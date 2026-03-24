@@ -167,19 +167,39 @@ export default function DriveSettings() {
   );
 }
 
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
+const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+
 function FolderConfig({ driveStatus, onRefresh }: { driveStatus: any; onRefresh: () => void }) {
   const [folderId, setFolderId] = useState(driveStatus?.folder_id || '');
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
     if (!folderId.trim()) { toast.error('Informe o ID da pasta'); return; }
+    if (!driveStatus?.id) { toast.error('Drive não conectado. Reconecte o Drive.'); return; }
     setSaving(true);
     try {
-      const { data, error } = await supabase.functions.invoke('drive-save-folder', {
-        body: { folder_id: folderId.trim() },
-      });
-      if (error || data?.error) {
-        toast.error(data?.error || error?.message || 'Erro ao salvar pasta');
+      // Lê token da sessão diretamente do localStorage para evitar hang do cliente Supabase
+      const storageKey = `sb-${SUPABASE_URL.match(/\/\/([^.]+)/)?.[1]}-auth-token`;
+      const raw = localStorage.getItem(storageKey);
+      const token = raw ? (JSON.parse(raw)?.access_token ?? SUPABASE_KEY) : SUPABASE_KEY;
+
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/drive_config?id=eq.${driveStatus.id}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': SUPABASE_KEY,
+            'Authorization': `Bearer ${token}`,
+            'Prefer': 'return=minimal',
+          },
+          body: JSON.stringify({ folder_id: folderId.trim(), folder_name: folderId.trim() }),
+        }
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err?.message || `Erro ${res.status}`);
       } else {
         toast.success('Pasta salva!');
         onRefresh();
