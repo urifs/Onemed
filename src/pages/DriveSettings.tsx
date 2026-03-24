@@ -175,17 +175,15 @@ function FolderConfig({ driveStatus, onRefresh }: { driveStatus: any; onRefresh:
     if (!folderId.trim()) { toast.error('Informe o ID da pasta'); return; }
     setSaving(true);
     try {
-      if (!driveStatus?.id) {
-        toast.error('Configuração do Drive não encontrada. Reconecte o Drive.');
-        return;
+      const { data, error } = await supabase.functions.invoke('drive-save-folder', {
+        body: { folder_id: folderId.trim() },
+      });
+      if (error || data?.error) {
+        toast.error(data?.error || error?.message || 'Erro ao salvar pasta');
+      } else {
+        toast.success('Pasta salva!');
+        onRefresh();
       }
-      const { error } = await supabase.from('drive_config').update({
-        folder_id: folderId.trim(),
-        folder_name: folderId.trim(),
-        updated_at: new Date().toISOString(),
-      }).eq('id', driveStatus.id);
-      if (error) toast.error(error.message);
-      else { toast.success('Pasta salva!'); onRefresh(); }
     } catch (e: any) {
       toast.error(e?.message || 'Erro ao salvar pasta');
     } finally {
