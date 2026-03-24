@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import AdminLayout from '@/components/AdminLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { FolderOpen, CheckCircle, AlertCircle, RefreshCw, Folder, Loader2, Search, ChevronDown } from 'lucide-react';
+import { FolderOpen, CheckCircle, AlertCircle, RefreshCw, Folder, Loader2 } from 'lucide-react';
 
 const GOOGLE_CLIENT_ID = '110017470335-2l6er8r451vj5hf3ob05rvolc2p4v9ku.apps.googleusercontent.com';
 
@@ -169,34 +169,10 @@ export default function DriveSettings() {
 
 function FolderConfig({ driveStatus, onRefresh }: { driveStatus: any; onRefresh: () => void }) {
   const [folderId, setFolderId] = useState(driveStatus?.folder_id || '');
-  const [folderName, setFolderName] = useState(driveStatus?.folder_name || '');
   const [saving, setSaving] = useState(false);
-  const [folders, setFolders] = useState<{ id: string; name: string }[]>([]);
-  const [loadingFolders, setLoadingFolders] = useState(false);
-  const [search, setSearch] = useState('');
-  const [showList, setShowList] = useState(false);
-
-  const loadFolders = async (q = '') => {
-    setLoadingFolders(true);
-    const { data, error } = await supabase.functions.invoke('drive-list-folders', { body: { query: q } });
-    setLoadingFolders(false);
-    if (error || data?.error) {
-      toast.error(data?.error || 'Erro ao listar pastas');
-    } else {
-      setFolders(data.folders || []);
-      setShowList(true);
-    }
-  };
-
-  const selectFolder = (f: { id: string; name: string }) => {
-    setFolderId(f.id);
-    setFolderName(f.name);
-    setShowList(false);
-    setSearch('');
-  };
 
   const save = async () => {
-    if (!folderId.trim()) { toast.error('Selecione ou informe o ID da pasta'); return; }
+    if (!folderId.trim()) { toast.error('Informe o ID da pasta'); return; }
     setSaving(true);
     try {
       if (!driveStatus?.id) {
@@ -205,7 +181,7 @@ function FolderConfig({ driveStatus, onRefresh }: { driveStatus: any; onRefresh:
       }
       const { error } = await supabase.from('drive_config').update({
         folder_id: folderId.trim(),
-        folder_name: folderName || folderId.trim(),
+        folder_name: folderId.trim(),
         updated_at: new Date().toISOString(),
       }).eq('id', driveStatus.id);
       if (error) toast.error(error.message);
@@ -226,67 +202,8 @@ function FolderConfig({ driveStatus, onRefresh }: { driveStatus: any; onRefresh:
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Folder browser */}
         <div>
-          <label className="text-sm text-muted-foreground block mb-2">Selecionar pasta do Google Drive</label>
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <input
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                placeholder="Buscar pastas..."
-                className="w-full h-10 rounded-md border border-border bg-secondary text-foreground pl-9 pr-3 text-sm placeholder:text-muted-foreground"
-                onKeyDown={e => e.key === 'Enter' && loadFolders(search)}
-              />
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => loadFolders(search)}
-              disabled={loadingFolders}
-              className="border-border text-muted-foreground hover:text-foreground gap-2 h-10 px-4"
-            >
-              {loadingFolders ? <Loader2 className="w-4 h-4 animate-spin" /> : <ChevronDown className="w-4 h-4" />}
-              {loadingFolders ? 'Carregando...' : 'Listar'}
-            </Button>
-          </div>
-
-          {/* Folder list */}
-          {showList && (
-            <div className="mt-2 border border-border rounded-md bg-secondary max-h-48 overflow-y-auto">
-              {folders.length === 0 ? (
-                <p className="text-sm text-muted-foreground p-3">Nenhuma pasta encontrada</p>
-              ) : (
-                folders.map(f => (
-                  <button
-                    key={f.id}
-                    onClick={() => selectFolder(f)}
-                    className="w-full text-left flex items-center gap-2 px-3 py-2 hover:bg-background text-sm text-foreground transition-colors"
-                  >
-                    <Folder className="w-4 h-4 text-primary shrink-0" />
-                    <span className="truncate">{f.name}</span>
-                    <span className="text-xs text-muted-foreground ml-auto shrink-0 font-mono">{f.id.slice(0, 8)}…</span>
-                  </button>
-                ))
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Selected / manual */}
-        {folderId && (
-          <div className="flex items-center gap-2 p-3 rounded-md bg-background border border-border">
-            <Folder className="w-4 h-4 text-primary shrink-0" />
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-foreground truncate">{folderName || 'Pasta selecionada'}</p>
-              <p className="text-xs text-muted-foreground font-mono truncate">{folderId}</p>
-            </div>
-          </div>
-        )}
-
-        <div>
-          <label className="text-sm text-muted-foreground block mb-1">Ou cole o ID manualmente</label>
+          <label className="text-sm text-muted-foreground block mb-1">ID da pasta do Google Drive</label>
           <input
             value={folderId}
             onChange={e => setFolderId(e.target.value)}
