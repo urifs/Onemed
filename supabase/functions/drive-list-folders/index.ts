@@ -69,9 +69,7 @@ serve(async (req) => {
       fields: 'files(id,name,parents)',
       orderBy: 'name',
       pageSize: '100',
-      includeItemsFromAllDrives: 'true',
-      supportsAllDrives: 'true',
-      corpora: 'allDrives',
+      corpora: 'user',
     })
 
     const res = await fetch(`https://www.googleapis.com/drive/v3/files?${params}`, {
