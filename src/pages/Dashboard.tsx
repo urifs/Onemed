@@ -22,11 +22,17 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchData = async () => {
       try {
+        // Início do dia atual no fuso de São Paulo (UTC-3)
+        const now = new Date();
+        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 3, 0, 0); // 03:00 UTC = 00:00 BRT
+        if (now.getHours() < 3) todayStart.setDate(todayStart.getDate() - 1); // antes das 03:00 UTC ainda é "ontem" em BRT
+        const todayISO = todayStart.toISOString();
+
         const [accessStats, recent, drive, visits] = await Promise.all([
-          supabase.from('accesses').select('status, access_type'),
+          supabase.from('accesses').select('status, access_type').gte('created_at', todayISO),
           supabase.from('accesses').select('*').order('created_at', { ascending: false }).limit(5),
           supabase.from('drive_config').select('connected').single(),
-          supabase.from('visits').select('id', { count: 'exact', head: true }),
+          supabase.from('visits').select('id', { count: 'exact', head: true }).gte('created_at', todayISO),
         ]);
 
         const accesses = accessStats.data || [];
@@ -87,10 +93,10 @@ export default function Dashboard() {
         {/* Stats grid */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[
-            { label: 'Total Acessos', value: stats?.total ?? '—', icon: Users, color: 'text-primary' },
-            { label: 'Ativos', value: stats?.active ?? '—', icon: Clock, color: 'text-accent-success' },
-            { label: 'Expirados', value: stats?.expired ?? '—', icon: XCircle, color: 'text-primary' },
-            { label: 'Visitas', value: visitCount, icon: Eye, color: 'text-accent-info' },
+            { label: 'Acessos Hoje', value: stats?.total ?? '—', icon: Users, color: 'text-primary' },
+            { label: 'Ativos Hoje', value: stats?.active ?? '—', icon: Clock, color: 'text-accent-success' },
+            { label: 'Expirados Hoje', value: stats?.expired ?? '—', icon: XCircle, color: 'text-primary' },
+            { label: 'Visitas Hoje', value: visitCount, icon: Eye, color: 'text-accent-info' },
           ].map((stat, i) => (
             <Card key={i} className="bg-background-paper border-border">
               <CardContent className="p-5">

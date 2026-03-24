@@ -26,6 +26,11 @@ export default function Index() {
   const [accessData, setAccessData] = useState<{ email: string } | null>(null);
   const [timeRemaining, setTimeRemaining] = useState({ minutes: TRIAL_DURATION_MINUTES, seconds: 0, expired: false });
 
+  // Registrar visita na página principal
+  useEffect(() => {
+    supabase.from('visits').insert({ page: '/' });
+  }, []);
+
   // Countdown timer
   useEffect(() => {
     if (!success) return;
