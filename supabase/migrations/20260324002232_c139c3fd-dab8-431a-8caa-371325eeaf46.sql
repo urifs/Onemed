@@ -1,0 +1,1 @@
+ALTER TABLE public.accesses ADD COLUMN IF NOT EXISTS drive_permission_id text;

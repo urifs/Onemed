@@ -1,0 +1,126 @@
+import { useState, useEffect } from 'react';
+import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
+import { trackLead } from '@/lib/pixel';
+import {
+  LandingHeader,
+  HeroSection,
+  TrialSuccessSection,
+  BenefitsSection,
+  CoursesSection,
+  BooksSection,
+  FaqSection,
+  LandingFooter
+} from '@/components/landing';
+
+const DEFAULT_COUNTRY = { code: '+55', country: 'Brasil', flag: 'BR' };
+const TRIAL_DURATION_MINUTES = 30;
+
+export default function Index() {
+  const [email, setEmail] = useState('');
+  const [whatsapp, setWhatsapp] = useState('');
+  const [selectedCountry, setSelectedCountry] = useState(DEFAULT_COUNTRY);
+  const [showWhatsappField, setShowWhatsappField] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [accessData, setAccessData] = useState<{ email: string } | null>(null);
+  const [timeRemaining, setTimeRemaining] = useState({ minutes: TRIAL_DURATION_MINUTES, seconds: 0, expired: false });
+
+  // Countdown timer
+  useEffect(() => {
+    if (!success) return;
+    const interval = setInterval(() => {
+      setTimeRemaining(prev => {
+        if (prev.expired) return prev;
+        if (prev.minutes === 0 && prev.seconds === 0) {
+          return { ...prev, expired: true };
+        }
+        if (prev.seconds === 0) {
+          return { minutes: prev.minutes - 1, seconds: 59, expired: false };
+        }
+        return { ...prev, seconds: prev.seconds - 1 };
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [success]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email) return;
+
+    if (!showWhatsappField) {
+      setShowWhatsappField(true);
+      return;
+    }
+
+    if (!whatsapp) {
+      toast.error('Por favor, informe seu WhatsApp');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('create-trial-access', {
+        body: {
+          email: email.toLowerCase(),
+          whatsapp: `${selectedCountry.code}${whatsapp}`,
+        },
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      if (data?.alreadyActive) {
+        setTimeRemaining({ minutes: data.minutesRemaining, seconds: data.secondsRemaining, expired: false });
+        setAccessData({ email: data.email });
+        setSuccess(true);
+        toast.info('Acesso já concedido para este email');
+        return;
+      }
+
+      setAccessData({ email: data.email });
+      setTimeRemaining({ minutes: TRIAL_DURATION_MINUTES, seconds: 0, expired: false });
+      setSuccess(true);
+      trackLead(email);
+      toast.success('Acesso liberado! Verifique seu Google Drive.');
+    } catch (err: any) {
+      console.error(err);
+      const msg = err.message || '';
+      if (msg.includes('já utilizou') || msg.includes('já possui acesso')) {
+        toast.error(msg, { duration: 6000 });
+      } else {
+        toast.error(msg || 'Erro ao solicitar acesso. Tente novamente.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-background">
+      <LandingHeader />
+      {success ? (
+        <TrialSuccessSection accessData={accessData} timeRemaining={timeRemaining} />
+      ) : (
+        <>
+          <HeroSection
+            email={email}
+            setEmail={setEmail}
+            whatsapp={whatsapp}
+            setWhatsapp={setWhatsapp}
+            showWhatsappField={showWhatsappField}
+            loading={loading}
+            onSubmit={handleSubmit}
+            selectedCountry={selectedCountry}
+            setSelectedCountry={setSelectedCountry}
+          />
+          <BenefitsSection />
+          <CoursesSection />
+          <BooksSection />
+          <FaqSection />
+          <LandingFooter />
+        </>
+      )}
+    </div>
+  );
+}
