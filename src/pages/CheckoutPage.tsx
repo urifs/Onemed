@@ -24,7 +24,20 @@ import {
   Phone,
   User,
   Infinity,
+  ChevronDown,
 } from 'lucide-react';
+import { formatWhatsApp } from '@/lib/utils';
+
+const COUNTRIES = [
+  { code: '+55', country: 'Brasil', flag: 'BR' },
+  { code: '+54', country: 'Argentina', flag: 'AR' },
+  { code: '+595', country: 'Paraguai', flag: 'PY' },
+  { code: '+598', country: 'Uruguai', flag: 'UY' },
+  { code: '+591', country: 'Bolívia', flag: 'BO' },
+  { code: '+56', country: 'Chile', flag: 'CL' },
+  { code: '+51', country: 'Peru', flag: 'PE' },
+  { code: '+57', country: 'Colômbia', flag: 'CO' },
+];
 
 const UPSELL_PRICE = 19.90;
 const UPSELL2_PRICE = 9.90;
@@ -84,6 +97,8 @@ export default function CheckoutPage() {
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
   const [customerWhatsapp, setCustomerWhatsapp] = useState('');
+  const [selectedCountry, setSelectedCountry] = useState(COUNTRIES[0]);
+  const [showCountryDropdown, setShowCountryDropdown] = useState(false);
 
   // Coupon
   const [couponCode, setCouponCode] = useState(initialCoupon);
@@ -146,13 +161,6 @@ export default function CheckoutPage() {
     return total;
   };
 
-  const formatWhatsapp = (value: string) => {
-    const numbers = value.replace(/\D/g, '');
-    if (numbers.length <= 2) return numbers;
-    if (numbers.length <= 7) return `(${numbers.slice(0, 2)}) ${numbers.slice(2)}`;
-    if (numbers.length <= 11) return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 7)}-${numbers.slice(7)}`;
-    return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 7)}-${numbers.slice(7, 11)}`;
-  };
 
   const validateCustomerData = () => {
     if (!customerEmail.trim() || !customerEmail.includes('@')) {
@@ -175,7 +183,7 @@ export default function CheckoutPage() {
       const { error: buyerErr } = await supabase.from('buyers').insert({
         email: customerEmail.toLowerCase().trim(),
         name: customerName.trim() || null,
-        whatsapp: customerWhatsapp.replace(/\D/g, ''),
+        whatsapp: `${selectedCountry.code}${customerWhatsapp.replace(/\D/g, '')}`,
         plan: selectedPlan,
         amount: getTotalPrice(),
         status: 'pending',
@@ -190,7 +198,7 @@ export default function CheckoutPage() {
           plan: selectedPlan,
           email: customerEmail.toLowerCase().trim(),
           name: customerName.trim() || '',
-          whatsapp: customerWhatsapp.replace(/\D/g, ''),
+          whatsapp: `${selectedCountry.code}${customerWhatsapp.replace(/\D/g, '')}`,
           externalReference: ref,
           couponCode: couponApplied?.code || null,
           upsell: upsellSelected,
@@ -468,7 +476,43 @@ export default function CheckoutPage() {
         </div>
         <div>
           <label className="block text-sm text-muted-foreground mb-2"><Phone className="w-4 h-4 inline mr-2" />WhatsApp *</label>
-          <Input type="tel" placeholder="(00) 00000-0000" value={customerWhatsapp} onChange={e => setCustomerWhatsapp(formatWhatsapp(e.target.value))} className="bg-secondary border-border text-foreground placeholder:text-muted-foreground h-12" required />
+          <div className="flex gap-2">
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowCountryDropdown(!showCountryDropdown)}
+                className="flex items-center gap-1.5 h-12 px-3 bg-secondary border border-border rounded-lg text-sm text-foreground hover:border-border"
+              >
+                <span>{selectedCountry.flag}</span>
+                <span>{selectedCountry.code}</span>
+                <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
+              </button>
+              {showCountryDropdown && (
+                <div className="absolute top-full left-0 mt-1 w-48 bg-background-paper border border-border rounded-lg shadow-xl z-50 overflow-hidden">
+                  {COUNTRIES.map(c => (
+                    <button
+                      key={c.code}
+                      type="button"
+                      onClick={() => { setSelectedCountry(c); setShowCountryDropdown(false); setCustomerWhatsapp(''); }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-secondary text-left"
+                    >
+                      <span>{c.flag}</span>
+                      <span>{c.country}</span>
+                      <span className="ml-auto text-muted-foreground">{c.code}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <Input
+              type="tel"
+              placeholder={selectedCountry.code === '+55' ? '(00) 00000-0000' : 'Número'}
+              value={customerWhatsapp}
+              onChange={e => setCustomerWhatsapp(formatWhatsApp(e.target.value, selectedCountry.code))}
+              className="flex-1 bg-secondary border-border text-foreground placeholder:text-muted-foreground h-12"
+              required
+            />
+          </div>
           <p className="text-muted-foreground text-xs mt-1">Para suporte e novidades</p>
         </div>
       </div>
