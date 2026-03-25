@@ -14,14 +14,14 @@ import {
 import { formatWhatsApp } from '@/lib/utils';
 
 const COUNTRIES = [
-  { code: '+55', country: 'Brasil', flag: 'BR' },
-  { code: '+54', country: 'Argentina', flag: 'AR' },
-  { code: '+595', country: 'Paraguai', flag: 'PY' },
-  { code: '+598', country: 'Uruguai', flag: 'UY' },
-  { code: '+591', country: 'Bolívia', flag: 'BO' },
-  { code: '+56', country: 'Chile', flag: 'CL' },
-  { code: '+51', country: 'Peru', flag: 'PE' },
-  { code: '+57', country: 'Colômbia', flag: 'CO' },
+  { code: '+55', country: 'Brasil', flag: '🇧🇷' },
+  { code: '+54', country: 'Argentina', flag: '🇦🇷' },
+  { code: '+595', country: 'Paraguai', flag: '🇵🇾' },
+  { code: '+598', country: 'Uruguai', flag: '🇺🇾' },
+  { code: '+591', country: 'Bolívia', flag: '🇧🇴' },
+  { code: '+56', country: 'Chile', flag: '🇨🇱' },
+  { code: '+51', country: 'Peru', flag: '🇵🇪' },
+  { code: '+57', country: 'Colômbia', flag: '🇨🇴' },
 ];
 
 interface HeroSectionProps {
