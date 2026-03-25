@@ -26,9 +26,22 @@ export default function Index() {
   const [accessData, setAccessData] = useState<{ email: string } | null>(null);
   const [timeRemaining, setTimeRemaining] = useState({ minutes: TRIAL_DURATION_MINUTES, seconds: 0, expired: false });
 
-  // Registrar visita na página principal
+  // Registrar visita na página principal usando keepalive para garantir que
+  // a requisição seja enviada mesmo quando o usuário sai rapidamente da página
   useEffect(() => {
-    supabase.from('visits').insert({ page: '/' });
+    const url = import.meta.env.VITE_SUPABASE_URL;
+    const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+    fetch(`${url}/rest/v1/visits`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': key,
+        'Authorization': `Bearer ${key}`,
+        'Prefer': 'return=minimal',
+      },
+      body: JSON.stringify({ page: '/' }),
+      keepalive: true,
+    }).catch(() => {});
   }, []);
 
   // Countdown timer

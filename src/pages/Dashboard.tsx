@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import AdminLayout from '@/components/AdminLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
-import { formatDateTimeSP } from '@/lib/utils';
+import { formatDateTimeSP, todayStartISO } from '@/lib/utils';
 import { Users, Clock, XCircle, AlertTriangle, ArrowRight, FolderOpen, Eye, Calendar } from 'lucide-react';
 import { Link as RouterLink } from 'react-router-dom';
 
@@ -22,11 +22,8 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // Início do dia atual no fuso de São Paulo (UTC-3)
-        const now = new Date();
-        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 3, 0, 0); // 03:00 UTC = 00:00 BRT
-        if (now.getHours() < 3) todayStart.setDate(todayStart.getDate() - 1); // antes das 03:00 UTC ainda é "ontem" em BRT
-        const todayISO = todayStart.toISOString();
+        // Início do dia atual no fuso horário de São Paulo (America/Sao_Paulo)
+        const todayISO = todayStartISO();
 
         const [accessStats, recent, drive, visits] = await Promise.all([
           supabase.from('accesses').select('status, access_type').gte('created_at', todayISO),

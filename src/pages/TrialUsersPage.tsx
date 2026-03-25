@@ -6,7 +6,7 @@ import AdminLayout from '@/components/AdminLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { formatDateTimeSP } from '@/lib/utils';
+import { formatDateTimeSP, todayStartISO } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Users, Phone, Mail, Clock, Search, Filter, RefreshCw, MessageCircle } from 'lucide-react';
 
@@ -25,11 +25,13 @@ export default function TrialUsersPage() {
       const { data } = await supabase.from('accesses').select('*').eq('access_type', 'trial').order('created_at', { ascending: false });
       const all = data || [];
       setTrials(all);
+      const todayISO = todayStartISO();
+      const today = all.filter(t => t.created_at >= todayISO);
       setStats({
-        total: all.length,
-        active: all.filter(t => t.status === 'active').length,
-        expired: all.filter(t => t.status === 'expired').length,
-        withWhatsapp: all.filter(t => t.whatsapp).length,
+        total: today.length,
+        active: today.filter(t => t.status === 'active').length,
+        expired: today.filter(t => t.status === 'expired').length,
+        withWhatsapp: today.filter(t => t.whatsapp).length,
       });
     } catch { toast.error('Erro ao carregar trials'); }
     finally { setLoading(false); }
@@ -70,10 +72,10 @@ export default function TrialUsersPage() {
         {/* Stats */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[
-            { label: 'Total Trial', value: stats?.total ?? '—', icon: Users },
-            { label: 'Ativos', value: stats?.active ?? '—', icon: Clock },
-            { label: 'Expirados', value: stats?.expired ?? '—', icon: Filter },
-            { label: 'Com WhatsApp', value: stats?.withWhatsapp ?? '—', icon: MessageCircle },
+            { label: 'Trial Hoje', value: stats?.total ?? '—', icon: Users },
+            { label: 'Ativos Hoje', value: stats?.active ?? '—', icon: Clock },
+            { label: 'Expirados Hoje', value: stats?.expired ?? '—', icon: Filter },
+            { label: 'WhatsApp Hoje', value: stats?.withWhatsapp ?? '—', icon: MessageCircle },
           ].map((s, i) => (
             <Card key={i} className="bg-background-paper border-border">
               <CardContent className="p-5">

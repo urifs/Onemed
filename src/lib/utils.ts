@@ -50,6 +50,13 @@ export function nowSaoPaulo(): Date {
   return new Date(new Date().toLocaleString('en-US', { timeZone: SAO_PAULO_TIMEZONE }));
 }
 
+// Retorna o início do dia atual no horário de São Paulo como string ISO (UTC)
+// Brasil não tem horário de verão desde 2019, então São Paulo é sempre UTC-3
+export function todayStartISO(): string {
+  const spDateStr = new Date().toLocaleDateString('en-CA', { timeZone: SAO_PAULO_TIMEZONE });
+  return new Date(`${spDateStr}T00:00:00-03:00`).toISOString();
+}
+
 export function formatWhatsApp(value: string, countryCode: string): string {
   const nums = value.replace(/\D/g, '');
   if (countryCode === '+55') {

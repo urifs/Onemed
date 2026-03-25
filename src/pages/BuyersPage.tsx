@@ -6,7 +6,7 @@ import AdminLayout from '@/components/AdminLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { formatDateTimeSP } from '@/lib/utils';
+import { formatDateTimeSP, todayStartISO } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DollarSign, Users, Clock, TrendingUp, Mail, Calendar, Phone, Trash2, UserPlus, Loader2, RefreshCw, CheckCircle, XCircle, X } from 'lucide-react';
 
@@ -28,12 +28,14 @@ export default function BuyersPage() {
       const { data: buyersData } = await supabase.from('buyers').select('*').eq('status', 'approved').order('created_at', { ascending: false });
       setBuyers(buyersData || []);
       const all = buyersData || [];
+      const todayISO = todayStartISO();
+      const today = all.filter(b => b.created_at >= todayISO);
       setStats({
-        total: all.length,
-        approved: all.filter(b => b.status === 'approved').length,
-        revenue: all.filter(b => b.status === 'approved').reduce((s: number, b: any) => s + (b.amount || 0), 0),
-        lifetime: all.filter(b => b.plan === 'lifetime').length,
-        annual: all.filter(b => b.plan === 'annual').length,
+        total: today.length,
+        approved: today.filter(b => b.status === 'approved').length,
+        revenue: today.filter(b => b.status === 'approved').reduce((s: number, b: any) => s + (b.amount || 0), 0),
+        lifetime: today.filter(b => b.plan === 'lifetime').length,
+        annual: today.filter(b => b.plan === 'annual').length,
       });
     } catch { toast.error('Erro ao carregar compradores'); }
     finally { setLoading(false); }
@@ -97,10 +99,10 @@ export default function BuyersPage() {
         {/* Stats */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[
-            { label: 'Total', value: stats?.total ?? '—', icon: Users, color: 'text-primary' },
-            { label: 'Aprovados', value: stats?.approved ?? '—', icon: CheckCircle, color: 'text-accent-success' },
-            { label: 'Receita', value: stats ? `R$ ${stats.revenue.toFixed(2)}` : '—', icon: DollarSign, color: 'text-accent-warning' },
-            { label: 'Vitalícios', value: stats?.lifetime ?? '—', icon: TrendingUp, color: 'text-accent-info' },
+            { label: 'Total Hoje', value: stats?.total ?? '—', icon: Users, color: 'text-primary' },
+            { label: 'Aprovados Hoje', value: stats?.approved ?? '—', icon: CheckCircle, color: 'text-accent-success' },
+            { label: 'Receita Hoje', value: stats ? `R$ ${stats.revenue.toFixed(2)}` : '—', icon: DollarSign, color: 'text-accent-warning' },
+            { label: 'Vitalícios Hoje', value: stats?.lifetime ?? '—', icon: TrendingUp, color: 'text-accent-info' },
           ].map((s, i) => (
             <Card key={i} className="bg-background-paper border-border">
               <CardContent className="p-5">
