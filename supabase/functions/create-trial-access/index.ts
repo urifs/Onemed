@@ -85,24 +85,29 @@ serve(async (req) => {
 
     const normalizedEmail = email.toLowerCase().trim()
 
-    // ── Rate limiting por IP ─────────────────────────────────────────────────
+    // ── Rate limiting por IP (degradado graciosamente se tabela não existir) ──
     const clientIp = (req.headers.get('x-forwarded-for') || '').split(',')[0].trim()
       || req.headers.get('x-real-ip')
       || 'unknown'
 
-    const rl = await checkRateLimit(supabase, clientIp, 'create_trial', 5, 15)
-    if (!rl.allowed) {
-      return new Response(JSON.stringify({
-        error: 'Muitas tentativas. Tente novamente em alguns minutos.',
-        retryAfterSeconds: rl.retryAfterSeconds,
-      }), {
-        status: 429,
-        headers: {
-          ...getCorsHeaders(req),
-          'Content-Type': 'application/json',
-          'Retry-After': String(rl.retryAfterSeconds ?? 60),
-        }
-      })
+    try {
+      const rl = await checkRateLimit(supabase, clientIp, 'create_trial', 5, 15)
+      if (!rl.allowed) {
+        return new Response(JSON.stringify({
+          error: 'Muitas tentativas. Tente novamente em alguns minutos.',
+          retryAfterSeconds: rl.retryAfterSeconds,
+        }), {
+          status: 429,
+          headers: {
+            ...getCorsHeaders(req),
+            'Content-Type': 'application/json',
+            'Retry-After': String(rl.retryAfterSeconds ?? 60),
+          }
+        })
+      }
+    } catch (rlErr: any) {
+      console.warn('Rate limit check failed (migration pendente?):', rlErr.message)
+      // Continua sem rate limit — não bloqueia o fluxo principal
     }
 
     // Block if email already purchased

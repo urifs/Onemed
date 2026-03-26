@@ -89,21 +89,26 @@ serve(async (req) => {
     const supabaseProjectRef = supabaseUrl?.match(/https:\/\/([^.]+)/)?.[1] || 'nxhdbpqgfvinwtrmtohz'
     const webhookUrl = `https://${supabaseProjectRef}.supabase.co/functions/v1/mp-webhook`
 
-    // ── 2. Rate limiting por email ─────────────────────────────────────────────
+    // ── 2. Rate limiting por email (degradado graciosamente se tabela não existir) ──
     if (email) {
-      const rl = await checkRateLimit(supabase, email.toLowerCase().trim(), 'create_payment', 10, 60)
-      if (!rl.allowed) {
-        return new Response(JSON.stringify({
-          error: 'Muitas tentativas de pagamento. Tente novamente mais tarde.',
-          retryAfterSeconds: rl.retryAfterSeconds,
-        }), {
-          status: 429,
-          headers: {
-            ...getCorsHeaders(req),
-            'Content-Type': 'application/json',
-            'Retry-After': String(rl.retryAfterSeconds ?? 3600),
-          }
-        })
+      try {
+        const rl = await checkRateLimit(supabase, email.toLowerCase().trim(), 'create_payment', 10, 60)
+        if (!rl.allowed) {
+          return new Response(JSON.stringify({
+            error: 'Muitas tentativas de pagamento. Tente novamente mais tarde.',
+            retryAfterSeconds: rl.retryAfterSeconds,
+          }), {
+            status: 429,
+            headers: {
+              ...getCorsHeaders(req),
+              'Content-Type': 'application/json',
+              'Retry-After': String(rl.retryAfterSeconds ?? 3600),
+            }
+          })
+        }
+      } catch (rlErr: any) {
+        console.warn('Rate limit check failed (migration pendente?):', rlErr.message)
+        // Continua sem rate limit — não bloqueia o fluxo de pagamento
       }
     }
 
