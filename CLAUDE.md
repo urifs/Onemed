@@ -1,27 +1,27 @@
 # OneMed — Contexto de Projeto para Claude Code
 
-> **INSTRUCAO OBRIGATORIA:** Ao iniciar qualquer sessao, leia este arquivo COMPLETO antes de qualquer acao.
 > Este arquivo e carregado automaticamente em toda sessao do Claude Code.
 > Atualize-o ao final de cada sessao com decisoes, mudancas e contexto relevante.
 
 ---
 
-## Visão Geral
+## Visao Geral
 
-**OneMed** é uma plataforma de cursos médicos (SaaS) que vende acesso a um acervo no Google Drive via Mercado Pago. O fluxo principal:
+**OneMed** e uma plataforma de cursos medicos (SaaS) que vende acesso a um acervo no Google Drive via Mercado Pago.
 
-1. Usuário acessa a landing page → solicita trial de 30 min
-2. Drive é compartilhado automaticamente via Edge Function
+**Fluxo principal:**
+1. Usuario acessa a landing → solicita trial de 30 min
+2. Drive e compartilhado automaticamente via Edge Function
 3. Trial expira → acesso revogado pelo cron job
-4. Usuário converte → paga via MP → acesso permanente liberado
+4. Usuario converte → paga via MP → acesso permanente liberado
 
 **Site:** https://onemedcursos.com.br
-**Repositório:** https://github.com/urifs/Onemed
+**Repositorio:** https://github.com/urifs/Onemed
 **Branch principal:** `main`
 
 ---
 
-## Stack Técnica
+## Stack Tecnica
 
 | Camada | Tecnologia |
 |--------|-----------|
@@ -29,30 +29,30 @@
 | Backend | Supabase Edge Functions (Deno) |
 | Banco | Supabase PostgreSQL + RLS |
 | Pagamentos | Mercado Pago (Checkout Pro) |
-| Armazenamento conteúdo | Google Drive (pasta compartilhada) |
+| Conteudo | Google Drive (pasta compartilhada) |
 | Emails | Resend API |
 | Hospedagem | Vercel (frontend) |
 
 ---
 
-## Supabase
+## Infraestrutura
 
-**Project ID:** `jrrybiohwqabsdurqudc`
-**URL:** `https://jrrybiohwqabsdurqudc.supabase.co`
-**Região:** South America (São Paulo)
-**Anon Key (pública):** ver `.env.example`
+### Supabase
+- **Project ID:** `jrrybiohwqabsdurqudc`
+- **URL:** `https://jrrybiohwqabsdurqudc.supabase.co`
+- **Regiao:** South America (Sao Paulo)
 
-## Vercel
-
-**Projeto:** `onemed`
-**Project ID:** `prj_6xtdW0fF2j3x3FBComSPvCBtrTVt`
-**URL:** `https://onemedcursos.com.br`
+### Vercel
+- **Projeto:** `onemed`
+- **Project ID:** `prj_6xtdW0fF2j3x3FBComSPvCBtrTVt`
+- **GitHub Repo ID:** `1162763179`
+- **URL:** `https://onemedcursos.com.br`
 
 ---
 
-## Credenciais de Acesso (uso exclusivo do Claude)
+## Credenciais (uso exclusivo do Claude)
 
-> Tokens necessarios para operacoes autonomas. Usar diretamente sem solicitar ao usuario.
+> Usar diretamente sem solicitar ao usuario.
 
 | Servico | Variavel | Valor |
 |---------|----------|-------|
@@ -63,24 +63,83 @@
 
 ---
 
-### Deploy de Edge Functions (sem Docker)
+## Deploy
+
+### Edge Functions (sem Docker)
 ```bash
 export SUPABASE_ACCESS_TOKEN="sbp_46a93dbb0118dfcdcef474f9287d4044284b30ec"
 supabase functions deploy <nome> --project-ref jrrybiohwqabsdurqudc --use-api
+```
 
-# Deploy de todas de uma vez:
+**Todas de uma vez:**
+```bash
 for fn in create-trial-access drive-list-folders drive-oauth-callback drive-revoke-access drive-save-folder drive-share-folder mp-create-payment mp-webhook send-access-email send-followup-emails sync-pending-buyers; do
   supabase functions deploy $fn --project-ref jrrybiohwqabsdurqudc --use-api
 done
 ```
 
-**IMPORTANTE — Deploy via `--use-api`:**
-O esbuild remove comentários ao compilar. Se a mudança no código for apenas em comentários, o hash do bundle não muda e o Supabase silenciosamente ignora o deploy (versão antiga continua rodando). Sempre fazer uma mudança real no código (ex: alterar string de log). Confirmar que o número de versão bumped após o deploy.
+> **IMPORTANTE:** O esbuild remove comentarios ao compilar. Se a mudanca for apenas em comentarios, o hash nao muda e o Supabase ignora o deploy. Sempre alterar codigo real (ex: string de log) e confirmar que a versao bumped.
+
+### Frontend (Vercel)
+```bash
+curl -s -X POST "https://api.vercel.com/v13/deployments?forceNew=1&target=production" \
+  -H "Authorization: Bearer vcp_6m85MdQjg3YEmboL3Bg4x0fHzqTfXiuhQQubBmzGE3tjjqhdDt0JF7SY" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"onemed","target":"production","gitSource":{"type":"github","repoId":1162763179,"ref":"BRANCH_AQUI"}}'
+```
+
+> **IMPORTANTE:** Deployments de branches que nao sejam `main` so atualizam `onemedcursos.com.br` se `target=production` estiver explicito. Sem isso, o Vercel cria apenas preview URLs.
+
+---
+
+## Edge Functions
+
+| Funcao | Versao | verify_jwt | Chamada por | Descricao |
+|--------|--------|-----------|-------------|-----------|
+| `create-trial-access` | v19 | true | Frontend | Cria trial 30min + Drive obrigatorio + email |
+| `mp-create-payment` | v15 | true | Frontend | Gera preferencia no Mercado Pago |
+| `mp-webhook` | v16 | false | Mercado Pago | Processa pagamento aprovado automaticamente |
+| `drive-share-folder` | v9 | false | Interna | Compartilha pasta Drive com email |
+| `drive-revoke-access` | v14 | false | Cron (*/5 min) | Revoga acessos trial expirados |
+| `drive-list-folders` | v13 | true | Admin | Lista pastas do Drive |
+| `drive-save-folder` | v8 | true | Admin | Salva pasta configurada |
+| `drive-oauth-callback` | v13 | false | OAuth flow | Troca code por tokens Google |
+| `send-access-email` | v14 | true | Interna | Envia emails de confirmacao (Resend) |
+| `send-followup-emails` | v14 | false | Cron (13h UTC) | Follow-ups 1d/7d/30d com cupons |
+| `sync-pending-buyers` | v11 | false | Admin | Sincroniza compradores pendentes com MP API |
+
+---
+
+## Padroes Importantes
+
+### Chamadas internas entre Edge Functions
+**NUNCA** usar `supabase.functions.invoke` para chamar outra Edge Function de dentro de uma Edge Function. O SDK envia o **anon key** no header Authorization (nao o service role), causando 401. Usar sempre `fetch()` direto **sem Authorization header**:
+
+```typescript
+const res = await fetch(`${supabaseUrl}/functions/v1/drive-share-folder`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ email, accessId }),
+})
+```
+
+### Funcoes chamadas pelo frontend (via SDK)
+Retornar **HTTP 200 para todos os casos** (sucesso, erro de auth, erro interno) com erro no body como `{ error: "..." }`. O SDK do Supabase descarta o body em respostas nao-2xx e mostra apenas "Edge Function returned a non-2xx status code".
+
+### Funcoes chamadas externamente (webhook MP)
+`verify_jwt: false` obrigatorio — o Mercado Pago nao envia Bearer token.
+
+### Funcoes do admin panel (sync-pending-buyers)
+`verify_jwt: false` + validacao JWT manual no codigo + retorno HTTP 200 sempre. Evita que o gateway intercepte antes da funcao.
+
+---
+
+## Banco de Dados
 
 ### Tabelas principais
-| Tabela | Descrição |
+| Tabela | Descricao |
 |--------|-----------|
-| `accesses` | Acessos trial e paid com status/expiração |
+| `accesses` | Acessos trial e paid com status/expiracao/drive_permission_id |
 | `buyers` | Compradores com external_reference do MP |
 | `coupons` | Cupons de desconto com limite de uso |
 | `visits` | Rastreamento de visitas na landing |
@@ -89,44 +148,32 @@ O esbuild remove comentários ao compilar. Se a mudança no código for apenas e
 | `user_roles` | Roles de admin |
 | `rate_limits` | Rate limiting das Edge Functions |
 
----
-
-## Edge Functions
-
-| Função | Versão Atual | verify_jwt | Chamada por | Descrição |
-|--------|-------------|-----------|-------------|-----------|
-| `create-trial-access` | v19 | true | Frontend (landing) | Cria trial de 30min + aguarda Drive + envia email |
-| `mp-create-payment` | v15 | true | Frontend (checkout) | Gera preferência no Mercado Pago |
-| `mp-webhook` | v16 | true | Mercado Pago | Processa pagamento aprovado, sem race condition |
-| `drive-share-folder` | v9 | false | Interna | Compartilha pasta Drive com email |
-| `drive-revoke-access` | v14 | false | Cron (*/5 min) | Revoga acessos trial expirados |
-| `drive-list-folders` | v13 | true | Admin panel | Lista pastas do Drive |
-| `drive-save-folder` | v8 | true | Admin panel | Salva pasta configurada |
-| `drive-oauth-callback` | v13 | false | OAuth flow | Troca code por tokens do Google |
-| `send-access-email` | v14 | true | Interna | Envia emails de confirmação (Resend) |
-| `send-followup-emails` | v14 | false | Cron (13h UTC) | Envia follow-ups para trials expirados |
-| `sync-pending-buyers` | v11 | false | Admin panel | Sincroniza compradores pendentes com MP API |
+### Migrations aplicadas
+| Arquivo | Descricao |
+|---------|-----------|
+| `20260323163043_*.sql` | Schema inicial, RLS, policies |
+| `20260323163104_*.sql` | Policy fixes |
+| `20260324002232_*.sql` | drive_permission_id |
+| `20260324002357_*.sql` | pg_cron setup |
+| `20260324034623_*.sql` | email_followups table |
+| `20260326000002_fix_cron_jobs.sql` | Cron jobs com CRON_SECRET do Vault (aplicada via SQL) |
 
 ---
 
-## Variáveis de Ambiente (Supabase Secrets)
+## Variaveis de Ambiente (Supabase Secrets)
 
-Configuradas em: **Supabase Dashboard → Edge Functions → Secrets**
-
-| Variável | Status | Descrição |
-|----------|--------|-----------|
-| `MP_ACCESS_TOKEN_PROD` | ✅ Configurado | Token de produção do Mercado Pago |
-| `MP_ACCESS_TOKEN_TEST` | ✅ Configurado | Token de teste do MP |
-| `GOOGLE_CLIENT_SECRET` | ✅ Configurado | Secret OAuth do Google |
-| `RESEND_API_KEY` | ✅ Configurado | API key do Resend |
-| `VERCEL_TOKEN` | ✅ Configurado | Token de deploy do Vercel |
-| `VERCEL_PROJECT_ID` | ✅ Configurado | ID do projeto Vercel |
-| `CRON_SECRET` | ✅ Configurado | Secret para autenticar cron jobs (Secrets + Vault) |
-| `MP_WEBHOOK_SECRET` | ⏳ Pendente | Secret HMAC do webhook MP (pegar no dashboard MP → Webhooks) |
+| Variavel | Descricao |
+|----------|-----------|
+| `MP_ACCESS_TOKEN_PROD` | Token de producao do Mercado Pago |
+| `RESEND_API_KEY` | API key do Resend |
+| `GOOGLE_CLIENT_SECRET` | Secret OAuth do Google |
+| `CRON_SECRET` | Secret para autenticar cron jobs (Secrets + Vault) |
+| `VERCEL_TOKEN` | Token de deploy do Vercel |
+| `VERCEL_PROJECT_ID` | ID do projeto Vercel |
 
 ---
 
-## Planos e Preços (server-side)
+## Planos e Precos (server-side)
 
 ```typescript
 lifetime: R$ 299,90  // Acesso permanente
@@ -137,219 +184,103 @@ upsell2:  R$   9,90
 
 ---
 
-## Segurança — Estado Atual (2026-03-26)
+## Seguranca
 
-### Ativo e funcionando ✅
-- **CORS restrito**: todas as 11 funções retornam `onemedcursos.com.br` em vez de `*`
-- **CRON_SECRET**: `drive-revoke-access` e `send-followup-emails` verificam `x-cron-secret`; cron jobs SQL leem o secret do Vault
-- **Rate limiting**: código ativo em `create-trial-access` (5/15min por IP) e `mp-create-payment` (10/hora por email)
-- **Validação server-side**: email, plano, preço e cupom validados no backend
-- **Drive obrigatório no trial**: countdown só aparece após Drive efetivamente compartilhado; se falhar → rollback
-- **Race condition no webhook**: `mp-webhook` verifica existência de acesso antes de inserir
-- **drive_permission_id salvo**: todos os compradores pagos têm permissão registrada para futura revogação
-- **Auth JWT em `drive-share-folder`**: verifica `service_role` no payload ou admin no `user_roles`
-- **HMAC webhook MP**: código presente, ativo quando `MP_WEBHOOK_SECRET` for configurado
+- **CORS restrito**: todas as funcoes retornam `onemedcursos.com.br` (nao `*`)
+- **CRON_SECRET**: `drive-revoke-access` e `send-followup-emails` verificam `x-cron-secret`; cron jobs SQL leem do Vault
+- **Rate limiting**: `create-trial-access` (5/15min por IP) e `mp-create-payment` (10/hora por email)
+- **Validacao server-side**: email, plano, preco e cupom validados no backend
+- **Drive obrigatorio no trial**: countdown so aparece apos Drive compartilhado; falha → rollback
+- **Race condition no webhook**: `mp-webhook` verifica existencia de acesso antes de inserir
+- **drive_permission_id**: todos os acessos pagos tem permissao registrada para futura revogacao
 - **RLS**: todas as tabelas com RLS ativado
-
-### Pendente ⏳
-1. Configurar `MP_WEBHOOK_SECRET` no Supabase Secrets (pegar no dashboard MP → Webhooks)
-2. Aplicar migration `20260326000001_rate_limits.sql` (rate limiting sem enforcement real até lá)
-
-### Baixa Prioridade (não bloqueante)
-- `ClaimAccessPage` grava acesso direto no banco pelo frontend (usuário com `external_reference` válido pode se auto-conceder acesso sem pagamento aprovado)
-- `access_type` inconsistente: webhook salva `'paid'`, ClaimAccessPage salva `'lifetime'`/`'annual'`
-- Preços nos emails de follow-up são strings hardcoded
-- Tabela `rate_limits` sem limpeza automática
+- **HMAC webhook MP**: codigo presente, ativo quando `MP_WEBHOOK_SECRET` for configurado
 
 ---
 
-## Migrations
-
-| Arquivo | Status | Descrição |
-|---------|--------|-----------|
-| `20260323163043_*.sql` | ✅ Aplicada | Schema inicial, RLS, policies |
-| `20260323163104_*.sql` | ✅ Aplicada | Policy fixes |
-| `20260324002232_*.sql` | ✅ Aplicada | drive_permission_id |
-| `20260324002357_*.sql` | ✅ Aplicada | pg_cron setup |
-| `20260324034623_*.sql` | ✅ Aplicada | email_followups table |
-| `20260324203337_cron_jobs.sql` | ✅ Substituída | Cron jobs antigos (token hardcoded) |
-| `20260326000001_rate_limits.sql` | ⏳ Pendente | Tabela rate_limits |
-| `20260326000002_fix_cron_jobs.sql` | ✅ Aplicada via SQL direto | Cron jobs com CRON_SECRET do Vault |
-
----
-
-## Estrutura de Arquivos Relevante
+## Estrutura de Arquivos
 
 ```
 onemed/
 ├── src/
 │   ├── pages/
-│   │   ├── Index.tsx            # Landing + trial form + countdown inline
-│   │   ├── CheckoutPage.tsx     # Checkout com seletor de país/WhatsApp
-│   │   ├── Dashboard.tsx        # Dashboard admin (métricas diárias)
-│   │   ├── BuyersPage.tsx       # Listagem de compradores + botão Sincronizar
-│   │   ├── TrialUsersPage.tsx   # Listagem de trials (admin)
-│   │   └── CouponsPage.tsx      # Gestão de cupons
-│   ├── context/AuthContext.tsx  # Auth admin
-│   └── App.tsx                  # Rotas (admin protegidas com ProtectedRoute)
+│   │   ├── Index.tsx              # Landing + trial form + countdown + tela manutencao
+│   │   ├── CheckoutPage.tsx       # Checkout com seletor de pais/WhatsApp
+│   │   ├── Dashboard.tsx          # Dashboard admin (metricas + tabela acessos recentes)
+│   │   ├── AccessManagement.tsx   # Gerenciamento de acessos (trial + paid)
+│   │   ├── BuyersPage.tsx         # Compradores + Sincronizar + status Drive
+│   │   ├── TrialUsersPage.tsx     # Listagem de trials + status Drive
+│   │   └── CouponsPage.tsx        # Gestao de cupons
+│   ├── context/AuthContext.tsx    # Auth admin
+│   └── App.tsx                    # Rotas (admin protegidas com ProtectedRoute)
 ├── supabase/
-│   ├── config.toml              # project_id: jrrybiohwqabsdurqudc
-│   ├── functions/               # 11 Edge Functions
-│   └── migrations/              # SQL migrations
+│   ├── config.toml
+│   ├── functions/                 # 11 Edge Functions
+│   └── migrations/
 ├── public/
-│   ├── admin-manifest.json      # PWA manifest (scope /admin)
-│   ├── admin-sw.js              # Service Worker (scope /admin)
-│   └── icons/admin-icon.svg     # Ícone PWA admin
-├── src/components/
-│   └── AdminPWAHead.tsx         # Injeta meta tags PWA dinamicamente
-├── .env.example                 # Chaves públicas do Supabase
-└── CLAUDE.md                    # Este arquivo
+│   ├── admin-manifest.json        # PWA manifest (scope /admin)
+│   ├── admin-sw.js                # Service Worker (scope /admin)
+│   └── icons/admin-icon.svg
+├── .env.example                   # Chaves publicas do Supabase
+└── CLAUDE.md                      # Este arquivo
 ```
 
 ---
 
-## Resumo Executivo do Projeto
+## Frontend — Rotas
 
-### Base
-Plataforma SaaS de cursos médicos que vende acesso a um acervo no Google Drive via Mercado Pago.
-
-**Fluxo principal:**
-Landing → trial 30min grátis → Drive compartilhado → trial expira → follow-up por email → checkout → pagamento MP → acesso permanente
-
-**Planos:** Lifetime R$299,90 / Annual R$199,00 + upsells R$19,90 e R$9,90
-
-### Frontend (rotas públicas)
-- `/` — Landing com formulário de trial; countdown renderizado **inline** após submit (não há rota `/trial` separada)
-- `/checkout` — Checkout com 4 etapas, seletor de país/WhatsApp
-- `/payment/success`, `/payment/pending`, `/payment/error` — Páginas de retorno do MP
+### Publicas
+- `/` — Landing com formulario de trial; countdown inline apos submit
+- `/checkout` — Checkout com 4 etapas, seletor de pais/WhatsApp
+- `/payment/success`, `/payment/pending`, `/payment/error` — Retorno do MP
 - `/claim-access` — Resgate de acesso por compra manual
-- `/termos`, `/privacidade` — Páginas legais
-- `/admin/*` — Painel admin protegido por ProtectedRoute
+- `/termos`, `/privacidade` — Paginas legais
 
-### Backend (11 Edge Functions — todas em produção)
-| Função | Responsabilidade |
-|--------|-----------------|
-| `create-trial-access` | Trial + rate limit + Drive obrigatório + email |
-| `mp-create-payment` | Valida plano, calcula preço server-side, gera checkout MP |
-| `mp-webhook` | Processa pagamento aprovado, sem race condition |
-| `drive-share-folder` | Compartilha pasta Drive via Google API, salva permission_id |
-| `drive-revoke-access` | Revoga trials expirados (cron */5min) |
-| `drive-oauth-callback` | Troca code OAuth por tokens Google |
-| `drive-list-folders` | Lista pastas do Drive (admin) |
-| `drive-save-folder` | Salva pasta configurada (admin) |
-| `send-access-email` | Envia email de boas-vindas (trial/paid) |
-| `send-followup-emails` | Follow-ups 1d/7d/30d com cupons ONEMED10/20/30 (cron 13h UTC) |
-| `sync-pending-buyers` | Sincroniza compradores pendentes com MP API (admin) |
-
-### Estado Geral
-Sistema **totalmente operacional** em produção. Fluxo completo trial → pagamento → acesso funcionando. Drive compartilhado corretamente para trials e compradores. Cron jobs autenticados via CRON_SECRET do Vault. CORS restrito em todas as funções. Todos os compradores pagos com `drive_permission_id` registrado.
-
-**IMPORTANTE — Chamadas internas entre Edge Functions:**
-Nunca usar `supabase.functions.invoke` para chamar outra Edge Function de dentro de uma Edge Function. O Supabase JS SDK envia o **anon key** no header Authorization (não o service role key), causando 401 em funções protegidas. Usar sempre `fetch()` diretamente **sem Authorization header** para chamadas internas — o `drive-share-folder` e outras funções internas autorizam chamadas sem header (`if (!authHeader) → isAuthorized = true`).
+### Admin (`/admin/*` — protegidas por ProtectedRoute)
+- `/admin` — Dashboard com metricas e tabela de acessos recentes
+- `/admin/access` — Gerenciamento de todos os acessos
+- `/admin/buyers` — Compradores com botao Sincronizar
+- `/admin/trials` — Usuarios trial
+- `/admin/coupons` — Cupons de desconto
+- `/admin/drive` — Configuracao do Google Drive
 
 ---
 
-## Histórico de Sessões
+## Funcionalidades do Admin Panel
 
-### Sessão 2026-03-26 (desktop)
-- Projeto sincronizado com GitHub (`urifs/Onemed`)
-- `.env.example` criado com chaves públicas do Supabase
-- Auditoria de segurança: HMAC webhook MP, token hardcoded no SQL, rate limiting, constant-time compare, CORS `*`, validação de email
-- 2 migrations criadas: `rate_limits` e `fix_cron_jobs`
-- 10 funções deployadas e verificadas em produção
+### Tabelas com scroll
+Todas as tabelas (Dashboard, Acessos, Trial, Compradores) tem `max-height` com scroll vertical e header fixo (`sticky`).
 
-### Sessão 2026-03-26 (remota — Claude Code Web)
-- Verificados todos os secrets do Supabase via Management API
-- Adicionados `VERCEL_TOKEN` e `VERCEL_PROJECT_ID` ao Supabase Secrets
-- `CLAUDE.md` criado com instrução de leitura obrigatória
+### Colunas padrao nas tabelas
+- **Email** — email do usuario
+- **WhatsApp** — clicavel, abre conversa no WhatsApp
+- **Tipo** — Trial / Pago
+- **Status** — Ativo / Expirado / Revogado / Aprovado / Pendente
+- **Drive** — Compartilhado (verde) / Pendente (vermelho) baseado em `drive_permission_id`
+- **Data** — horario no fuso de Sao Paulo
 
-### Sessão 2026-03-26 (remota — continuação)
-- Análise completa do codebase
-- PWA exclusiva para o painel admin (manifest, service worker, ícones PNG)
-- `.claude/settings.json` criado com `"defaultMode": "bypassPermissions"`
-
-### Sessão 2026-03-26 (remota — continuação 2)
-- Correção: Drive não compartilhava com trials (fire-and-forget interrompido antes de completar)
-- Nova função `sync-pending-buyers` + botão "Sincronizar" em BuyersPage
-- Branch: `claude/verify-api-keys-LjXH2`
-
-### Sessão 2026-03-26 (remota — continuação 3)
-**Correções críticas após descoberta de deploys stale:**
-- `drive-share-folder` v7: auth JWT corrigida (service_role + admin)
-- `create-trial-access` v10: Drive obrigatório antes de liberar countdown; rollback se falhar
-- `mp-webhook` v12: race condition corrigido + passa `accessId` para Drive
-- `sync-pending-buyers` v5: passa `accessId` para Drive
-- `drive-revoke-access` v13: CRON_SECRET implementado
-- `send-followup-emails` v13: CRON_SECRET implementado
-- CORS corrigido em todas as 11 funções
-- 5 acessos duplicados removidos do banco
-- Drive re-compartilhado manualmente para todos os compradores pagos
-- CRON_SECRET configurado no Supabase Secrets + Vault
-- Cron jobs SQL atualizados para enviar `x-cron-secret` do Vault
-
-### Sessão 2026-03-26 (remota — continuação 4)
-**Verificação geral minuciosa — resultado: plataforma totalmente operacional ✅**
-- Todos os 11 Edge Functions testados (auth, validação, respostas corretas)
-- Frontend testado: todas as páginas HTTP 200, SPA shell correto
-- CORS verificado em todas as funções
-- Drive: connected=true, pasta configurada, token válido
-- DB: 7 aprovados, 7 acessos pagos, 0 sem drive_permission_id, 0 duplicados
-- Cron jobs: funcionando com x-cron-secret do Vault
-
-### Sessão 2026-03-26 (remota — continuação 5)
-**Bug crítico corrigido: trial falhava para todos os clientes**
-
-**Causa raiz descoberta:** `supabase.functions.invoke` dentro de Edge Functions envia o anon key no header `Authorization` (não o service role key). O `drive-share-folder` recebia o anon key, retornava 401, e `create-trial-access` interpretava como falha do Drive → retornava erro "Edge function returned a non-2xx status code" para todos os clientes.
-
-**Funções corrigidas:**
-- `create-trial-access` v15 — usa `fetch()` sem Authorization header para `drive-share-folder` e `send-access-email`
-- `mp-webhook` v14 — mesmo fix para os dois invokes (Drive + email)
-- `sync-pending-buyers` v7 — mesmo fix para os dois invokes (Drive + email)
-
-**Padrão estabelecido:** Chamadas internas entre Edge Functions devem usar `fetch()` sem Authorization header. Nunca usar `supabase.functions.invoke` para isso.
-
-**Verificado após fix:** trial criado com sucesso, Drive compartilhado, email enviado ✅
-
-### Sessão 2026-03-26 (remota — continuação 6)
-**Tela de manutenção com WhatsApp para erros de sistema no trial**
-
-- Backend (`create-trial-access`): distingue dois tipos de falha no Drive:
-  - Erro de email (conta Google inválida) → `{ error: "Use um email Gmail..." }` — toast normal
-  - Erro de sistema (Drive desconectado, token expirado, etc.) → `{ error: "...", maintenanceError: true }`
-- Frontend (`Index.tsx`): quando `data.maintenanceError === true`, exibe tela intermediária com botão WhatsApp e "Tentar novamente"
-- Deploy: `dpl_CrdUtrrZ6cJmh1NpeUZLFn3zGP8L` (READY)
-
-### Sessão 2026-03-26 (remota — continuação 7)
-**Correção do botão Sincronizar no painel admin — erro non-2xx persistente**
-
-**Causa raiz:** `sync-pending-buyers` tinha `verify_jwt: true`. O gateway do Supabase interceptava requisições com token inválido/expirado e retornava `{"code":401,"message":"..."}` com HTTP 401 — antes da função executar. O SDK do Supabase converte respostas não-2xx em `FunctionsHttpError`. O frontend tentava extrair `body?.error` mas o gateway retorna `message` (não `error`), resultando no genérico "Erro ao sincronizar".
-
-**Correções aplicadas:**
-- `sync-pending-buyers` v11: `verify_jwt` desativado via Management API (`PATCH /functions/sync-pending-buyers`) — a função já faz validação JWT manual
-- Função agora retorna HTTP 200 para TODOS os casos (auth errors, erros internos, sucesso) — mesmo padrão do `create-trial-access`
-- `BuyersPage.tsx`: lógica de extração de erro simplificada — apenas `data?.error` (não mais `context.json()`)
-- Deploy frontend: `dpl_B3USJTpJ1xwH7p6yLojcBQ2Er7fm` (READY em `onemedcursos.com.br`)
-
-**Padrão consolidado para Edge Functions do admin panel:**
-`verify_jwt: false` + retorno HTTP 200 sempre + erro no body como `{ error: "..." }`. Isso evita que o gateway intercepte antes da função e garante que o SDK sempre receba a resposta em `data`.
-
-**Verificado:** bloqueio de trial duplicado funcionando — email com trial expirado bloqueado, comprador bloqueado de usar trial ✅
+### Tela de manutencao (trial)
+Quando o Drive falha por erro de sistema (nao erro de email do usuario), o frontend exibe tela com botao WhatsApp para suporte em vez do erro generico.
 
 ---
 
-## Comandos Úteis
+## Comandos Uteis
 
 ```bash
-# Deploy de uma função específica
+# Deploy de uma funcao
 export SUPABASE_ACCESS_TOKEN="sbp_46a93dbb0118dfcdcef474f9287d4044284b30ec"
 supabase functions deploy mp-webhook --project-ref jrrybiohwqabsdurqudc --use-api
 
-# Testar trial creation
-curl -s -X POST "https://jrrybiohwqabsdurqudc.supabase.co/functions/v1/create-trial-access" \
-  -H "Authorization: Bearer $(grep PUBLISHABLE .env.example | cut -d'"' -f2)" \
-  -H "Content-Type: application/json" \
-  -d '{"email":"test@test.com"}'
+# Verificar versao deployada
+curl -s "https://api.supabase.com/v1/projects/jrrybiohwqabsdurqudc/functions/<nome>" \
+  -H "Authorization: Bearer sbp_46a93dbb0118dfcdcef474f9287d4044284b30ec" | python3 -m json.tool
 
-# Push para produção
-git add -A && git commit -m "feat: ..." && git push origin main
+# Deploy frontend para producao
+curl -s -X POST "https://api.vercel.com/v13/deployments?forceNew=1&target=production" \
+  -H "Authorization: Bearer vcp_6m85MdQjg3YEmboL3Bg4x0fHzqTfXiuhQQubBmzGE3tjjqhdDt0JF7SY" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"onemed","target":"production","gitSource":{"type":"github","repoId":1162763179,"ref":"main"}}'
+
+# Git push
+git push -u origin <branch>
 ```
