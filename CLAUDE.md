@@ -195,6 +195,73 @@ onemed/
 
 ---
 
+## Resumo Executivo do Projeto
+
+### Base
+Plataforma SaaS de cursos médicos que vende acesso a um acervo no Google Drive via Mercado Pago.
+
+**Fluxo principal:**
+Landing → trial 30min grátis → Drive compartilhado → trial expira → follow-up por email → checkout → pagamento MP → acesso permanente
+
+**Planos:** Lifetime R$299,90 / Annual R$199,00 + upsells R$19,90 e R$9,90
+
+### Frontend (9 páginas)
+- **Público:** Landing (trial), Checkout (4 etapas), Trial countdown, Payment success/error/pending, Claim access
+- **Admin:** Dashboard diário, Compradores, Trials, Cupons, Drive Settings, Gestão de acessos, Banco de dados
+- Meta Pixel integrado (Lead, InitiateCheckout, Purchase)
+- SPA routing via `vercel.json`, timezone São Paulo em todo o sistema
+
+### Backend (10 Edge Functions — todas em produção)
+| Função | Responsabilidade |
+|--------|-----------------|
+| `create-trial-access` | Trial + rate limit + compartilha Drive + envia email |
+| `mp-create-payment` | Valida plano, calcula preço server-side, gera checkout MP |
+| `mp-webhook` | Processa pagamento aprovado, libera acesso permanente |
+| `drive-share-folder` | Compartilha pasta Drive via Google API |
+| `drive-revoke-access` | Revoga trials expirados (cron */5min) |
+| `drive-oauth-callback` | Troca code OAuth por tokens Google |
+| `drive-list-folders` | Lista pastas do Drive (admin) |
+| `drive-save-folder` | Salva pasta configurada (admin) |
+| `send-access-email` | Envia email de boas-vindas (trial/paid) |
+| `send-followup-emails` | Follow-ups 1d/7d/30d com cupons ONEMED10/20/30 (cron 13h UTC) |
+
+### Estado Geral
+Sistema funcionando em produção. Fluxo completo (trial → pagamento → acesso) operacional. Todos os secrets configurados no Supabase. Segurança parcialmente ativa (pendências abaixo).
+
+---
+
+## Problemas Identificados
+
+### Alta Prioridade
+| # | Problema | Impacto |
+|---|---------|---------|
+| 1 | `MP_WEBHOOK_SECRET` nao configurado no Supabase Secrets | HMAC esta no codigo mas inativo — webhook aceita qualquer requisicao |
+| 2 | `CRON_SECRET` nao configurado | Cron jobs sem autenticacao |
+| 3 | Migrations `rate_limits` e `fix_cron_jobs` nao aplicadas | Rate limiting sem enforcement real, cron com token hardcoded antigo |
+
+### Media Prioridade
+| # | Problema | Impacto |
+|---|---------|---------|
+| 4 | `ClaimAccessPage` escreve direto no banco pelo frontend | Usuario com `external_reference` valido pode se auto-conceder acesso sem pagamento aprovado |
+
+### Baixa Prioridade
+| # | Problema | Impacto |
+|---|---------|---------|
+| 5 | `access_type` inconsistente: webhook salva `'paid'`, ClaimAccessPage salva `'lifetime'`/`'annual'` | Filtros no admin podem se comportar errado |
+| 6 | Precos nos emails de follow-up sao strings hardcoded | Se preco mudar, emails ficam desatualizados |
+| 7 | Tabela `rate_limits` sem limpeza automatica | Acumula registros indefinidamente |
+| 8 | Comparacao do `CRON_SECRET` nao usa constant-time | Inconsistente com padrao ja adotado em `drive-share-folder` |
+
+### O que Esta Bem
+- RLS ativo em todas as 8 tabelas
+- CORS restrito a `onemedcursos.com.br` em todas as funcoes
+- Rate limiting implementado (aguardando migration para enforcement real)
+- Validacao de email, plano e cupom server-side
+- Precos sempre calculados no backend (nunca confiar no cliente)
+- Codigo organizado e tipado com TypeScript
+
+---
+
 ## Histórico de Sessões
 
 ### Sessão 2026-03-26
