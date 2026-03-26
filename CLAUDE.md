@@ -334,6 +334,12 @@ Sistema funcionando em produção. Fluxo completo (trial → pagamento → acess
 - `.claude/settings.json` criado com `"defaultMode": "bypassPermissions"`
 - Claude tem autoridade total para executar todas as ações sem pedir confirmação
 
+### Sessão 2026-03-26 (local — Claude Code Desktop)
+**Sincronização e correção de bug**
+- Repositório local sincronizado com GitHub (9 commits à frente: PWA admin, fix webhook MP, bypassPermissions)
+- `BuyersPage.tsx`: adicionada coluna WhatsApp na tabela de compradores (campo já existia em `buyers` mas não era exibido)
+  - Ícone verde clicável abrindo `wa.me/` — mesmo padrão do `TrialUsersPage`
+
 ---
 
 ## Comandos Úteis
