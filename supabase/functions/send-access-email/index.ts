@@ -1,8 +1,14 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+const ALLOWED_ORIGINS = ['https://onemedcursos.com.br', 'http://localhost:5173', 'http://localhost:3000']
+
+function getCorsHeaders(req: Request) {
+  const origin = req.headers.get('origin') || ''
+  const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0]
+  return {
+    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  }
 }
 
 const SITE_URL = 'https://onemedcursos.com.br'
@@ -302,7 +308,7 @@ function getPaymentApprovedEmail(firstName: string, plan: string, amount?: numbe
 }
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders })
+  if (req.method === 'OPTIONS') return new Response(null, { headers: getCorsHeaders(req) })
 
   try {
     const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')!
@@ -326,7 +332,7 @@ serve(async (req) => {
       html = getPaymentApprovedEmail(firstName, plan, amount, to)
     } else {
       return new Response(JSON.stringify({ error: 'Tipo de email invalido' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        status: 400, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
       })
     }
 
@@ -349,17 +355,17 @@ serve(async (req) => {
     if (!res.ok) {
       console.error('Resend error:', data)
       return new Response(JSON.stringify({ error: data.message }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        status: 400, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
       })
     }
 
     return new Response(JSON.stringify({ success: true, id: data.id }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
     })
   } catch (err: any) {
     console.error(err)
     return new Response(JSON.stringify({ error: err.message }), {
-      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      status: 500, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
     })
   }
 })

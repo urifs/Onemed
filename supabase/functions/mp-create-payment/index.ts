@@ -1,12 +1,60 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
+// ─── CORS ─────────────────────────────────────────────────────────────────────
+const ALLOWED_ORIGINS = ['https://onemedcursos.com.br', 'http://localhost:5173', 'http://localhost:3000']
+
+function getCorsHeaders(req: Request) {
+  const origin = req.headers.get('origin') || ''
+  const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0]
+  return {
+    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
+  }
 }
 
-// ─── Preços canônicos definidos SERVER-SIDE ───────────────────────────────
+// ─── RATE LIMITING ────────────────────────────────────────────────────────────
+// 10 tentativas por email a cada 60 minutos
+async function checkRateLimit(
+  supabase: ReturnType<typeof createClient>,
+  identifier: string,
+  action: string,
+  maxAttempts: number,
+  windowMinutes: number
+): Promise<{ allowed: boolean; retryAfterSeconds?: number }> {
+  const now = new Date()
+  const windowMs = windowMinutes * 60 * 1000
+
+  const { data: existing } = await supabase
+    .from('rate_limits')
+    .select('attempts, window_start')
+    .eq('identifier', identifier)
+    .eq('action', action)
+    .maybeSingle()
+
+  if (!existing || (now.getTime() - new Date(existing.window_start).getTime()) > windowMs) {
+    await supabase.from('rate_limits').upsert(
+      { identifier, action, attempts: 1, window_start: now.toISOString() },
+      { onConflict: 'identifier,action' }
+    )
+    return { allowed: true }
+  }
+
+  if (existing.attempts >= maxAttempts) {
+    const windowExpiry = new Date(new Date(existing.window_start).getTime() + windowMs)
+    const retryAfterSeconds = Math.ceil((windowExpiry.getTime() - now.getTime()) / 1000)
+    return { allowed: false, retryAfterSeconds }
+  }
+
+  await supabase.from('rate_limits')
+    .update({ attempts: existing.attempts + 1 })
+    .eq('identifier', identifier)
+    .eq('action', action)
+
+  return { allowed: true }
+}
+
+// ─── Preços canônicos definidos SERVER-SIDE ───────────────────────────────────
 const PLAN_PRICES: Record<string, number> = {
   lifetime: 299.90,
   annual:   199.00,
@@ -21,32 +69,50 @@ const PLAN_LABELS: Record<string, string> = {
 }
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: getCorsHeaders(req) })
 
   try {
     const { plan, email, name, whatsapp, externalReference, couponCode, upsell, upsell2 } = await req.json()
 
-    // ── 1. Validar plano contra allowlist ─────────────────────────────────
+    // ── 1. Validar plano contra allowlist ─────────────────────────────────────
     if (!PLAN_PRICES[plan]) {
       return new Response(JSON.stringify({ error: 'Plano inválido' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        status: 400, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
       })
     }
 
-    const accessToken = Deno.env.get('MP_ACCESS_TOKEN_PROD') || Deno.env.get('MP_ACCESS_TOKEN_TEST')
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    const supabase = createClient(supabaseUrl, supabaseKey)
+    const accessToken  = Deno.env.get('MP_ACCESS_TOKEN_PROD') || Deno.env.get('MP_ACCESS_TOKEN_TEST')
+    const supabaseUrl  = Deno.env.get('SUPABASE_URL')!
+    const supabaseKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    const supabase     = createClient(supabaseUrl, supabaseKey)
 
     const supabaseProjectRef = supabaseUrl?.match(/https:\/\/([^.]+)/)?.[1] || 'nxhdbpqgfvinwtrmtohz'
     const webhookUrl = `https://${supabaseProjectRef}.supabase.co/functions/v1/mp-webhook`
 
-    // ── 2. Calcular preço base server-side ────────────────────────────────
+    // ── 2. Rate limiting por email ─────────────────────────────────────────────
+    if (email) {
+      const rl = await checkRateLimit(supabase, email.toLowerCase().trim(), 'create_payment', 10, 60)
+      if (!rl.allowed) {
+        return new Response(JSON.stringify({
+          error: 'Muitas tentativas de pagamento. Tente novamente mais tarde.',
+          retryAfterSeconds: rl.retryAfterSeconds,
+        }), {
+          status: 429,
+          headers: {
+            ...getCorsHeaders(req),
+            'Content-Type': 'application/json',
+            'Retry-After': String(rl.retryAfterSeconds ?? 3600),
+          }
+        })
+      }
+    }
+
+    // ── 3. Calcular preço base server-side ────────────────────────────────────
     let basePrice = PLAN_PRICES[plan]
     let discountPercent = 0
     let appliedCoupon: string | null = null
 
-    // ── 3. Validar cupom no banco (nunca confiar no desconto do cliente) ──
+    // ── 4. Validar cupom no banco (nunca confiar no desconto do cliente) ──────
     if (couponCode) {
       const { data: coupon } = await supabase
         .from('coupons')
@@ -59,21 +125,21 @@ serve(async (req) => {
         // Verificar expiração
         if (coupon.expires_at && new Date(coupon.expires_at) < new Date()) {
           return new Response(JSON.stringify({ error: 'Cupom expirado' }), {
-            status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            status: 400, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
           })
         }
         // Verificar limite de usos
         if (coupon.max_uses !== null && coupon.times_used !== null && coupon.times_used >= coupon.max_uses) {
           return new Response(JSON.stringify({ error: 'Cupom esgotado' }), {
-            status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            status: 400, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
           })
         }
         discountPercent = coupon.discount_percent
-        appliedCoupon = coupon.id
+        appliedCoupon   = coupon.id
       }
     }
 
-    // ── 4. Calcular total com desconto e upsells ──────────────────────────
+    // ── 5. Calcular total com desconto e upsells ──────────────────────────────
     const discountedPrice = discountPercent > 0
       ? basePrice - (basePrice * discountPercent / 100)
       : basePrice
@@ -159,13 +225,13 @@ serve(async (req) => {
       preference_id: mpData.id,
       amount: totalAmount,
     }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
     })
 
   } catch (err: any) {
     console.error('Unexpected error:', err?.message || err)
     return new Response(JSON.stringify({ error: err?.message || 'Erro interno' }), {
-      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      status: 500, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
     })
   }
 })

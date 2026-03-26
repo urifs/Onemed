@@ -1,9 +1,15 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+const ALLOWED_ORIGINS = ['https://onemedcursos.com.br', 'http://localhost:5173', 'http://localhost:3000']
+
+function getCorsHeaders(req: Request) {
+  const origin = req.headers.get('origin') || ''
+  const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0]
+  return {
+    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  }
 }
 
 const GOOGLE_CLIENT_ID = '110017470335-2l6er8r451vj5hf3ob05rvolc2p4v9ku.apps.googleusercontent.com'
@@ -25,7 +31,7 @@ async function refreshAccessToken(refreshToken: string, clientSecret: string): P
 }
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders })
+  if (req.method === 'OPTIONS') return new Response(null, { headers: getCorsHeaders(req) })
 
   try {
     const GOOGLE_CLIENT_SECRET = Deno.env.get('GOOGLE_CLIENT_SECRET')!
@@ -38,7 +44,7 @@ serve(async (req) => {
     const { data: config, error } = await supabase.from('drive_config').select('*').single()
     if (error || !config?.connected) {
       return new Response(JSON.stringify({ error: 'Google Drive não conectado' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        status: 400, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
       })
     }
 
@@ -48,7 +54,7 @@ serve(async (req) => {
     if (!expiry || expiry < new Date()) {
       if (!config.refresh_token) {
         return new Response(JSON.stringify({ error: 'Token expirado. Reconecte o Google Drive.' }), {
-          status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
         })
       }
       accessToken = await refreshAccessToken(config.refresh_token, GOOGLE_CLIENT_SECRET)
@@ -79,19 +85,19 @@ serve(async (req) => {
     if (!res.ok) {
       const err = await res.json()
       return new Response(JSON.stringify({ error: err.error?.message || 'Erro ao listar pastas' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        status: 400, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
       })
     }
 
     const data = await res.json()
 
     return new Response(JSON.stringify({ folders: data.files || [] }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
     })
   } catch (err) {
     console.error(err)
     return new Response(JSON.stringify({ error: err.message }), {
-      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      status: 500, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
     })
   }
 })

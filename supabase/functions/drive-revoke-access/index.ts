@@ -1,9 +1,16 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+// ─── CORS ─────────────────────────────────────────────────────────────────────
+const ALLOWED_ORIGINS = ['https://onemedcursos.com.br', 'http://localhost:5173', 'http://localhost:3000']
+
+function getCorsHeaders(req: Request) {
+  const origin = req.headers.get('origin') || ''
+  const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0]
+  return {
+    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  }
 }
 
 const GOOGLE_CLIENT_ID = '110017470335-2l6er8r451vj5hf3ob05rvolc2p4v9ku.apps.googleusercontent.com'
@@ -24,13 +31,25 @@ async function refreshAccessToken(refreshToken: string, clientSecret: string): P
 }
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders })
+  if (req.method === 'OPTIONS') return new Response(null, { headers: getCorsHeaders(req) })
 
   try {
+    // ── Verificação de CRON_SECRET (ativa somente se o secret estiver configurado) ──
+    const cronSecret = Deno.env.get('CRON_SECRET')
+    if (cronSecret) {
+      const providedSecret = req.headers.get('x-cron-secret') || ''
+      if (providedSecret !== cronSecret) {
+        console.error('drive-revoke-access: x-cron-secret inválido ou ausente')
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
+        })
+      }
+    }
+
     const GOOGLE_CLIENT_SECRET = Deno.env.get('GOOGLE_CLIENT_SECRET')!
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    const supabase = createClient(supabaseUrl, supabaseKey)
+    const supabaseUrl  = Deno.env.get('SUPABASE_URL')!
+    const supabaseKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    const supabase     = createClient(supabaseUrl, supabaseKey)
 
     const now = new Date().toISOString()
 
@@ -62,7 +81,7 @@ serve(async (req) => {
 
     if (!expiredAccesses || expiredAccesses.length === 0) {
       return new Response(JSON.stringify({ revoked: 0, markedExpired }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
       })
     }
 
@@ -79,20 +98,19 @@ serve(async (req) => {
         await supabase.from('accesses').update({ status: 'expired', drive_permission_id: null }).eq('id', id)
       }
       return new Response(JSON.stringify({ revoked: 0, markedExpired: markedExpired + ids.length, note: 'Drive não conectado, acesso expirado sem revogar permissão' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
       })
     }
 
     let accessToken = config.access_token
-    const expiry = config.token_expiry ? new Date(config.token_expiry) : null
+    const expiry    = config.token_expiry ? new Date(config.token_expiry) : null
     if (!expiry || expiry < new Date()) {
       if (!config.refresh_token) {
-        // Token expired, just mark as expired
         for (const access of expiredAccesses) {
           await supabase.from('accesses').update({ status: 'expired', drive_permission_id: null }).eq('id', access.id)
         }
         return new Response(JSON.stringify({ revoked: 0, markedExpired: markedExpired + expiredAccesses.length, note: 'Token expirado, acesso expirado sem revogar permissão' }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
         })
       }
       accessToken = await refreshAccessToken(config.refresh_token, GOOGLE_CLIENT_SECRET)
@@ -143,12 +161,12 @@ serve(async (req) => {
     }
 
     return new Response(JSON.stringify({ revoked, markedExpired, errors }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
     })
   } catch (err: any) {
     console.error(err)
     return new Response(JSON.stringify({ error: err.message }), {
-      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      status: 500, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
     })
   }
 })
