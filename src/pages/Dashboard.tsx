@@ -152,9 +152,9 @@ export default function Dashboard() {
             ) : recentAccesses.length === 0 ? (
               <p className="text-muted-foreground text-sm text-center py-8">Nenhum acesso ainda</p>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="overflow-auto max-h-[500px]">
                 <table className="w-full">
-                  <thead>
+                  <thead className="sticky top-0 bg-background-paper z-10">
                     <tr className="border-b border-border">
                       {['Email', 'WhatsApp', 'Tipo', 'Status', 'Drive', 'Data'].map(h => (
                         <th key={h} className="text-left px-4 py-3 text-xs font-mono uppercase text-muted-foreground">{h}</th>

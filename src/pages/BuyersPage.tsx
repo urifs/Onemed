@@ -161,9 +161,9 @@ export default function BuyersPage() {
         {/* Table */}
         <Card className="bg-background-paper border-border">
           <CardContent className="p-0">
-            <div className="overflow-x-auto">
+            <div className="overflow-auto max-h-[600px]">
               <table className="w-full">
-                <thead>
+                <thead className="sticky top-0 bg-background-paper z-10">
                   <tr className="border-b border-border">
                     {['Email', 'Nome', 'WhatsApp', 'Plano', 'Valor', 'Status', 'Drive', 'Data', ''].map(h => (
                       <th key={h} className="text-left px-4 py-3 text-xs font-mono uppercase text-muted-foreground">{h}</th>

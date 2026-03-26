@@ -108,9 +108,9 @@ export default function TrialUsersPage() {
         {/* Table */}
         <Card className="bg-background-paper border-border">
           <CardContent className="p-0">
-            <div className="overflow-x-auto">
+            <div className="overflow-auto max-h-[600px]">
               <table className="w-full">
-                <thead>
+                <thead className="sticky top-0 bg-background-paper z-10">
                   <tr className="border-b border-border">
                     {['Email', 'WhatsApp', 'Status', 'Drive', 'Data', 'Expiração'].map(h => (
                       <th key={h} className="text-left px-4 py-3 text-xs font-mono uppercase text-muted-foreground">{h}</th>

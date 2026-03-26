@@ -214,9 +214,9 @@ export default function AccessManagement() {
             ) : filtered.length === 0 ? (
               <p className="text-muted-foreground text-center py-12">Nenhum acesso encontrado</p>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="overflow-auto max-h-[600px]">
                 <table className="w-full">
-                  <thead>
+                  <thead className="sticky top-0 bg-background-paper z-10">
                     <tr className="border-b border-border">
                       <th className="text-left px-4 py-3 text-xs font-mono uppercase text-muted-foreground">Email</th>
                       <th className="text-left px-4 py-3 text-xs font-mono uppercase text-muted-foreground hidden md:table-cell">WhatsApp</th>
