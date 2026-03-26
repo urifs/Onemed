@@ -18,6 +18,7 @@ import {
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
+import { AdminPWAHead } from '@/components/AdminPWAHead';
 
 const navItems = [
   { path: '/admin', label: 'Dashboard', icon: LayoutDashboard },
@@ -48,6 +49,7 @@ export const AdminLayout = ({ children }: { children: React.ReactNode }) => {
 
   return (
     <div className="flex min-h-screen bg-background">
+      <AdminPWAHead />
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div

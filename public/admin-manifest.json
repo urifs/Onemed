@@ -1,0 +1,27 @@
+{
+  "name": "OneMed Admin",
+  "short_name": "OneMed",
+  "description": "Painel administrativo OneMed",
+  "start_url": "/admin",
+  "scope": "/admin",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a0a0a",
+  "theme_color": "#EF4444",
+  "lang": "pt-BR",
+  "categories": ["medical", "productivity"],
+  "icons": [
+    {
+      "src": "/icons/admin-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/admin-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
