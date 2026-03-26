@@ -27,11 +27,11 @@ export const AdminPWAHead = () => {
     addMeta('mobile-web-app-capable', 'yes');
     addMeta('theme-color', '#EF4444');
 
-    // Apple touch icon
+    // Apple touch icon (iOS requer PNG)
     const appleIcon = document.createElement('link');
     appleIcon.id = 'admin-pwa-apple-icon';
     appleIcon.rel = 'apple-touch-icon';
-    appleIcon.href = '/icons/admin-icon.svg';
+    appleIcon.href = '/icons/admin-icon-192.png';
     document.head.appendChild(appleIcon);
 
     // Register service worker
