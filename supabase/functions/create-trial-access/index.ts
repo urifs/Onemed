@@ -121,7 +121,14 @@ serve(async (req) => {
       if (!driveOk) {
         await supabase.from('accesses').delete().eq('id', newAccessId)
         console.error('Drive share failed:', driveErrMsg)
-        return new Response(JSON.stringify({ error: 'Use um email Gmail para acessar o trial. Se já usa Gmail, tente novamente.' }), {
+        // Distinguish user email error vs system/Drive error
+        const isEmailError = driveErrMsg.includes('Google Account') || driveErrMsg.includes('do not have a Google')
+        if (isEmailError) {
+          return new Response(JSON.stringify({ error: 'Use um email Gmail para acessar o trial. Se já usa Gmail, tente novamente.' }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+        return new Response(JSON.stringify({ error: 'Sistema em manutenção.', maintenanceError: true }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
       }
