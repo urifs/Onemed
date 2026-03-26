@@ -322,10 +322,17 @@ Sistema funcionando em produção. Fluxo completo (trial → pagamento → acess
 **PWA exclusiva para o painel admin**
 - `public/admin-manifest.json` — manifest com scope `/admin`, tema vermelho (#EF4444), display standalone
 - `public/admin-sw.js` — service worker com cache do app shell e estratégia network-first para rotas admin
-- `public/icons/admin-icon.svg` — ícone com design de estetoscópio na cor da marca
+- `public/icons/admin-icon.svg` — ícone SVG com design de estetoscópio na cor da marca
+- `public/icons/admin-icon-192.png` — ícone PNG 192x192 (obrigatório para install prompt no Chrome)
+- `public/icons/admin-icon-512.png` — ícone PNG 512x512 (splash screen Android)
 - `src/components/AdminPWAHead.tsx` — injeta manifest + meta tags Apple/Android dinamicamente só em rotas admin
 - `src/components/AdminLayout.tsx` — monta/desmonta PWA head ao entrar/sair do admin
 - Landing page e site público **não são afetados** (manifest e SW isolados ao scope `/admin`)
+- **Correção:** ícones PNG adicionados pois Chrome exige PNG para exibir prompt de instalação e modo standalone
+
+**Permissões do Claude Code**
+- `.claude/settings.json` criado com `"defaultMode": "bypassPermissions"`
+- Claude tem autoridade total para executar todas as ações sem pedir confirmação
 
 ---
 
