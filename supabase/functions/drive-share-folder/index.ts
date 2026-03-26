@@ -39,28 +39,34 @@ serve(async (req) => {
     const authHeader = req.headers.get('Authorization') || ''
     let isAuthorized = false
 
-    // Chamadas internas entre edge functions chegam sem Authorization mas com service role
-    // Verificar JWT de admin para chamadas do painel
-    if (authHeader.startsWith('Bearer ')) {
-      const token = authHeader.replace('Bearer ', '')
-      // Se for a service role key, autoriza direto
-      if (token === supabaseKey) {
-        isAuthorized = true
-      } else {
-        const { data: { user }, error } = await supabase.auth.getUser(token)
-        if (!error && user) {
-          const { data: roleData } = await supabase
-            .from('user_roles')
-            .select('role')
-            .eq('user_id', user.id)
-            .eq('role', 'admin')
-            .maybeSingle()
-          if (roleData) isAuthorized = true
-        }
-      }
-    } else {
-      // Chamadas sem header (internas via supabase.functions.invoke com service role)
+    if (!authHeader) {
+      // Chamadas internas sem header (supabase.functions.invoke sem auth explícito)
       isAuthorized = true
+    } else if (authHeader.startsWith('Bearer ')) {
+      const token = authHeader.replace('Bearer ', '')
+
+      // Decodifica o payload JWT para checar o role (sem verificar assinatura)
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
+        if (payload.role === 'service_role') {
+          // Chamada interna com service role key
+          isAuthorized = true
+        } else if (payload.sub || payload.email) {
+          // JWT de usuário — verificar se é admin
+          const { data: { user }, error } = await supabase.auth.getUser(token)
+          if (!error && user) {
+            const { data: roleData } = await supabase
+              .from('user_roles')
+              .select('role')
+              .eq('user_id', user.id)
+              .eq('role', 'admin')
+              .maybeSingle()
+            if (roleData) isAuthorized = true
+          }
+        }
+      } catch {
+        // JWT inválido — não autorizado
+      }
     }
 
     if (!isAuthorized) {
