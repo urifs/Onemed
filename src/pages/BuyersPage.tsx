@@ -48,7 +48,12 @@ export default function BuyersPage() {
     setSyncing(true);
     try {
       const { data, error } = await supabase.functions.invoke('sync-pending-buyers', { body: {} });
-      if (error) throw new Error(error.message || 'Erro ao sincronizar');
+      if (error) {
+        // Tentar extrair mensagem real do corpo da resposta
+        let msg = 'Erro ao sincronizar';
+        try { const body = await (error as any).context?.json?.(); if (body?.error) msg = body.error; } catch {}
+        throw new Error(msg);
+      }
       if (data?.error) throw new Error(data.error);
       if (data?.synced > 0) {
         toast.success(`${data.synced} compra(s) sincronizada(s)!`);

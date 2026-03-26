@@ -1,4 +1,4 @@
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts' // v2
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts' // v3
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
@@ -13,6 +13,13 @@ function getCorsHeaders(req: Request) {
   }
 }
 
+function jsonRes(req: Request, body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
+  })
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: getCorsHeaders(req) })
 
@@ -25,29 +32,19 @@ serve(async (req) => {
     // ── Auth: apenas admin ────────────────────────────────────────────────────
     const authHeader = req.headers.get('Authorization') || ''
     if (!authHeader.startsWith('Bearer ')) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
-      })
+      return jsonRes(req, { error: 'Unauthorized' }, 401)
     }
 
     const token = authHeader.replace('Bearer ', '')
-
-    // Decodifica payload JWT para obter user_id sem depender de auth.getUser()
     let userId: string | null = null
     try {
       const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
       userId = payload.sub || null
     } catch {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
-      })
+      return jsonRes(req, { error: 'Unauthorized' }, 401)
     }
 
-    if (!userId) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
-      })
-    }
+    if (!userId) return jsonRes(req, { error: 'Unauthorized' }, 401)
 
     const { data: roleData } = await supabase
       .from('user_roles')
@@ -56,11 +53,7 @@ serve(async (req) => {
       .eq('role', 'admin')
       .maybeSingle()
 
-    if (!roleData) {
-      return new Response(JSON.stringify({ error: 'Forbidden' }), {
-        status: 403, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
-      })
-    }
+    if (!roleData) return jsonRes(req, { error: 'Forbidden' }, 403)
 
     // ── Buscar compradores pendentes com external_reference ───────────────────
     const { data: pendingBuyers, error: fetchErr } = await supabase
@@ -144,37 +137,23 @@ serve(async (req) => {
           accessId = newAccess?.id || null
         }
 
-        // Compartilhar Drive
-        try {
-          const driveRes = await fetch(`${supabaseUrl}/functions/v1/drive-share-folder`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: buyer.email, accessId }),
-          })
-          const driveData = await driveRes.json()
-          if (!driveRes.ok) console.warn('Drive share error for', buyer.email, driveData?.error)
-        } catch (driveErr: any) {
-          console.warn('Drive share error for', buyer.email, driveErr?.message)
-        }
-
-        // Enviar email de acesso
-        try {
-          await fetch(`${supabaseUrl}/functions/v1/send-access-email`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              to: buyer.email,
-              name: buyer.name,
-              type: 'payment_approved',
-              plan: buyer.plan,
-            }),
-          })
-        } catch (emailErr: any) {
-          console.warn('Email error for', buyer.email, emailErr?.message)
-        }
-
         results.synced++
         console.log('Synced buyer:', buyer.email, 'payment:', payment.id)
+
+        // Drive e email em background (fire-and-forget) para não bloquear
+        fetch(`${supabaseUrl}/functions/v1/drive-share-folder`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: buyer.email, accessId }),
+        }).then(r => r.ok ? null : r.json().then(d => console.warn('Drive error for', buyer.email, d?.error)))
+          .catch(e => console.warn('Drive fetch error for', buyer.email, e?.message))
+
+        fetch(`${supabaseUrl}/functions/v1/send-access-email`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to: buyer.email, name: buyer.name, type: 'payment_approved', plan: buyer.plan }),
+        }).catch(e => console.warn('Email fetch error for', buyer.email, e?.message))
+
       } catch (err: any) {
         console.error('Error processing buyer', buyer.email, err?.message)
         results.failed++
@@ -184,18 +163,14 @@ serve(async (req) => {
 
     console.log('Sync complete:', JSON.stringify(results))
 
-    return new Response(JSON.stringify({
+    return jsonRes(req, {
       success: true,
       total: pendingBuyers?.length ?? 0,
       ...results,
-    }), {
-      headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
     })
 
   } catch (err: any) {
     console.error('sync-pending-buyers error:', err)
-    return new Response(JSON.stringify({ error: err?.message || 'Erro interno' }), {
-      status: 500, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
-    })
+    return jsonRes(req, { error: err?.message || 'Erro interno' }, 500)
   }
 })
