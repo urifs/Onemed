@@ -23,11 +23,24 @@ export default function BuyersPage() {
   const [search, setSearch] = useState('');
   const [syncing, setSyncing] = useState(false);
 
+  const [driveMap, setDriveMap] = useState<Record<string, boolean>>({});
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const { data: buyersData } = await supabase.from('buyers').select('*').eq('status', 'approved').order('created_at', { ascending: false });
+      const [{ data: buyersData }, { data: accessesData }] = await Promise.all([
+        supabase.from('buyers').select('*').eq('status', 'approved').order('created_at', { ascending: false }),
+        supabase.from('accesses').select('email,drive_permission_id').eq('access_type', 'paid'),
+      ]);
       setBuyers(buyersData || []);
+
+      // Mapa email → tem Drive compartilhado
+      const map: Record<string, boolean> = {};
+      for (const a of accessesData || []) {
+        map[a.email] = !!a.drive_permission_id;
+      }
+      setDriveMap(map);
+
       const all = buyersData || [];
       const todayISO = todayStartISO();
       const today = all.filter(b => b.created_at >= todayISO);
@@ -152,7 +165,7 @@ export default function BuyersPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-border">
-                    {['Email', 'Nome', 'WhatsApp', 'Plano', 'Valor', 'Status', 'Data', ''].map(h => (
+                    {['Email', 'Nome', 'WhatsApp', 'Plano', 'Valor', 'Status', 'Drive', 'Data', ''].map(h => (
                       <th key={h} className="text-left px-4 py-3 text-xs font-mono uppercase text-muted-foreground">{h}</th>
                     ))}
                   </tr>
@@ -166,6 +179,14 @@ export default function BuyersPage() {
                       <td className="px-4 py-3 text-sm text-muted-foreground capitalize">{buyer.plan}</td>
                       <td className="px-4 py-3 text-sm text-foreground">{buyer.amount ? `R$ ${Number(buyer.amount).toFixed(2)}` : '—'}</td>
                       <td className="px-4 py-3">{statusBadge(buyer.status)}</td>
+                      <td className="px-4 py-3">
+                        {driveMap[buyer.email] === true
+                          ? <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium badge-active">Compartilhado</span>
+                          : driveMap[buyer.email] === false
+                          ? <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium badge-expired">Pendente</span>
+                          : <span className="text-xs text-muted-foreground">—</span>
+                        }
+                      </td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">{formatDateTimeSP(buyer.created_at)}</td>
                       <td className="px-4 py-3">
                         <button onClick={() => deleteBuyer(buyer.id)} className="p-1.5 text-muted-foreground hover:text-primary">
