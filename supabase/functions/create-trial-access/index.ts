@@ -20,7 +20,7 @@ serve(async (req) => {
 
     if (!email) {
       return new Response(JSON.stringify({ error: 'Email é obrigatório' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
@@ -36,7 +36,7 @@ serve(async (req) => {
 
     if (buyer) {
       return new Response(JSON.stringify({ error: 'Este email já possui acesso completo ao OneMed. Acesse pelo link enviado no seu email.' }), {
-        status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
@@ -66,7 +66,7 @@ serve(async (req) => {
       }
       // Trial expirado ou outro status — bloqueia nova tentativa
       return new Response(JSON.stringify({ error: 'Este email já utilizou o período de teste gratuito. Para continuar com acesso ilimitado, adquira um plano.' }), {
-        status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
@@ -122,7 +122,7 @@ serve(async (req) => {
         await supabase.from('accesses').delete().eq('id', newAccessId)
         console.error('Drive share failed:', driveErrMsg)
         return new Response(JSON.stringify({ error: 'Use um email Gmail para acessar o trial. Se já usa Gmail, tente novamente.' }), {
-          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
       }
 
