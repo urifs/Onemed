@@ -96,34 +96,43 @@ serve(async (req) => {
     // Track visit (fire and forget)
     supabase.from('visits').insert({ page: 'trial', user_agent: '' }).then(() => {}).catch(() => {})
 
-    // Share Drive folder + send email — await both concurrently
-    const tasks: Promise<any>[] = []
-
+    // If Drive is configured, sharing must succeed before returning success
     if (driveConfig?.connected && driveConfig?.folder_id) {
-      tasks.push(
-        supabase.functions.invoke('drive-share-folder', {
+      let driveResult: any
+      try {
+        driveResult = await supabase.functions.invoke('drive-share-folder', {
           body: { email: normalizedEmail, accessId: newAccessId },
-        }).then((res) => {
-          if (res.error) console.warn('Drive share error:', JSON.stringify(res.error))
-          else console.log('Drive shared for:', normalizedEmail)
-        }).catch((e: any) => console.warn('Drive share failed:', e))
-      )
+        })
+      } catch (e: any) {
+        await supabase.from('accesses').delete().eq('id', newAccessId)
+        console.error('Drive share invoke failed:', e?.message)
+        return new Response(JSON.stringify({ error: 'Erro ao conectar com o Google Drive. Tente novamente.' }), {
+          status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
+      if (driveResult.error) {
+        await supabase.from('accesses').delete().eq('id', newAccessId)
+        console.error('Drive share failed:', JSON.stringify(driveResult.error))
+        return new Response(JSON.stringify({
+          error: 'Use um email Gmail para acessar o trial. Se já usa Gmail, tente novamente.',
+        }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+
+      console.log('Drive shared for:', normalizedEmail)
     }
 
-    tasks.push(
-      supabase.functions.invoke('send-access-email', {
-        body: {
-          to: normalizedEmail,
-          type: 'trial_access',
-          folderId: driveConfig?.folder_id || null,
-          folderName: driveConfig?.folder_name || null,
-        },
-      }).then((res) => {
-        if (res.error) console.warn('Trial email error:', JSON.stringify(res.error))
-      }).catch((e: any) => console.warn('Trial email failed:', e))
-    )
-
-    await Promise.allSettled(tasks)
+    // Send email (fire and forget — don't block the response)
+    supabase.functions.invoke('send-access-email', {
+      body: {
+        to: normalizedEmail,
+        type: 'trial_access',
+        folderId: driveConfig?.folder_id || null,
+        folderName: driveConfig?.folder_name || null,
+      },
+    }).then((res) => {
+      if (res.error) console.warn('Trial email error:', JSON.stringify(res.error))
+    }).catch((e: any) => console.warn('Trial email failed:', e))
 
     return new Response(JSON.stringify({
       success: true,
