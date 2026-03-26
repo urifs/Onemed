@@ -19,7 +19,7 @@ serve(async (req) => {
     })
 
     const body = await req.json()
-    console.log('MP Webhook received:', JSON.stringify(body))
+    console.log('[mp-webhook] received:', JSON.stringify(body))
 
     // MP sends two formats:
     // 1. Webhook: { type: "payment", data: { id: "123" } }
