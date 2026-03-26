@@ -20,6 +20,9 @@ async function refreshAccessToken(refreshToken: string, clientSecret: string): P
     }),
   })
   const data = await res.json()
+  if (!data.access_token) {
+    throw new Error(`Token refresh failed: ${JSON.stringify(data)}`)
+  }
   return data.access_token
 }
 

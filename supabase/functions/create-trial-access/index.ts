@@ -96,22 +96,34 @@ serve(async (req) => {
     // Track visit (fire and forget)
     supabase.from('visits').insert({ page: 'trial', user_agent: '' }).then(() => {}).catch(() => {})
 
-    // Share Drive folder — fire and forget so we don't block the response
+    // Share Drive folder + send email — await both concurrently
+    const tasks: Promise<any>[] = []
+
     if (driveConfig?.connected && driveConfig?.folder_id) {
-      supabase.functions.invoke('drive-share-folder', {
-        body: { email: normalizedEmail, accessId: newAccessId },
-      }).then(() => {}).catch((e: any) => console.warn('Drive share failed:', e))
+      tasks.push(
+        supabase.functions.invoke('drive-share-folder', {
+          body: { email: normalizedEmail, accessId: newAccessId },
+        }).then((res) => {
+          if (res.error) console.warn('Drive share error:', JSON.stringify(res.error))
+          else console.log('Drive shared for:', normalizedEmail)
+        }).catch((e: any) => console.warn('Drive share failed:', e))
+      )
     }
 
-    // Send trial access email — fire and forget
-    supabase.functions.invoke('send-access-email', {
-      body: {
-        to: normalizedEmail,
-        type: 'trial_access',
-        folderId: driveConfig?.folder_id || null,
-        folderName: driveConfig?.folder_name || null,
-      },
-    }).then(() => {}).catch((e: any) => console.warn('Trial email failed:', e))
+    tasks.push(
+      supabase.functions.invoke('send-access-email', {
+        body: {
+          to: normalizedEmail,
+          type: 'trial_access',
+          folderId: driveConfig?.folder_id || null,
+          folderName: driveConfig?.folder_name || null,
+        },
+      }).then((res) => {
+        if (res.error) console.warn('Trial email error:', JSON.stringify(res.error))
+      }).catch((e: any) => console.warn('Trial email failed:', e))
+    )
+
+    await Promise.allSettled(tasks)
 
     return new Response(JSON.stringify({
       success: true,

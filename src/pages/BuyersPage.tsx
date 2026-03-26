@@ -21,6 +21,7 @@ export default function BuyersPage() {
   const [newAmount, setNewAmount] = useState('');
   const [creating, setCreating] = useState(false);
   const [search, setSearch] = useState('');
+  const [syncing, setSyncing] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -42,6 +43,32 @@ export default function BuyersPage() {
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  const syncPending = async () => {
+    if (!session?.access_token) return;
+    setSyncing(true);
+    try {
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-pending-buyers`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erro ao sincronizar');
+      if (data.synced > 0) {
+        toast.success(`${data.synced} compra(s) sincronizada(s)!`);
+        fetchData();
+      } else {
+        toast.info(`Nenhuma compra nova. Pendentes: ${data.still_pending}, Total: ${data.total}`);
+      }
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const createBuyer = async () => {
     if (!newEmail) { toast.error('Informe um email'); return; }
@@ -91,9 +118,15 @@ export default function BuyersPage() {
             <h1 className="font-secondary text-3xl font-bold text-foreground">Compradores</h1>
             <p className="text-muted-foreground mt-1">Gerencie os compradores do OneMed</p>
           </div>
-          <Button onClick={() => setShowModal(true)} className="bg-primary hover:bg-primary-hover text-primary-foreground gap-2">
-            <UserPlus className="w-4 h-4" /> Novo Comprador
-          </Button>
+          <div className="flex gap-2">
+            <Button onClick={syncPending} disabled={syncing} variant="outline" className="border-border text-foreground gap-2">
+              {syncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              Sincronizar
+            </Button>
+            <Button onClick={() => setShowModal(true)} className="bg-primary hover:bg-primary-hover text-primary-foreground gap-2">
+              <UserPlus className="w-4 h-4" /> Novo Comprador
+            </Button>
+          </div>
         </div>
 
         {/* Stats */}
