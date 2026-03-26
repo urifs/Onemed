@@ -106,7 +106,7 @@ export default function BuyersPage() {
   return (
     <AdminLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex items-start justify-between flex-wrap gap-4">
           <div>
             <h1 className="font-secondary text-3xl font-bold text-foreground">Compradores</h1>
             <p className="text-muted-foreground mt-1">Gerencie os compradores do OneMed</p>
@@ -152,7 +152,7 @@ export default function BuyersPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-border">
-                    {['Email', 'Nome', 'Plano', 'Valor', 'Status', 'Data', ''].map(h => (
+                    {['Email', 'Nome', 'WhatsApp', 'Plano', 'Valor', 'Status', 'Data', ''].map(h => (
                       <th key={h} className="text-left px-4 py-3 text-xs font-mono uppercase text-muted-foreground">{h}</th>
                     ))}
                   </tr>
@@ -162,6 +162,7 @@ export default function BuyersPage() {
                     <tr key={buyer.id} className="border-b border-border/40 hover:bg-secondary/30 transition-colors">
                       <td className="px-4 py-3 text-sm text-foreground">{buyer.email}</td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">{buyer.name || '—'}</td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground">{buyer.whatsapp || '—'}</td>
                       <td className="px-4 py-3 text-sm text-muted-foreground capitalize">{buyer.plan}</td>
                       <td className="px-4 py-3 text-sm text-foreground">{buyer.amount ? `R$ ${Number(buyer.amount).toFixed(2)}` : '—'}</td>
                       <td className="px-4 py-3">{statusBadge(buyer.status)}</td>
