@@ -1,4 +1,4 @@
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts' // v3
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts' // v4
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
@@ -32,7 +32,7 @@ serve(async (req) => {
     // ── Auth: apenas admin ────────────────────────────────────────────────────
     const authHeader = req.headers.get('Authorization') || ''
     if (!authHeader.startsWith('Bearer ')) {
-      return jsonRes(req, { error: 'Unauthorized' }, 401)
+      return jsonRes(req, { error: 'Unauthorized' })
     }
 
     const token = authHeader.replace('Bearer ', '')
@@ -41,10 +41,10 @@ serve(async (req) => {
       const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
       userId = payload.sub || null
     } catch {
-      return jsonRes(req, { error: 'Unauthorized' }, 401)
+      return jsonRes(req, { error: 'Unauthorized' })
     }
 
-    if (!userId) return jsonRes(req, { error: 'Unauthorized' }, 401)
+    if (!userId) return jsonRes(req, { error: 'Unauthorized' })
 
     const { data: roleData } = await supabase
       .from('user_roles')
@@ -53,7 +53,7 @@ serve(async (req) => {
       .eq('role', 'admin')
       .maybeSingle()
 
-    if (!roleData) return jsonRes(req, { error: 'Forbidden' }, 403)
+    if (!roleData) return jsonRes(req, { error: 'Acesso negado. Apenas admins.' })
 
     // ── Buscar compradores pendentes com external_reference ───────────────────
     const { data: pendingBuyers, error: fetchErr } = await supabase
@@ -171,6 +171,6 @@ serve(async (req) => {
 
   } catch (err: any) {
     console.error('sync-pending-buyers error:', err)
-    return jsonRes(req, { error: err?.message || 'Erro interno' }, 500)
+    return jsonRes(req, { error: err?.message || 'Erro interno' })
   }
 })
