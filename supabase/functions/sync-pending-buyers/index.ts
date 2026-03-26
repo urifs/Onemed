@@ -31,8 +31,19 @@ serve(async (req) => {
     }
 
     const token = authHeader.replace('Bearer ', '')
-    const { data: { user }, error: authErr } = await supabase.auth.getUser(token)
-    if (authErr || !user) {
+
+    // Decodifica payload JWT para obter user_id sem depender de auth.getUser()
+    let userId: string | null = null
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
+      userId = payload.sub || null
+    } catch {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
+      })
+    }
+
+    if (!userId) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
       })
@@ -41,7 +52,7 @@ serve(async (req) => {
     const { data: roleData } = await supabase
       .from('user_roles')
       .select('role')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .eq('role', 'admin')
       .maybeSingle()
 
