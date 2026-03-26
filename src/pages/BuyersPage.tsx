@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { formatDateTimeSP, todayStartISO } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { DollarSign, Users, Clock, TrendingUp, Mail, Calendar, Phone, Trash2, UserPlus, Loader2, RefreshCw, CheckCircle, XCircle, X, MessageCircle } from 'lucide-react';
+import { DollarSign, Users, Clock, TrendingUp, Mail, Calendar, Phone, Trash2, UserPlus, Loader2, RefreshCw, CheckCircle, XCircle, X } from 'lucide-react';
 
 export default function BuyersPage() {
   const { session } = useAuth();
@@ -126,7 +126,7 @@ export default function BuyersPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-border">
-                    {['Email', 'Nome', 'WhatsApp', 'Plano', 'Valor', 'Status', 'Data', ''].map(h => (
+                    {['Email', 'Nome', 'Plano', 'Valor', 'Status', 'Data', ''].map(h => (
                       <th key={h} className="text-left px-4 py-3 text-xs font-mono uppercase text-muted-foreground">{h}</th>
                     ))}
                   </tr>
@@ -136,14 +136,6 @@ export default function BuyersPage() {
                     <tr key={buyer.id} className="border-b border-border/40 hover:bg-secondary/30 transition-colors">
                       <td className="px-4 py-3 text-sm text-foreground">{buyer.email}</td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">{buyer.name || '—'}</td>
-                      <td className="px-4 py-3 text-sm text-muted-foreground">
-                        {buyer.whatsapp ? (
-                          <a href={`https://wa.me/${buyer.whatsapp.replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-accent-success hover:underline">
-                            <MessageCircle className="w-3.5 h-3.5" />
-                            {buyer.whatsapp}
-                          </a>
-                        ) : '—'}
-                      </td>
                       <td className="px-4 py-3 text-sm text-muted-foreground capitalize">{buyer.plan}</td>
                       <td className="px-4 py-3 text-sm text-foreground">{buyer.amount ? `R$ ${Number(buyer.amount).toFixed(2)}` : '—'}</td>
                       <td className="px-4 py-3">{statusBadge(buyer.status)}</td>
