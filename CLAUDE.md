@@ -104,7 +104,7 @@ curl -s -X POST "https://api.vercel.com/v13/deployments?forceNew=1&target=produc
 | `drive-list-folders` | v13 | true | Admin | Lista pastas do Drive |
 | `drive-save-folder` | v8 | true | Admin | Salva pasta configurada |
 | `drive-oauth-callback` | v13 | false | OAuth flow | Troca code por tokens Google |
-| `send-access-email` | v14 | true | Interna | Envia emails de confirmacao (Resend) |
+| `send-access-email` | v14 | false | Interna | Envia emails de confirmacao (Resend) |
 | `send-followup-emails` | v14 | false | Cron (13h UTC) | Follow-ups 1d/7d/30d com cupons |
 | `sync-pending-buyers` | v11 | false | Admin | Sincroniza compradores pendentes com MP API |
 
