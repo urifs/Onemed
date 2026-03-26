@@ -106,24 +106,38 @@ serve(async (req) => {
         .update({ access_granted: true })
         .eq('id', buyer.id)
 
-      // Insert into accesses table (service role bypasses RLS)
-      const { error: accessErr } = await supabase.from('accesses').insert({
-        email: buyer.email,
-        access_type: 'paid',
-        status: 'active',
-        whatsapp: buyer.whatsapp,
-      })
+      // Check if access already exists (prevents race condition with duplicate webhooks)
+      const { data: existingAccess } = await supabase
+        .from('accesses')
+        .select('id')
+        .eq('email', buyer.email)
+        .eq('access_type', 'paid')
+        .maybeSingle()
 
-      if (accessErr) {
-        console.error('Error inserting access:', accessErr.message)
+      let accessId: string | null = existingAccess?.id || null
+
+      if (!existingAccess) {
+        const { data: newAccess, error: accessErr } = await supabase.from('accesses').insert({
+          email: buyer.email,
+          access_type: 'paid',
+          status: 'active',
+          whatsapp: buyer.whatsapp,
+        }).select('id').single()
+
+        if (accessErr) {
+          console.error('Error inserting access:', accessErr.message)
+        } else {
+          accessId = newAccess?.id || null
+          console.log('Access granted for:', buyer.email)
+        }
       } else {
-        console.log('Access granted for:', buyer.email)
+        console.log('Access already exists for:', buyer.email, '— skipping insert')
       }
 
       // Share Drive folder with the buyer's email
       try {
         const driveRes = await supabase.functions.invoke('drive-share-folder', {
-          body: { email: buyer.email }
+          body: { email: buyer.email, accessId }
         })
         console.log('Drive folder shared with:', buyer.email, 'result:', JSON.stringify(driveRes.data))
       } catch (driveErr: any) {

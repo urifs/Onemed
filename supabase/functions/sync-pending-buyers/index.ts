@@ -132,19 +132,22 @@ serve(async (req) => {
           .eq('access_type', 'paid')
           .maybeSingle()
 
+        let accessId: string | null = existingAccess?.id || null
+
         if (!existingAccess) {
-          await supabase.from('accesses').insert({
+          const { data: newAccess } = await supabase.from('accesses').insert({
             email: buyer.email,
             access_type: 'paid',
             status: 'active',
             whatsapp: buyer.whatsapp,
-          })
+          }).select('id').single()
+          accessId = newAccess?.id || null
         }
 
         // Compartilhar Drive
         try {
           await supabase.functions.invoke('drive-share-folder', {
-            body: { email: buyer.email }
+            body: { email: buyer.email, accessId }
           })
         } catch (driveErr: any) {
           console.warn('Drive share error for', buyer.email, driveErr?.message)
