@@ -7,7 +7,7 @@ import AdminLayout from '@/components/AdminLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { formatDateTimeSP, todayStartISO } from '@/lib/utils';
-import { Users, Clock, XCircle, AlertTriangle, ArrowRight, FolderOpen, Eye, Calendar } from 'lucide-react';
+import { Users, Clock, XCircle, AlertTriangle, ArrowRight, FolderOpen, Eye, Calendar, MessageCircle } from 'lucide-react';
 import { Link as RouterLink } from 'react-router-dom';
 
 export default function Dashboard() {
@@ -27,7 +27,7 @@ export default function Dashboard() {
 
         const [accessStats, recent, drive, visits] = await Promise.all([
           supabase.from('accesses').select('status, access_type').gte('created_at', todayISO),
-          supabase.from('accesses').select('*').order('created_at', { ascending: false }).limit(5),
+          supabase.from('accesses').select('*').order('created_at', { ascending: false }).limit(10),
           supabase.from('drive_config').select('connected').single(),
           supabase.from('visits').select('id', { count: 'exact', head: true }).gte('created_at', todayISO),
         ]);
@@ -144,27 +144,52 @@ export default function Dashboard() {
               Ver todos <ArrowRight className="w-3 h-3" />
             </RouterLink>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-0">
             {loading ? (
-              <div className="space-y-3">
+              <div className="space-y-3 p-6">
                 {[1, 2, 3].map(i => <div key={i} className="h-10 bg-secondary rounded animate-pulse" />)}
               </div>
             ) : recentAccesses.length === 0 ? (
-              <p className="text-muted-foreground text-sm text-center py-4">Nenhum acesso ainda</p>
+              <p className="text-muted-foreground text-sm text-center py-8">Nenhum acesso ainda</p>
             ) : (
-              <div className="space-y-3">
-                {recentAccesses.map(access => (
-                  <div key={access.id} className="flex items-center justify-between py-2 border-b border-border/50 last:border-0">
-                    <div>
-                      <p className="text-sm font-medium text-foreground">{access.email}</p>
-                      <p className="text-xs text-muted-foreground">{formatDateTimeSP(access.created_at)}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground capitalize">{access.access_type}</span>
-                      {statusBadge(access.status)}
-                    </div>
-                  </div>
-                ))}
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-border">
+                      {['Email', 'WhatsApp', 'Tipo', 'Status', 'Drive', 'Data'].map(h => (
+                        <th key={h} className="text-left px-4 py-3 text-xs font-mono uppercase text-muted-foreground">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentAccesses.map(access => (
+                      <tr key={access.id} className="border-b border-border/40 hover:bg-secondary/30 transition-colors">
+                        <td className="px-4 py-3 text-sm text-foreground">{access.email}</td>
+                        <td className="px-4 py-3 text-sm text-muted-foreground">
+                          {access.whatsapp ? (
+                            <a href={`https://wa.me/${access.whatsapp.replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-accent-success hover:underline">
+                              <MessageCircle className="w-3.5 h-3.5" />
+                              {access.whatsapp}
+                            </a>
+                          ) : '—'}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${access.access_type === 'trial' ? 'badge-pending' : 'badge-active'}`}>
+                            {access.access_type === 'trial' ? 'Trial' : 'Pago'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">{statusBadge(access.status)}</td>
+                        <td className="px-4 py-3">
+                          {access.drive_permission_id
+                            ? <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium badge-active">Compartilhado</span>
+                            : <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium badge-expired">Pendente</span>
+                          }
+                        </td>
+                        <td className="px-4 py-3 text-sm text-muted-foreground">{formatDateTimeSP(access.created_at)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </CardContent>

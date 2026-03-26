@@ -112,7 +112,7 @@ export default function TrialUsersPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-border">
-                    {['Email', 'WhatsApp', 'Status', 'Data', 'Expiração'].map(h => (
+                    {['Email', 'WhatsApp', 'Status', 'Drive', 'Data', 'Expiração'].map(h => (
                       <th key={h} className="text-left px-4 py-3 text-xs font-mono uppercase text-muted-foreground">{h}</th>
                     ))}
                   </tr>
@@ -130,6 +130,12 @@ export default function TrialUsersPage() {
                         ) : '—'}
                       </td>
                       <td className="px-4 py-3">{statusBadge(trial.status)}</td>
+                      <td className="px-4 py-3">
+                        {trial.drive_permission_id
+                          ? <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium badge-active">Compartilhado</span>
+                          : <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium badge-expired">Pendente</span>
+                        }
+                      </td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">{formatDateTimeSP(trial.created_at)}</td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">{formatDateTimeSP(trial.expires_at)}</td>
                     </tr>
