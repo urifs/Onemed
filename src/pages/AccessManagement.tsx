@@ -235,9 +235,10 @@ export default function AccessManagement() {
                         <td className="px-4 py-3 text-sm text-muted-foreground capitalize">{access.access_type}</td>
                         <td className="px-4 py-3">{statusBadge(access.status)}</td>
                         <td className="px-4 py-3 text-sm hidden lg:table-cell">
-                          {access.drive_folder_id ? (
-                            <a href={`https://drive.google.com/drive/folders/${access.drive_folder_id}`} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline text-xs">{access.drive_folder_name || 'Ver pasta'}</a>
-                          ) : <span className="text-muted-foreground">—</span>}
+                          {access.drive_permission_id
+                            ? <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium badge-active">Compartilhado</span>
+                            : <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium badge-expired">Pendente</span>
+                          }
                         </td>
                         <td className="px-4 py-3 text-sm text-accent-success hidden lg:table-cell font-mono">
                           {access.status === 'active' ? getRemainingTime(access) || '—' : '—'}
