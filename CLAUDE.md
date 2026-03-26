@@ -235,6 +235,9 @@ Landing → trial 30min grátis → Drive compartilhado → trial expira → fol
 ### Estado Geral
 Sistema funcionando em produção. Fluxo completo (trial → pagamento → acesso) operacional. Todos os secrets configurados no Supabase. Segurança parcialmente ativa (pendências abaixo).
 
+**IMPORTANTE — Deploy de Edge Functions:**
+O CLI `--use-api` silenciosamente ignora deploys quando o bundle compilado é idêntico ao anterior (comentários são removidos pelo esbuild). Sempre fazer uma mudança real no código (ex: string de log) ao redeployar. Confirmar que a versão bumped após o deploy comparando o número de versão antes e depois.
+
 ---
 
 ## Problemas Identificados
@@ -361,6 +364,51 @@ Sistema funcionando em produção. Fluxo completo (trial → pagamento → acess
 - Este branch tem uma versão ligeiramente diferente de `create-trial-access` (sem rate limiting e email validation do main, mas com CORS `*`)
 - As correções de Drive e sync button estão neste branch
 - Para merge com main: mesclar cuidadosamente preservando rate limiting e email validation do main
+
+### Sessão 2026-03-26 (remota — continuação 3)
+
+**Problema descoberto: deploy via CLI `--use-api` não atualiza código quando mudança é apenas em comentários**
+- O Supabase CLI compila o TypeScript com esbuild antes de enviar; comentários são removidos na compilação
+- Se a mudança no código só afeta comentários, o `ezbr_sha256` (hash do bundle compilado) não muda
+- O servidor detecta "mesmo hash" e NÃO substitui a função → versão antiga continua rodando silenciosamente
+- **Diagnóstico:** comparar `ezbr_sha256` da API com `sha256` local NÃO funciona (algoritmos diferentes). Verificar se a versão bumped após deploy
+- **Fix:** sempre fazer uma mudança real no código (ex: alterar string de log) para forçar novo bundle
+
+**Funções afetadas que tinham código antigo rodando (todas corrigidas):**
+- `drive-share-folder` → estava rodando versão SEM auth JWT fix → toda chamada com Authorization header retornava 401
+- `mp-webhook` → estava rodando SEM race condition fix e SEM passar `accessId`
+- `sync-pending-buyers` → estava rodando SEM passar `accessId` para `drive-share-folder`
+- `create-trial-access` → estava rodando SEM validação de resultado do Drive
+
+**Versões finais deployadas e confirmadas:**
+| Função | Versão | Correções ativas |
+|--------|--------|-----------------|
+| `drive-share-folder` | v6 | Auth JWT (service_role + admin) |
+| `create-trial-access` | v9 | Bloqueia countdown se Drive falhar; rollback do trial |
+| `mp-webhook` | v11 | Race condition fix + accessId para Drive |
+| `sync-pending-buyers` | v5 | accessId para Drive |
+
+**Correções aplicadas nesta sessão:**
+
+1. **Race condition em `mp-webhook`** — MP envia 2 webhooks em paralelo antes de `access_granted` ser marcado → 2 registros duplicados por comprador. Fix: verifica `existingAccess` antes de inserir; retorna `accessId` para Drive
+
+2. **`drive_permission_id` nunca salvo para compradores pagos** — `mp-webhook` e `sync-pending-buyers` chamavam `drive-share-folder` sem `accessId`. Fix: passam `accessId` correto
+
+3. **5 acessos duplicados removidos** do banco (andressalimasant, guga_osmakukos, leonelchonke, marcelodasilvaortiz1234, marcellocerto)
+
+4. **Drive re-compartilhado** com todos os 7 compradores pagos que estavam sem `drive_permission_id` (operação manual via curl)
+
+5. **`create-trial-access` bloqueado por Drive** — antes retornava `success: true` mesmo quando Drive falhava. Agora:
+   - Aguarda resultado do `drive-share-folder`
+   - Se falhar → rollback do trial (delete) + erro: "Use um email Gmail para acessar o trial"
+   - Countdown só aparece se Drive for efetivamente compartilhado
+
+6. **`drive-share-folder` auth corrigida** — código antigo (deployado) usava comparação `token === supabaseKey` que sempre falhava para chamadas internas com Authorization header. Novo código decodifica payload JWT e verifica `payload.role === 'service_role'`
+
+**Estado do Drive após esta sessão:**
+- Todos os 7 compradores pagos: `drive_permission_id` ✅
+- Trials futuros: Drive compartilhado obrigatório antes de liberar countdown ✅
+- Compradores futuros: `mp-webhook` passa `accessId` corretamente ✅
 
 ---
 
