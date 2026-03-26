@@ -244,6 +244,9 @@ Landing → trial 30min grátis → Drive compartilhado → trial expira → fol
 ### Estado Geral
 Sistema **totalmente operacional** em produção. Fluxo completo trial → pagamento → acesso funcionando. Drive compartilhado corretamente para trials e compradores. Cron jobs autenticados via CRON_SECRET do Vault. CORS restrito em todas as funções. Todos os compradores pagos com `drive_permission_id` registrado.
 
+**IMPORTANTE — Chamadas internas entre Edge Functions:**
+Nunca usar `supabase.functions.invoke` para chamar outra Edge Function de dentro de uma Edge Function. O Supabase JS SDK envia o **anon key** no header Authorization (não o service role key), causando 401 em funções protegidas. Usar sempre `fetch()` diretamente **sem Authorization header** para chamadas internas — o `drive-share-folder` e outras funções internas autorizam chamadas sem header (`if (!authHeader) → isAuthorized = true`).
+
 ---
 
 ## Histórico de Sessões
@@ -292,6 +295,20 @@ Sistema **totalmente operacional** em produção. Fluxo completo trial → pagam
 - Drive: connected=true, pasta configurada, token válido
 - DB: 7 aprovados, 7 acessos pagos, 0 sem drive_permission_id, 0 duplicados
 - Cron jobs: funcionando com x-cron-secret do Vault
+
+### Sessão 2026-03-26 (remota — continuação 5)
+**Bug crítico corrigido: trial falhava para todos os clientes**
+
+**Causa raiz descoberta:** `supabase.functions.invoke` dentro de Edge Functions envia o anon key no header `Authorization` (não o service role key). O `drive-share-folder` recebia o anon key, retornava 401, e `create-trial-access` interpretava como falha do Drive → retornava erro "Edge function returned a non-2xx status code" para todos os clientes.
+
+**Funções corrigidas:**
+- `create-trial-access` v15 — usa `fetch()` sem Authorization header para `drive-share-folder` e `send-access-email`
+- `mp-webhook` v14 — mesmo fix para os dois invokes (Drive + email)
+- `sync-pending-buyers` v7 — mesmo fix para os dois invokes (Drive + email)
+
+**Padrão estabelecido:** Chamadas internas entre Edge Functions devem usar `fetch()` sem Authorization header. Nunca usar `supabase.functions.invoke` para isso.
+
+**Verificado após fix:** trial criado com sucesso, Drive compartilhado, email enviado ✅
 
 ---
 
