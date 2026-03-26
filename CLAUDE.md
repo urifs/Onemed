@@ -174,11 +174,34 @@ onemed/
 ## Histórico de Sessões
 
 ### Sessão 2026-03-26
-- Auditoria de segurança completa (6 vulnerabilidades encontradas e corrigidas)
-- Deploy das 10 Edge Functions com correções de segurança
-- Sincronização do projeto com GitHub para acesso mobile
-- Token Supabase CLI salvo em `~/.bashrc`
-- Testes funcionais pós-deploy: todos os fluxos ✅
+**Sincronização remota**
+- Projeto sincronizado com GitHub (`urifs/Onemed`) para acesso via Claude Code mobile
+- `.env.example` criado com chaves públicas do Supabase
+- `supabase/.temp/` adicionado ao `.gitignore`
+
+**Auditoria e correções de segurança**
+- 6 vulnerabilidades corrigidas: HMAC webhook MP, token hardcoded no SQL de cron, rate limiting, constant-time compare, CORS `*`, validação de email
+- 2 migrations criadas: `rate_limits` (tabela) e `fix_cron_jobs` (remove token hardcoded)
+- Rate limiting defensivo (não quebra se migration não aplicada)
+- Todas as 10 Edge Functions com CORS restrito a `onemedcursos.com.br`
+
+**Deploy**
+- Supabase CLI autenticado: token `sbp_0bfd1b84358ef0811676dca4fc2eb8108b7bd07e` salvo em `~/.bashrc`
+- Deploy via `--use-api` (sem Docker) funcionando
+- 10 funções deployadas e verificadas em produção
+
+**Testes pós-deploy (todos ✅)**
+- Validação de email (sem @, malformado → 400)
+- Trial creation, duplicate detection
+- Pagamento MP (plano inválido → 400, lifetime R$299,90 → init_point)
+- Webhook fake processado sem erro
+- Drive revoke, follow-up emails, send-access-email
+- Drive list folders: 100 pastas retornadas (Drive conectado)
+- CORS: origem maliciosa bloqueada, `onemedcursos.com.br` autorizada
+
+**Sistema de contexto**
+- `CLAUDE.md` criado na raiz (carregado automaticamente em toda sessão)
+- Disponível no GitHub → sincroniza com mobile automaticamente
 
 ---
 
