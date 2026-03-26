@@ -1,7 +1,8 @@
 # OneMed — Contexto de Projeto para Claude Code
 
-> Este arquivo é carregado automaticamente em toda sessão do Claude Code.
-> Atualize-o ao final de cada sessão com decisões, mudanças e contexto relevante.
+> **INSTRUCAO OBRIGATORIA:** Ao iniciar qualquer sessao, leia este arquivo COMPLETO antes de qualquer acao.
+> Este arquivo e carregado automaticamente em toda sessao do Claude Code.
+> Atualize-o ao final de cada sessao com decisoes, mudancas e contexto relevante.
 
 ---
 
@@ -40,6 +41,12 @@
 **URL:** `https://jrrybiohwqabsdurqudc.supabase.co`
 **Região:** South America (São Paulo)
 **Anon Key (pública):** ver `.env.example`
+
+## Vercel
+
+**Projeto:** `onemed`
+**Project ID:** `prj_6xtdW0fF2j3x3FBComSPvCBtrTVt`
+**URL:** `https://onemedcursos.com.br`
 
 ### Deploy de Edge Functions (sem Docker)
 ```bash
@@ -95,6 +102,8 @@ Configuradas em: **Supabase Dashboard → Edge Functions → Secrets**
 | `MP_ACCESS_TOKEN_TEST` | ✅ Configurado | Token de teste do MP |
 | `GOOGLE_CLIENT_SECRET` | ✅ Configurado | Secret OAuth do Google |
 | `RESEND_API_KEY` | ✅ Configurado | API key do Resend |
+| `VERCEL_TOKEN` | ✅ Configurado | Token de deploy do Vercel |
+| `VERCEL_PROJECT_ID` | ✅ Configurado | ID do projeto Vercel (`prj_6xtdW0fF2j3x3FBComSPvCBtrTVt`) |
 | `MP_WEBHOOK_SECRET` | ⏳ Pendente | Secret HMAC do webhook MP (pegar no dashboard MP → Webhooks) |
 | `CRON_SECRET` | ⏳ Pendente | Secret para autenticar cron jobs (gerar com `openssl rand -hex 32`) |
 
@@ -202,6 +211,19 @@ onemed/
 **Sistema de contexto**
 - `CLAUDE.md` criado na raiz (carregado automaticamente em toda sessão)
 - Disponível no GitHub → sincroniza com mobile automaticamente
+
+### Sessão 2026-03-26 (remota — Claude Code Web)
+**Verificacao e configuracao de chaves**
+- Verificados todos os secrets do Supabase via Management API
+- Adicionados `VERCEL_TOKEN` e `VERCEL_PROJECT_ID` ao Supabase Secrets (para deploys remotos)
+- Supabase Personal Access Token desta sessao: `sbp_46a93dbb0118dfcdcef474f9287d4044284b30ec`
+- Vercel Project ID confirmado: `prj_6xtdW0fF2j3x3FBComSPvCBtrTVt`
+
+**Contexto sincronizado**
+- `CLAUDE.md` atualizado com instrucao de leitura obrigatoria no inicio de cada sessao
+- Secao Vercel adicionada ao arquivo
+- Secrets table atualizada com status atual de todas as chaves
+- Alteracoes de seguranca feitas pelo Claude desktop (commits do usuario) ja incorporadas ao main
 
 ---
 
