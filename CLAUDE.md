@@ -93,19 +93,19 @@ O esbuild remove comentários ao compilar. Se a mudança no código for apenas e
 
 ## Edge Functions
 
-| Função | Versão Atual | Chamada por | Descrição |
-|--------|-------------|-------------|-----------|
-| `create-trial-access` | v10 | Frontend (landing) | Cria trial de 30min + aguarda Drive + envia email |
-| `mp-create-payment` | v13 | Frontend (checkout) | Gera preferência no Mercado Pago |
-| `mp-webhook` | v12 | Mercado Pago | Processa pagamento aprovado, sem race condition |
-| `drive-share-folder` | v7 | Interna | Compartilha pasta Drive com email |
-| `drive-revoke-access` | v13 | Cron (*/5 min) | Revoga acessos trial expirados |
-| `drive-list-folders` | v11 | Admin panel | Lista pastas do Drive |
-| `drive-save-folder` | v6 | Admin panel | Salva pasta configurada |
-| `drive-oauth-callback` | — | OAuth flow | Troca code por tokens do Google |
-| `send-access-email` | v12 | Interna | Envia emails de confirmação (Resend) |
-| `send-followup-emails` | v13 | Cron (13h UTC) | Envia follow-ups para trials expirados |
-| `sync-pending-buyers` | v5 | Admin panel | Sincroniza compradores pendentes com MP API |
+| Função | Versão Atual | verify_jwt | Chamada por | Descrição |
+|--------|-------------|-----------|-------------|-----------|
+| `create-trial-access` | v19 | true | Frontend (landing) | Cria trial de 30min + aguarda Drive + envia email |
+| `mp-create-payment` | v15 | true | Frontend (checkout) | Gera preferência no Mercado Pago |
+| `mp-webhook` | v16 | true | Mercado Pago | Processa pagamento aprovado, sem race condition |
+| `drive-share-folder` | v9 | false | Interna | Compartilha pasta Drive com email |
+| `drive-revoke-access` | v14 | false | Cron (*/5 min) | Revoga acessos trial expirados |
+| `drive-list-folders` | v13 | true | Admin panel | Lista pastas do Drive |
+| `drive-save-folder` | v8 | true | Admin panel | Salva pasta configurada |
+| `drive-oauth-callback` | v13 | false | OAuth flow | Troca code por tokens do Google |
+| `send-access-email` | v14 | true | Interna | Envia emails de confirmação (Resend) |
+| `send-followup-emails` | v14 | false | Cron (13h UTC) | Envia follow-ups para trials expirados |
+| `sync-pending-buyers` | v11 | false | Admin panel | Sincroniza compradores pendentes com MP API |
 
 ---
 
@@ -316,13 +316,24 @@ Nunca usar `supabase.functions.invoke` para chamar outra Edge Function de dentro
 - Backend (`create-trial-access`): distingue dois tipos de falha no Drive:
   - Erro de email (conta Google inválida) → `{ error: "Use um email Gmail..." }` — toast normal
   - Erro de sistema (Drive desconectado, token expirado, etc.) → `{ error: "...", maintenanceError: true }`
-- Frontend (`Index.tsx`): quando `data.maintenanceError === true`, exibe tela intermediária com:
-  - Ícone de manutenção
-  - Mensagem: "Nosso sistema de teste gratuito está temporariamente em manutenção. Para realizar seu teste grátis agora, entre em contato com nosso suporte pelo WhatsApp."
-  - Botão verde do WhatsApp com link direto para o suporte
-  - Botão "Tentar novamente" para voltar ao formulário
-- A tela de manutenção **só aparece** quando há erro real no sistema, nunca para erro de email do usuário
+- Frontend (`Index.tsx`): quando `data.maintenanceError === true`, exibe tela intermediária com botão WhatsApp e "Tentar novamente"
 - Deploy: `dpl_CrdUtrrZ6cJmh1NpeUZLFn3zGP8L` (READY)
+
+### Sessão 2026-03-26 (remota — continuação 7)
+**Correção do botão Sincronizar no painel admin — erro non-2xx persistente**
+
+**Causa raiz:** `sync-pending-buyers` tinha `verify_jwt: true`. O gateway do Supabase interceptava requisições com token inválido/expirado e retornava `{"code":401,"message":"..."}` com HTTP 401 — antes da função executar. O SDK do Supabase converte respostas não-2xx em `FunctionsHttpError`. O frontend tentava extrair `body?.error` mas o gateway retorna `message` (não `error`), resultando no genérico "Erro ao sincronizar".
+
+**Correções aplicadas:**
+- `sync-pending-buyers` v11: `verify_jwt` desativado via Management API (`PATCH /functions/sync-pending-buyers`) — a função já faz validação JWT manual
+- Função agora retorna HTTP 200 para TODOS os casos (auth errors, erros internos, sucesso) — mesmo padrão do `create-trial-access`
+- `BuyersPage.tsx`: lógica de extração de erro simplificada — apenas `data?.error` (não mais `context.json()`)
+- Deploy frontend: `dpl_B3USJTpJ1xwH7p6yLojcBQ2Er7fm` (READY em `onemedcursos.com.br`)
+
+**Padrão consolidado para Edge Functions do admin panel:**
+`verify_jwt: false` + retorno HTTP 200 sempre + erro no body como `{ error: "..." }`. Isso evita que o gateway intercepte antes da função e garante que o SDK sempre receba a resposta em `data`.
+
+**Verificado:** bloqueio de trial duplicado funcionando — email com trial expirado bloqueado, comprador bloqueado de usar trial ✅
 
 ---
 
