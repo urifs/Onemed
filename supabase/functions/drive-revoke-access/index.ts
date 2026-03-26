@@ -26,6 +26,17 @@ async function refreshAccessToken(refreshToken: string, clientSecret: string): P
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders })
 
+  // Verify CRON_SECRET if configured
+  const CRON_SECRET = Deno.env.get('CRON_SECRET')
+  if (CRON_SECRET) {
+    const incoming = req.headers.get('x-cron-secret')
+    if (!incoming || incoming !== CRON_SECRET) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+  }
+
   try {
     const GOOGLE_CLIENT_SECRET = Deno.env.get('GOOGLE_CLIENT_SECRET')!
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!

@@ -243,6 +243,19 @@ function getFollowupEmailHtml(email: string, cfg: FollowupConfig): string {
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders })
 
+  // Verify CRON_SECRET if configured
+  const CRON_SECRET = Deno.env.get('CRON_SECRET')
+  console.log('[send-followup-emails] CRON_SECRET set:', !!CRON_SECRET)
+  if (CRON_SECRET) {
+    const incoming = req.headers.get('x-cron-secret')
+    if (!incoming || incoming !== CRON_SECRET) {
+      console.log('[send-followup-emails] Unauthorized - missing or wrong x-cron-secret')
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+  }
+
   try {
     const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')!
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
