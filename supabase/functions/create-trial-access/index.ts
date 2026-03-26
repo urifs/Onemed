@@ -98,41 +98,49 @@ serve(async (req) => {
 
     // If Drive is configured, sharing must succeed before returning success
     if (driveConfig?.connected && driveConfig?.folder_id) {
-      let driveResult: any
+      let driveOk = false
+      let driveErrMsg = ''
       try {
-        driveResult = await supabase.functions.invoke('drive-share-folder', {
-          body: { email: normalizedEmail, accessId: newAccessId },
+        const driveRes = await fetch(`${supabaseUrl}/functions/v1/drive-share-folder`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ email: normalizedEmail, accessId: newAccessId }),
         })
+        const driveData = await driveRes.json()
+        if (driveRes.ok && driveData?.success) {
+          driveOk = true
+        } else {
+          driveErrMsg = driveData?.error || `status ${driveRes.status}`
+        }
       } catch (e: any) {
+        driveErrMsg = e?.message || 'network error'
+      }
+
+      if (!driveOk) {
         await supabase.from('accesses').delete().eq('id', newAccessId)
-        console.error('Drive share invoke failed:', e?.message)
-        return new Response(JSON.stringify({ error: 'Erro ao conectar com o Google Drive. Tente novamente.' }), {
-          status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        console.error('Drive share failed:', driveErrMsg)
+        return new Response(JSON.stringify({ error: 'Use um email Gmail para acessar o trial. Se já usa Gmail, tente novamente.' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
       }
 
-      if (driveResult.error) {
-        await supabase.from('accesses').delete().eq('id', newAccessId)
-        console.error('Drive share failed:', JSON.stringify(driveResult.error))
-        return new Response(JSON.stringify({
-          error: 'Use um email Gmail para acessar o trial. Se já usa Gmail, tente novamente.',
-        }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
-      }
-
-      console.log('Drive shared for:', normalizedEmail)
+      console.log('Drive shared for trial:', normalizedEmail)
     }
 
     // Send email (fire and forget — don't block the response)
-    supabase.functions.invoke('send-access-email', {
-      body: {
+    fetch(`${supabaseUrl}/functions/v1/send-access-email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
         to: normalizedEmail,
         type: 'trial_access',
         folderId: driveConfig?.folder_id || null,
         folderName: driveConfig?.folder_name || null,
-      },
-    }).then((res) => {
-      if (res.error) console.warn('Trial email error:', JSON.stringify(res.error))
-    }).catch((e: any) => console.warn('Trial email failed:', e))
+      }),
+    }).then(r => r.ok ? null : r.json().then(d => console.warn('Trial email error:', d)))
+      .catch((e: any) => console.warn('Trial email failed:', e))
 
     return new Response(JSON.stringify({
       success: true,

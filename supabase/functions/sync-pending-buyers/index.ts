@@ -146,22 +146,28 @@ serve(async (req) => {
 
         // Compartilhar Drive
         try {
-          await supabase.functions.invoke('drive-share-folder', {
-            body: { email: buyer.email, accessId }
+          const driveRes = await fetch(`${supabaseUrl}/functions/v1/drive-share-folder`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: buyer.email, accessId }),
           })
+          const driveData = await driveRes.json()
+          if (!driveRes.ok) console.warn('Drive share error for', buyer.email, driveData?.error)
         } catch (driveErr: any) {
           console.warn('Drive share error for', buyer.email, driveErr?.message)
         }
 
         // Enviar email de acesso
         try {
-          await supabase.functions.invoke('send-access-email', {
-            body: {
+          await fetch(`${supabaseUrl}/functions/v1/send-access-email`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
               to: buyer.email,
               name: buyer.name,
               type: 'payment_approved',
               plan: buyer.plan,
-            }
+            }),
           })
         } catch (emailErr: any) {
           console.warn('Email error for', buyer.email, emailErr?.message)

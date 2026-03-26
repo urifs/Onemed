@@ -136,28 +136,38 @@ serve(async (req) => {
 
       // Share Drive folder with the buyer's email
       try {
-        const driveRes = await supabase.functions.invoke('drive-share-folder', {
-          body: { email: buyer.email, accessId }
+        const driveRes = await fetch(`${supabaseUrl}/functions/v1/drive-share-folder`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: buyer.email, accessId }),
         })
-        console.log('Drive folder shared with:', buyer.email, 'result:', JSON.stringify(driveRes.data))
+        const driveData = await driveRes.json()
+        if (driveRes.ok) {
+          console.log('Drive folder shared with:', buyer.email, 'permissionId:', driveData?.permissionId)
+        } else {
+          console.error('Drive share error for', buyer.email, driveData?.error)
+        }
       } catch (driveErr: any) {
         console.error('Drive share error:', driveErr?.message || driveErr)
       }
 
       // Send access confirmation email
       try {
-        const emailRes = await supabase.functions.invoke('send-access-email', {
-          body: {
+        const emailRes = await fetch(`${supabaseUrl}/functions/v1/send-access-email`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
             to: buyer.email,
             name: buyer.name,
             type: 'payment_approved',
             plan: buyer.plan,
-          }
+          }),
         })
-        if (emailRes.error) {
-          console.error('Email invoke error:', JSON.stringify(emailRes.error))
+        const emailData = await emailRes.json()
+        if (emailRes.ok) {
+          console.log('Email sent to:', buyer.email)
         } else {
-          console.log('Email sent to:', buyer.email, 'result:', JSON.stringify(emailRes.data))
+          console.error('Email error for', buyer.email, emailData?.error)
         }
       } catch (emailErr: any) {
         console.error('Email error:', emailErr?.message || emailErr)
