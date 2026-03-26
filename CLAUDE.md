@@ -310,6 +310,20 @@ Nunca usar `supabase.functions.invoke` para chamar outra Edge Function de dentro
 
 **Verificado após fix:** trial criado com sucesso, Drive compartilhado, email enviado ✅
 
+### Sessão 2026-03-26 (remota — continuação 6)
+**Tela de manutenção com WhatsApp para erros de sistema no trial**
+
+- Backend (`create-trial-access`): distingue dois tipos de falha no Drive:
+  - Erro de email (conta Google inválida) → `{ error: "Use um email Gmail..." }` — toast normal
+  - Erro de sistema (Drive desconectado, token expirado, etc.) → `{ error: "...", maintenanceError: true }`
+- Frontend (`Index.tsx`): quando `data.maintenanceError === true`, exibe tela intermediária com:
+  - Ícone de manutenção
+  - Mensagem: "Nosso sistema de teste gratuito está temporariamente em manutenção. Para realizar seu teste grátis agora, entre em contato com nosso suporte pelo WhatsApp."
+  - Botão verde do WhatsApp com link direto para o suporte
+  - Botão "Tentar novamente" para voltar ao formulário
+- A tela de manutenção **só aparece** quando há erro real no sistema, nunca para erro de email do usuário
+- Deploy: `dpl_CrdUtrrZ6cJmh1NpeUZLFn3zGP8L` (READY)
+
 ---
 
 ## Comandos Úteis
