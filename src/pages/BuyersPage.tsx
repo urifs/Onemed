@@ -45,23 +45,16 @@ export default function BuyersPage() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const syncPending = async () => {
-    if (!session?.access_token) return;
     setSyncing(true);
     try {
-      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-pending-buyers`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Erro ao sincronizar');
-      if (data.synced > 0) {
+      const { data, error } = await supabase.functions.invoke('sync-pending-buyers', { body: {} });
+      if (error) throw new Error(error.message || 'Erro ao sincronizar');
+      if (data?.error) throw new Error(data.error);
+      if (data?.synced > 0) {
         toast.success(`${data.synced} compra(s) sincronizada(s)!`);
         fetchData();
       } else {
-        toast.info(`Nenhuma compra nova. Pendentes: ${data.still_pending}, Total: ${data.total}`);
+        toast.info(`Nenhuma compra nova. Pendentes: ${data?.still_pending ?? 0}, Total: ${data?.total ?? 0}`);
       }
     } catch (err: any) {
       toast.error(err.message);
