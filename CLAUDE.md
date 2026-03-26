@@ -189,6 +189,12 @@ onemed/
 │   ├── config.toml              # project_id: jrrybiohwqabsdurqudc
 │   ├── functions/               # 10 Edge Functions
 │   └── migrations/              # SQL migrations
+├── public/
+│   ├── admin-manifest.json      # PWA manifest (scope /admin)
+│   ├── admin-sw.js              # Service Worker (scope /admin)
+│   └── icons/admin-icon.svg     # Ícone PWA admin
+├── src/components/
+│   └── AdminPWAHead.tsx         # Injeta meta tags PWA dinamicamente
 ├── .env.example                 # Chaves públicas do Supabase
 └── CLAUDE.md                    # Este arquivo
 ```
@@ -306,6 +312,20 @@ Sistema funcionando em produção. Fluxo completo (trial → pagamento → acess
 - Secao Vercel adicionada ao arquivo
 - Secrets table atualizada com status atual de todas as chaves
 - Alteracoes de seguranca feitas pelo Claude desktop (commits do usuario) ja incorporadas ao main
+
+### Sessão 2026-03-26 (remota — continuação)
+**Verificacao e análise geral**
+- Análise completa do codebase: frontend, backend, migrations, fluxos, segurança
+- Resumo executivo adicionado ao CLAUDE.md (base, frontend, backend, estado geral)
+- Tabela de problemas identificados documentada por prioridade
+
+**PWA exclusiva para o painel admin**
+- `public/admin-manifest.json` — manifest com scope `/admin`, tema vermelho (#EF4444), display standalone
+- `public/admin-sw.js` — service worker com cache do app shell e estratégia network-first para rotas admin
+- `public/icons/admin-icon.svg` — ícone com design de estetoscópio na cor da marca
+- `src/components/AdminPWAHead.tsx` — injeta manifest + meta tags Apple/Android dinamicamente só em rotas admin
+- `src/components/AdminLayout.tsx` — monta/desmonta PWA head ao entrar/sair do admin
+- Landing page e site público **não são afetados** (manifest e SW isolados ao scope `/admin`)
 
 ---
 
