@@ -57,7 +57,7 @@
 | Servico | Variavel | Valor |
 |---------|----------|-------|
 | Supabase Management API | `SUPABASE_ACCESS_TOKEN` | `sbp_46a93dbb0118dfcdcef474f9287d4044284b30ec` |
-| Vercel API | `VERCEL_TOKEN` | `vck_53yMeRUNuCVH8XcoL0L8WGRTeVk5ItNJAKGqwHFKwmXtOgzdtR4WWfZP` |
+| Vercel API | `VERCEL_TOKEN` | `vcp_6m85MdQjg3YEmboL3Bg4x0fHzqTfXiuhQQubBmzGE3tjjqhdDt0JF7SY` |
 | Vercel Project ID | `VERCEL_PROJECT_ID` | `prj_6xtdW0fF2j3x3FBComSPvCBtrTVt` |
 | Supabase Project Ref | `SUPABASE_PROJECT_REF` | `jrrybiohwqabsdurqudc` |
 
