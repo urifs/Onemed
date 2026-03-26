@@ -86,8 +86,9 @@ serve(async (req) => {
     const supabaseKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabase     = createClient(supabaseUrl, supabaseKey)
 
-    const supabaseProjectRef = supabaseUrl?.match(/https:\/\/([^.]+)/)?.[1] || 'nxhdbpqgfvinwtrmtohz'
-    const webhookUrl = `https://${supabaseProjectRef}.supabase.co/functions/v1/mp-webhook`
+    const supabaseProjectRef = supabaseUrl?.match(/https:\/\/([^.]+)/)?.[1] || 'jrrybiohwqabsdurqudc'
+    const supabaseAnonKey    = Deno.env.get('SUPABASE_ANON_KEY') || ''
+    const webhookUrl = `https://${supabaseProjectRef}.supabase.co/functions/v1/mp-webhook?apikey=${supabaseAnonKey}`
 
     // ── 2. Rate limiting por email (degradado graciosamente se tabela não existir) ──
     if (email) {
