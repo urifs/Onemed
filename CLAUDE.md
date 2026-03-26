@@ -48,9 +48,24 @@
 **Project ID:** `prj_6xtdW0fF2j3x3FBComSPvCBtrTVt`
 **URL:** `https://onemedcursos.com.br`
 
+---
+
+## Credenciais de Acesso (uso exclusivo do Claude)
+
+> Tokens necessarios para operacoes autonomas. Usar diretamente sem solicitar ao usuario.
+
+| Servico | Variavel | Valor |
+|---------|----------|-------|
+| Supabase Management API | `SUPABASE_ACCESS_TOKEN` | `sbp_46a93dbb0118dfcdcef474f9287d4044284b30ec` |
+| Vercel API | `VERCEL_TOKEN` | `vck_53yMeRUNuCVH8XcoL0L8WGRTeVk5ItNJAKGqwHFKwmXtOgzdtR4WWfZP` |
+| Vercel Project ID | `VERCEL_PROJECT_ID` | `prj_6xtdW0fF2j3x3FBComSPvCBtrTVt` |
+| Supabase Project Ref | `SUPABASE_PROJECT_REF` | `jrrybiohwqabsdurqudc` |
+
+---
+
 ### Deploy de Edge Functions (sem Docker)
 ```bash
-export SUPABASE_ACCESS_TOKEN="sbp_0bfd1b84358ef0811676dca4fc2eb8108b7bd07e"
+export SUPABASE_ACCESS_TOKEN="sbp_46a93dbb0118dfcdcef474f9287d4044284b30ec"
 supabase functions deploy <nome> --project-ref jrrybiohwqabsdurqudc --use-api
 
 # Deploy de todas de uma vez:
@@ -231,7 +246,7 @@ onemed/
 
 ```bash
 # Deploy de uma função específica
-export SUPABASE_ACCESS_TOKEN="sbp_0bfd1b84358ef0811676dca4fc2eb8108b7bd07e"
+export SUPABASE_ACCESS_TOKEN="sbp_46a93dbb0118dfcdcef474f9287d4044284b30ec"
 supabase functions deploy mp-webhook --project-ref jrrybiohwqabsdurqudc --use-api
 
 # Testar trial creation
