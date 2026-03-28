@@ -22,8 +22,12 @@ export default function TrialUsersPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await supabase.from('accesses').select('*').eq('access_type', 'trial').order('created_at', { ascending: false });
-      const all = data || [];
+      const [{ data: trialsData }, { data: buyersData }] = await Promise.all([
+        supabase.from('accesses').select('*').eq('access_type', 'trial').order('created_at', { ascending: false }),
+        supabase.from('buyers').select('email').eq('status', 'approved'),
+      ]);
+      const buyerEmails = new Set((buyersData || []).map((b: any) => b.email.toLowerCase()));
+      const all = (trialsData || []).filter(t => !buyerEmails.has(t.email.toLowerCase()));
       setTrials(all);
       const todayISO = todayStartISO();
       const today = all.filter(t => t.created_at >= todayISO);
