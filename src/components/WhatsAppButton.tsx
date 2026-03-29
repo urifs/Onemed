@@ -1,6 +1,11 @@
 import { MessageCircle } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
 
 export const WhatsAppButton = () => {
+  const location = useLocation();
+
+  if (location.pathname !== '/') return null;
+
   const phoneNumber = '5545991220048';
   const message = 'Olá! Tenho interesse no OneMed.';
   const url = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
