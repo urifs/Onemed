@@ -290,6 +290,7 @@ export default function EmailCampaignPage() {
     }
 
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+    const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
     const fnUrl = `${supabaseUrl}/functions/v1/send-custom-email`;
 
     for (let i = 0; i < recipients.length; i++) {
@@ -303,6 +304,7 @@ export default function EmailCampaignPage() {
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${jwt}`,
+            'apikey': anonKey,
           },
           body: JSON.stringify({ to: email, subject, templateType: tType, templateData }),
         });
