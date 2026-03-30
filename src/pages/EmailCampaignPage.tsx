@@ -116,6 +116,7 @@ export default function EmailCampaignPage() {
   const [recipientType, setRecipientType] = useState<RecipientType>('trials');
   const [recipients, setRecipients] = useState<string[]>([]);
   const [loadingRecipients, setLoadingRecipients] = useState(false);
+  const fetchSeqRef = useRef(0);
 
   // Send mode
   const [sendMode, setSendMode] = useState<SendMode>('now');
@@ -141,22 +142,49 @@ export default function EmailCampaignPage() {
   // ── Fetch recipients ────────────────────────────────────────────────────────
 
   const fetchRecipients = useCallback(async (type: RecipientType) => {
+    // Sequence guard: descarta resultados de fetches anteriores
+    const seq = ++fetchSeqRef.current;
     setLoadingRecipients(true);
+
+    // Timeout de 12s por query para evitar loading infinito
+    const withTimeout = <T>(p: PromiseLike<T>): Promise<T> =>
+      Promise.race([
+        Promise.resolve(p),
+        new Promise<T>((_, reject) =>
+          setTimeout(() => reject(new Error('Timeout ao carregar destinatários')), 12000)
+        ),
+      ]);
+
     try {
       const all: string[] = [];
+
       if (type === 'trials' || type === 'both') {
-        const { data } = await supabase.from('accesses').select('email').eq('access_type', 'trial');
-        (data || []).forEach(r => all.push(r.email.toLowerCase()));
+        const { data, error } = await withTimeout(
+          supabase.from('accesses').select('email').eq('access_type', 'trial').limit(5000)
+        );
+        if (error) throw new Error('Trials: ' + error.message);
+        (data || []).forEach((r: any) => r.email && all.push(r.email.toLowerCase()));
       }
+
       if (type === 'buyers' || type === 'both') {
-        const { data } = await supabase.from('buyers').select('email').eq('status', 'approved');
-        (data || []).forEach(r => all.push(r.email.toLowerCase()));
+        const { data, error } = await withTimeout(
+          supabase.from('buyers').select('email').eq('status', 'approved').limit(5000)
+        );
+        if (error) throw new Error('Compradores: ' + error.message);
+        (data || []).forEach((r: any) => r.email && all.push(r.email.toLowerCase()));
       }
-      setRecipients([...new Set(all)]);
-    } catch {
-      toast.error('Erro ao carregar destinatários');
+
+      if (seq === fetchSeqRef.current) {
+        setRecipients([...new Set(all)]);
+      }
+    } catch (err: any) {
+      if (seq === fetchSeqRef.current) {
+        toast.error(err?.message || 'Erro ao carregar destinatários');
+      }
     } finally {
-      setLoadingRecipients(false);
+      if (seq === fetchSeqRef.current) {
+        setLoadingRecipients(false);
+      }
     }
   }, []);
 
@@ -164,17 +192,19 @@ export default function EmailCampaignPage() {
 
   // ── Fetch campaigns ─────────────────────────────────────────────────────────
 
+  // ── email_campaigns: cast necessário pois não está nos tipos gerados ──────────
+
   const fetchCampaigns = useCallback(async () => {
     setLoadingCampaigns(true);
     try {
-      const { data } = await supabase
+      const { data, error } = await (supabase as any)
         .from('email_campaigns')
         .select('*')
         .order('created_at', { ascending: false })
         .limit(20);
-      setCampaigns(data || []);
+      if (!error) setCampaigns(data || []);
     } catch {
-      // silently fail
+      // Tabela pode ainda não existir em ambientes antigos
     } finally {
       setLoadingCampaigns(false);
     }
@@ -298,7 +328,7 @@ export default function EmailCampaignPage() {
     const { templateType: tType, templateData } = getTemplatePayload();
 
     try {
-      const { error } = await supabase.from('email_campaigns').insert({
+      const { error } = await (supabase as any).from('email_campaigns').insert({
         subject,
         template_type: tType,
         template_data: templateData,
@@ -318,7 +348,7 @@ export default function EmailCampaignPage() {
   // ── Cancel campaign ──────────────────────────────────────────────────────────
 
   const cancelCampaign = async (id: string) => {
-    const { error } = await supabase
+    const { error } = await (supabase as any)
       .from('email_campaigns')
       .update({ status: 'cancelled' })
       .eq('id', id)
