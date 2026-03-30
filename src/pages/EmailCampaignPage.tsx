@@ -32,8 +32,8 @@ function spLocalToUTC(localStr: string): string {
 
 // ─── Template presets ─────────────────────────────────────────────────────────
 
-type TemplateType = 'followup_1d' | 'followup_7d' | 'followup_30d' | 'custom';
-type RecipientType = 'trials' | 'buyers' | 'both';
+type TemplateType = 'followup_1d' | 'followup_7d' | 'followup_30d' | 'free_trial' | 'custom';
+type RecipientType = 'trials' | 'buyers' | 'both' | 'manual';
 type SendMode = 'now' | 'scheduled';
 
 interface FollowupFields {
@@ -45,6 +45,13 @@ interface FollowupFields {
   urgency: string;
   annualPrice: string;
   lifetimePrice: string;
+}
+
+interface FreeTrialFields {
+  subject: string;
+  subjectText: string;
+  message: string;
+  urgency: string;
 }
 
 interface CustomFields {
@@ -85,10 +92,18 @@ const PRESETS: Record<Exclude<TemplateType, 'custom'>, FollowupFields> = {
   },
 };
 
+const FREE_TRIAL_PRESET: FreeTrialFields = {
+  subject: 'Experimente o OneMed gratuitamente! - OneMed',
+  subjectText: 'Experimente Gratis!',
+  message: 'Conheca o maior acervo de conteudos medicos da America Latina. Teste gratis por 30 minutos e veja tudo o que preparamos para voce!',
+  urgency: 'Acesse agora e descubra +530 cursos e +9.000 livros medicos. Sem compromisso!',
+};
+
 const TEMPLATE_OPTIONS: { id: TemplateType; label: string; sublabel: string }[] = [
   { id: 'followup_1d',  label: 'Acompanhamento 1 dia',    sublabel: 'Cupom 10% · ONEMED10' },
   { id: 'followup_7d',  label: 'Acompanhamento 7 dias',   sublabel: 'Cupom 20% · ONEMED20' },
   { id: 'followup_30d', label: 'Acompanhamento 30 dias',  sublabel: 'Cupom 30% · ONEMED30' },
+  { id: 'free_trial',   label: 'Convite Teste Gratis',     sublabel: 'Botao para teste gratis' },
   { id: 'custom',       label: 'Email personalizado',      sublabel: 'Escreva do zero' },
 ];
 
@@ -110,11 +125,13 @@ export default function EmailCampaignPage() {
   // Template
   const [templateType, setTemplateType] = useState<TemplateType>('followup_1d');
   const [followupFields, setFollowupFields] = useState<FollowupFields>({ ...PRESETS.followup_1d });
+  const [freeTrialFields, setFreeTrialFields] = useState<FreeTrialFields>({ ...FREE_TRIAL_PRESET });
   const [customFields, setCustomFields] = useState<CustomFields>({ subject: '', body: '' });
 
   // Recipients
   const [recipientType, setRecipientType] = useState<RecipientType>('trials');
   const [recipients, setRecipients] = useState<string[]>([]);
+  const [manualEmails, setManualEmails] = useState('');
   const [loadingRecipients, setLoadingRecipients] = useState(false);
   const fetchSeqRef = useRef(0);
 
@@ -188,7 +205,23 @@ export default function EmailCampaignPage() {
     }
   }, []);
 
-  useEffect(() => { fetchRecipients(recipientType); }, [recipientType, fetchRecipients]);
+  useEffect(() => {
+    if (recipientType === 'manual') {
+      setLoadingRecipients(false);
+      return;
+    }
+    fetchRecipients(recipientType);
+  }, [recipientType, fetchRecipients]);
+
+  // Parse manual emails
+  useEffect(() => {
+    if (recipientType !== 'manual') return;
+    const emails = manualEmails
+      .split(/[\n,;]+/)
+      .map(e => e.trim().toLowerCase())
+      .filter(e => e && e.includes('@'));
+    setRecipients([...new Set(emails)]);
+  }, [manualEmails, recipientType]);
 
   // ── Fetch campaigns ─────────────────────────────────────────────────────────
 
@@ -230,31 +263,50 @@ export default function EmailCampaignPage() {
 
   const handleTemplateChange = (t: TemplateType) => {
     setTemplateType(t);
-    if (t !== 'custom') setFollowupFields({ ...PRESETS[t] });
+    if (t === 'free_trial') {
+      setFreeTrialFields({ ...FREE_TRIAL_PRESET });
+    } else if (t !== 'custom') {
+      setFollowupFields({ ...PRESETS[t] });
+    }
     setLog([]);
     setDone(false);
   };
 
   // ── Build payload ────────────────────────────────────────────────────────────
 
-  const getSubject = () =>
-    templateType === 'custom' ? customFields.subject : followupFields.subject;
+  const getSubject = () => {
+    if (templateType === 'custom') return customFields.subject;
+    if (templateType === 'free_trial') return freeTrialFields.subject;
+    return followupFields.subject;
+  };
 
-  const getTemplatePayload = () =>
-    templateType === 'custom'
-      ? { templateType: 'custom', templateData: { body: customFields.body } }
-      : {
-          templateType: 'followup',
-          templateData: {
-            subjectText:  followupFields.subjectText,
-            message:      followupFields.message,
-            couponCode:   followupFields.couponCode,
-            discount:     followupFields.discount,
-            urgency:      followupFields.urgency,
-            annualPrice:  followupFields.annualPrice,
-            lifetimePrice: followupFields.lifetimePrice,
-          },
-        };
+  const getTemplatePayload = () => {
+    if (templateType === 'custom') {
+      return { templateType: 'custom', templateData: { body: customFields.body } };
+    }
+    if (templateType === 'free_trial') {
+      return {
+        templateType: 'free_trial',
+        templateData: {
+          subjectText: freeTrialFields.subjectText,
+          message: freeTrialFields.message,
+          urgency: freeTrialFields.urgency,
+        },
+      };
+    }
+    return {
+      templateType: 'followup',
+      templateData: {
+        subjectText:  followupFields.subjectText,
+        message:      followupFields.message,
+        couponCode:   followupFields.couponCode,
+        discount:     followupFields.discount,
+        urgency:      followupFields.urgency,
+        annualPrice:  followupFields.annualPrice,
+        lifetimePrice: followupFields.lifetimePrice,
+      },
+    };
+  };
 
   // ── Validate ────────────────────────────────────────────────────────────────
 
@@ -353,7 +405,7 @@ export default function EmailCampaignPage() {
         subject,
         template_type: tType,
         template_data: templateData,
-        recipient_type: recipientType,
+        recipient_type: recipientType === 'manual' ? 'manual' : recipientType,
         recipient_emails: recipients,
         scheduled_at: scheduledUTC,
         total_count: recipients.length,
@@ -382,9 +434,9 @@ export default function EmailCampaignPage() {
   // ── Derived ──────────────────────────────────────────────────────────────────
 
   const currentSubject = getSubject();
-  const currentTitle   = templateType === 'custom' ? customFields.subject : followupFields.subjectText;
-  const currentCoupon  = templateType !== 'custom' ? followupFields.couponCode : null;
-  const currentDiscount = templateType !== 'custom' ? followupFields.discount : null;
+  const currentTitle   = templateType === 'custom' ? customFields.subject : templateType === 'free_trial' ? freeTrialFields.subjectText : followupFields.subjectText;
+  const currentCoupon  = templateType !== 'custom' && templateType !== 'free_trial' ? followupFields.couponCode : null;
+  const currentDiscount = templateType !== 'custom' && templateType !== 'free_trial' ? followupFields.discount : null;
 
   // ─── Render ───────────────────────────────────────────────────────────────────
 
@@ -459,6 +511,25 @@ export default function EmailCampaignPage() {
                       />
                     </div>
                   </>
+                ) : templateType === 'free_trial' ? (
+                  <>
+                    <div className="space-y-1.5">
+                      <Label className="text-muted-foreground text-xs uppercase font-mono">Assunto</Label>
+                      <Input value={freeTrialFields.subject} onChange={e => setFreeTrialFields(f => ({ ...f, subject: e.target.value }))} className="bg-background border-border text-foreground" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-muted-foreground text-xs uppercase font-mono">Título (h1 do email)</Label>
+                      <Input value={freeTrialFields.subjectText} onChange={e => setFreeTrialFields(f => ({ ...f, subjectText: e.target.value }))} className="bg-background border-border text-foreground" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-muted-foreground text-xs uppercase font-mono">Mensagem introdutória</Label>
+                      <Textarea value={freeTrialFields.message} onChange={e => setFreeTrialFields(f => ({ ...f, message: e.target.value }))} rows={3} className="bg-background border-border text-foreground resize-none" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-muted-foreground text-xs uppercase font-mono">Texto de urgência</Label>
+                      <Textarea value={freeTrialFields.urgency} onChange={e => setFreeTrialFields(f => ({ ...f, urgency: e.target.value }))} rows={2} className="bg-background border-border text-foreground resize-none" />
+                    </div>
+                  </>
                 ) : (
                   <>
                     <div className="space-y-1.5">
@@ -527,9 +598,15 @@ export default function EmailCampaignPage() {
                       <p className="text-green-400 font-bold text-sm">{currentDiscount}% DE DESCONTO</p>
                     </div>
                   )}
+                  {templateType === 'free_trial' && (
+                    <div className="border border-green-500/30 rounded-lg py-3 px-4 bg-green-500/10">
+                      <p className="text-green-400 text-xs font-bold uppercase mb-1">Acesso Gratuito</p>
+                      <p className="text-white text-sm">30 minutos para explorar todo o conteudo</p>
+                    </div>
+                  )}
                   <p className="text-slate-500 text-xs">Assunto: <span className="text-slate-400">{currentSubject || '—'}</span></p>
                   <div className="inline-block bg-red-600 text-white rounded-lg px-5 py-2 text-sm font-bold">
-                    {templateType === 'custom' ? 'Acessar OneMed' : 'Usar Cupom e Garantir Acesso'}
+                    {templateType === 'free_trial' ? 'Quero Testar Gratis' : templateType === 'custom' ? 'Acessar OneMed' : 'Usar Cupom e Garantir Acesso'}
                   </div>
                 </div>
               </CardContent>
@@ -544,11 +621,12 @@ export default function EmailCampaignPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-4 gap-2">
                   {([
                     { id: 'trials',  label: 'Trials',       icon: Clock       },
                     { id: 'buyers',  label: 'Compradores',   icon: DollarSign  },
                     { id: 'both',    label: 'Ambos',         icon: Users       },
+                    { id: 'manual',  label: 'Manual',        icon: Mail        },
                   ] as { id: RecipientType; label: string; icon: any }[]).map(opt => (
                     <button
                       key={opt.id}
@@ -564,6 +642,18 @@ export default function EmailCampaignPage() {
                     </button>
                   ))}
                 </div>
+                {recipientType === 'manual' && (
+                  <div className="space-y-1.5">
+                    <Label className="text-muted-foreground text-xs uppercase font-mono">Lista de emails (um por linha ou separados por vírgula)</Label>
+                    <Textarea
+                      value={manualEmails}
+                      onChange={e => setManualEmails(e.target.value)}
+                      placeholder={"email1@exemplo.com\nemail2@exemplo.com\nemail3@exemplo.com"}
+                      rows={6}
+                      className="bg-background border-border text-foreground resize-none font-mono text-xs"
+                    />
+                  </div>
+                )}
                 <div className="flex items-center justify-between px-4 py-3 bg-background rounded-lg border border-border">
                   {loadingRecipients ? (
                     <span className="text-muted-foreground text-sm flex items-center gap-2">
@@ -576,7 +666,7 @@ export default function EmailCampaignPage() {
                     </>
                   )}
                 </div>
-                {recipients.length > 0 && (
+                {recipients.length > 0 && recipientType !== 'manual' && (
                   <div className="max-h-20 overflow-y-auto space-y-1 pr-1">
                     {recipients.slice(0, 4).map(e => (
                       <p key={e} className="text-xs text-muted-foreground truncate px-1">{e}</p>

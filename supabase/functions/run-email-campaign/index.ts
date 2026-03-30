@@ -133,6 +133,45 @@ function buildFollowupHtml(email: string, cfg: FollowupData): string {
   return getBaseTemplate(content, `${cfg.subjectText} - ${SITE_NAME}`)
 }
 
+interface FreeTrialData {
+  subjectText: string
+  message: string
+  urgency: string
+}
+
+function buildFreeTrialHtml(email: string, cfg: FreeTrialData): string {
+  const content = `
+    <h1 style="color: white; font-size: 28px; margin: 0 0 20px; text-align: center;">${cfg.subjectText}</h1>
+    <p style="color: #94A3B8; font-size: 16px; line-height: 1.6; margin: 0 0 20px;">Ola!</p>
+    <p style="color: #94A3B8; font-size: 16px; line-height: 1.6; margin: 0 0 20px;">${cfg.message}</p>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background: linear-gradient(135deg, rgba(34,197,94,0.15) 0%, rgba(21,128,61,0.15) 100%); border-radius: 12px; border: 1px solid rgba(34,197,94,0.3); margin: 20px 0;">
+      <tr><td style="padding: 24px; text-align: center;">
+        <p style="color: #22C55E; font-size: 14px; font-weight: bold; margin: 0 0 8px; text-transform: uppercase;">Acesso Gratuito</p>
+        <p style="color: white; font-size: 24px; font-weight: bold; margin: 0 0 8px;">30 minutos</p>
+        <p style="color: #94A3B8; font-size: 14px; margin: 0;">para explorar todo o conteudo sem compromisso</p>
+      </td></tr>
+    </table>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background: linear-gradient(135deg, rgba(239,68,68,0.1) 0%, rgba(153,27,27,0.1) 100%); border-radius: 12px; border: 1px solid rgba(239,68,68,0.3); margin: 20px 0;">
+      <tr><td style="padding: 24px; text-align: center;"><p style="color: white; font-size: 18px; font-weight: bold; margin: 0;">${cfg.urgency}</p></td></tr>
+    </table>
+    <h2 style="color: white; font-size: 20px; margin: 30px 0 15px;">O que voce vai encontrar:</h2>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+      <tr><td style="padding: 10px 0;"><span style="color: #EF4444;">•</span><span style="color: #CBD5E1; font-size: 15px; margin-left: 10px;">+530 cursos de medicina</span></td></tr>
+      <tr><td style="padding: 10px 0;"><span style="color: #EF4444;">•</span><span style="color: #CBD5E1; font-size: 15px; margin-left: 10px;">+9.000 livros medicos atualizados</span></td></tr>
+      <tr><td style="padding: 10px 0;"><span style="color: #EF4444;">•</span><span style="color: #CBD5E1; font-size: 15px; margin-left: 10px;">Material completo para Residencia e Revalida</span></td></tr>
+    </table>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin: 30px 0;">
+      <tr><td align="center" style="padding: 10px 0 20px;">
+        <a href="${SITE_URL}" style="display: inline-block; background: linear-gradient(135deg, #DC2626 0%, #991B1B 100%); color: white; text-decoration: none; padding: 18px 48px; border-radius: 8px; font-size: 18px; font-weight: bold;">
+          Quero Testar Gratis
+        </a>
+      </td></tr>
+    </table>
+    <p style="color: #64748B; font-size: 12px; text-align: center; margin: 10px 0 0;">Clique no botao acima para acessar o teste gratuito de 30 minutos</p>
+    <p style="color: #475569; font-size: 12px; text-align: center; margin: 16px 0 0;">Este email foi enviado para <strong style="color: #94A3B8;">${email}</strong>.</p>`
+  return getBaseTemplate(content, `${cfg.subjectText} - ${SITE_NAME}`)
+}
+
 function buildCustomHtml(body: string, subject: string): string {
   const paragraphs = body
     .split('\n\n')
@@ -214,6 +253,8 @@ serve(async (req) => {
         let html: string
         if (campaign.template_type === 'followup') {
           html = buildFollowupHtml(email, campaign.template_data as FollowupData)
+        } else if (campaign.template_type === 'free_trial') {
+          html = buildFreeTrialHtml(email, campaign.template_data as FreeTrialData)
         } else {
           html = buildCustomHtml(campaign.template_data?.body || '', campaign.subject)
         }
