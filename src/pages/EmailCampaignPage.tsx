@@ -279,16 +279,35 @@ export default function EmailCampaignPage() {
     const subject = getSubject();
     const { templateType: tType, templateData } = getTemplatePayload();
 
+    // Pega o JWT do usuário logado para enviar na Authorization
+    const { data: { session } } = await supabase.auth.getSession();
+    const jwt = session?.access_token;
+    if (!jwt) {
+      toast.error('Sessão expirada. Faça login novamente.');
+      setSending(false);
+      setDone(true);
+      return;
+    }
+
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+    const fnUrl = `${supabaseUrl}/functions/v1/send-custom-email`;
+
     for (let i = 0; i < recipients.length; i++) {
       if (shouldStopRef.current) break;
       const email = recipients[i];
       setProgress(p => ({ ...p, current: i + 1 }));
 
       try {
-        const { error } = await supabase.functions.invoke('send-custom-email', {
-          body: { to: email, subject, templateType: tType, templateData },
+        const res = await fetch(fnUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${jwt}`,
+          },
+          body: JSON.stringify({ to: email, subject, templateType: tType, templateData }),
         });
-        if (error) throw new Error(error.message || 'Erro desconhecido');
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
         sent++;
         setProgress(p => ({ ...p, sent: p.sent + 1 }));
         setLog(l => [...l, { email, status: 'success' }]);

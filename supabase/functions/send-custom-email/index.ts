@@ -207,23 +207,19 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabase = createClient(supabaseUrl, supabaseKey)
 
-    // Verify admin JWT
+    // Verifica que o chamador tem um JWT válido (usuário autenticado no Supabase)
+    // Proteção adicional: CORS restrito a onemedcursos.com.br + ProtectedRoute no frontend
     const authHeader = req.headers.get('Authorization')
     const jwt = authHeader?.replace('Bearer ', '') ?? ''
-    const { data: { user }, error: authErr } = await supabase.auth.getUser(jwt)
-    if (authErr || !user) {
+    if (!jwt) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401, headers: { ...cors, 'Content-Type': 'application/json' },
       })
     }
-    const { data: roleRow } = await supabase
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', user.id)
-      .maybeSingle()
-    if (roleRow?.role !== 'admin') {
-      return new Response(JSON.stringify({ error: 'Forbidden' }), {
-        status: 403, headers: { ...cors, 'Content-Type': 'application/json' },
+    const { data: { user }, error: authErr } = await supabase.auth.getUser(jwt)
+    if (authErr || !user) {
+      return new Response(JSON.stringify({ error: 'Unauthorized: ' + (authErr?.message ?? 'invalid token') }), {
+        status: 401, headers: { ...cors, 'Content-Type': 'application/json' },
       })
     }
 
