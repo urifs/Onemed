@@ -13,7 +13,8 @@ import {
   Tag,
   Database,
   AlertTriangle,
-  Stethoscope
+  Stethoscope,
+  Mail,
 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -27,6 +28,7 @@ const navItems = [
   { path: '/admin/trials', label: 'Usuários Trial', icon: Users },
   { path: '/admin/coupons', label: 'Cupons', icon: Tag },
   { path: '/admin/drive', label: 'Google Drive', icon: FolderOpen },
+  { path: '/admin/email-campaign', label: 'Campanha Email', icon: Mail },
   { path: '/admin/database', label: 'Database', icon: Database },
 ];
 
