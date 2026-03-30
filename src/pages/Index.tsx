@@ -85,7 +85,18 @@ export default function Index() {
         },
       });
 
-      if (error) throw error;
+      if (error) {
+        // Extract actual error message from edge function response
+        let serverMsg: string | undefined;
+        try {
+          const ctx = (error as any).context;
+          if (ctx && typeof ctx.json === 'function') {
+            const body = await ctx.json();
+            serverMsg = body?.error;
+          }
+        } catch {}
+        throw new Error(serverMsg || error.message || 'Erro ao solicitar acesso.');
+      }
       if (data?.error) throw new Error(data.error);
 
       if (data?.alreadyActive) {
