@@ -48,33 +48,29 @@ export default function TrialUsersPage() {
     setSyncing(true);
     try {
       const [{ data: trialsData }, { data: buyersData }] = await Promise.all([
-        supabase.from('accesses').select('*').eq('access_type', 'trial').order('created_at', { ascending: false }),
+        supabase.from('accesses').select('id, email').eq('access_type', 'trial'),
         supabase.from('buyers').select('email').eq('status', 'approved'),
       ]);
       const buyerEmails = new Set((buyersData || []).map((b: any) => b.email.toLowerCase()));
-      const all = (trialsData || []);
-      const filtered_out = all.filter(t => buyerEmails.has(t.email.toLowerCase()));
-      const remaining = all.filter(t => !buyerEmails.has(t.email.toLowerCase()));
-      setTrials(remaining);
-      const todayISO = todayStartISO();
-      const today = remaining.filter(t => t.created_at >= todayISO);
-      setStats({
-        total: today.length,
-        active: today.filter(t => t.status === 'active').length,
-        expired: today.filter(t => t.status === 'expired').length,
-        withWhatsapp: today.filter(t => t.whatsapp).length,
-      });
-      if (filtered_out.length > 0) {
-        toast.success(`${filtered_out.length} trial(s) removido(s) — já compraram`);
-      } else {
+      const toDelete = (trialsData || []).filter((t: any) => buyerEmails.has(t.email.toLowerCase()));
+
+      if (toDelete.length === 0) {
         toast.success('Lista já sincronizada, nenhum comprador encontrado nos trials');
+        return;
       }
-    } catch {
-      toast.error('Erro ao sincronizar');
+
+      const ids = toDelete.map((t: any) => t.id);
+      const { error } = await supabase.from('accesses').delete().in('id', ids);
+      if (error) throw error;
+
+      toast.success(`${toDelete.length} trial(s) excluído(s) permanentemente — já compraram`);
+      fetchData();
+    } catch (err: any) {
+      toast.error('Erro ao sincronizar: ' + (err?.message || 'desconhecido'));
     } finally {
       setSyncing(false);
     }
-  }, []);
+  }, [fetchData]);
 
   useEffect(() => {
     let result = trials;
