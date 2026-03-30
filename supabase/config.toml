@@ -1,1 +1,25 @@
 project_id = "jrrybiohwqabsdurqudc"
+
+[functions.send-custom-email]
+verify_jwt = false
+
+[functions.run-email-campaign]
+verify_jwt = false
+
+[functions.mp-webhook]
+verify_jwt = false
+
+[functions.send-access-email]
+verify_jwt = false
+
+[functions.send-followup-emails]
+verify_jwt = false
+
+[functions.drive-revoke-access]
+verify_jwt = false
+
+[functions.drive-oauth-callback]
+verify_jwt = false
+
+[functions.drive-share-folder]
+verify_jwt = false
