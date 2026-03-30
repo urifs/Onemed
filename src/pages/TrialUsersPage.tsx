@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { formatDateTimeSP, todayStartISO } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Users, Phone, Mail, Clock, Search, Filter, RefreshCw, MessageCircle } from 'lucide-react';
+import { Users, Phone, Mail, Clock, Search, Filter, RefreshCw, MessageCircle, UserCheck } from 'lucide-react';
 
 export default function TrialUsersPage() {
   const { session } = useAuth();
@@ -16,6 +16,7 @@ export default function TrialUsersPage() {
   const [filtered, setFiltered] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
 
@@ -43,6 +44,38 @@ export default function TrialUsersPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  const syncPurchased = useCallback(async () => {
+    setSyncing(true);
+    try {
+      const [{ data: trialsData }, { data: buyersData }] = await Promise.all([
+        supabase.from('accesses').select('*').eq('access_type', 'trial').order('created_at', { ascending: false }),
+        supabase.from('buyers').select('email').eq('status', 'approved'),
+      ]);
+      const buyerEmails = new Set((buyersData || []).map((b: any) => b.email.toLowerCase()));
+      const all = (trialsData || []);
+      const filtered_out = all.filter(t => buyerEmails.has(t.email.toLowerCase()));
+      const remaining = all.filter(t => !buyerEmails.has(t.email.toLowerCase()));
+      setTrials(remaining);
+      const todayISO = todayStartISO();
+      const today = remaining.filter(t => t.created_at >= todayISO);
+      setStats({
+        total: today.length,
+        active: today.filter(t => t.status === 'active').length,
+        expired: today.filter(t => t.status === 'expired').length,
+        withWhatsapp: today.filter(t => t.whatsapp).length,
+      });
+      if (filtered_out.length > 0) {
+        toast.success(`${filtered_out.length} trial(s) removido(s) — já compraram`);
+      } else {
+        toast.success('Lista já sincronizada, nenhum comprador encontrado nos trials');
+      }
+    } catch {
+      toast.error('Erro ao sincronizar');
+    } finally {
+      setSyncing(false);
+    }
+  }, []);
+
   useEffect(() => {
     let result = trials;
     if (search) result = result.filter(t => t.email.includes(search) || (t.whatsapp || '').includes(search));
@@ -68,9 +101,21 @@ export default function TrialUsersPage() {
             <h1 className="font-secondary text-3xl font-bold text-foreground">Usuários Trial</h1>
             <p className="text-muted-foreground mt-1">Usuários que utilizaram o acesso de teste</p>
           </div>
-          <Button variant="ghost" size="icon" onClick={fetchData} className="text-muted-foreground hover:text-foreground">
-            <RefreshCw className="w-4 h-4" />
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={syncPurchased}
+              disabled={syncing}
+              className="flex items-center gap-2 border-border text-foreground hover:bg-secondary"
+            >
+              <UserCheck className={`w-4 h-4 ${syncing ? 'animate-pulse' : ''}`} />
+              {syncing ? 'Sincronizando...' : 'Sincronizar'}
+            </Button>
+            <Button variant="ghost" size="icon" onClick={fetchData} className="text-muted-foreground hover:text-foreground">
+              <RefreshCw className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
 
         {/* Stats */}
