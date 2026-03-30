@@ -16,47 +16,6 @@ function getCorsHeaders(req: Request) {
 // ─── EMAIL VALIDATION ─────────────────────────────────────────────────────────
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
 
-// ─── RATE LIMITING ────────────────────────────────────────────────────────────
-// 5 tentativas por IP a cada 15 minutos
-async function checkRateLimit(
-  supabase: ReturnType<typeof createClient>,
-  identifier: string,
-  action: string,
-  maxAttempts: number,
-  windowMinutes: number
-): Promise<{ allowed: boolean; retryAfterSeconds?: number }> {
-  const now = new Date()
-  const windowMs = windowMinutes * 60 * 1000
-
-  const { data: existing } = await supabase
-    .from('rate_limits')
-    .select('attempts, window_start')
-    .eq('identifier', identifier)
-    .eq('action', action)
-    .maybeSingle()
-
-  if (!existing || (now.getTime() - new Date(existing.window_start).getTime()) > windowMs) {
-    // Nova janela ou janela expirada — zerar contador
-    await supabase.from('rate_limits').upsert(
-      { identifier, action, attempts: 1, window_start: now.toISOString() },
-      { onConflict: 'identifier,action' }
-    )
-    return { allowed: true }
-  }
-
-  if (existing.attempts >= maxAttempts) {
-    const windowExpiry = new Date(new Date(existing.window_start).getTime() + windowMs)
-    const retryAfterSeconds = Math.ceil((windowExpiry.getTime() - now.getTime()) / 1000)
-    return { allowed: false, retryAfterSeconds }
-  }
-
-  await supabase.from('rate_limits')
-    .update({ attempts: existing.attempts + 1 })
-    .eq('identifier', identifier)
-    .eq('action', action)
-
-  return { allowed: true }
-}
 
 const TRIAL_DURATION_MINUTES = 30
 
@@ -84,31 +43,6 @@ serve(async (req) => {
     }
 
     const normalizedEmail = email.toLowerCase().trim()
-
-    // ── Rate limiting por IP (degradado graciosamente se tabela não existir) ──
-    const clientIp = (req.headers.get('x-forwarded-for') || '').split(',')[0].trim()
-      || req.headers.get('x-real-ip')
-      || 'unknown'
-
-    try {
-      const rl = await checkRateLimit(supabase, clientIp, 'create_trial', 5, 15)
-      if (!rl.allowed) {
-        return new Response(JSON.stringify({
-          error: 'Muitas tentativas. Tente novamente em alguns minutos.',
-          retryAfterSeconds: rl.retryAfterSeconds,
-        }), {
-          status: 429,
-          headers: {
-            ...getCorsHeaders(req),
-            'Content-Type': 'application/json',
-            'Retry-After': String(rl.retryAfterSeconds ?? 60),
-          }
-        })
-      }
-    } catch (rlErr: any) {
-      console.warn('Rate limit check failed (migration pendente?):', rlErr.message)
-      // Continua sem rate limit — não bloqueia o fluxo principal
-    }
 
     // Block if email already purchased
     const { data: buyer } = await supabase
