@@ -85,16 +85,12 @@ serve(async (req) => {
 
     const normalizedEmail = email.toLowerCase().trim()
 
-    // ── Rate limiting por IP (degradado graciosamente se tabela não existir) ──
-    const clientIp = (req.headers.get('x-forwarded-for') || '').split(',')[0].trim()
-      || req.headers.get('x-real-ip')
-      || 'unknown'
-
+    // ── Rate limiting por email (degradado graciosamente se tabela não existir) ──
     try {
-      const rl = await checkRateLimit(supabase, clientIp, 'create_trial', 5, 15)
+      const rl = await checkRateLimit(supabase, normalizedEmail, 'create_trial', 5, 15)
       if (!rl.allowed) {
         return new Response(JSON.stringify({
-          error: 'Muitas tentativas. Tente novamente em alguns minutos.',
+          error: 'Muitas tentativas com este email. Tente novamente em alguns minutos.',
           retryAfterSeconds: rl.retryAfterSeconds,
         }), {
           status: 429,
