@@ -147,7 +147,7 @@ export default function EmailCampaignPage() {
     setLoadingRecipients(true);
 
     // Timeout de 12s por query para evitar loading infinito
-    const withTimeout = <T>(p: PromiseLike<T>): Promise<T> =>
+    const withTimeout = <T,>(p: PromiseLike<T>): Promise<T> =>
       Promise.race([
         Promise.resolve(p),
         new Promise<T>((_, reject) =>
