@@ -7,15 +7,34 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { formatDateTimeSP } from '@/lib/utils';
 import {
   Mail, Users, DollarSign, CheckCircle2, XCircle,
-  Loader2, Send, Clock, StopCircle,
+  Loader2, Send, Clock, StopCircle, CalendarClock,
+  RefreshCw, Ban, Zap,
 } from 'lucide-react';
 
-// ─── Template presets ────────────────────────────────────────────────────────
+// ─── Timezone SP ──────────────────────────────────────────────────────────────
+// Brasil não tem horário de verão desde 2019: SP é sempre UTC-3
+
+/** Retorna "YYYY-MM-DDTHH:MM" no horário de São Paulo para usar em datetime-local */
+function getSPDatetimeLocal(): string {
+  return new Date()
+    .toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' })
+    .slice(0, 16)
+    .replace(' ', 'T');
+}
+
+/** Converte string "YYYY-MM-DDTHH:MM" (horário SP/UTC-3) para ISO UTC */
+function spLocalToUTC(localStr: string): string {
+  return new Date(`${localStr}:00-03:00`).toISOString();
+}
+
+// ─── Template presets ─────────────────────────────────────────────────────────
 
 type TemplateType = 'followup_1d' | 'followup_7d' | 'followup_30d' | 'custom';
 type RecipientType = 'trials' | 'buyers' | 'both';
+type SendMode = 'now' | 'scheduled';
 
 interface FollowupFields {
   subject: string;
@@ -67,21 +86,25 @@ const PRESETS: Record<Exclude<TemplateType, 'custom'>, FollowupFields> = {
 };
 
 const TEMPLATE_OPTIONS: { id: TemplateType; label: string; sublabel: string }[] = [
-  { id: 'followup_1d', label: 'Acompanhamento 1 dia', sublabel: 'Cupom 10% · ONEMED10' },
-  { id: 'followup_7d', label: 'Acompanhamento 7 dias', sublabel: 'Cupom 20% · ONEMED20' },
-  { id: 'followup_30d', label: 'Acompanhamento 30 dias', sublabel: 'Cupom 30% · ONEMED30' },
-  { id: 'custom', label: 'Email personalizado', sublabel: 'Escreva do zero' },
+  { id: 'followup_1d',  label: 'Acompanhamento 1 dia',    sublabel: 'Cupom 10% · ONEMED10' },
+  { id: 'followup_7d',  label: 'Acompanhamento 7 dias',   sublabel: 'Cupom 20% · ONEMED20' },
+  { id: 'followup_30d', label: 'Acompanhamento 30 dias',  sublabel: 'Cupom 30% · ONEMED30' },
+  { id: 'custom',       label: 'Email personalizado',      sublabel: 'Escreva do zero' },
 ];
 
-// ─── Log entry ───────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-interface LogEntry {
-  email: string;
-  status: 'pending' | 'success' | 'error';
-  error?: string;
-}
+interface LogEntry { email: string; status: 'success' | 'error'; error?: string }
 
-// ─── Component ───────────────────────────────────────────────────────────────
+const STATUS_LABELS: Record<string, { label: string; cls: string }> = {
+  scheduled:  { label: 'Agendado',   cls: 'text-yellow-400 bg-yellow-400/10 border-yellow-400/30' },
+  running:    { label: 'Enviando',   cls: 'text-blue-400 bg-blue-400/10 border-blue-400/30' },
+  completed:  { label: 'Concluído',  cls: 'text-green-400 bg-green-400/10 border-green-400/30' },
+  failed:     { label: 'Falhou',     cls: 'text-red-400 bg-red-400/10 border-red-400/30' },
+  cancelled:  { label: 'Cancelado',  cls: 'text-muted-foreground bg-secondary border-border' },
+};
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export default function EmailCampaignPage() {
   // Template
@@ -94,7 +117,16 @@ export default function EmailCampaignPage() {
   const [recipients, setRecipients] = useState<string[]>([]);
   const [loadingRecipients, setLoadingRecipients] = useState(false);
 
-  // Sending
+  // Send mode
+  const [sendMode, setSendMode] = useState<SendMode>('now');
+  const [scheduledAt, setScheduledAt] = useState<string>(() => {
+    // Default: 10 minutos à frente no horário SP
+    const sp = new Date();
+    sp.setMinutes(sp.getMinutes() + 10);
+    return sp.toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }).slice(0, 16).replace(' ', 'T');
+  });
+
+  // Sending now
   const [sending, setSending] = useState(false);
   const [progress, setProgress] = useState({ total: 0, sent: 0, failed: 0, current: 0 });
   const [log, setLog] = useState<LogEntry[]>([]);
@@ -102,24 +134,25 @@ export default function EmailCampaignPage() {
   const shouldStopRef = useRef(false);
   const logEndRef = useRef<HTMLDivElement>(null);
 
-  // ── Load recipients ────────────────────────────────────────────────────────
+  // Scheduled campaigns list
+  const [campaigns, setCampaigns] = useState<any[]>([]);
+  const [loadingCampaigns, setLoadingCampaigns] = useState(false);
+
+  // ── Fetch recipients ────────────────────────────────────────────────────────
 
   const fetchRecipients = useCallback(async (type: RecipientType) => {
     setLoadingRecipients(true);
     try {
-      const allEmails: string[] = [];
-
+      const all: string[] = [];
       if (type === 'trials' || type === 'both') {
         const { data } = await supabase.from('accesses').select('email').eq('access_type', 'trial');
-        (data || []).forEach(r => allEmails.push(r.email.toLowerCase()));
+        (data || []).forEach(r => all.push(r.email.toLowerCase()));
       }
-
       if (type === 'buyers' || type === 'both') {
         const { data } = await supabase.from('buyers').select('email').eq('status', 'approved');
-        (data || []).forEach(r => allEmails.push(r.email.toLowerCase()));
+        (data || []).forEach(r => all.push(r.email.toLowerCase()));
       }
-
-      setRecipients([...new Set(allEmails)]);
+      setRecipients([...new Set(all)]);
     } catch {
       toast.error('Erro ao carregar destinatários');
     } finally {
@@ -129,85 +162,101 @@ export default function EmailCampaignPage() {
 
   useEffect(() => { fetchRecipients(recipientType); }, [recipientType, fetchRecipients]);
 
-  // ── Auto-scroll log ────────────────────────────────────────────────────────
+  // ── Fetch campaigns ─────────────────────────────────────────────────────────
+
+  const fetchCampaigns = useCallback(async () => {
+    setLoadingCampaigns(true);
+    try {
+      const { data } = await supabase
+        .from('email_campaigns')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(20);
+      setCampaigns(data || []);
+    } catch {
+      // silently fail
+    } finally {
+      setLoadingCampaigns(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchCampaigns(); }, [fetchCampaigns]);
+
+  // Auto-refresh campaigns that are scheduled/running
+  useEffect(() => {
+    const hasPending = campaigns.some(c => c.status === 'scheduled' || c.status === 'running');
+    if (!hasPending) return;
+    const interval = setInterval(fetchCampaigns, 15000);
+    return () => clearInterval(interval);
+  }, [campaigns, fetchCampaigns]);
+
+  // ── Auto-scroll log ─────────────────────────────────────────────────────────
 
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [log]);
 
-  // ── When template changes, reset fields to preset ─────────────────────────
+  // ── Template change ─────────────────────────────────────────────────────────
 
   const handleTemplateChange = (t: TemplateType) => {
     setTemplateType(t);
-    if (t !== 'custom') {
-      setFollowupFields({ ...PRESETS[t] });
-    }
+    if (t !== 'custom') setFollowupFields({ ...PRESETS[t] });
     setLog([]);
     setDone(false);
   };
 
-  // ── Build payload ──────────────────────────────────────────────────────────
+  // ── Build payload ────────────────────────────────────────────────────────────
 
-  const buildPayload = (to: string) => {
-    if (templateType === 'custom') {
-      return {
-        to,
-        subject: customFields.subject,
-        templateType: 'custom',
-        templateData: { body: customFields.body },
-      };
-    }
-    return {
-      to,
-      subject: followupFields.subject,
-      templateType: 'followup',
-      templateData: {
-        subjectText: followupFields.subjectText,
-        message: followupFields.message,
-        couponCode: followupFields.couponCode,
-        discount: followupFields.discount,
-        urgency: followupFields.urgency,
-        annualPrice: followupFields.annualPrice,
-        lifetimePrice: followupFields.lifetimePrice,
-      },
-    };
+  const getSubject = () =>
+    templateType === 'custom' ? customFields.subject : followupFields.subject;
+
+  const getTemplatePayload = () =>
+    templateType === 'custom'
+      ? { templateType: 'custom', templateData: { body: customFields.body } }
+      : {
+          templateType: 'followup',
+          templateData: {
+            subjectText:  followupFields.subjectText,
+            message:      followupFields.message,
+            couponCode:   followupFields.couponCode,
+            discount:     followupFields.discount,
+            urgency:      followupFields.urgency,
+            annualPrice:  followupFields.annualPrice,
+            lifetimePrice: followupFields.lifetimePrice,
+          },
+        };
+
+  // ── Validate ────────────────────────────────────────────────────────────────
+
+  const validate = (): boolean => {
+    if (recipients.length === 0) { toast.error('Nenhum destinatário selecionado'); return false; }
+    if (!getSubject().trim()) { toast.error('Informe o assunto do email'); return false; }
+    if (templateType === 'custom' && !customFields.body.trim()) { toast.error('Escreva o corpo do email'); return false; }
+    return true;
   };
 
-  // ── Send campaign ──────────────────────────────────────────────────────────
+  // ── Send now ─────────────────────────────────────────────────────────────────
 
-  const startSending = async () => {
-    if (recipients.length === 0) {
-      toast.error('Nenhum destinatário selecionado');
-      return;
-    }
-    const subject = templateType === 'custom' ? customFields.subject : followupFields.subject;
-    if (!subject.trim()) {
-      toast.error('Informe o assunto do email');
-      return;
-    }
-    if (templateType === 'custom' && !customFields.body.trim()) {
-      toast.error('Escreva o corpo do email');
-      return;
-    }
-
+  const startSendingNow = async () => {
+    if (!validate()) return;
     shouldStopRef.current = false;
     setSending(true);
     setDone(false);
     setLog([]);
     setProgress({ total: recipients.length, sent: 0, failed: 0, current: 0 });
 
-    let sent = 0;
-    let failed = 0;
+    let sent = 0; let failed = 0;
+    const subject = getSubject();
+    const { templateType: tType, templateData } = getTemplatePayload();
 
     for (let i = 0; i < recipients.length; i++) {
       if (shouldStopRef.current) break;
-
       const email = recipients[i];
       setProgress(p => ({ ...p, current: i + 1 }));
 
       try {
         const { error } = await supabase.functions.invoke('send-custom-email', {
-          body: buildPayload(email),
+          body: { to: email, subject, templateType: tType, templateData },
         });
         if (error) throw new Error(error.message || 'Erro desconhecido');
         sent++;
@@ -219,10 +268,9 @@ export default function EmailCampaignPage() {
         setLog(l => [...l, { email, status: 'error', error: err.message }]);
       }
 
-      // Delay 1–5 seconds between sends (skip after last email)
       if (i < recipients.length - 1 && !shouldStopRef.current) {
-        const delay = 1000 + Math.floor(Math.random() * 4000);
-        await new Promise(resolve => setTimeout(resolve, delay));
+        const delay = 1000 + Math.floor(Math.random() * 4000); // 1–5s
+        await new Promise(r => setTimeout(r, delay));
       }
     }
 
@@ -235,33 +283,78 @@ export default function EmailCampaignPage() {
     }
   };
 
-  const stopSending = () => {
-    shouldStopRef.current = true;
+  // ── Schedule ─────────────────────────────────────────────────────────────────
+
+  const scheduleCampaign = async () => {
+    if (!validate()) return;
+
+    const scheduledUTC = spLocalToUTC(scheduledAt);
+    if (new Date(scheduledUTC) <= new Date()) {
+      toast.error('O horário agendado deve ser no futuro (horário de Brasília)');
+      return;
+    }
+
+    const subject = getSubject();
+    const { templateType: tType, templateData } = getTemplatePayload();
+
+    try {
+      const { error } = await supabase.from('email_campaigns').insert({
+        subject,
+        template_type: tType,
+        template_data: templateData,
+        recipient_type: recipientType,
+        recipient_emails: recipients,
+        scheduled_at: scheduledUTC,
+        total_count: recipients.length,
+      });
+      if (error) throw error;
+      toast.success(`Campanha agendada para ${formatDateTimeSP(scheduledUTC)} (Brasília)`);
+      fetchCampaigns();
+    } catch (err: any) {
+      toast.error('Erro ao agendar: ' + err.message);
+    }
   };
 
-  // ── Subject derived ────────────────────────────────────────────────────────
+  // ── Cancel campaign ──────────────────────────────────────────────────────────
 
-  const currentSubject = templateType === 'custom' ? customFields.subject : followupFields.subject;
-  const currentTitle = templateType === 'custom' ? customFields.subject : followupFields.subjectText;
-  const currentCoupon = templateType !== 'custom' ? followupFields.couponCode : null;
+  const cancelCampaign = async (id: string) => {
+    const { error } = await supabase
+      .from('email_campaigns')
+      .update({ status: 'cancelled' })
+      .eq('id', id)
+      .eq('status', 'scheduled');
+    if (error) { toast.error('Erro ao cancelar'); return; }
+    toast.success('Campanha cancelada');
+    fetchCampaigns();
+  };
+
+  // ── Derived ──────────────────────────────────────────────────────────────────
+
+  const currentSubject = getSubject();
+  const currentTitle   = templateType === 'custom' ? customFields.subject : followupFields.subjectText;
+  const currentCoupon  = templateType !== 'custom' ? followupFields.couponCode : null;
   const currentDiscount = templateType !== 'custom' ? followupFields.discount : null;
 
-  // ─── Render ────────────────────────────────────────────────────────────────
+  // ─── Render ───────────────────────────────────────────────────────────────────
 
   return (
     <AdminLayout>
       <div className="space-y-6">
+
         {/* Header */}
         <div>
           <h1 className="font-secondary text-3xl font-bold text-foreground">Campanha de Email</h1>
-          <p className="text-muted-foreground mt-1">Envie emails em massa para trials e compradores</p>
+          <p className="text-muted-foreground mt-1">
+            Envie ou agende disparos para trials e compradores · Horário: <span className="text-foreground">Brasília (UTC-3)</span>
+          </p>
         </div>
 
         <div className="grid lg:grid-cols-2 gap-6">
-          {/* ── LEFT COLUMN ─────────────────────────────────────────────────── */}
+
+          {/* ── LEFT ────────────────────────────────────────────────────────── */}
           <div className="space-y-6">
 
-            {/* Template Selection */}
+            {/* Template */}
             <Card className="bg-background-paper border-border">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base font-semibold text-foreground flex items-center gap-2">
@@ -287,7 +380,7 @@ export default function EmailCampaignPage() {
               </CardContent>
             </Card>
 
-            {/* Content Editing */}
+            {/* Content */}
             <Card className="bg-background-paper border-border">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base font-semibold text-foreground">Conteúdo</CardTitle>
@@ -309,88 +402,48 @@ export default function EmailCampaignPage() {
                       <Textarea
                         value={customFields.body}
                         onChange={e => setCustomFields(f => ({ ...f, body: e.target.value }))}
-                        placeholder="Escreva o texto do email. Use linhas em branco para separar parágrafos."
+                        placeholder="Escreva o texto do email. Separe parágrafos com uma linha em branco."
                         rows={10}
                         className="bg-background border-border text-foreground resize-none"
                       />
-                      <p className="text-xs text-muted-foreground">Separe parágrafos com uma linha em branco.</p>
                     </div>
                   </>
                 ) : (
                   <>
                     <div className="space-y-1.5">
                       <Label className="text-muted-foreground text-xs uppercase font-mono">Assunto</Label>
-                      <Input
-                        value={followupFields.subject}
-                        onChange={e => setFollowupFields(f => ({ ...f, subject: e.target.value }))}
-                        className="bg-background border-border text-foreground"
-                      />
+                      <Input value={followupFields.subject} onChange={e => setFollowupFields(f => ({ ...f, subject: e.target.value }))} className="bg-background border-border text-foreground" />
                     </div>
                     <div className="space-y-1.5">
                       <Label className="text-muted-foreground text-xs uppercase font-mono">Título (h1 do email)</Label>
-                      <Input
-                        value={followupFields.subjectText}
-                        onChange={e => setFollowupFields(f => ({ ...f, subjectText: e.target.value }))}
-                        className="bg-background border-border text-foreground"
-                      />
+                      <Input value={followupFields.subjectText} onChange={e => setFollowupFields(f => ({ ...f, subjectText: e.target.value }))} className="bg-background border-border text-foreground" />
                     </div>
                     <div className="space-y-1.5">
                       <Label className="text-muted-foreground text-xs uppercase font-mono">Mensagem introdutória</Label>
-                      <Textarea
-                        value={followupFields.message}
-                        onChange={e => setFollowupFields(f => ({ ...f, message: e.target.value }))}
-                        rows={3}
-                        className="bg-background border-border text-foreground resize-none"
-                      />
+                      <Textarea value={followupFields.message} onChange={e => setFollowupFields(f => ({ ...f, message: e.target.value }))} rows={3} className="bg-background border-border text-foreground resize-none" />
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
                         <Label className="text-muted-foreground text-xs uppercase font-mono">Código do Cupom</Label>
-                        <Input
-                          value={followupFields.couponCode}
-                          onChange={e => setFollowupFields(f => ({ ...f, couponCode: e.target.value.toUpperCase() }))}
-                          className="bg-background border-border text-foreground font-mono"
-                        />
+                        <Input value={followupFields.couponCode} onChange={e => setFollowupFields(f => ({ ...f, couponCode: e.target.value.toUpperCase() }))} className="bg-background border-border text-foreground font-mono" />
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-muted-foreground text-xs uppercase font-mono">Desconto (%)</Label>
-                        <Input
-                          type="number"
-                          min={1}
-                          max={99}
-                          value={followupFields.discount}
-                          onChange={e => setFollowupFields(f => ({ ...f, discount: Number(e.target.value) }))}
-                          className="bg-background border-border text-foreground"
-                        />
+                        <Input type="number" min={1} max={99} value={followupFields.discount} onChange={e => setFollowupFields(f => ({ ...f, discount: Number(e.target.value) }))} className="bg-background border-border text-foreground" />
                       </div>
                     </div>
                     <div className="space-y-1.5">
                       <Label className="text-muted-foreground text-xs uppercase font-mono">Texto de urgência</Label>
-                      <Textarea
-                        value={followupFields.urgency}
-                        onChange={e => setFollowupFields(f => ({ ...f, urgency: e.target.value }))}
-                        rows={2}
-                        className="bg-background border-border text-foreground resize-none"
-                      />
+                      <Textarea value={followupFields.urgency} onChange={e => setFollowupFields(f => ({ ...f, urgency: e.target.value }))} rows={2} className="bg-background border-border text-foreground resize-none" />
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
-                        <Label className="text-muted-foreground text-xs uppercase font-mono">Preço Anual</Label>
-                        <Input
-                          value={followupFields.annualPrice}
-                          onChange={e => setFollowupFields(f => ({ ...f, annualPrice: e.target.value }))}
-                          placeholder="R$ 179,10"
-                          className="bg-background border-border text-foreground"
-                        />
+                        <Label className="text-muted-foreground text-xs uppercase font-mono">Preço Anual c/ desconto</Label>
+                        <Input value={followupFields.annualPrice} onChange={e => setFollowupFields(f => ({ ...f, annualPrice: e.target.value }))} placeholder="R$ 179,10" className="bg-background border-border text-foreground" />
                       </div>
                       <div className="space-y-1.5">
-                        <Label className="text-muted-foreground text-xs uppercase font-mono">Preço Vitalício</Label>
-                        <Input
-                          value={followupFields.lifetimePrice}
-                          onChange={e => setFollowupFields(f => ({ ...f, lifetimePrice: e.target.value }))}
-                          placeholder="R$ 269,10"
-                          className="bg-background border-border text-foreground"
-                        />
+                        <Label className="text-muted-foreground text-xs uppercase font-mono">Preço Vitalício c/ desconto</Label>
+                        <Input value={followupFields.lifetimePrice} onChange={e => setFollowupFields(f => ({ ...f, lifetimePrice: e.target.value }))} placeholder="R$ 269,10" className="bg-background border-border text-foreground" />
                       </div>
                     </div>
                   </>
@@ -399,7 +452,7 @@ export default function EmailCampaignPage() {
             </Card>
           </div>
 
-          {/* ── RIGHT COLUMN ────────────────────────────────────────────────── */}
+          {/* ── RIGHT ───────────────────────────────────────────────────────── */}
           <div className="space-y-6">
 
             {/* Preview */}
@@ -409,18 +462,13 @@ export default function EmailCampaignPage() {
               </CardHeader>
               <CardContent>
                 <div className="bg-[#111111] rounded-lg border border-red-900/30 p-5 text-center space-y-3">
-                  {/* Logo mock */}
                   <div className="flex items-center justify-center gap-2 pb-3 border-b border-white/10">
                     <div className="w-7 h-7 bg-red-600 rounded-lg flex items-center justify-center text-white font-bold text-sm">+</div>
                     <span className="text-white font-bold">One<span className="text-red-500">Med</span></span>
                   </div>
-
-                  {/* Title */}
                   <p className="text-white font-bold text-lg leading-tight">
-                    {currentTitle || <span className="text-muted-foreground italic">Título do email</span>}
+                    {currentTitle || <span className="text-slate-500 italic text-sm">Título do email</span>}
                   </p>
-
-                  {/* Coupon box */}
                   {currentCoupon && (
                     <div className="border-2 border-dashed border-green-500/50 rounded-lg py-3 px-4 bg-green-500/10">
                       <p className="text-green-400 text-xs font-bold uppercase mb-1">Cupom Exclusivo</p>
@@ -428,13 +476,7 @@ export default function EmailCampaignPage() {
                       <p className="text-green-400 font-bold text-sm">{currentDiscount}% DE DESCONTO</p>
                     </div>
                   )}
-
-                  {/* Subject line */}
-                  <p className="text-slate-500 text-xs">
-                    Assunto: <span className="text-slate-400">{currentSubject || '—'}</span>
-                  </p>
-
-                  {/* CTA mock */}
+                  <p className="text-slate-500 text-xs">Assunto: <span className="text-slate-400">{currentSubject || '—'}</span></p>
                   <div className="inline-block bg-red-600 text-white rounded-lg px-5 py-2 text-sm font-bold">
                     {templateType === 'custom' ? 'Acessar OneMed' : 'Usar Cupom e Garantir Acesso'}
                   </div>
@@ -453,9 +495,9 @@ export default function EmailCampaignPage() {
               <CardContent className="space-y-3">
                 <div className="grid grid-cols-3 gap-2">
                   {([
-                    { id: 'trials', label: 'Trials', icon: Clock },
-                    { id: 'buyers', label: 'Compradores', icon: DollarSign },
-                    { id: 'both', label: 'Ambos', icon: Users },
+                    { id: 'trials',  label: 'Trials',       icon: Clock       },
+                    { id: 'buyers',  label: 'Compradores',   icon: DollarSign  },
+                    { id: 'both',    label: 'Ambos',         icon: Users       },
                   ] as { id: RecipientType; label: string; icon: any }[]).map(opt => (
                     <button
                       key={opt.id}
@@ -471,7 +513,6 @@ export default function EmailCampaignPage() {
                     </button>
                   ))}
                 </div>
-
                 <div className="flex items-center justify-between px-4 py-3 bg-background rounded-lg border border-border">
                   {loadingRecipients ? (
                     <span className="text-muted-foreground text-sm flex items-center gap-2">
@@ -484,21 +525,20 @@ export default function EmailCampaignPage() {
                     </>
                   )}
                 </div>
-
                 {recipients.length > 0 && (
-                  <div className="max-h-28 overflow-y-auto space-y-1 pr-1">
-                    {recipients.slice(0, 5).map(e => (
+                  <div className="max-h-20 overflow-y-auto space-y-1 pr-1">
+                    {recipients.slice(0, 4).map(e => (
                       <p key={e} className="text-xs text-muted-foreground truncate px-1">{e}</p>
                     ))}
-                    {recipients.length > 5 && (
-                      <p className="text-xs text-muted-foreground px-1">... e mais {recipients.length - 5}</p>
+                    {recipients.length > 4 && (
+                      <p className="text-xs text-muted-foreground px-1">... e mais {recipients.length - 4}</p>
                     )}
                   </div>
                 )}
               </CardContent>
             </Card>
 
-            {/* Send */}
+            {/* Send / Schedule */}
             <Card className="bg-background-paper border-border">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base font-semibold text-foreground flex items-center gap-2">
@@ -507,13 +547,61 @@ export default function EmailCampaignPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
+
+                {/* Mode toggle */}
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setSendMode('now')}
+                    className={`flex items-center justify-center gap-2 py-2.5 rounded-lg border text-sm font-medium transition-colors ${
+                      sendMode === 'now'
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-border text-muted-foreground hover:bg-secondary'
+                    }`}
+                  >
+                    <Zap className="w-4 h-4" />
+                    Enviar agora
+                  </button>
+                  <button
+                    onClick={() => setSendMode('scheduled')}
+                    className={`flex items-center justify-center gap-2 py-2.5 rounded-lg border text-sm font-medium transition-colors ${
+                      sendMode === 'scheduled'
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-border text-muted-foreground hover:bg-secondary'
+                    }`}
+                  >
+                    <CalendarClock className="w-4 h-4" />
+                    Agendar
+                  </button>
+                </div>
+
+                {/* Scheduled datetime picker */}
+                {sendMode === 'scheduled' && (
+                  <div className="space-y-1.5">
+                    <Label className="text-muted-foreground text-xs uppercase font-mono">
+                      Data e hora · Horário de Brasília (UTC-3)
+                    </Label>
+                    <Input
+                      type="datetime-local"
+                      value={scheduledAt}
+                      min={getSPDatetimeLocal()}
+                      onChange={e => setScheduledAt(e.target.value)}
+                      className="bg-background border-border text-foreground"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      O sistema enviará automaticamente na hora marcada, mesmo com o painel fechado.
+                    </p>
+                  </div>
+                )}
+
                 {/* Delay note */}
                 <p className="text-xs text-muted-foreground">
-                  Delay aleatório de 1–5 segundos entre cada email para evitar bloqueio por spam.
+                  {sendMode === 'now'
+                    ? 'Delay aleatório de 1–5s entre cada email (anti-spam).'
+                    : 'Delay de 1s entre envios. Campanhas grandes processadas em lotes por minuto.'}
                 </p>
 
-                {/* Progress bar */}
-                {(sending || done) && progress.total > 0 && (
+                {/* Progress (send now only) */}
+                {sendMode === 'now' && (sending || done) && progress.total > 0 && (
                   <div className="space-y-2">
                     <div className="flex justify-between text-xs text-muted-foreground">
                       <span>{progress.current} / {progress.total}</span>
@@ -531,41 +619,36 @@ export default function EmailCampaignPage() {
                   </div>
                 )}
 
-                {/* Action buttons */}
-                <div className="flex gap-2">
-                  {!sending ? (
-                    <Button
-                      onClick={startSending}
-                      disabled={loadingRecipients || recipients.length === 0 || sending}
-                      className="flex-1"
-                    >
+                {/* Action button */}
+                {sendMode === 'now' ? (
+                  !sending ? (
+                    <Button onClick={startSendingNow} disabled={loadingRecipients || recipients.length === 0} className="w-full">
                       <Send className="w-4 h-4 mr-2" />
                       Enviar para {recipients.length} email{recipients.length !== 1 ? 's' : ''}
                     </Button>
                   ) : (
-                    <Button variant="destructive" onClick={stopSending} className="flex-1">
+                    <Button variant="destructive" onClick={() => { shouldStopRef.current = true; }} className="w-full">
                       <StopCircle className="w-4 h-4 mr-2" />
                       Interromper envio
                     </Button>
-                  )}
-                </div>
+                  )
+                ) : (
+                  <Button onClick={scheduleCampaign} disabled={loadingRecipients || recipients.length === 0} className="w-full">
+                    <CalendarClock className="w-4 h-4 mr-2" />
+                    Agendar {recipients.length} email{recipients.length !== 1 ? 's' : ''}
+                  </Button>
+                )}
 
                 {/* Send log */}
                 {log.length > 0 && (
-                  <div className="max-h-52 overflow-y-auto space-y-1 border border-border rounded-lg p-2 bg-background">
+                  <div className="max-h-48 overflow-y-auto space-y-1 border border-border rounded-lg p-2 bg-background">
                     {log.map((entry, i) => (
                       <div key={i} className="flex items-center gap-2 py-1 px-1">
-                        {entry.status === 'success' ? (
-                          <CheckCircle2 className="w-3.5 h-3.5 text-green-400 flex-shrink-0" />
-                        ) : (
-                          <XCircle className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
-                        )}
+                        {entry.status === 'success'
+                          ? <CheckCircle2 className="w-3.5 h-3.5 text-green-400 flex-shrink-0" />
+                          : <XCircle className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />}
                         <span className="text-xs text-foreground truncate flex-1">{entry.email}</span>
-                        {entry.error && (
-                          <span className="text-xs text-red-400 truncate max-w-24" title={entry.error}>
-                            {entry.error}
-                          </span>
-                        )}
+                        {entry.error && <span className="text-xs text-red-400 truncate max-w-28" title={entry.error}>{entry.error}</span>}
                       </div>
                     ))}
                     <div ref={logEndRef} />
@@ -574,7 +657,7 @@ export default function EmailCampaignPage() {
 
                 {done && !sending && (
                   <p className="text-xs text-center text-muted-foreground">
-                    Campanha finalizada — {progress.sent} enviados com sucesso, {progress.failed} com erro.
+                    Campanha finalizada — {progress.sent} enviados, {progress.failed} com erro.
                   </p>
                 )}
               </CardContent>
@@ -582,6 +665,83 @@ export default function EmailCampaignPage() {
 
           </div>
         </div>
+
+        {/* ── Campanhas agendadas ─────────────────────────────────────────────── */}
+        <Card className="bg-background-paper border-border">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base font-semibold text-foreground flex items-center gap-2">
+                <CalendarClock className="w-4 h-4 text-primary" />
+                Campanhas Agendadas
+              </CardTitle>
+              <Button variant="ghost" size="icon" onClick={fetchCampaigns} disabled={loadingCampaigns} className="text-muted-foreground hover:text-foreground">
+                <RefreshCw className={`w-4 h-4 ${loadingCampaigns ? 'animate-spin' : ''}`} />
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-border">
+                    {['Assunto', 'Destinatários', 'Agendado para (Brasília)', 'Progresso', 'Status', ''].map(h => (
+                      <th key={h} className="text-left px-4 py-3 text-xs font-mono uppercase text-muted-foreground whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {campaigns.map(c => {
+                    const st = STATUS_LABELS[c.status] || STATUS_LABELS.cancelled;
+                    const pct = c.total_count > 0 ? Math.round((c.processed_index / c.total_count) * 100) : 0;
+                    return (
+                      <tr key={c.id} className="border-b border-border/40 hover:bg-secondary/30 transition-colors">
+                        <td className="px-4 py-3 text-sm text-foreground max-w-48 truncate">{c.subject}</td>
+                        <td className="px-4 py-3 text-sm text-muted-foreground whitespace-nowrap">
+                          {c.total_count} {c.recipient_type === 'trials' ? 'trials' : c.recipient_type === 'buyers' ? 'compradores' : 'total'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-muted-foreground whitespace-nowrap">
+                          {formatDateTimeSP(c.scheduled_at)}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2 min-w-24">
+                            <div className="flex-1 h-1.5 bg-secondary rounded-full overflow-hidden">
+                              <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${pct}%` }} />
+                            </div>
+                            <span className="text-xs text-muted-foreground whitespace-nowrap">
+                              {c.sent_count}/{c.total_count}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${st.cls}`}>
+                            {st.label}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          {c.status === 'scheduled' && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => cancelCampaign(c.id)}
+                              className="text-muted-foreground hover:text-red-400 h-7 px-2"
+                            >
+                              <Ban className="w-3.5 h-3.5 mr-1" />
+                              Cancelar
+                            </Button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {campaigns.length === 0 && !loadingCampaigns && (
+                <p className="text-muted-foreground text-center py-10 text-sm">Nenhuma campanha encontrada</p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
       </div>
     </AdminLayout>
   );
