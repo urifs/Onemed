@@ -42,7 +42,14 @@ export default function Dashboard() {
           paid: accesses.filter(a => a.access_type !== 'trial').length,
         });
 
-        setRecentAccesses(recent.data || []);
+        // Deduplica por email, mantendo apenas o mais recente
+        const seen = new Set<string>();
+        const deduped = (recent.data || []).filter((a: any) => {
+          if (seen.has(a.email)) return false;
+          seen.add(a.email);
+          return true;
+        });
+        setRecentAccesses(deduped);
         setDriveConnected(drive.data?.connected || false);
         setVisitCount(visits.count || 0);
       } catch (err) {

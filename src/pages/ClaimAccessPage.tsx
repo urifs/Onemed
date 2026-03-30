@@ -33,8 +33,22 @@ export default function ClaimAccessPage() {
     if (!email) { toast.error('Informe seu email'); return; }
     setLoading(true);
     try {
-      await supabase.from('buyers').update({ email: email.toLowerCase(), access_granted: true }).eq('external_reference', externalReference!);
-      await supabase.from('accesses').insert({ email: email.toLowerCase(), access_type: purchaseInfo?.plan || 'lifetime', status: 'active' });
+      const normalizedEmail = email.toLowerCase();
+      await supabase.from('buyers').update({ email: normalizedEmail, access_granted: true }).eq('external_reference', externalReference!);
+
+      // Só insere em accesses se não existir acesso ativo para este email
+      const { data: existing } = await supabase
+        .from('accesses')
+        .select('id')
+        .eq('email', normalizedEmail)
+        .eq('status', 'active')
+        .neq('access_type', 'trial')
+        .limit(1);
+
+      if (!existing || existing.length === 0) {
+        await supabase.from('accesses').insert({ email: normalizedEmail, access_type: purchaseInfo?.plan || 'lifetime', status: 'active' });
+      }
+
       setRegistered(true);
       toast.success('Acesso liberado!');
     } catch (err: any) { toast.error(err.message); }

@@ -187,18 +187,30 @@ serve(async (req) => {
         .update({ access_granted: true })
         .eq('id', buyer.id)
 
-      // Insert into accesses table (service role bypasses RLS)
-      const { error: accessErr } = await supabase.from('accesses').insert({
-        email: buyer.email,
-        access_type: 'paid',
-        status: 'active',
-        whatsapp: buyer.whatsapp,
-      })
+      // Check if paid access already exists (prevents duplicates from race conditions)
+      const { data: existingAccess } = await supabase
+        .from('accesses')
+        .select('id')
+        .eq('email', buyer.email)
+        .eq('status', 'active')
+        .neq('access_type', 'trial')
+        .limit(1)
 
-      if (accessErr) {
-        console.error('Error inserting access:', accessErr.message)
+      if (existingAccess && existingAccess.length > 0) {
+        console.log('Active paid access already exists for:', buyer.email, '— skipping insert')
       } else {
-        console.log('Access granted for:', buyer.email)
+        const { error: accessErr } = await supabase.from('accesses').insert({
+          email: buyer.email,
+          access_type: 'paid',
+          status: 'active',
+          whatsapp: buyer.whatsapp,
+        })
+
+        if (accessErr) {
+          console.error('Error inserting access:', accessErr.message)
+        } else {
+          console.log('Access granted for:', buyer.email)
+        }
       }
 
       // Share Drive folder with the buyer's email
