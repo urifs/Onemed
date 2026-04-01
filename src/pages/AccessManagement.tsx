@@ -231,7 +231,11 @@ export default function AccessManagement() {
                     {filtered.map(access => (
                       <tr key={access.id} className="border-b border-border/40 hover:bg-secondary/30 transition-colors">
                         <td className="px-4 py-3 text-sm text-foreground">{access.email}</td>
-                        <td className="px-4 py-3 text-sm text-muted-foreground hidden md:table-cell">{access.whatsapp || '—'}</td>
+                        <td className="px-4 py-3 text-sm text-muted-foreground hidden md:table-cell">
+                          {access.whatsapp ? (
+                            <a href={`https://wa.me/${access.whatsapp.replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{access.whatsapp}</a>
+                          ) : '—'}
+                        </td>
                         <td className="px-4 py-3 text-sm text-muted-foreground capitalize">{access.access_type}</td>
                         <td className="px-4 py-3">{statusBadge(access.status)}</td>
                         <td className="px-4 py-3 text-sm hidden lg:table-cell">
