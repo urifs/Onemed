@@ -34,19 +34,33 @@ export default function ClaimAccessPage() {
     setLoading(true);
     try {
       const normalizedEmail = email.toLowerCase();
-      await supabase.from('buyers').update({ email: normalizedEmail, access_granted: true }).eq('external_reference', externalReference!);
 
-      // Só insere em accesses se não existir acesso ativo para este email
-      const { data: existing } = await supabase
-        .from('accesses')
-        .select('id')
-        .eq('email', normalizedEmail)
-        .eq('status', 'active')
-        .neq('access_type', 'trial')
-        .limit(1);
+      // Atomically mark access_granted = true ONLY if it was false
+      // This prevents duplicates when webhook already processed the payment
+      const { data: grantedRows } = await supabase
+        .from('buyers')
+        .update({ email: normalizedEmail, access_granted: true })
+        .eq('external_reference', externalReference!)
+        .eq('access_granted', false)
+        .select('id');
 
-      if (!existing || existing.length === 0) {
-        await supabase.from('accesses').insert({ email: normalizedEmail, access_type: purchaseInfo?.plan || 'lifetime', status: 'active' });
+      // Only insert access if we were the ones to flip access_granted
+      if (grantedRows && grantedRows.length > 0) {
+        // Check if paid access already exists (extra safety)
+        const { data: existing } = await supabase
+          .from('accesses')
+          .select('id')
+          .eq('email', normalizedEmail)
+          .eq('status', 'active')
+          .neq('access_type', 'trial')
+          .limit(1);
+
+        if (!existing || existing.length === 0) {
+          await supabase.from('accesses').insert({ email: normalizedEmail, access_type: purchaseInfo?.plan || 'lifetime', status: 'active' });
+        }
+      } else {
+        // access_granted was already true — just update the email if needed
+        await supabase.from('buyers').update({ email: normalizedEmail }).eq('external_reference', externalReference!);
       }
 
       setRegistered(true);

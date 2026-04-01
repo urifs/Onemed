@@ -175,19 +175,21 @@ serve(async (req) => {
 
     // If approved, grant access and send email
     if (status === 'approved') {
-      // Skip if already granted to avoid duplicates
-      if (buyer.access_granted) {
-        console.log('Access already granted for:', buyer.email, '— skipping duplicate')
-        return new Response('ok', { headers: getCorsHeaders(req) })
-      }
-
-      // Mark access as granted
-      await supabase
+      // Atomically mark access_granted = true ONLY if it was false
+      // This prevents race conditions when MP sends duplicate webhooks
+      const { data: grantedRows } = await supabase
         .from('buyers')
         .update({ access_granted: true })
         .eq('id', buyer.id)
+        .eq('access_granted', false)
+        .select('id')
 
-      // Check if paid access already exists (prevents duplicates from race conditions)
+      if (!grantedRows || grantedRows.length === 0) {
+        console.log('Access already granted for:', buyer.email, '— skipping duplicate (atomic check)')
+        return new Response('ok', { headers: getCorsHeaders(req) })
+      }
+
+      // Check if paid access already exists (extra safety net)
       const { data: existingAccess } = await supabase
         .from('accesses')
         .select('id')
