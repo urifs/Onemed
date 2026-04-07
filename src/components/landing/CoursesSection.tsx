@@ -5,64 +5,64 @@ import { Button } from '@/components/ui/button';
 
 const allCourses: Record<string, string[]> = {
   'Estratégia Med': [
-    'Extensivo 2025', 'Intensivo 2025', 'Exclusive 2025', 'Curso Prático 2025',
-    'Material Complementar 2025', 'Memorex e Rastreamentos 2025', 'Cronogramas e Guia Estatístico',
-    'R+ GO Intensivo 2024', 'Sprint Revalida INEP 2025', 'Curso Multimídia',
-    'Atualizações para Prova de Residência', 'FlashCards', 'Mentoria Pré-Edital 2025',
+    'Extensivo', 'Intensivo', 'Exclusive', 'Curso Prático',
+    'Material Complementar', 'Memorex e Rastreamentos', 'Cronogramas e Guia Estatístico',
+    'R+ GO Intensivo', 'Sprint Revalida INEP', 'Curso Multimídia',
+    'Atualizações para Prova de Residência', 'FlashCards', 'Mentoria Pré-Edital',
     'OSCE Prova Prática', 'Psicopatologia e Psiquiatria', 'Semiologia do Zero',
     '+20mil Banco de Questões', 'Questões por Matéria', 'Questões por Área', 'Simulados',
   ],
   'MedGrupo / MedCurso': [
-    'MEDCurso 2025 Completo', 'MedCurso Intensivão', 'Intensivão R1 2024', 'Intensivão R+ 2024',
-    'CPMED 2024', 'MedEletro 2024', 'MedFoco 2024', 'MedImagem 2024', 'MedATB',
-    'VentilaMed 2024', 'Apostilas e Questões por Bloco', 'Fichas', 'Mapas Mentais',
+    'MEDCurso Completo', 'MedCurso Intensivão', 'Intensivão R1', 'Intensivão R+',
+    'CPMED', 'MedEletro', 'MedFoco', 'MedImagem', 'MedATB',
+    'VentilaMed', 'Apostilas e Questões por Bloco', 'Fichas', 'Mapas Mentais',
     'Resumos', 'Slides', 'Resumo Hack', '+4mil Simulados por Ano', '+80mil Banco de Questões',
     'TEP R+ Cirurgia', 'TEP R+ Clínica Médica', 'TEP R+ GO', 'TEP R+ Pediatria',
     'TEP R+ TED Dermatologia', 'TEP R4 GO', 'TEP Pediatria Completo', 'Revalida MedGrupo',
     'FluidMed Super Planner + MedPlanner', 'PED/PREV',
   ],
   'Medway': [
-    'Extensivo 2025', 'Intensivo SP 2025', 'CR Medway', 'Pronto Socorro 2025',
-    'ECG', 'Gasometria', 'Radiologia 2025', 'Provas de Instituições',
+    'Extensivo', 'Intensivo SP', 'CR Medway', 'Pronto Socorro',
+    'ECG', 'Gasometria', 'Radiologia', 'Provas de Instituições',
     'Guia de Antibioticoterapia (Papo de Clínica)', 'Simulados por Instituição',
   ],
   'Medcof': [
-    'Extensivo 2025', 'R+ CLM 2024', 'R3 Cirurgia 2024', 'HIIT 2024', 'HIIT Cirurgia 2023',
-    'ECG, USG e Endoscopia', 'Prescrições 2025', 'Check-list', 'Revisão de Véspera R1 e R+',
+    'Extensivo', 'R+ CLM', 'R3 Cirurgia', 'HIIT', 'HIIT Cirurgia',
+    'ECG, USG e Endoscopia', 'Prescrições', 'Check-list', 'Revisão de Véspera R1 e R+',
     '+5mil Questões',
   ],
   'Medcel / Afya': [
     'Extensivo Afya', 'Emergências Clínicas', 'Habilidades Médicas', 'Terapia Intensiva',
-    'Cirurgia - Urgências e Emergências', 'GO Papers Afya 2024', 'IA para Médicos',
+    'Cirurgia - Urgências e Emergências', 'GO Papers Afya', 'IA para Médicos',
   ],
   'Sanar': [
-    'SanarFlix Completo 2025', 'SanarFlix Extensivo R1', 'Ciclo Básico Completo',
+    'SanarFlix Completo', 'SanarFlix Extensivo R1', 'Ciclo Básico Completo',
     'Pré Internato', 'Radiologia e Imagens', 'Resumos', 'Ética Médica',
   ],
   'HardWork': [
     'Curso Completo', 'Hard Topics', 'Lives', 'Revalida', 'Complementos',
   ],
   'Eu Médico Residente': [
-    'Extensivo 2024', 'Semi Extensivo R1', 'Revisão R1', 'Eletro, Antibiótico e Imagem',
+    'Extensivo', 'Semi Extensivo R1', 'Revisão R1', 'Eletro, Antibiótico e Imagem',
   ],
   'Cardiologia': [
     'CardioClub Intensivo ECG XIV - Rhanderson', 'CardioClub Rhanderson Cardoso',
-    'Cardiopapers Curso de Consultório 2024', 'Cardiopapers ECG', 'Cardiopapers MBE',
+    'Cardiopapers Curso de Consultório', 'Cardiopapers ECG', 'Cardiopapers MBE',
     'Curso de Diabetes', 'Curso de Dislipidemias', 'Curso de Produtividade',
     'Cardiologia na Prática 2.0 - Emergências', 'ECG na Prática - Bárbara Valente',
     'InCor Eletrocardiograma', 'Facilitando Eletro', 'Dr Neif ECG', 'MedNeif Infarto',
-    'Intensivo de Metas Rhanderson 2023', 'Questões em Cardiologia - Emergências',
+    'Intensivo de Metas Rhanderson', 'Questões em Cardiologia - Emergências',
   ],
   'Emergência e UTI': [
     'UTI Online HCFMUSP 2ª Edição', 'UTI Papers Guia de Bolso', 'Medicina Intensiva USP',
-    'Medicina de Emergência USP', 'Escola de Emergência 2024 - Grupo Mover',
+    'Medicina de Emergência USP', 'Escola de Emergência - Grupo Mover',
     'MeuStaff Capacitação em Emergência', 'Emergências Herlon',
     'Raciocínio Clínico na Emergência', 'Treinamento em Emergência - Victor Galvão',
     'Manejo de Sangramento em Pacientes Graves', 'Manole Terapia Intensiva',
   ],
   'PS Zerado': [
     'Curso Regular 3.0', 'Extras', 'Curso Avançado de Trauma',
-    'Treinamento de Sutura e Manejo de Feridas', 'PS Zerado 2025',
+    'Treinamento de Sutura e Manejo de Feridas', 'PS Zerado',
   ],
   'Ventilação Mecânica': [
     'Dr Thiago Chaves Pacote Completo', 'Ventilação Danielle Bastos',
@@ -77,7 +77,7 @@ const allCourses: Record<string, string[]> = {
     'Medcel Urgências e Emergências Cirúrgicas',
   ],
   'Ginecologia e Obstetrícia': [
-    'Manole GO 9ª Edição', 'Jaleko Ginecologia', 'GO Papers Afya 2024',
+    'Manole GO 9ª Edição', 'Jaleko Ginecologia', 'GO Papers Afya',
   ],
   'Clínica Médica': [
     'Manole Clínica Médica 3ª Edição', 'Semiologia Clínica USP', 'Semiologia do Zero',
@@ -85,13 +85,13 @@ const allCourses: Record<string, string[]> = {
     'Tá de Clinicagem Pronto Atendimento',
   ],
   'Neurologia': [
-    'NeuroPost Completo 2024', 'Neuroanatomia Aplicada',
+    'NeuroPost Completo', 'Neuroanatomia Aplicada',
   ],
   'Psiquiatria': [
     'Psiquiatria na Prática', 'Psiquiatria em 12 Tópicos', 'Psicopatologia EstratégiaMed',
   ],
   'Infectologia': [
-    'Infectoflix 2024', 'SOS Antibiótico', 'Curso de Antibiótico Tá de Clinicagem',
+    'Infectoflix', 'SOS Antibiótico', 'Curso de Antibiótico Tá de Clinicagem',
     'Guia de Antibioticoterapia Papo de Clínica + Medway',
   ],
   'Nefrologia': [
@@ -102,18 +102,18 @@ const allCourses: Record<string, string[]> = {
     'Descomplicando a Pneumologia - Dr Megda',
   ],
   'Dermatologia': [
-    'Dermatopapers 2023', 'Emerg.SIMM Dermato no PS',
+    'Dermatopapers', 'Emerg.SIMM Dermato no PS',
   ],
   'Endocrinologia': [
-    'Endocrinopapers Completo', 'Endocrinologia Ambulatorial 2025',
+    'Endocrinopapers Completo', 'Endocrinologia Ambulatorial',
   ],
   'Ortopedia': [
-    'Ortoacademy 2025', 'Ortopedia para o Clínico',
+    'Ortoacademy', 'Ortopedia para o Clínico',
   ],
   'Radiologia e Imagem': [
     'Você Radiologista Radiografia', 'Você Radiologista Tomografia',
     'Você Radiologista USG', 'RadioPosts Radiologia', 'RadioPosts Tomografia na Emergência',
-    'USG Master Dr. Mauricio Magalhães', 'MedImagem R 2024',
+    'USG Master Dr. Mauricio Magalhães', 'MedImagem R',
   ],
   'Farmacologia': [
     'Farmacologia Mapeada Instituto INCAF', 'Farmacologia na Prática - Interações',
@@ -128,38 +128,38 @@ const allCourses: Record<string, string[]> = {
     'SanarFlix Ciclo Básico', 'Jaleko Gasometria',
   ],
   'Revalida': [
-    'Estratégia Med Sprint Revalida INEP 2025', 'HardWork Revalida',
-    'MedGrupo Revalida', 'RedBook Revalida 3ª Edição', 'Mundo Revalida Intensivo 2025',
-    'Foco no CRM Revalidação BR', 'Mentoria Revalidei Prático', 'Provas Revalida 2011-2023',
+    'Estratégia Med Sprint Revalida INEP', 'HardWork Revalida',
+    'MedGrupo Revalida', 'RedBook Revalida 3ª Edição', 'Mundo Revalida Intensivo',
+    'Foco no CRM Revalidação BR', 'Mentoria Revalidei Prático', 'Provas Revalida',
   ],
   'Preparatório Residência': [
-    'Aristo + JJ Mentoria', 'JJ Mentoria', 'Currículo Médico Mundo Afora 2024',
+    'Aristo + JJ Mentoria', 'JJ Mentoria', 'Currículo Médico Mundo Afora',
     'Programa PPA Clara Aragão', 'Planilhas para Residência', 'Saúde da Família Mentoria',
     '+100 Compilados Provas Residência', 'Provas Anteriores Instituições',
   ],
   'Plantão e Prescrição': [
     'Manole Prescrição no Plantão 2ª Edição', 'Jaleko Prescrição Médica',
-    'Plantão Sempre Tranquilo', 'Prescrições UBS e PA 2025', 'Prescrições de Plantão 2025',
+    'Plantão Sempre Tranquilo', 'Prescrições UBS e PA', 'Prescrições de Plantão',
     'Medicações no PS', 'Mais Frequentes Plantão', 'Emerg.SIMM Dominando o Dia-Dia',
   ],
   'Intubação e Procedimentos': [
-    'Dr Thiago Chaves Intubação', 'Intubaclass 2024', 'Sala de Parada Academy',
+    'Dr Thiago Chaves Intubação', 'Intubaclass', 'Sala de Parada Academy',
   ],
   'Medicina do Esporte': [
     'Paulo Muzy Performance com Saúde',
   ],
   'Medicina Legal e Perícia': [
-    'Perícia Médica sem Segredos 2025', 'Direito Médico Prof. Isadora',
+    'Perícia Médica sem Segredos', 'Direito Médico Prof. Isadora',
   ],
   'Inglês Médico': [
-    'Med Idiomas Inglês para Médicos 2025', 'Você Médico nos EUA - RD Medicine',
+    'Med Idiomas Inglês para Médicos', 'Você Médico nos EUA - RD Medicine',
     'CV Premium EUA', 'O que Você Precisa Saber USMLE', 'O que Você Precisa Saber Reino Unido',
     'Estágios Medicina EUA - Letícia Pretti',
   ],
   'Livros e Materiais': [
     '+9.000 Livros Médicos', 'MedLivros 1.0 e 2.0', 'Apostilas Conceitos Matadores',
     'Amo Resumos', 'Decoreba e Memorex', 'Mapas Mentais e Resumos', 'FlashCards Anki',
-    'MedCards Atualizado', 'MedResumos 2025', 'MedRout PDFs', 'Super Planilha para Estudos',
+    'MedCards Atualizado', 'MedResumos', 'MedRout PDFs', 'Super Planilha para Estudos',
   ],
   'Bancos de Questões': [
     '+100.000 Questões Estratégia', '+80.000 Questões MedGrupo', '+56.000 Questões MED',
@@ -170,12 +170,12 @@ const allCourses: Record<string, string[]> = {
     'Whitebook Premium Android', 'WeMeds Premium', 'Apps Modificados',
   ],
   'Outros Cursos': [
-    'AHA ACLS', 'Academia Praxys', 'AlphaMed', 'Análise Laboratorial RevisaMed 2025',
-    'Anamnese e Receitas 2025', 'AnestReview', 'APS101 2024', 'Bora Salvar 24hrs',
-    'Casal Med 2025', 'Comunidade Medicina Intuitiva', 'Comunidade Padrão Total',
+    'AHA ACLS', 'Academia Praxys', 'AlphaMed', 'Análise Laboratorial RevisaMed',
+    'Anamnese e Receitas', 'AnestReview', 'APS101', 'Bora Salvar 24hrs',
+    'Casal Med', 'Comunidade Medicina Intuitiva', 'Comunidade Padrão Total',
     'Descomplicando a Medicina', 'Empreendedorismo e Medicina', 'Marketing Médico',
-    'Instagram para Médicos', 'Med Neif Completo 2025', 'Médico na Prática 2024',
-    'MemoriMED 2.0 2025', 'PROGEB', 'Raciocínio Clínico Vitor Borin',
+    'Instagram para Médicos', 'Med Neif Completo', 'Médico na Prática',
+    'MemoriMED 2.0', 'PROGEB', 'Raciocínio Clínico Vitor Borin',
     'Renda na Faculdade', 'Sons Littmann na Ausculta',
   ],
 };
