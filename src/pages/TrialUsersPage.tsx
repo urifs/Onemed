@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { formatDateTimeSP, todayStartISO } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Users, Phone, Mail, Clock, Search, Filter, RefreshCw, MessageCircle, UserCheck } from 'lucide-react';
+import { WhatsAppLink } from '@/components/WhatsAppLink';
 
 export default function TrialUsersPage() {
   const { session } = useAuth();
@@ -168,10 +169,7 @@ export default function TrialUsersPage() {
                       <td className="px-4 py-3 text-sm text-foreground">{trial.email}</td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">
                         {trial.whatsapp ? (
-                          <a href={`https://wa.me/${trial.whatsapp.replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-accent-success hover:underline">
-                            <MessageCircle className="w-3.5 h-3.5" />
-                            {trial.whatsapp}
-                          </a>
+                          <WhatsAppLink phone={trial.whatsapp} showIcon className="text-accent-success" />
                         ) : '—'}
                       </td>
                       <td className="px-4 py-3">{statusBadge(trial.status)}</td>

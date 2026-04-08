@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { UserPlus, Search, Trash2, RefreshCw, XCircle, FolderOpen, Loader2 } from 'lucide-react';
+import { WhatsAppLink } from '@/components/WhatsAppLink';
 
 export default function AccessManagement() {
   const { session } = useAuth();
@@ -233,7 +234,7 @@ export default function AccessManagement() {
                         <td className="px-4 py-3 text-sm text-foreground">{access.email}</td>
                         <td className="px-4 py-3 text-sm text-muted-foreground hidden md:table-cell">
                           {access.whatsapp ? (
-                            <a href={`https://wa.me/${access.whatsapp.replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{access.whatsapp}</a>
+                            <WhatsAppLink phone={access.whatsapp} className="text-primary" />
                           ) : '—'}
                         </td>
                         <td className="px-4 py-3 text-sm text-muted-foreground capitalize">{access.access_type}</td>
