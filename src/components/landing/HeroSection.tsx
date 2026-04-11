@@ -161,7 +161,7 @@ export const HeroSection = ({
           <div className="mt-3 max-w-md">
             <Link
               to="/checkout"
-              className="w-full h-11 flex items-center justify-center gap-2 text-sm font-medium text-foreground border border-border rounded-lg hover:border-primary/50 hover:text-primary transition-colors duration-200 bg-secondary/50"
+              className="w-full h-11 flex items-center justify-center gap-2 text-sm font-medium text-white rounded-lg transition-colors duration-200 bg-green-600 hover:bg-green-500"
             >
               <ShoppingCart className="w-4 h-4" />
               Ou adquira acesso completo →
