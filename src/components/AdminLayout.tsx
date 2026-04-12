@@ -15,7 +15,6 @@ import {
   AlertTriangle,
   Stethoscope,
   Mail,
-  MessageSquare,
 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -30,7 +29,6 @@ const navItems = [
   { path: '/admin/coupons', label: 'Cupons', icon: Tag },
   { path: '/admin/drive', label: 'Google Drive', icon: FolderOpen },
   { path: '/admin/email-campaign', label: 'Campanha Email', icon: Mail },
-  { path: '/admin/whatsapp', label: 'WhatsApp', icon: MessageSquare },
   { path: '/admin/database', label: 'Database', icon: Database },
 ];
 
