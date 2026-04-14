@@ -6,9 +6,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import {
   MessageSquare, Users, CheckCircle2, XCircle,
-  Loader2, Send, Eye, AlertTriangle, Info, Clock, StopCircle,
+  Loader2, Send, Eye, AlertTriangle, Info, Clock, StopCircle, Trash2,
 } from 'lucide-react';
 
 const BATCH_SIZE = 12;
@@ -277,6 +278,13 @@ export default function WhatsAppPage() {
     toast.info('Parando após o lote atual...');
   }
 
+  async function handleClearHistory() {
+    const { error } = await supabase.from('whatsapp_sends').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    if (error) { toast.error('Erro ao limpar histórico: ' + error.message); return; }
+    resetState();
+    toast.success('Histórico de envios limpo — todos os contatos poderão receber novamente');
+  }
+
   function resetState() {
     setProgress([]);
     setRecipients([]);
@@ -294,7 +302,8 @@ export default function WhatsAppPage() {
       <div className="max-w-4xl mx-auto space-y-6">
 
         {/* Header */}
-        <div>
+        <div className="flex items-start justify-between gap-4">
+          <div>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
             <MessageSquare className="w-6 h-6 text-green-500" />
             Disparos WhatsApp
@@ -302,6 +311,29 @@ export default function WhatsAppPage() {
           <p className="text-muted-foreground mt-1 text-sm">
             Envie mensagens em massa via Z-API · Número: <span className="text-foreground font-mono">+55 (45) 99122-0048</span>
           </p>
+          </div>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="outline" size="sm" disabled={sending}
+                className="border-red-500/30 text-red-400 hover:bg-red-500/10 hover:text-red-300 flex-shrink-0">
+                <Trash2 className="w-4 h-4 mr-2" /> Limpar histórico
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent className="bg-background-paper border-border">
+              <AlertDialogHeader>
+                <AlertDialogTitle className="text-foreground">Limpar histórico de envios?</AlertDialogTitle>
+                <AlertDialogDescription className="text-muted-foreground">
+                  Todos os registros de mensagens enviadas serão removidos. Os contatos voltarão a aparecer nas próximas listas de disparo e os indicadores verde/vermelho serão resetados.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel className="bg-secondary border-border text-foreground">Cancelar</AlertDialogCancel>
+                <AlertDialogAction onClick={handleClearHistory} className="bg-red-600 hover:bg-red-700 text-white">
+                  Limpar tudo
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
 
         {/* Aviso */}
