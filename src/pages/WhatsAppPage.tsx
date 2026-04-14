@@ -135,7 +135,11 @@ export default function WhatsAppPage() {
       }
 
       const { data, error } = await supabase.functions.invoke('send-whatsapp', { body: payload });
-      if (error) throw new Error(error.message || 'Erro ao buscar contagem');
+      if (error) {
+        let msg = 'Erro ao buscar contagem';
+        try { const b = await (error as any).context?.json?.(); msg = b?.error || error.message || msg; } catch {}
+        throw new Error(msg);
+      }
       setPreviewCount(data?.total ?? 0);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : 'Erro ao buscar contagem');
@@ -158,7 +162,11 @@ export default function WhatsAppPage() {
       }
 
       const { data, error } = await supabase.functions.invoke('send-whatsapp', { body: payload });
-      if (error) throw new Error(error.message || 'Erro ao enviar');
+      if (error) {
+        let msg = 'Erro ao enviar';
+        try { const b = await (error as any).context?.json?.(); msg = b?.error || error.message || msg; } catch {}
+        throw new Error(msg);
+      }
 
       setResult({ sent: data?.sent ?? 0, failed: data?.failed ?? 0, total: data?.total ?? 0, invalid: data?.invalid ?? 0, errors: data?.errors ?? [] });
       toast.success(`Disparo concluído: ${data?.sent ?? 0} mensagens enviadas`);
