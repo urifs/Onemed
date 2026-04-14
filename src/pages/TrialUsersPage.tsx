@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { formatDateTimeSP, todayStartISO } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Users, Phone, Mail, Clock, Search, Filter, RefreshCw, MessageCircle, UserCheck } from 'lucide-react';
+import { Users, Phone, Mail, Clock, Search, Filter, RefreshCw, MessageCircle, UserCheck, CheckCircle2, XCircle } from 'lucide-react';
 import { WhatsAppLink } from '@/components/WhatsAppLink';
 
 export default function TrialUsersPage() {
@@ -20,17 +20,32 @@ export default function TrialUsersPage() {
   const [syncing, setSyncing] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [waSentPhones, setWaSentPhones] = useState<Set<string>>(new Set());
+  const [waFailedPhones, setWaFailedPhones] = useState<Set<string>>(new Set());
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [{ data: trialsData }, { data: buyersData }] = await Promise.all([
+      const [{ data: trialsData }, { data: buyersData }, { data: waSends }] = await Promise.all([
         supabase.from('accesses').select('*').eq('access_type', 'trial').order('created_at', { ascending: false }),
         supabase.from('buyers').select('email').eq('status', 'approved'),
+        supabase.from('whatsapp_sends').select('phone, status'),
       ]);
       const buyerEmails = new Set((buyersData || []).map((b: any) => b.email.toLowerCase()));
       const all = (trialsData || []).filter(t => !buyerEmails.has(t.email.toLowerCase()));
       setTrials(all);
+
+      // Montar sets de telefones que receberam/falharam WA
+      const sent = new Set<string>();
+      const failed = new Set<string>();
+      for (const s of (waSends || [])) {
+        const digits = (s.phone || '').replace(/\D/g, '');
+        if (s.status === 'sent') sent.add(digits);
+        else if (s.status === 'failed') failed.add(digits);
+      }
+      setWaSentPhones(sent);
+      setWaFailedPhones(failed);
+
       const todayISO = todayStartISO();
       const today = all.filter(t => t.created_at >= todayISO);
       setStats({
@@ -158,7 +173,7 @@ export default function TrialUsersPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-border">
-                    {['Email', 'WhatsApp', 'Status', 'Data', 'Expiração'].map(h => (
+                    {['Email', 'WhatsApp', 'WA Enviado', 'Status', 'Data', 'Expiração'].map(h => (
                       <th key={h} className="text-left px-4 py-3 text-xs font-mono uppercase text-muted-foreground">{h}</th>
                     ))}
                   </tr>
@@ -171,6 +186,28 @@ export default function TrialUsersPage() {
                         {trial.whatsapp ? (
                           <WhatsAppLink phone={trial.whatsapp} showIcon className="text-accent-success" />
                         ) : '—'}
+                      </td>
+                      <td className="px-4 py-3">
+                        {(() => {
+                          if (!trial.whatsapp) return <span className="text-muted-foreground text-xs">—</span>;
+                          const digits = trial.whatsapp.replace(/\D/g, '');
+                          const normalized = digits.startsWith('55') ? digits : '55' + digits;
+                          if (waSentPhones.has(normalized) || waSentPhones.has(digits)) {
+                            return (
+                              <span className="inline-flex items-center gap-1 text-green-400 text-xs font-medium">
+                                <CheckCircle2 className="w-3.5 h-3.5" /> Enviado
+                              </span>
+                            );
+                          }
+                          if (waFailedPhones.has(normalized) || waFailedPhones.has(digits)) {
+                            return (
+                              <span className="inline-flex items-center gap-1 text-red-400 text-xs font-medium">
+                                <XCircle className="w-3.5 h-3.5" /> Falhou
+                              </span>
+                            );
+                          }
+                          return <span className="text-muted-foreground text-xs">Não enviado</span>;
+                        })()}
                       </td>
                       <td className="px-4 py-3">{statusBadge(trial.status)}</td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">{formatDateTimeSP(trial.created_at)}</td>
