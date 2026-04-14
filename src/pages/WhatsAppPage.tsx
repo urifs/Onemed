@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import AdminLayout from '@/components/AdminLayout';
@@ -7,12 +7,12 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
-  MessageSquare, Users, DollarSign, CheckCircle2, XCircle,
-  Loader2, Send, Eye, AlertTriangle, Info, UserCheck, PhoneCall,
-  Clock,
+  MessageSquare, Users, CheckCircle2, XCircle,
+  Loader2, Send, Eye, AlertTriangle, Info, Clock, StopCircle,
 } from 'lucide-react';
 
-// ─── Tipos de audiência ────────────────────────────────────────────────────────
+const BATCH_SIZE = 12;
+
 type Audience =
   | 'trial_expired_today'
   | 'trial_expired_yesterday'
@@ -37,11 +37,11 @@ const AUDIENCE_GROUPS: AudienceGroup[] = [
     label: 'Trials expirados',
     icon: Clock,
     options: [
-      { value: 'trial_expired_today',     label: 'Hoje',             description: 'Expiraram hoje' },
-      { value: 'trial_expired_yesterday', label: 'Ontem',            description: 'Expiraram ontem' },
-      { value: 'trial_expired_3d',        label: 'Últimos 3 dias',   description: 'Expiraram nos últimos 3 dias' },
-      { value: 'trial_expired_5d',        label: 'Últimos 5 dias',   description: 'Expiraram nos últimos 5 dias' },
-      { value: 'trial_expired_7d',        label: 'Últimos 7 dias',   description: 'Expiraram nos últimos 7 dias' },
+      { value: 'trial_expired_today',     label: 'Hoje',               description: 'Expiraram hoje' },
+      { value: 'trial_expired_yesterday', label: 'Ontem',              description: 'Expiraram ontem' },
+      { value: 'trial_expired_3d',        label: 'Últimos 3 dias',     description: 'Expiraram nos últimos 3 dias' },
+      { value: 'trial_expired_5d',        label: 'Últimos 5 dias',     description: 'Expiraram nos últimos 5 dias' },
+      { value: 'trial_expired_7d',        label: 'Últimos 7 dias',     description: 'Expiraram nos últimos 7 dias' },
       { value: 'trial_expired_all',       label: 'Todos os expirados', description: 'Todos os trials já expirados' },
     ],
   },
@@ -49,11 +49,11 @@ const AUDIENCE_GROUPS: AudienceGroup[] = [
     label: 'Outros',
     icon: Users,
     options: [
-      { value: 'trial_active',      label: 'Trials ativos',          description: 'Usuários com trial em andamento' },
-      { value: 'buyers_approved',   label: 'Compradores aprovados',  description: 'Quem já pagou e teve acesso liberado' },
-      { value: 'buyers_all',        label: 'Todos compradores',      description: 'Todos os registros na tabela de compradores' },
-      { value: 'all_with_whatsapp', label: 'Todos com WhatsApp',     description: 'Trials + compradores com número cadastrado' },
-      { value: 'custom',            label: 'Lista avulsa',           description: 'Cole uma lista de números manualmente' },
+      { value: 'trial_active',      label: 'Trials ativos',         description: 'Usuários com trial em andamento' },
+      { value: 'buyers_approved',   label: 'Compradores aprovados', description: 'Quem já pagou e teve acesso liberado' },
+      { value: 'buyers_all',        label: 'Todos compradores',     description: 'Todos os registros na tabela de compradores' },
+      { value: 'all_with_whatsapp', label: 'Todos com WhatsApp',    description: 'Trials + compradores com número cadastrado' },
+      { value: 'custom',            label: 'Lista avulsa',          description: 'Cole uma lista de números manualmente' },
     ],
   },
 ];
@@ -107,69 +107,147 @@ Não perca! ⏰`,
   },
 ];
 
+interface ProgressItem {
+  phone: string;
+  email?: string;
+  status: 'pending' | 'sent' | 'failed';
+  error?: string;
+}
+
 export default function WhatsAppPage() {
   const [message, setMessage] = useState('');
   const [audience, setAudience] = useState<Audience>('trial_expired_today');
   const [customNumbers, setCustomNumbers] = useState('');
   const [delayMs, setDelayMs] = useState(1500);
 
-  const [previewCount, setPreviewCount] = useState<number | null>(null);
+  const [recipients, setRecipients] = useState<{ phone: string; email?: string }[]>([]);
   const [previewing, setPreviewing] = useState(false);
+
   const [sending, setSending] = useState(false);
-  const [result, setResult] = useState<{
-    sent: number; failed: number; total: number; invalid: number; errors: string[];
-  } | null>(null);
+  const [progress, setProgress] = useState<ProgressItem[]>([]);
+  const [sentCount, setSentCount] = useState(0);
+  const [failedCount, setFailedCount] = useState(0);
+  const [done, setDone] = useState(false);
+  const stopRef = useRef(false);
 
   // ── Preview ────────────────────────────────────────────────────────────────
   async function handlePreview() {
     setPreviewing(true);
-    setPreviewCount(null);
+    setRecipients([]);
     try {
-      const payload: Record<string, unknown> = {
-        audience: 'preview',
-        message: audience,
-      };
+      const payload: Record<string, unknown> = { mode: 'list', audience };
       if (audience === 'custom') {
         payload.custom_numbers = customNumbers.split('\n').map(s => s.trim()).filter(Boolean);
-        payload.message = 'custom';
       }
-
       const { data, error } = await supabase.functions.invoke('send-whatsapp', { body: payload });
       if (error) {
-        let msg = 'Erro ao buscar contagem';
+        let msg = 'Erro ao buscar destinatários';
         try { const b = await (error as any).context?.json?.(); msg = b?.error || error.message || msg; } catch {}
         throw new Error(msg);
       }
-      setPreviewCount(data?.total ?? 0);
+      const list: { phone: string; email?: string }[] = data?.recipients ?? [];
+      setRecipients(list);
+      toast.success(`${list.length} destinatário${list.length !== 1 ? 's' : ''} encontrado${list.length !== 1 ? 's' : ''}`);
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Erro ao buscar contagem');
+      toast.error(e instanceof Error ? e.message : 'Erro ao buscar destinatários');
     } finally {
       setPreviewing(false);
     }
   }
 
-  // ── Enviar ─────────────────────────────────────────────────────────────────
+  // ── Enviar em lotes ────────────────────────────────────────────────────────
   async function handleSend() {
     if (!message.trim()) { toast.error('Digite a mensagem antes de enviar'); return; }
     if (audience === 'custom' && !customNumbers.trim()) { toast.error('Adicione pelo menos um número'); return; }
 
     setSending(true);
-    setResult(null);
+    setDone(false);
+    setSentCount(0);
+    setFailedCount(0);
+    stopRef.current = false;
+
     try {
-      const payload: Record<string, unknown> = { audience, message: message.trim(), delay_ms: delayMs };
+      // 1. Buscar lista de destinatários
+      const payload: Record<string, unknown> = { mode: 'list', audience };
       if (audience === 'custom') {
         payload.custom_numbers = customNumbers.split('\n').map(s => s.trim()).filter(Boolean);
       }
-
-      const { data, error } = await supabase.functions.invoke('send-whatsapp', { body: payload });
-      if (error) {
-        let msg = 'Erro ao enviar';
-        try { const b = await (error as any).context?.json?.(); msg = b?.error || error.message || msg; } catch {}
+      const { data: listData, error: listError } = await supabase.functions.invoke('send-whatsapp', { body: payload });
+      if (listError) {
+        let msg = 'Erro ao buscar destinatários';
+        try { const b = await (listError as any).context?.json?.(); msg = b?.error || listError.message || msg; } catch {}
         throw new Error(msg);
       }
+      const allRecipients: { phone: string; email?: string }[] = listData?.recipients ?? [];
+      if (allRecipients.length === 0) {
+        toast.info('Nenhum destinatário encontrado para este público');
+        setSending(false);
+        return;
+      }
 
-      setResult({ sent: data?.sent ?? 0, failed: data?.failed ?? 0, total: data?.total ?? 0, invalid: data?.invalid ?? 0, errors: data?.errors ?? [] });
-      toast.success(`Disparo concluído: ${data?.sent ?? 0} mensagens enviadas`);
+      // 2. Inicializar painel de progresso
+      const initial: ProgressItem[] = allRecipients.map(r => ({ phone: r.phone, email: r.email, status: 'pending' }));
+      setProgress(initial);
+      setRecipients(allRecipients);
+
+      let totalSent = 0;
+      let totalFailed = 0;
+
+      // 3. Enviar em lotes
+      for (let i = 0; i < allRecipients.length; i += BATCH_SIZE) {
+        if (stopRef.current) break;
+
+        const batch = allRecipients.slice(i, i + BATCH_SIZE);
+        const { data: batchData, error: batchError } = await supabase.functions.invoke('send-whatsapp', {
+          body: {
+            mode: 'batch',
+            audience,
+            message: message.trim(),
+            delay_ms: delayMs,
+            batch_recipients: batch,
+          },
+        });
+
+        if (batchError || !batchData) {
+          // marcar todo o lote como falha
+          setProgress(prev => {
+            const next = [...prev];
+            for (let j = i; j < i + batch.length; j++) {
+              if (next[j]) next[j] = { ...next[j], status: 'failed', error: 'Erro no lote' };
+            }
+            return next;
+          });
+          totalFailed += batch.length;
+          setFailedCount(totalFailed);
+        } else {
+          const results: { phone: string; status: string; error?: string }[] = batchData.results ?? [];
+          const resultMap = new Map(results.map(r => [r.phone, r]));
+
+          setProgress(prev => {
+            const next = [...prev];
+            for (let j = i; j < i + batch.length; j++) {
+              if (!next[j]) continue;
+              const r = resultMap.get(next[j].phone);
+              if (r) {
+                next[j] = { ...next[j], status: r.status === 'sent' ? 'sent' : 'failed', error: r.error };
+              } else {
+                next[j] = { ...next[j], status: 'failed', error: 'Sem resposta' };
+              }
+            }
+            return next;
+          });
+
+          const batchSent = results.filter(r => r.status === 'sent').length;
+          const batchFailed = results.filter(r => r.status !== 'sent').length;
+          totalSent += batchSent;
+          totalFailed += batchFailed;
+          setSentCount(totalSent);
+          setFailedCount(totalFailed);
+        }
+      }
+
+      setDone(true);
+      toast.success(`Disparo concluído: ${totalSent} enviadas, ${totalFailed} falhas`);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : 'Erro desconhecido');
     } finally {
@@ -177,7 +255,22 @@ export default function WhatsAppPage() {
     }
   }
 
-  const selectedOption = AUDIENCE_GROUPS.flatMap(g => g.options).find(o => o.value === audience);
+  function handleStop() {
+    stopRef.current = true;
+    toast.info('Parando após o lote atual...');
+  }
+
+  function resetState() {
+    setProgress([]);
+    setRecipients([]);
+    setSentCount(0);
+    setFailedCount(0);
+    setDone(false);
+  }
+
+  const totalProgress = progress.length;
+  const doneCount = progress.filter(p => p.status !== 'pending').length;
+  const progressPct = totalProgress > 0 ? Math.round((doneCount / totalProgress) * 100) : 0;
 
   return (
     <AdminLayout>
@@ -213,7 +306,7 @@ export default function WhatsAppPage() {
               <Label className="text-sm text-muted-foreground mb-2 block">Mensagens prontas</Label>
               <div className="flex flex-wrap gap-2">
                 {QUICK_MESSAGES.map(qm => (
-                  <button key={qm.label} onClick={() => { setMessage(qm.text); setResult(null); }}
+                  <button key={qm.label} onClick={() => { setMessage(qm.text); resetState(); }}
                     className="px-3 py-1.5 rounded-lg text-xs font-medium border border-border text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
                     {qm.label}
                   </button>
@@ -228,7 +321,7 @@ export default function WhatsAppPage() {
               </div>
               <Textarea
                 value={message}
-                onChange={e => { setMessage(e.target.value); setResult(null); }}
+                onChange={e => { setMessage(e.target.value); resetState(); }}
                 placeholder={`Digite sua mensagem aqui...\n\nUse *asteriscos* para negrito, _sublinhado_ para itálico e emojis à vontade 🎓`}
                 rows={10}
                 className="bg-background border-border text-sm resize-none font-mono"
@@ -285,7 +378,7 @@ export default function WhatsAppPage() {
                     {group.options.map(opt => (
                       <button
                         key={opt.value}
-                        onClick={() => { setAudience(opt.value); setPreviewCount(null); setResult(null); }}
+                        onClick={() => { setAudience(opt.value); resetState(); }}
                         className={`flex flex-col items-start px-3 py-2.5 rounded-lg border text-left transition-colors ${
                           audience === opt.value
                             ? 'bg-green-500/15 border-green-500/40'
@@ -309,7 +402,7 @@ export default function WhatsAppPage() {
                 <Label className="text-sm text-muted-foreground mb-1.5 block">Números (um por linha)</Label>
                 <Textarea
                   value={customNumbers}
-                  onChange={e => { setCustomNumbers(e.target.value); setPreviewCount(null); }}
+                  onChange={e => { setCustomNumbers(e.target.value); resetState(); }}
                   placeholder={`5563999849659\n5511987654321\n+55 41 98765-4321`}
                   rows={5}
                   className="bg-background border-border font-mono text-sm resize-none"
@@ -318,18 +411,17 @@ export default function WhatsAppPage() {
               </div>
             )}
 
-            {/* Preview count */}
+            {/* Botão preview */}
             <div className="flex items-center gap-3 flex-wrap">
               <Button variant="outline" size="sm" onClick={handlePreview}
-                disabled={previewing || (audience === 'custom' && !customNumbers.trim())}
+                disabled={previewing || sending || (audience === 'custom' && !customNumbers.trim())}
                 className="border-border text-muted-foreground hover:text-foreground">
                 {previewing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Eye className="w-4 h-4 mr-2" />}
                 Ver quantos serão impactados
               </Button>
-              {previewCount !== null && (
+              {recipients.length > 0 && !sending && !done && (
                 <span className="text-sm text-green-400 font-medium">
-                  {previewCount} destinatário{previewCount !== 1 ? 's' : ''} com WhatsApp cadastrado
-                  {selectedOption && <span className="text-muted-foreground font-normal"> · {selectedOption.label}</span>}
+                  {recipients.length} destinatário{recipients.length !== 1 ? 's' : ''} com WhatsApp cadastrado
                 </span>
               )}
             </div>
@@ -352,6 +444,7 @@ export default function WhatsAppPage() {
                   { label: '3s (muito seguro)', value: 3000 },
                 ].map(opt => (
                   <button key={opt.value} onClick={() => setDelayMs(opt.value)}
+                    disabled={sending}
                     className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
                       delayMs === opt.value
                         ? 'bg-green-500/20 border-green-500/50 text-green-400'
@@ -361,11 +454,6 @@ export default function WhatsAppPage() {
                   </button>
                 ))}
               </div>
-              {previewCount !== null && previewCount > 0 && (
-                <p className="text-xs text-muted-foreground mt-2">
-                  Tempo estimado: ~{Math.ceil((previewCount * delayMs) / 60000)} minuto{Math.ceil((previewCount * delayMs) / 60000) !== 1 ? 's' : ''} para {previewCount} mensagens
-                </p>
-              )}
             </div>
 
             <div className="flex gap-3 p-3 rounded-lg bg-secondary/50 border border-border">
@@ -376,53 +464,101 @@ export default function WhatsAppPage() {
               </p>
             </div>
 
-            <Button onClick={handleSend} disabled={sending || !message.trim()}
-              className="bg-green-600 hover:bg-green-700 text-white w-full sm:w-auto" size="lg">
-              {sending
-                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Enviando... não feche a página</>
-                : <><Send className="w-4 h-4 mr-2" />Disparar mensagens</>}
-            </Button>
-
-            {result && (
-              <div className="rounded-lg border border-border p-4 space-y-3">
-                <h3 className="text-sm font-medium text-foreground">Resultado do disparo</h3>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {[
-                    { label: 'Enviadas', value: result.sent, icon: CheckCircle2, color: 'green' },
-                    { label: 'Falharam', value: result.failed, icon: XCircle, color: 'red' },
-                    { label: 'Total', value: result.total, icon: Users, color: 'gray' },
-                    { label: 'Inválidos', value: result.invalid, icon: AlertTriangle, color: 'yellow' },
-                  ].map(({ label, value, icon: Icon, color }) => (
-                    <div key={label} className={`rounded-lg p-3 text-center border ${
-                      color === 'green' ? 'bg-green-500/10 border-green-500/20' :
-                      color === 'red' ? 'bg-red-500/10 border-red-500/20' :
-                      color === 'yellow' ? 'bg-yellow-500/10 border-yellow-500/20' :
-                      'bg-secondary border-border'
-                    }`}>
-                      <Icon className={`w-5 h-5 mx-auto mb-1 ${
-                        color === 'green' ? 'text-green-400' : color === 'red' ? 'text-red-400' :
-                        color === 'yellow' ? 'text-yellow-400' : 'text-muted-foreground'
-                      }`} />
-                      <p className={`text-2xl font-bold ${
-                        color === 'green' ? 'text-green-400' : color === 'red' ? 'text-red-400' :
-                        color === 'yellow' ? 'text-yellow-400' : 'text-foreground'
-                      }`}>{value}</p>
-                      <p className="text-xs text-muted-foreground">{label}</p>
-                    </div>
-                  ))}
-                </div>
-                {result.errors.length > 0 && (
-                  <div>
-                    <p className="text-xs font-medium text-red-400 mb-2">Erros ({result.errors.length}):</p>
-                    <div className="max-h-40 overflow-y-auto rounded bg-background border border-border p-2 space-y-1">
-                      {result.errors.map((err, i) => <p key={i} className="text-xs font-mono text-red-300">{err}</p>)}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
+            <div className="flex gap-3 flex-wrap">
+              <Button onClick={handleSend} disabled={sending || !message.trim()}
+                className="bg-green-600 hover:bg-green-700 text-white" size="lg">
+                {sending
+                  ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Enviando... não feche a página</>
+                  : <><Send className="w-4 h-4 mr-2" />Disparar mensagens</>}
+              </Button>
+              {sending && (
+                <Button onClick={handleStop} variant="outline" size="lg"
+                  className="border-red-500/40 text-red-400 hover:bg-red-500/10">
+                  <StopCircle className="w-4 h-4 mr-2" /> Parar
+                </Button>
+              )}
+            </div>
           </CardContent>
         </Card>
+
+        {/* Painel de progresso em tempo real */}
+        {progress.length > 0 && (
+          <Card className="bg-background-paper border-border">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base text-foreground">Progresso do disparo</CardTitle>
+                <div className="flex items-center gap-4 text-sm">
+                  <span className="text-green-400 font-medium flex items-center gap-1">
+                    <CheckCircle2 className="w-4 h-4" /> {sentCount} enviadas
+                  </span>
+                  <span className="text-red-400 font-medium flex items-center gap-1">
+                    <XCircle className="w-4 h-4" /> {failedCount} falhas
+                  </span>
+                  <span className="text-muted-foreground">
+                    {doneCount}/{totalProgress}
+                  </span>
+                </div>
+              </div>
+              {/* Barra de progresso */}
+              <div className="mt-3 h-2 bg-secondary rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-green-500 transition-all duration-300 rounded-full"
+                  style={{ width: `${progressPct}%` }}
+                />
+              </div>
+              {done && (
+                <p className="text-xs text-green-400 mt-1 font-medium">
+                  ✓ Disparo concluído — {sentCount} enviadas, {failedCount} falhas
+                </p>
+              )}
+              {sending && !done && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Enviando em lotes de {BATCH_SIZE}... {progressPct}% concluído
+                </p>
+              )}
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="max-h-80 overflow-y-auto">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-background-paper border-b border-border">
+                    <tr>
+                      <th className="text-left px-4 py-2 text-xs font-mono uppercase text-muted-foreground">Telefone</th>
+                      <th className="text-left px-4 py-2 text-xs font-mono uppercase text-muted-foreground">Email</th>
+                      <th className="text-left px-4 py-2 text-xs font-mono uppercase text-muted-foreground">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {progress.map((item, idx) => (
+                      <tr key={idx} className="border-b border-border/30 hover:bg-secondary/20 transition-colors">
+                        <td className="px-4 py-2 font-mono text-xs text-foreground">{item.phone}</td>
+                        <td className="px-4 py-2 text-xs text-muted-foreground">{item.email || '—'}</td>
+                        <td className="px-4 py-2">
+                          {item.status === 'pending' && (
+                            <span className="inline-flex items-center gap-1 text-muted-foreground text-xs">
+                              <Loader2 className="w-3 h-3 animate-spin" /> Aguardando
+                            </span>
+                          )}
+                          {item.status === 'sent' && (
+                            <span className="inline-flex items-center gap-1 text-green-400 text-xs font-medium">
+                              <CheckCircle2 className="w-3.5 h-3.5" /> Enviado
+                            </span>
+                          )}
+                          {item.status === 'failed' && (
+                            <span className="inline-flex items-center gap-1 text-red-400 text-xs font-medium" title={item.error}>
+                              <XCircle className="w-3.5 h-3.5" /> Falhou
+                              {item.error && <span className="text-red-300/70 font-normal truncate max-w-[120px]"> · {item.error}</span>}
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
       </div>
     </AdminLayout>
   );
