@@ -130,6 +130,30 @@ export default function WhatsAppPage() {
   const [done, setDone] = useState(false);
   const stopRef = useRef(false);
 
+  // ── Chamada direta à edge function (mostra erro real) ─────────────────────
+  async function callFn(body: Record<string, unknown>) {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    if (!token) throw new Error('Sessão expirada — faça login novamente');
+    const res = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-whatsapp`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+          'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+        },
+        body: JSON.stringify(body),
+      }
+    );
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(json?.error || json?.message || `Erro HTTP ${res.status}`);
+    }
+    return json;
+  }
+
   // ── Preview ────────────────────────────────────────────────────────────────
   async function handlePreview() {
     setPreviewing(true);
@@ -139,12 +163,7 @@ export default function WhatsAppPage() {
       if (audience === 'custom') {
         payload.custom_numbers = customNumbers.split('\n').map(s => s.trim()).filter(Boolean);
       }
-      const { data, error } = await supabase.functions.invoke('send-whatsapp', { body: payload });
-      if (error) {
-        let msg = 'Erro ao buscar destinatários';
-        try { const b = await (error as any).context?.json?.(); msg = b?.error || error.message || msg; } catch {}
-        throw new Error(msg);
-      }
+      const data = await callFn(payload);
       const list: { phone: string; email?: string }[] = data?.recipients ?? [];
       setRecipients(list);
       toast.success(`${list.length} destinatário${list.length !== 1 ? 's' : ''} encontrado${list.length !== 1 ? 's' : ''}`);
@@ -172,12 +191,7 @@ export default function WhatsAppPage() {
       if (audience === 'custom') {
         payload.custom_numbers = customNumbers.split('\n').map(s => s.trim()).filter(Boolean);
       }
-      const { data: listData, error: listError } = await supabase.functions.invoke('send-whatsapp', { body: payload });
-      if (listError) {
-        let msg = 'Erro ao buscar destinatários';
-        try { const b = await (listError as any).context?.json?.(); msg = b?.error || listError.message || msg; } catch {}
-        throw new Error(msg);
-      }
+      const listData = await callFn(payload);
       const allRecipients: { phone: string; email?: string }[] = listData?.recipients ?? [];
       if (allRecipients.length === 0) {
         toast.info('Nenhum destinatário encontrado para este público');
@@ -198,17 +212,20 @@ export default function WhatsAppPage() {
         if (stopRef.current) break;
 
         const batch = allRecipients.slice(i, i + BATCH_SIZE);
-        const { data: batchData, error: batchError } = await supabase.functions.invoke('send-whatsapp', {
-          body: {
+        let batchData: any = null;
+        try {
+          batchData = await callFn({
             mode: 'batch',
             audience,
             message: message.trim(),
             delay_ms: delayMs,
             batch_recipients: batch,
-          },
-        });
+          });
+        } catch (batchErr) {
+          console.error('Batch error:', batchErr);
+        }
 
-        if (batchError || !batchData) {
+        if (!batchData) {
           // marcar todo o lote como falha
           setProgress(prev => {
             const next = [...prev];
