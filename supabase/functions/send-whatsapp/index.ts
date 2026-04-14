@@ -90,15 +90,18 @@ async function fetchExpiredTrials(
 async function sendZApi(
   instanceId: string,
   token: string,
+  clientToken: string,
   phone: string,
   message: string,
 ): Promise<{ ok: boolean; error?: string }> {
   try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (clientToken) headers['Client-Token'] = clientToken
     const res = await fetch(
       `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ phone, message }),
       },
     )
@@ -121,6 +124,7 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const instanceId = Deno.env.get('ZAPI_INSTANCE_ID')!
     const zapiToken = Deno.env.get('ZAPI_TOKEN')!
+    const zapiClientToken = Deno.env.get('ZAPI_CLIENT_TOKEN') || ''
 
     // ── Auth admin ───────────────────────────────────────────────────────────
     const jwt = (req.headers.get('authorization') || '').replace('Bearer ', '')
@@ -238,7 +242,7 @@ serve(async (req) => {
     const logsToInsert: Record<string, unknown>[] = []
 
     for (const [phone, email] of seen.entries()) {
-      const result = await sendZApi(instanceId, zapiToken, phone, message.trim())
+      const result = await sendZApi(instanceId, zapiToken, zapiClientToken, phone, message.trim())
 
       if (result.ok) {
         sent++
