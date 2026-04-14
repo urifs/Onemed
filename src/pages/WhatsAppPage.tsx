@@ -12,8 +12,6 @@ import {
   Clock,
 } from 'lucide-react';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
-
 // ─── Tipos de audiência ────────────────────────────────────────────────────────
 type Audience =
   | 'trial_expired_today'
@@ -127,26 +125,18 @@ export default function WhatsAppPage() {
     setPreviewing(true);
     setPreviewCount(null);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) { toast.error('Sessão expirada'); return; }
-
       const payload: Record<string, unknown> = {
         audience: 'preview',
-        message: audience, // reutilizado para passar o audience real
+        message: audience,
       };
       if (audience === 'custom') {
         payload.custom_numbers = customNumbers.split('\n').map(s => s.trim()).filter(Boolean);
         payload.message = 'custom';
       }
 
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/send-whatsapp`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Erro');
-      setPreviewCount(data.total ?? 0);
+      const { data, error } = await supabase.functions.invoke('send-whatsapp', { body: payload });
+      if (error) throw new Error(error.message || 'Erro ao buscar contagem');
+      setPreviewCount(data?.total ?? 0);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : 'Erro ao buscar contagem');
     } finally {
@@ -162,24 +152,16 @@ export default function WhatsAppPage() {
     setSending(true);
     setResult(null);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) { toast.error('Sessão expirada'); return; }
-
       const payload: Record<string, unknown> = { audience, message: message.trim(), delay_ms: delayMs };
       if (audience === 'custom') {
         payload.custom_numbers = customNumbers.split('\n').map(s => s.trim()).filter(Boolean);
       }
 
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/send-whatsapp`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Erro');
+      const { data, error } = await supabase.functions.invoke('send-whatsapp', { body: payload });
+      if (error) throw new Error(error.message || 'Erro ao enviar');
 
-      setResult({ sent: data.sent ?? 0, failed: data.failed ?? 0, total: data.total ?? 0, invalid: data.invalid ?? 0, errors: data.errors ?? [] });
-      toast.success(`Disparo concluído: ${data.sent} mensagens enviadas`);
+      setResult({ sent: data?.sent ?? 0, failed: data?.failed ?? 0, total: data?.total ?? 0, invalid: data?.invalid ?? 0, errors: data?.errors ?? [] });
+      toast.success(`Disparo concluído: ${data?.sent ?? 0} mensagens enviadas`);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : 'Erro desconhecido');
     } finally {
