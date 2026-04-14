@@ -7,7 +7,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { formatDateTimeSP } from '@/lib/utils';
+import { formatDateTimeSP, fetchAllRows } from '@/lib/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
@@ -32,8 +32,10 @@ export default function AccessManagement() {
   const fetchAccesses = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await supabase.from('accesses').select('*').order('created_at', { ascending: false });
-      setAccesses(data || []);
+      const all = await fetchAllRows((from, to) =>
+        supabase.from('accesses').select('*').order('created_at', { ascending: false }).range(from, to)
+      );
+      setAccesses(all);
     } catch { toast.error('Erro ao carregar acessos'); }
     finally { setLoading(false); }
   }, []);

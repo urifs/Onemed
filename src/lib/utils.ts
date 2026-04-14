@@ -57,6 +57,23 @@ export function todayStartISO(): string {
   return new Date(`${spDateStr}T00:00:00-03:00`).toISOString();
 }
 
+// Busca todos os registros de uma tabela contornando o limite de 1000 linhas do Supabase
+export async function fetchAllRows<T = any>(
+  buildQuery: (from: number, to: number) => Promise<{ data: T[] | null; error: any }>
+): Promise<T[]> {
+  const PAGE = 1000;
+  let all: T[] = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await buildQuery(from, from + PAGE - 1);
+    if (error) throw error;
+    all = all.concat(data || []);
+    if (!data || data.length < PAGE) break;
+    from += PAGE;
+  }
+  return all;
+}
+
 export function formatWhatsApp(value: string, countryCode: string): string {
   const nums = value.replace(/\D/g, '');
   if (countryCode === '+55') {

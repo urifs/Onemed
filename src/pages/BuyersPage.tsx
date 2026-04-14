@@ -6,7 +6,7 @@ import AdminLayout from '@/components/AdminLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { formatDateTimeSP, todayStartISO } from '@/lib/utils';
+import { formatDateTimeSP, todayStartISO, fetchAllRows } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DollarSign, Users, Clock, TrendingUp, Mail, Calendar, Phone, Trash2, UserPlus, Loader2, RefreshCw, CheckCircle, XCircle, X } from 'lucide-react';
 import { WhatsAppLink } from '@/components/WhatsAppLink';
@@ -26,9 +26,11 @@ export default function BuyersPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const { data: buyersData } = await supabase.from('buyers').select('*').eq('status', 'approved').order('created_at', { ascending: false });
-      setBuyers(buyersData || []);
-      const all = buyersData || [];
+      const buyersData = await fetchAllRows((f, t) =>
+        supabase.from('buyers').select('*').eq('status', 'approved').order('created_at', { ascending: false }).range(f, t)
+      );
+      setBuyers(buyersData);
+      const all = buyersData;
       const todayISO = todayStartISO();
       const today = all.filter(b => b.created_at >= todayISO);
       setStats({

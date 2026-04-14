@@ -6,7 +6,7 @@ import AdminLayout from '@/components/AdminLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { formatDateTimeSP, todayStartISO } from '@/lib/utils';
+import { formatDateTimeSP, todayStartISO, fetchAllRows } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Users, Phone, Mail, Clock, Search, Filter, RefreshCw, MessageCircle, UserCheck, CheckCircle2, XCircle } from 'lucide-react';
 import { WhatsAppLink } from '@/components/WhatsAppLink';
@@ -26,10 +26,10 @@ export default function TrialUsersPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [{ data: trialsData }, { data: buyersData }, { data: waSends }] = await Promise.all([
-        supabase.from('accesses').select('*').eq('access_type', 'trial').order('created_at', { ascending: false }),
-        supabase.from('buyers').select('email').eq('status', 'approved'),
-        supabase.from('whatsapp_sends').select('phone, status'),
+      const [trialsData, buyersData, waSends] = await Promise.all([
+        fetchAllRows((f, t) => supabase.from('accesses').select('*').eq('access_type', 'trial').order('created_at', { ascending: false }).range(f, t)),
+        fetchAllRows((f, t) => supabase.from('buyers').select('email').eq('status', 'approved').range(f, t)),
+        fetchAllRows((f, t) => supabase.from('whatsapp_sends').select('phone, status').range(f, t)),
       ]);
       const buyerEmails = new Set((buyersData || []).map((b: any) => b.email.toLowerCase()));
       const all = (trialsData || []).filter(t => !buyerEmails.has(t.email.toLowerCase()));
@@ -63,12 +63,12 @@ export default function TrialUsersPage() {
   const syncPurchased = useCallback(async () => {
     setSyncing(true);
     try {
-      const [{ data: trialsData }, { data: buyersData }] = await Promise.all([
-        supabase.from('accesses').select('id, email').eq('access_type', 'trial'),
-        supabase.from('buyers').select('email').eq('status', 'approved'),
+      const [trialsData, buyersData] = await Promise.all([
+        fetchAllRows((f, t) => supabase.from('accesses').select('id, email').eq('access_type', 'trial').range(f, t)),
+        fetchAllRows((f, t) => supabase.from('buyers').select('email').eq('status', 'approved').range(f, t)),
       ]);
-      const buyerEmails = new Set((buyersData || []).map((b: any) => b.email.toLowerCase()));
-      const toDelete = (trialsData || []).filter((t: any) => buyerEmails.has(t.email.toLowerCase()));
+      const buyerEmails = new Set(buyersData.map((b: any) => b.email.toLowerCase()));
+      const toDelete = trialsData.filter((t: any) => buyerEmails.has(t.email.toLowerCase()));
 
       if (toDelete.length === 0) {
         toast.success('Lista já sincronizada, nenhum comprador encontrado nos trials');
