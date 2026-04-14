@@ -139,10 +139,15 @@ serve(async (req) => {
       } else {
         raw = await fetchRecipients(supabase, audience)
       }
+
+      // Buscar números que já receberam com sucesso
+      const { data: alreadySent } = await supabase.from('whatsapp_sends').select('phone').eq('status', 'sent')
+      const sentSet = new Set((alreadySent || []).map((r: any) => r.phone))
+
       const seen = new Map<string, string>()
       for (const r of raw) {
         const n = normalizePhone(r.phone)
-        if (n && !seen.has(n)) seen.set(n, r.email || '')
+        if (n && !seen.has(n) && !sentSet.has(n)) seen.set(n, r.email || '')
       }
       const recipients = Array.from(seen.entries()).map(([phone, email]) => ({ phone, email }))
       return new Response(JSON.stringify({ recipients }), {
