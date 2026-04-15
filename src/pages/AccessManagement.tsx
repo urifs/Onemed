@@ -21,6 +21,7 @@ export default function AccessManagement() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [paymentIdToEmail, setPaymentIdToEmail] = useState<Record<string, string>>({});
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [newEmail, setNewEmail] = useState('');
   const [newWhatsapp, setNewWhatsapp] = useState('');
@@ -32,10 +33,16 @@ export default function AccessManagement() {
   const fetchAccesses = useCallback(async () => {
     setLoading(true);
     try {
-      const all = await fetchAllRows((from, to) =>
-        supabase.from('accesses').select('*').order('created_at', { ascending: false }).range(from, to)
-      );
+      const [all, { data: buyers }] = await Promise.all([
+        fetchAllRows((from, to) =>
+          supabase.from('accesses').select('*').order('created_at', { ascending: false }).range(from, to)
+        ),
+        supabase.from('buyers').select('email, payment_id').not('payment_id', 'is', null),
+      ]);
       setAccesses(all);
+      const map: Record<string, string> = {};
+      (buyers || []).forEach((b: any) => { if (b.payment_id) map[String(b.payment_id)] = b.email; });
+      setPaymentIdToEmail(map);
     } catch { toast.error('Erro ao carregar acessos'); }
     finally { setLoading(false); }
   }, []);
@@ -44,10 +51,19 @@ export default function AccessManagement() {
 
   useEffect(() => {
     let result = accesses;
-    if (search) result = result.filter(a => a.email.toLowerCase().includes(search.toLowerCase()) || (a.whatsapp || '').includes(search));
+    if (search) {
+      const term = search.toLowerCase();
+      // Check if the term matches a Mercado Pago payment_id in the buyers table
+      const emailFromPaymentId = paymentIdToEmail[search.trim()];
+      result = result.filter(a =>
+        a.email.toLowerCase().includes(term) ||
+        (a.whatsapp || '').includes(term) ||
+        (emailFromPaymentId && a.email.toLowerCase() === emailFromPaymentId.toLowerCase())
+      );
+    }
     if (statusFilter !== 'all') result = result.filter(a => a.status === statusFilter);
     setFiltered(result);
-  }, [accesses, search, statusFilter]);
+  }, [accesses, search, statusFilter, paymentIdToEmail]);
 
   const addAccess = async () => {
     if (!newEmail) { toast.error('Informe um email'); return; }
@@ -191,7 +207,7 @@ export default function AccessManagement() {
         <div className="flex gap-3 flex-wrap">
           <div className="relative flex-1 min-w-48">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar email ou WhatsApp..." className="pl-9 bg-background-paper border-border text-foreground" />
+            <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar email, WhatsApp ou ID da transação..." className="pl-9 bg-background-paper border-border text-foreground" />
           </div>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="w-36 bg-background-paper border-border text-foreground"><SelectValue /></SelectTrigger>
