@@ -78,14 +78,22 @@ export default function Index() {
 
     setLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('create-trial-access', {
-        body: {
+      const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const res = await fetch(`${supabaseUrl}/functions/v1/create-trial-access`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': anonKey,
+          'Authorization': `Bearer ${anonKey}`,
+        },
+        body: JSON.stringify({
           email: email.toLowerCase(),
           whatsapp: `${selectedCountry.code}${whatsapp}`,
-        },
+        }),
       });
-
-      if (error) throw error;
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || data?.message || `Erro HTTP ${res.status}`);
       if (data?.error) throw new Error(data.error);
 
       if (data?.alreadyActive) {
