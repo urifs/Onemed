@@ -347,9 +347,17 @@ export default function EmailCampaignPage() {
       setProgress(p => ({ ...p, current: i + 1 }));
 
       try {
-        const { data, error } = await supabase.functions.invoke('send-custom-email', {
-          body: { to: email, subject, templateType: tType, templateData },
-        });
+        const invokeController = new AbortController();
+        const invokeTimeout = setTimeout(() => invokeController.abort(), 30000);
+        let data: any, error: any;
+        try {
+          ({ data, error } = await supabase.functions.invoke('send-custom-email', {
+            body: { to: email, subject, templateType: tType, templateData },
+            signal: invokeController.signal,
+          }));
+        } finally {
+          clearTimeout(invokeTimeout);
+        }
         if (error) throw new Error(error.message || 'Erro ao enviar');
         if (data?.error) throw new Error(data.error);
         sent++;

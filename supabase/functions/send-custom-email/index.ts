@@ -299,19 +299,27 @@ serve(async (req) => {
       html = getCustomEmailHtml(templateData?.body || '', subject)
     }
 
-    const res = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${RESEND_API_KEY}`,
-      },
-      body: JSON.stringify({
-        from: `${SITE_NAME} <${FROM_EMAIL}>`,
-        to: [to],
-        subject,
-        html,
-      }),
-    })
+    const resendController = new AbortController()
+    const resendTimeout = setTimeout(() => resendController.abort(), 15000)
+    let res: Response
+    try {
+      res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${RESEND_API_KEY}`,
+        },
+        body: JSON.stringify({
+          from: `${SITE_NAME} <${FROM_EMAIL}>`,
+          to: [to],
+          subject,
+          html,
+        }),
+        signal: resendController.signal,
+      })
+    } finally {
+      clearTimeout(resendTimeout)
+    }
 
     const data = await res.json()
     if (!res.ok) {
