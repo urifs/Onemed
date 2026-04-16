@@ -163,32 +163,42 @@ export default function EmailCampaignPage() {
     const seq = ++fetchSeqRef.current;
     setLoadingRecipients(true);
 
-    // Timeout de 12s por query para evitar loading infinito
-    const withTimeout = <T,>(p: PromiseLike<T>): Promise<T> =>
-      Promise.race([
-        Promise.resolve(p),
-        new Promise<T>((_, reject) =>
-          setTimeout(() => reject(new Error('Timeout ao carregar destinatários')), 12000)
-        ),
-      ]);
+    const PAGE_SIZE = 1000;
+
+    // Busca todas as páginas de uma query paginada
+    const fetchAllPages = async <T extends { email?: string }>(
+      builder: () => ReturnType<typeof supabase.from>
+    ): Promise<string[]> => {
+      const emails: string[] = [];
+      let page = 0;
+      while (true) {
+        const from = page * PAGE_SIZE;
+        const { data, error } = await (builder() as any)
+          .range(from, from + PAGE_SIZE - 1);
+        if (error) throw new Error(error.message);
+        const rows: T[] = data || [];
+        rows.forEach((r) => r.email && emails.push((r.email as string).toLowerCase()));
+        if (rows.length < PAGE_SIZE) break;
+        page++;
+      }
+      return emails;
+    };
 
     try {
       const all: string[] = [];
 
       if (type === 'trials' || type === 'both') {
-        const { data, error } = await withTimeout(
-          supabase.from('accesses').select('email').eq('access_type', 'trial').limit(5000)
+        const emails = await fetchAllPages(() =>
+          supabase.from('accesses').select('email').eq('access_type', 'trial')
         );
-        if (error) throw new Error('Trials: ' + error.message);
-        (data || []).forEach((r: any) => r.email && all.push(r.email.toLowerCase()));
+        all.push(...emails);
       }
 
       if (type === 'buyers' || type === 'both') {
-        const { data, error } = await withTimeout(
-          supabase.from('buyers').select('email').eq('status', 'approved').limit(5000)
+        const emails = await fetchAllPages(() =>
+          supabase.from('buyers').select('email').eq('status', 'approved')
         );
-        if (error) throw new Error('Compradores: ' + error.message);
-        (data || []).forEach((r: any) => r.email && all.push(r.email.toLowerCase()));
+        all.push(...emails);
       }
 
       if (seq === fetchSeqRef.current) {
