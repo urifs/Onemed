@@ -16,9 +16,9 @@ function getCorsHeaders(req: Request) {
 function normalizePhone(raw: string): string | null {
   const digits = raw.replace(/\D/g, '')
   if (!digits) return null
-  if (digits.startsWith('55') && (digits.length === 12 || digits.length === 13)) return digits
-  if (digits.length === 10 || digits.length === 11) return '55' + digits
-  if (digits.length >= 12 && digits.length <= 15) return digits
+  if (digits.startsWith('55') && (digits.length === 12 || digits.length === 13)) return '+' + digits
+  if (digits.length === 10 || digits.length === 11) return '+55' + digits
+  if (digits.length >= 12 && digits.length <= 15) return '+' + digits
   return null
 }
 
@@ -85,17 +85,22 @@ async function fetchRecipients(
   return []
 }
 
-async function sendZApi(instanceId: string, token: string, clientToken: string, phone: string, message: string) {
+async function sendSMS(accountSid: string, authToken: string, from: string, to: string, body: string) {
   try {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-    if (clientToken) headers['Client-Token'] = clientToken
     const res = await fetch(
-      `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`,
-      { method: 'POST', headers, body: JSON.stringify({ phone, message }) },
+      `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Basic ' + btoa(`${accountSid}:${authToken}`),
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({ From: from, To: to, Body: body }).toString(),
+      }
     )
     const data = await res.json()
-    if (res.ok && (data.zaapId || data.messageId || data.id)) return { ok: true }
-    return { ok: false, error: data?.message || data?.error || JSON.stringify(data) }
+    if (res.ok && data.sid) return { ok: true }
+    return { ok: false, error: data?.message || data?.code || JSON.stringify(data) }
   } catch (e: unknown) {
     return { ok: false, error: e instanceof Error ? e.message : 'Network error' }
   }
@@ -108,9 +113,9 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    const instanceId = Deno.env.get('ZAPI_INSTANCE_ID')!
-    const zapiToken = Deno.env.get('ZAPI_TOKEN')!
-    const zapiClientToken = Deno.env.get('ZAPI_CLIENT_TOKEN') || ''
+    const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID')!
+    const twilioAuthToken  = Deno.env.get('TWILIO_AUTH_TOKEN')!
+    const twilioFrom       = Deno.env.get('TWILIO_FROM_NUMBER')!
 
     // Auth
     const jwt = (req.headers.get('authorization') || '').replace('Bearer ', '')
@@ -155,7 +160,7 @@ serve(async (req) => {
       })
     }
 
-    // ── MODO BATCH: envia para lista específica de números ───────────────────
+    // ── MODO BATCH: envia SMS via Twilio ─────────────────────────────────────
     if (mode === 'batch') {
       if (!message?.trim()) return new Response(JSON.stringify({ error: 'message obrigatório' }), {
         status: 400, headers: { ...cors, 'Content-Type': 'application/json' },
@@ -166,7 +171,8 @@ serve(async (req) => {
       const logs: Record<string, unknown>[] = []
 
       for (const r of recipients) {
-        const result = await sendZApi(instanceId, zapiToken, zapiClientToken, r.phone, message.trim())
+        const normalized = normalizePhone(r.phone) || r.phone
+        const result = await sendSMS(twilioAccountSid, twilioAuthToken, twilioFrom, normalized, message.trim())
         const status = result.ok ? 'sent' : 'failed'
         results.push({ phone: r.phone, email: r.email, status, error: result.error })
         logs.push({ phone: r.phone, email: r.email || null, status, audience: audience || 'batch' })
@@ -187,7 +193,7 @@ serve(async (req) => {
     })
 
   } catch (err: unknown) {
-    console.error('send-whatsapp error:', err)
+    console.error('send-sms error:', err)
     return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Erro interno' }), {
       status: 500, headers: { ...cors, 'Content-Type': 'application/json' },
     })

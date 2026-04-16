@@ -306,10 +306,10 @@ export default function WhatsAppPage() {
           <div>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
             <MessageSquare className="w-6 h-6 text-green-500" />
-            Disparos WhatsApp
+            Disparos SMS
           </h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            Envie mensagens em massa via Z-API · Número: <span className="text-foreground font-mono">+55 (45) 99122-0048</span>
+            Envie SMS em massa via Twilio · Remetente: <span className="text-foreground font-mono">+1 (978) 754-6713</span>
           </p>
           </div>
           <AlertDialog>
@@ -508,8 +508,9 @@ export default function WhatsAppPage() {
             <div className="flex gap-3 p-3 rounded-lg bg-secondary/50 border border-border">
               <Info className="w-4 h-4 text-muted-foreground flex-shrink-0 mt-0.5" />
               <p className="text-xs text-muted-foreground">
-                Não feche esta página durante o envio. O resultado de cada disparo é registrado automaticamente
+                Não feche esta página durante o envio. O resultado de cada SMS é registrado automaticamente
                 e aparece como indicador verde/vermelho na página de <strong className="text-foreground">Usuários Trial</strong>.
+                SMS não suporta formatação (*negrito*, _itálico_) — use texto simples.
               </p>
             </div>
 
