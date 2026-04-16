@@ -151,6 +151,7 @@ export default function EmailCampaignPage() {
   const [done, setDone] = useState(false);
   const shouldStopRef = useRef(false);
   const logEndRef = useRef<HTMLDivElement>(null);
+  const [activeCampaign, setActiveCampaign] = useState<any | null>(null);
 
   // Scheduled campaigns list
   const [campaigns, setCampaigns] = useState<any[]>([]);
@@ -223,6 +224,60 @@ export default function EmailCampaignPage() {
     fetchRecipients(recipientType);
   }, [recipientType, fetchRecipients]);
 
+  // ── Server-side campaign runner ──────────────────────────────────────────────
+
+  const runCampaign = useCallback(async (campaignId: string) => {
+    while (!shouldStopRef.current) {
+      const { data: current } = await (supabase as any)
+        .from('email_campaigns').select('*').eq('id', campaignId).maybeSingle();
+
+      if (!current) break;
+
+      setActiveCampaign(current);
+      setProgress({
+        total: current.total_count || 0,
+        sent: current.sent_count || 0,
+        failed: current.failed_count || 0,
+        current: current.processed_index || 0,
+      });
+
+      if (['completed', 'failed', 'cancelled'].includes(current.status)) {
+        setSending(false);
+        setDone(true);
+        if (current.status === 'completed') {
+          toast.success(`Campanha concluída! ${current.sent_count} enviados, ${current.failed_count} erros.`);
+        }
+        return;
+      }
+
+      if (current.status === 'running') {
+        await new Promise(r => setTimeout(r, 3000));
+        continue;
+      }
+
+      // status === 'scheduled' — dispara próximo lote
+      try {
+        await supabase.functions.invoke('run-email-campaign', {
+          body: { campaign_id: campaignId },
+        });
+      } catch (e) {
+        console.error('Campaign trigger error:', e);
+        await new Promise(r => setTimeout(r, 5000));
+      }
+    }
+
+    if (shouldStopRef.current) {
+      await (supabase as any)
+        .from('email_campaigns')
+        .update({ status: 'cancelled' })
+        .eq('id', campaignId)
+        .in('status', ['scheduled', 'running']);
+      setSending(false);
+      setDone(true);
+      toast.warning('Envio interrompido.');
+    }
+  }, []);
+
   // Parse manual emails
   useEffect(() => {
     if (recipientType !== 'manual') return;
@@ -262,6 +317,35 @@ export default function EmailCampaignPage() {
     const interval = setInterval(fetchCampaigns, 15000);
     return () => clearInterval(interval);
   }, [campaigns, fetchCampaigns]);
+
+  // ── Detecta campanha ativa ao carregar a página ──────────────────────────────
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await (supabase as any)
+        .from('email_campaigns')
+        .select('*')
+        .in('status', ['running', 'scheduled'])
+        .lte('scheduled_at', new Date().toISOString())
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (data) {
+        setActiveCampaign(data);
+        setProgress({
+          total: data.total_count || 0,
+          sent: data.sent_count || 0,
+          failed: data.failed_count || 0,
+          current: data.processed_index || 0,
+        });
+        setSending(true);
+        setDone(false);
+        shouldStopRef.current = false;
+        runCampaign(data.id);
+      }
+    })();
+  }, [runCampaign]);
 
   // ── Auto-scroll log ─────────────────────────────────────────────────────────
 
@@ -327,7 +411,7 @@ export default function EmailCampaignPage() {
     return true;
   };
 
-  // ── Send now ─────────────────────────────────────────────────────────────────
+  // ── Send now (server-side) ────────────────────────────────────────────────────
 
   const startSendingNow = async () => {
     if (!validate()) return;
@@ -335,52 +419,36 @@ export default function EmailCampaignPage() {
     setSending(true);
     setDone(false);
     setLog([]);
-    setProgress({ total: recipients.length, sent: 0, failed: 0, current: 0 });
 
-    let sent = 0; let failed = 0;
     const subject = getSubject();
     const { templateType: tType, templateData } = getTemplatePayload();
 
-    for (let i = 0; i < recipients.length; i++) {
-      if (shouldStopRef.current) break;
-      const email = recipients[i];
-      setProgress(p => ({ ...p, current: i + 1 }));
+    try {
+      const { data: campaign, error } = await (supabase as any)
+        .from('email_campaigns')
+        .insert({
+          subject,
+          template_type: tType,
+          template_data: templateData,
+          recipient_type: recipientType === 'manual' ? 'manual' : recipientType,
+          recipient_emails: recipients,
+          scheduled_at: new Date().toISOString(),
+          total_count: recipients.length,
+        })
+        .select()
+        .single();
 
-      try {
-        const invokeController = new AbortController();
-        const invokeTimeout = setTimeout(() => invokeController.abort(), 30000);
-        let data: any, error: any;
-        try {
-          ({ data, error } = await supabase.functions.invoke('send-custom-email', {
-            body: { to: email, subject, templateType: tType, templateData },
-            signal: invokeController.signal,
-          }));
-        } finally {
-          clearTimeout(invokeTimeout);
-        }
-        if (error) throw new Error(error.message || 'Erro ao enviar');
-        if (data?.error) throw new Error(data.error);
-        sent++;
-        setProgress(p => ({ ...p, sent: p.sent + 1 }));
-        setLog(l => [...l, { email, status: 'success' }]);
-      } catch (err: any) {
-        failed++;
-        setProgress(p => ({ ...p, failed: p.failed + 1 }));
-        setLog(l => [...l, { email, status: 'error', error: err.message }]);
-      }
+      if (error) throw error;
 
-      if (i < recipients.length - 1 && !shouldStopRef.current) {
-        const delay = 1000 + Math.floor(Math.random() * 4000); // 1–5s
-        await new Promise(r => setTimeout(r, delay));
-      }
-    }
+      setActiveCampaign(campaign);
+      setProgress({ total: campaign.total_count, sent: 0, failed: 0, current: 0 });
+      fetchCampaigns();
 
-    setSending(false);
-    setDone(true);
-    if (shouldStopRef.current) {
-      toast.warning(`Envio interrompido. ${sent} enviados, ${failed} erros.`);
-    } else {
-      toast.success(`Campanha concluída! ${sent} enviados, ${failed} erros.`);
+      toast.success('Campanha iniciada! O envio continua mesmo se fechar esta página.');
+      runCampaign(campaign.id);
+    } catch (err: any) {
+      toast.error('Erro ao iniciar campanha: ' + err.message);
+      setSending(false);
     }
   };
 
@@ -735,7 +803,7 @@ export default function EmailCampaignPage() {
                 {/* Delay note */}
                 <p className="text-xs text-muted-foreground">
                   {sendMode === 'now'
-                    ? 'Delay aleatório de 1–5s entre cada email (anti-spam).'
+                    ? 'Processado no servidor em lotes de 15 — pode fechar a página com segurança.'
                     : 'Delay de 1s entre envios. Campanhas grandes processadas em lotes por minuto.'}
                 </p>
 
@@ -796,7 +864,7 @@ export default function EmailCampaignPage() {
 
                 {done && !sending && (
                   <p className="text-xs text-center text-muted-foreground">
-                    Campanha finalizada — {progress.sent} enviados, {progress.failed} com erro.
+                    Campanha finalizada — {activeCampaign?.sent_count ?? progress.sent} enviados, {activeCampaign?.failed_count ?? progress.failed} com erro.
                   </p>
                 )}
               </CardContent>

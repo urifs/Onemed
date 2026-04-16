@@ -1,17 +1,25 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
+const ALLOWED_ORIGINS = ['https://onemedcursos.com.br', 'http://localhost:5173', 'http://localhost:3000']
+
+function getCorsHeaders(req: Request) {
+  const origin = req.headers.get('origin') || ''
+  const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0]
+  return {
+    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-secret',
+  }
+}
+
 const SITE_URL = 'https://onemedcursos.com.br'
 const SITE_NAME = 'OneMed'
 const FROM_EMAIL = 'contato@onemedcursos.com.br'
 const WHATSAPP_URL = 'https://wa.me/5545991220048?text=Ol%C3%A1!%20Tenho%20interesse%20no%20OneMed.'
 
-// Máximo de emails processados por invocação do cron (evita timeout)
 const BATCH_SIZE = 15
-// Delay entre cada envio em ms (anti-spam)
 const SEND_DELAY_MS = 1000
-
-// ─── Templates (mesmos do send-custom-email) ─────────────────────────────────
 
 function getBaseTemplate(content: string, title: string): string {
   return `<!DOCTYPE html>
@@ -189,55 +197,72 @@ function buildCustomHtml(body: string, subject: string): string {
   return getBaseTemplate(content, subject)
 }
 
-// ─── Main handler ─────────────────────────────────────────────────────────────
-
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
 serve(async (req) => {
+  const cors = getCorsHeaders(req)
+
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: { 'Access-Control-Allow-Origin': '*' } })
+    return new Response(null, { headers: cors })
   }
 
   try {
-    const cronSecret = Deno.env.get('CRON_SECRET')
-    if (cronSecret) {
-      const provided = req.headers.get('x-cron-secret') || ''
-      if (provided !== cronSecret) {
-        console.error('run-email-campaign: x-cron-secret inválido')
-        return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 })
-      }
-    }
-
     const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')!
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabase = createClient(supabaseUrl, supabaseKey)
 
-    // Busca a próxima campanha agendada que está na hora
+    // Auth: cron secret OR valid user JWT
+    const cronSecret = Deno.env.get('CRON_SECRET')
+    const providedCron = req.headers.get('x-cron-secret') || ''
+    const jwt = (req.headers.get('Authorization') || '').replace('Bearer ', '')
+
+    let authed = false
+    if (cronSecret && providedCron === cronSecret) {
+      authed = true
+    } else if (jwt) {
+      const { data: { user } } = await supabase.auth.getUser(jwt)
+      if (user) authed = true
+    } else if (!cronSecret) {
+      authed = true
+    }
+
+    if (!authed) {
+      console.error('run-email-campaign: unauthorized')
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401, headers: { ...cors, 'Content-Type': 'application/json' },
+      })
+    }
+
+    // Optional campaign_id targeting
+    let targetCampaignId: string | null = null
+    try {
+      const body = await req.json()
+      targetCampaignId = body?.campaign_id ?? null
+    } catch { /* no body */ }
+
     const now = new Date().toISOString()
-    const { data: campaign, error: fetchErr } = await supabase
-      .from('email_campaigns')
-      .select('*')
-      .eq('status', 'scheduled')
-      .lte('scheduled_at', now)
-      .order('scheduled_at', { ascending: true })
-      .limit(1)
-      .maybeSingle()
+
+    const { data: campaign, error: fetchErr } = await (
+      targetCampaignId
+        ? supabase.from('email_campaigns').select('*').eq('id', targetCampaignId).eq('status', 'scheduled').maybeSingle()
+        : supabase.from('email_campaigns').select('*').eq('status', 'scheduled').lte('scheduled_at', now).order('scheduled_at', { ascending: true }).limit(1).maybeSingle()
+    )
 
     if (fetchErr) {
       console.error('run-email-campaign: erro ao buscar campanhas:', fetchErr)
-      return new Response(JSON.stringify({ error: fetchErr.message }), { status: 500 })
+      return new Response(JSON.stringify({ error: fetchErr.message }), {
+        status: 500, headers: { ...cors, 'Content-Type': 'application/json' },
+      })
     }
 
     if (!campaign) {
-      return new Response(JSON.stringify({ ok: true, message: 'Nenhuma campanha pendente' }), { status: 200 })
+      return new Response(JSON.stringify({ ok: true, message: 'Nenhuma campanha pendente' }), {
+        status: 200, headers: { ...cors, 'Content-Type': 'application/json' },
+      })
     }
 
-    // Marca como running
-    await supabase
-      .from('email_campaigns')
-      .update({ status: 'running' })
-      .eq('id', campaign.id)
+    await supabase.from('email_campaigns').update({ status: 'running' }).eq('id', campaign.id)
 
     const emails: string[] = campaign.recipient_emails || []
     const start = campaign.processed_index as number
@@ -259,19 +284,27 @@ serve(async (req) => {
           html = buildCustomHtml(campaign.template_data?.body || '', campaign.subject)
         }
 
-        const res = await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${RESEND_API_KEY}`,
-          },
-          body: JSON.stringify({
-            from: `${SITE_NAME} <${FROM_EMAIL}>`,
-            to: [email],
-            subject: campaign.subject,
-            html,
-          }),
-        })
+        const resendCtrl = new AbortController()
+        const resendTimeout = setTimeout(() => resendCtrl.abort(), 15000)
+        let res: Response
+        try {
+          res = await fetch('https://api.resend.com/emails', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${RESEND_API_KEY}`,
+            },
+            body: JSON.stringify({
+              from: `${SITE_NAME} <${FROM_EMAIL}>`,
+              to: [email],
+              subject: campaign.subject,
+              html,
+            }),
+            signal: resendCtrl.signal,
+          })
+        } finally {
+          clearTimeout(resendTimeout)
+        }
 
         const data = await res.json()
         if (res.ok) {
@@ -286,7 +319,6 @@ serve(async (req) => {
         console.error(`[campaign ${campaign.id}] Exceção para ${email}:`, e.message)
       }
 
-      // Delay entre envios (exceto no último do batch)
       if (i < batch.length - 1) {
         await sleep(SEND_DELAY_MS)
       }
@@ -295,25 +327,24 @@ serve(async (req) => {
     const newIndex = end
     const isDone = newIndex >= emails.length
 
-    await supabase
-      .from('email_campaigns')
-      .update({
-        status: isDone ? 'completed' : 'scheduled',
-        processed_index: newIndex,
-        sent_count: sent,
-        failed_count: failed,
-        completed_at: isDone ? new Date().toISOString() : null,
-      })
-      .eq('id', campaign.id)
+    await supabase.from('email_campaigns').update({
+      status: isDone ? 'completed' : 'scheduled',
+      processed_index: newIndex,
+      sent_count: sent,
+      failed_count: failed,
+      completed_at: isDone ? new Date().toISOString() : null,
+    }).eq('id', campaign.id)
 
-    console.log(`[campaign ${campaign.id}] Batch ${start}-${end} concluído. ${isDone ? 'COMPLETO' : 'Continua próximo cron'}. Enviados: ${sent}, Erros: ${failed}`)
+    console.log(`[campaign ${campaign.id}] Batch ${start}-${end}. ${isDone ? 'COMPLETO' : 'Continua'}. Enviados: ${sent}, Erros: ${failed}`)
 
     return new Response(
       JSON.stringify({ ok: true, campaignId: campaign.id, processed: batch.length, sent, failed, done: isDone }),
-      { status: 200 }
+      { status: 200, headers: { ...cors, 'Content-Type': 'application/json' } }
     )
   } catch (err: any) {
     console.error('run-email-campaign erro:', err)
-    return new Response(JSON.stringify({ error: err.message }), { status: 500 })
+    return new Response(JSON.stringify({ error: err.message }), {
+      status: 500, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
+    })
   }
 })
