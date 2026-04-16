@@ -43,9 +43,10 @@ export const LandingFooter = () => {
               <a href="https://wa.me/5545991220048" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">Suporte</a>
             </div>
 
-            <p className="text-xs text-muted-foreground">
-              © {new Date().getFullYear()} OneMed. Todos os direitos reservados.
-            </p>
+            <div className="text-xs text-muted-foreground text-center md:text-right">
+              <p>© {new Date().getFullYear()} OneMed. Todos os direitos reservados.</p>
+              <p>CNPJ: 39.686.383/0001-39</p>
+            </div>
           </div>
         </div>
       </footer>
