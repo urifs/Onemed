@@ -251,18 +251,31 @@ export default function EmailCampaignPage() {
       }
 
       if (current.status === 'running') {
+        // Outro processo executando este lote — só aguarda
         await new Promise(r => setTimeout(r, 3000));
         continue;
       }
 
-      // status === 'scheduled' — dispara próximo lote
+      // status === 'scheduled' — dispara próximo lote com timeout máximo
+      // Promise.race garante que o loop não trava se o invoke congelar
       try {
-        await supabase.functions.invoke('run-email-campaign', {
-          body: { campaign_id: campaignId },
-        });
-      } catch (e) {
-        console.error('Campaign trigger error:', e);
-        await new Promise(r => setTimeout(r, 5000));
+        await Promise.race([
+          supabase.functions.invoke('run-email-campaign', {
+            body: { campaign_id: campaignId },
+          }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('timeout')), 6 * 60 * 1000)
+          ),
+        ]);
+      } catch (e: any) {
+        console.error('Campaign batch error (retrying):', e?.message);
+        // Se a campanha ficou presa em 'running' por timeout, volta para 'scheduled'
+        await (supabase as any)
+          .from('email_campaigns')
+          .update({ status: 'scheduled' })
+          .eq('id', campaignId)
+          .eq('status', 'running');
+        await new Promise(r => setTimeout(r, 3000));
       }
     }
 
