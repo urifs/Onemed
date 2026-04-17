@@ -16,9 +16,9 @@ function getCorsHeaders(req: Request) {
 function normalizePhone(raw: string): string | null {
   const digits = raw.replace(/\D/g, '')
   if (!digits) return null
-  if (digits.startsWith('55') && (digits.length === 12 || digits.length === 13)) return '+' + digits
-  if (digits.length === 10 || digits.length === 11) return '+55' + digits
-  if (digits.length >= 12 && digits.length <= 15) return '+' + digits
+  if (digits.startsWith('55') && (digits.length === 12 || digits.length === 13)) return digits
+  if (digits.length === 10 || digits.length === 11) return '55' + digits
+  if (digits.length >= 12 && digits.length <= 15) return digits
   return null
 }
 
@@ -85,22 +85,28 @@ async function fetchRecipients(
   return []
 }
 
-async function sendSMS(accountSid: string, authToken: string, from: string, to: string, body: string) {
+async function sendWhatsApp(token: string, phoneId: string, to: string, body: string) {
   try {
     const res = await fetch(
-      `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
+      `https://graph.facebook.com/v18.0/${phoneId}/messages`,
       {
         method: 'POST',
         headers: {
-          'Authorization': 'Basic ' + btoa(`${accountSid}:${authToken}`),
-          'Content-Type': 'application/x-www-form-urlencoded',
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
         },
-        body: new URLSearchParams({ From: from, To: to, Body: body }).toString(),
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          to,
+          type: 'text',
+          text: { body, preview_url: false },
+        }),
       }
     )
     const data = await res.json()
-    if (res.ok && data.sid) return { ok: true }
-    return { ok: false, error: data?.message || data?.code || JSON.stringify(data) }
+    if (res.ok && data.messages?.[0]?.id) return { ok: true }
+    const errMsg = data?.error?.message || data?.error?.error_data?.details || JSON.stringify(data)
+    return { ok: false, error: errMsg }
   } catch (e: unknown) {
     return { ok: false, error: e instanceof Error ? e.message : 'Network error' }
   }
@@ -113,11 +119,9 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID')!
-    const twilioAuthToken  = Deno.env.get('TWILIO_AUTH_TOKEN')!
-    const twilioFrom       = Deno.env.get('TWILIO_FROM_NUMBER')!
+    const whatsappToken = Deno.env.get('WHATSAPP_TOKEN')!
+    const whatsappPhoneId = Deno.env.get('WHATSAPP_PHONE_ID')!
 
-    // Auth
     const jwt = (req.headers.get('authorization') || '').replace('Bearer ', '')
     if (!jwt) return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401, headers: { ...cors, 'Content-Type': 'application/json' },
@@ -136,7 +140,7 @@ serve(async (req) => {
     const body = await req.json()
     const { mode, audience, custom_numbers, message, delay_ms, batch_recipients } = body
 
-    // ── MODO LIST: retorna lista de destinatários sem enviar ─────────────────
+    // ── MODO LIST ────────────────────────────────────────────────────────────
     if (mode === 'list') {
       let raw: { phone: string; email: string }[] = []
       if (audience === 'custom') {
@@ -145,7 +149,6 @@ serve(async (req) => {
         raw = await fetchRecipients(supabase, audience)
       }
 
-      // Buscar números que já receberam com sucesso
       const { data: alreadySent } = await supabase.from('whatsapp_sends').select('phone').eq('status', 'sent')
       const sentSet = new Set((alreadySent || []).map((r: any) => r.phone))
 
@@ -160,7 +163,7 @@ serve(async (req) => {
       })
     }
 
-    // ── MODO BATCH: envia SMS via Twilio ─────────────────────────────────────
+    // ── MODO BATCH ───────────────────────────────────────────────────────────
     if (mode === 'batch') {
       if (!message?.trim()) return new Response(JSON.stringify({ error: 'message obrigatório' }), {
         status: 400, headers: { ...cors, 'Content-Type': 'application/json' },
@@ -171,8 +174,8 @@ serve(async (req) => {
       const logs: Record<string, unknown>[] = []
 
       for (const r of recipients) {
-        const normalized = normalizePhone(r.phone) || r.phone
-        const result = await sendSMS(twilioAccountSid, twilioAuthToken, twilioFrom, normalized, message.trim())
+        const normalized = normalizePhone(r.phone) || r.phone.replace(/\D/g, '')
+        const result = await sendWhatsApp(whatsappToken, whatsappPhoneId, normalized, message.trim())
         const status = result.ok ? 'sent' : 'failed'
         results.push({ phone: r.phone, email: r.email, status, error: result.error })
         logs.push({ phone: r.phone, email: r.email || null, status, audience: audience || 'batch' })
@@ -193,7 +196,7 @@ serve(async (req) => {
     })
 
   } catch (err: unknown) {
-    console.error('send-sms error:', err)
+    console.error('send-whatsapp error:', err)
     return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Erro interno' }), {
       status: 500, headers: { ...cors, 'Content-Type': 'application/json' },
     })

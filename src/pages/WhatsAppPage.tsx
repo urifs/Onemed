@@ -306,10 +306,10 @@ export default function WhatsAppPage() {
           <div>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
             <MessageSquare className="w-6 h-6 text-green-500" />
-            Disparos SMS
+            Disparos WhatsApp
           </h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            Envie SMS em massa via Twilio · Remetente: <span className="text-foreground font-mono">+1 (978) 754-6713</span>
+            Envie mensagens em massa via API Oficial WhatsApp · Remetente: <span className="text-foreground font-mono">+55 63 9953-5519</span>
           </p>
           </div>
           <AlertDialog>
@@ -341,7 +341,7 @@ export default function WhatsAppPage() {
           <AlertTriangle className="w-5 h-5 text-yellow-500 flex-shrink-0 mt-0.5" />
           <p className="text-sm text-muted-foreground">
             <span className="text-yellow-400 font-medium">Boas práticas: </span>
-            Envie entre <strong className="text-foreground">8h–20h</strong> · Máximo <strong className="text-foreground">300–500/dia</strong> · Evite repetir a mesma mensagem para o mesmo público em dias seguidos.
+            Envie entre <strong className="text-foreground">8h–20h</strong> · Máximo <strong className="text-foreground">1.000/dia</strong> no tier inicial · A API oficial entrega como mensagem WhatsApp real do número <strong className="text-foreground">+55 63 9953-5519</strong>.
           </p>
         </div>
 
@@ -508,9 +508,9 @@ export default function WhatsAppPage() {
             <div className="flex gap-3 p-3 rounded-lg bg-secondary/50 border border-border">
               <Info className="w-4 h-4 text-muted-foreground flex-shrink-0 mt-0.5" />
               <p className="text-xs text-muted-foreground">
-                Não feche esta página durante o envio. O resultado de cada SMS é registrado automaticamente
+                Não feche esta página durante o envio. O resultado de cada mensagem é registrado automaticamente
                 e aparece como indicador verde/vermelho na página de <strong className="text-foreground">Usuários Trial</strong>.
-                SMS não suporta formatação (*negrito*, _itálico_) — use texto simples.
+                WhatsApp suporta formatação: <strong className="text-foreground">*negrito*</strong>, <em>_itálico_</em> e emojis.
               </p>
             </div>
 
