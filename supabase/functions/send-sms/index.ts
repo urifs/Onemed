@@ -42,6 +42,26 @@ function getTrialDateRange(audience: string): { from: string | null; to: string 
   }
 }
 
+// For an array of YYYY-MM-DD dates (Brazil timezone), returns the UTC timestamptz ranges
+// matching each calendar day in BR time (UTC-3).
+function getBrazilDayRanges(dates: string[]): { from: string; to: string }[] {
+  const BR_OFFSET = 3 * 60 * 60 * 1000
+  const DAY = 24 * 60 * 60 * 1000
+  const ranges: { from: string; to: string }[] = []
+  for (const d of dates) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d)
+    if (!m) continue
+    const [_, y, mo, da] = m
+    // Midnight BR = 03:00 UTC of same calendar day
+    const startUtc = Date.UTC(Number(y), Number(mo) - 1, Number(da)) + BR_OFFSET
+    ranges.push({
+      from: new Date(startUtc).toISOString(),
+      to:   new Date(startUtc + DAY).toISOString(),
+    })
+  }
+  return ranges
+}
+
 const TRIAL_EXPIRED_AUDIENCES = [
   'trial_expired_today','trial_expired_yesterday','trial_expired_3d',
   'trial_expired_5d','trial_expired_7d','trial_expired_all',
@@ -50,7 +70,23 @@ const TRIAL_EXPIRED_AUDIENCES = [
 async function fetchRecipients(
   supabase: ReturnType<typeof createClient>,
   audience: string,
+  expiredDates?: string[],
 ): Promise<{ phone: string; email: string }[]> {
+  if (audience === 'trial_expired_custom_dates') {
+    const ranges = getBrazilDayRanges(expiredDates || [])
+    if (ranges.length === 0) return []
+    // Supabase-js does not support OR of ranges directly; run one query per day and merge.
+    const results: { phone: string; email: string }[] = []
+    for (const { from, to } of ranges) {
+      const { data } = await supabase.from('accesses').select('whatsapp, email')
+        .eq('access_type', 'trial').eq('status', 'expired').not('whatsapp', 'is', null)
+        .gte('expires_at', from).lt('expires_at', to)
+      for (const r of (data || []) as any[]) {
+        results.push({ phone: r.whatsapp, email: r.email })
+      }
+    }
+    return results
+  }
   if (TRIAL_EXPIRED_AUDIENCES.includes(audience)) {
     const { from, to } = getTrialDateRange(audience)
     let q = supabase.from('accesses').select('whatsapp, email')
@@ -150,7 +186,7 @@ serve(async (req) => {
     })
 
     const body = await req.json()
-    const { mode, audience, custom_numbers, message, delay_ms, batch_recipients, job_id, scheduled_at } = body
+    const { mode, audience, custom_numbers, message, delay_ms, batch_recipients, job_id, scheduled_at, expired_dates } = body
 
     // ── CREATE JOB ───────────────────────────────────────────────────────────
     if (mode === 'create-job') {
@@ -162,7 +198,7 @@ serve(async (req) => {
       if (audience === 'custom') {
         raw = (custom_numbers || []).filter(Boolean).map((p: string) => ({ phone: p, email: '' }))
       } else {
-        raw = await fetchRecipients(supabase, audience)
+        raw = await fetchRecipients(supabase, audience, expired_dates)
       }
 
       // For custom lists, skip deduplication — user explicitly chose those numbers.
@@ -225,7 +261,7 @@ serve(async (req) => {
       if (audience === 'custom') {
         raw = (custom_numbers || []).filter(Boolean).map((p: string) => ({ phone: p, email: '' }))
       } else {
-        raw = await fetchRecipients(supabase, audience)
+        raw = await fetchRecipients(supabase, audience, expired_dates)
       }
       let sentSetList = new Set<string>()
       if (audience !== 'custom') {

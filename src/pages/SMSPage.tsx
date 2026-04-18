@@ -13,8 +13,11 @@ import {
 import {
   Smartphone, Users, CheckCircle2, XCircle, Loader2, Send,
   AlertTriangle, Info, Clock, StopCircle, Trash2, Eye, RefreshCw,
+  CalendarIcon, X,
 } from 'lucide-react';
 import type { RealtimeChannel } from '@supabase/supabase-js';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 const GSM7_BASIC = new Set(
   '@£$¥èéùìòÇ\nØø\rÅå\u0394_\u03A6\u0393\u039B\u03A9\u03A0\u03A8\u03A3\u0398\u039EÆæßÉ' +
@@ -38,6 +41,7 @@ function countGSM7(text: string): number {
 type Audience =
   | 'trial_expired_today' | 'trial_expired_yesterday' | 'trial_expired_3d'
   | 'trial_expired_5d' | 'trial_expired_7d' | 'trial_expired_all'
+  | 'trial_expired_custom_dates'
   | 'trial_active' | 'buyers_approved' | 'buyers_all' | 'all_with_whatsapp' | 'custom';
 
 interface SmsJob {
@@ -74,6 +78,7 @@ const AUDIENCE_GROUPS = [
       { value: 'trial_expired_5d'        as Audience, label: 'Últimos 5 dias',     description: 'Expiraram nos últimos 5 dias' },
       { value: 'trial_expired_7d'        as Audience, label: 'Últimos 7 dias',     description: 'Expiraram nos últimos 7 dias' },
       { value: 'trial_expired_all'       as Audience, label: 'Todos os expirados', description: 'Todos os trials já expirados' },
+      { value: 'trial_expired_custom_dates' as Audience, label: 'Escolher dias',   description: 'Selecionar datas específicas no calendário' },
     ],
   },
   {
@@ -93,6 +98,7 @@ export default function SMSPage() {
   const [audience, setAudience] = useState<Audience>('trial_expired_today');
   const [customNumbers, setCustomNumbers] = useState('');
   const [delayMs, setDelayMs] = useState(1000);
+  const [selectedDates, setSelectedDates] = useState<Date[]>([]);
 
   const [activeJob, setActiveJob] = useState<SmsJob | null>(null);
   const [sends, setSends] = useState<SmsJobSend[]>([]);
@@ -202,12 +208,23 @@ export default function SMSPage() {
     return responseData;
   }
 
+  function toLocalYMD(d: Date): string {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const da = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${da}`;
+  }
+
   async function handlePreview() {
+    if (audience === 'trial_expired_custom_dates' && selectedDates.length === 0) {
+      toast.error('Selecione ao menos um dia no calendário'); return;
+    }
     setPreviewing(true);
     setPreviewCount(null);
     try {
       const payload: Record<string, unknown> = { mode: 'list', audience };
       if (audience === 'custom') payload.custom_numbers = customNumbers.split('\n').map(s => s.trim()).filter(Boolean);
+      if (audience === 'trial_expired_custom_dates') payload.expired_dates = selectedDates.map(toLocalYMD);
       const data = await callFn('send-sms', payload);
       const count = (data?.recipients ?? []).length;
       setPreviewCount(count);
@@ -222,6 +239,9 @@ export default function SMSPage() {
   async function handleStartJob() {
     if (!message.trim()) { toast.error('Digite a mensagem antes de enviar'); return; }
     if (audience === 'custom' && !customNumbers.trim()) { toast.error('Adicione pelo menos um número'); return; }
+    if (audience === 'trial_expired_custom_dates' && selectedDates.length === 0) {
+      toast.error('Selecione ao menos um dia no calendário'); return;
+    }
 
     setCreating(true);
     setSends([]);
@@ -233,6 +253,7 @@ export default function SMSPage() {
         delay_ms: delayMs,
       };
       if (audience === 'custom') payload.custom_numbers = customNumbers.split('\n').map(s => s.trim()).filter(Boolean);
+      if (audience === 'trial_expired_custom_dates') payload.expired_dates = selectedDates.map(toLocalYMD);
 
       const data = await callFn('send-sms', payload);
       const { job_id, total } = data;
@@ -538,6 +559,70 @@ export default function SMSPage() {
               );
             })}
 
+            {audience === 'trial_expired_custom_dates' && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <Label className="text-sm text-muted-foreground">Dias em que os trials expiraram</Label>
+                  <div className="flex items-center gap-2">
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" size="sm" disabled={!!isJobActive}
+                          className="border-border text-muted-foreground hover:text-foreground">
+                          <CalendarIcon className="w-4 h-4 mr-2" />
+                          {selectedDates.length === 0
+                            ? 'Abrir calendário'
+                            : `${selectedDates.length} dia${selectedDates.length !== 1 ? 's' : ''} selecionado${selectedDates.length !== 1 ? 's' : ''}`}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent align="end" className="w-auto p-0 bg-background-paper border-border">
+                        <Calendar
+                          mode="multiple"
+                          selected={selectedDates}
+                          onSelect={(days) => { setSelectedDates(days || []); setPreviewCount(null); }}
+                          disabled={(d) => d > new Date()}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
+                    {selectedDates.length > 0 && (
+                      <Button variant="ghost" size="sm"
+                        onClick={() => { setSelectedDates([]); setPreviewCount(null); }}
+                        disabled={!!isJobActive}
+                        className="h-8 px-2 text-muted-foreground hover:text-foreground">
+                        <X className="w-4 h-4 mr-1" /> Limpar
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                {selectedDates.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {[...selectedDates]
+                      .sort((a, b) => a.getTime() - b.getTime())
+                      .map((d) => (
+                        <span key={d.toISOString()}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-blue-500/15 border border-blue-500/30 text-xs text-blue-300">
+                          {d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                          <button type="button"
+                            disabled={!!isJobActive}
+                            onClick={() => {
+                              setSelectedDates((prev) =>
+                                prev.filter((x) => x.toDateString() !== d.toDateString())
+                              );
+                              setPreviewCount(null);
+                            }}
+                            className="hover:text-blue-200 disabled:opacity-50">
+                            <X className="w-3 h-3" />
+                          </button>
+                        </span>
+                      ))}
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Serão incluídos trials cuja data de expiração caiu em qualquer um dos dias selecionados (horário de Brasília).
+                </p>
+              </div>
+            )}
+
             {audience === 'custom' && (
               <div>
                 <Label className="text-sm text-muted-foreground mb-1.5 block">Números (um por linha)</Label>
@@ -555,7 +640,11 @@ export default function SMSPage() {
 
             <div className="flex items-center gap-3 flex-wrap">
               <Button variant="outline" size="sm" onClick={handlePreview}
-                disabled={previewing || !!isJobActive || (audience === 'custom' && !customNumbers.trim())}
+                disabled={
+                  previewing || !!isJobActive
+                  || (audience === 'custom' && !customNumbers.trim())
+                  || (audience === 'trial_expired_custom_dates' && selectedDates.length === 0)
+                }
                 className="border-border text-muted-foreground hover:text-foreground">
                 {previewing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Eye className="w-4 h-4 mr-2" />}
                 Ver quantos serão impactados
