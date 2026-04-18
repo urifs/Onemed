@@ -159,16 +159,28 @@ export default function SMSPage() {
   }, []);
 
   async function callFn(fn: string, body: Record<string, unknown>) {
-    const { data, error } = await supabase.functions.invoke(fn, { body });
-    if (error) {
-      const ctx = (error as any)?.context;
-      const msg = (typeof ctx === 'object' && ctx !== null)
-        ? (ctx.error || ctx.message || JSON.stringify(ctx))
-        : (error.message || 'Erro na função');
-      throw new Error(String(msg));
-    }
-    if (data?.error) throw new Error(data.error);
-    return data;
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('Sessão expirada. Faça login novamente.');
+
+    const res = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${fn}`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      }
+    );
+
+    let responseData: Record<string, unknown> = {};
+    try { responseData = await res.json(); } catch { /* empty body */ }
+
+    if (!res.ok) throw new Error(String(responseData?.error || responseData?.message || `Erro ${res.status}`));
+    if (responseData?.error) throw new Error(String(responseData.error));
+    return responseData;
   }
 
   async function handlePreview() {
