@@ -482,21 +482,17 @@ export default function SMSPage() {
               />
             </div>
 
-            {/* Link clickability tip */}
-            {(() => {
-              const hasUrl = /https?:\/\//i.test(message)
-              const hasBareUrl = /\b(onemedcursos\.com\.br|[a-z0-9-]+\.[a-z]{2,}\/\S*)/i.test(message) && !hasUrl
-              return hasBareUrl ? (
-                <div className="flex gap-2 p-3 rounded-lg border border-orange-500/30 bg-orange-500/5">
-                  <AlertTriangle className="w-4 h-4 text-orange-400 flex-shrink-0 mt-0.5" />
-                  <p className="text-xs text-muted-foreground">
-                    <span className="text-orange-400 font-medium">Link não clicável: </span>
-                    URLs sem <span className="font-mono text-foreground">https://</span> aparecem como texto simples no celular.
-                    Substitua por <span className="font-mono text-foreground">https://onemedcursos.com.br</span>
-                  </p>
-                </div>
-              ) : null
-            })()}
+            {/* Link tip — always visible */}
+            <div className="flex gap-2 p-3 rounded-lg border border-blue-500/20 bg-blue-500/5">
+              <Info className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-muted-foreground">
+                <span className="text-blue-400 font-medium">Dica de link clicável: </span>
+                Apps de SMS e operadoras brasileiras frequentemente não reconhecem <span className="font-mono text-foreground">.com.br</span> como link, mesmo com <span className="font-mono text-foreground">https://</span>.
+                Use um encurtador como{' '}
+                <span className="font-mono text-foreground">bit.ly</span> ou{' '}
+                <span className="font-mono text-foreground">tinyurl.com</span> — links curtos são clicáveis em 100% dos aparelhos.
+              </p>
+            </div>
 
             {message.trim() && (
               <div className="p-3 rounded-lg border border-border bg-secondary/30">
