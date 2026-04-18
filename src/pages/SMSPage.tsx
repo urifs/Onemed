@@ -207,7 +207,7 @@ export default function SMSPage() {
               Disparos SMS
             </h1>
             <p className="text-muted-foreground mt-1 text-sm">
-              Via AWS SNS · Cobrança por mensagem enviada
+              Via Twilio · Remetente: <span className="font-mono text-foreground">+1 978 754 6613</span>
             </p>
           </div>
           <AlertDialog>
@@ -234,17 +234,16 @@ export default function SMSPage() {
           </AlertDialog>
         </div>
 
-        {/* Aviso Sandbox */}
+        {/* Aviso Trial Twilio */}
         <div className="flex gap-3 p-4 rounded-lg border border-yellow-500/30 bg-yellow-500/5">
           <AlertTriangle className="w-5 h-5 text-yellow-500 flex-shrink-0 mt-0.5" />
           <div className="text-sm text-muted-foreground space-y-1">
             <p>
               <span className="text-yellow-400 font-medium">Atenção: </span>
-              Contas AWS novas estão no <strong className="text-foreground">SMS Sandbox</strong> — só enviam para números verificados.
+              Contas Twilio trial só enviam para números verificados e adicionam prefixo "Sent from a Twilio trial account".
             </p>
             <p>
-              Para enviar para qualquer número, solicite saída do Sandbox em:
-              AWS Console → SNS → Text messaging → <strong className="text-foreground">Request production access</strong>.
+              Para enviar para qualquer número sem prefixo, faça o <strong className="text-foreground">upgrade da conta</strong> em Twilio Console → Billing → Upgrade.
             </p>
           </div>
         </div>
@@ -381,7 +380,7 @@ export default function SMSPage() {
             <div className="flex gap-3 p-3 rounded-lg bg-secondary/50 border border-border">
               <Info className="w-4 h-4 text-muted-foreground flex-shrink-0 mt-0.5" />
               <p className="text-xs text-muted-foreground">
-                Não feche esta página durante o envio. Cada SMS enviado é cobrado pela AWS (~R$0,05 por mensagem para Brasil).
+                Não feche esta página durante o envio. Cada SMS enviado é cobrado pelo Twilio (~US$0,05 por mensagem para Brasil).
               </p>
             </div>
 

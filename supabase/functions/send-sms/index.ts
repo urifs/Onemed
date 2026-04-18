@@ -1,6 +1,5 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { SNSClient, PublishCommand } from 'https://esm.sh/@aws-sdk/client-sns@3'
 
 const ALLOWED_ORIGINS = ['https://onemedcursos.com.br', 'http://localhost:5173', 'http://localhost:3000']
 
@@ -86,6 +85,33 @@ async function fetchRecipients(
   return []
 }
 
+async function sendTwilioSMS(
+  accountSid: string,
+  authToken: string,
+  from: string,
+  to: string,
+  body: string,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const res = await fetch(
+      `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Basic ' + btoa(`${accountSid}:${authToken}`),
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({ To: to, From: from, Body: body }).toString(),
+      }
+    )
+    const data = await res.json()
+    if (res.ok && data.sid) return { ok: true }
+    return { ok: false, error: data?.message || data?.code || JSON.stringify(data) }
+  } catch (e: unknown) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Network error' }
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: getCorsHeaders(req) })
   const cors = getCorsHeaders(req)
@@ -93,15 +119,14 @@ serve(async (req) => {
   try {
     const supabaseUrl        = Deno.env.get('SUPABASE_URL')!
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    const awsAccessKeyId     = Deno.env.get('AWS_ACCESS_KEY_ID')!
-    const awsSecretAccessKey = Deno.env.get('AWS_SECRET_ACCESS_KEY')!
-    const awsRegion          = Deno.env.get('AWS_REGION') || 'us-east-1'
+    const twilioSid          = Deno.env.get('TWILIO_ACCOUNT_SID')!
+    const twilioToken        = Deno.env.get('TWILIO_AUTH_TOKEN')!
+    const twilioFrom         = Deno.env.get('TWILIO_FROM_NUMBER')!
 
     const jwt = (req.headers.get('authorization') || '').replace('Bearer ', '')
     if (!jwt) return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401, headers: { ...cors, 'Content-Type': 'application/json' },
     })
-
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
     const { data: { user }, error: authErr } = await supabase.auth.getUser(jwt)
     if (authErr || !user) return new Response(JSON.stringify({ error: 'Unauthorized' }), {
@@ -111,11 +136,6 @@ serve(async (req) => {
       .eq('user_id', user.id).eq('role', 'admin').maybeSingle()
     if (!roleData) return new Response(JSON.stringify({ error: 'Forbidden' }), {
       status: 403, headers: { ...cors, 'Content-Type': 'application/json' },
-    })
-
-    const sns = new SNSClient({
-      region: awsRegion,
-      credentials: { accessKeyId: awsAccessKeyId, secretAccessKey: awsSecretAccessKey },
     })
 
     const body = await req.json()
@@ -155,36 +175,21 @@ serve(async (req) => {
 
       for (const r of recipients) {
         const normalized = normalizePhone(r.phone)
-        let ok = false
-        let error: string | undefined
+        let result: { ok: boolean; error?: string }
 
         if (!normalized) {
-          error = 'Número inválido'
+          result = { ok: false, error: 'Número inválido' }
         } else {
-          try {
-            await sns.send(new PublishCommand({
-              PhoneNumber: normalized,
-              Message: message.trim(),
-              MessageAttributes: {
-                'AWS.SNS.SMS.SMSType': { DataType: 'String', StringValue: 'Promotional' },
-                'AWS.SNS.SMS.SenderID': { DataType: 'String', StringValue: 'OneMed' },
-              },
-            }))
-            ok = true
-          } catch (e: unknown) {
-            error = e instanceof Error ? e.message : 'Erro ao enviar'
-          }
+          result = await sendTwilioSMS(twilioSid, twilioToken, twilioFrom, normalized, message.trim())
         }
 
-        const status = ok ? 'sent' : 'failed'
-        results.push({ phone: r.phone, email: r.email, status, error })
+        const status = result.ok ? 'sent' : 'failed'
+        results.push({ phone: r.phone, email: r.email, status, error: result.error })
         logs.push({ phone: r.phone, email: r.email || null, status, audience: audience || 'batch' })
         await new Promise(resolve => setTimeout(resolve, delayMs))
       }
 
-      if (logs.length > 0) {
-        await supabase.from('sms_sends').insert(logs)
-      }
+      if (logs.length > 0) await supabase.from('sms_sends').insert(logs)
 
       const sent = results.filter(r => r.status === 'sent').length
       const failed = results.filter(r => r.status === 'failed').length
