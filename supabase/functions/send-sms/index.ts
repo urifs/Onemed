@@ -154,8 +154,13 @@ serve(async (req) => {
         raw = await fetchRecipients(supabase, audience)
       }
 
-      const { data: alreadySent } = await supabase.from('sms_sends').select('phone').eq('status', 'sent')
-      const sentSet = new Set((alreadySent || []).map((r: any) => r.phone))
+      // For custom lists, skip deduplication — user explicitly chose those numbers.
+      // For audience-based lists, filter already-sent numbers to avoid duplicates.
+      let sentSet = new Set<string>()
+      if (audience !== 'custom') {
+        const { data: alreadySent } = await supabase.from('sms_sends').select('phone').eq('status', 'sent')
+        sentSet = new Set((alreadySent || []).map((r: any) => r.phone))
+      }
       const seen = new Map<string, string>()
       for (const r of raw) {
         const n = normalizePhone(r.phone)
@@ -208,14 +213,17 @@ serve(async (req) => {
       } else {
         raw = await fetchRecipients(supabase, audience)
       }
-      const { data: alreadySent } = await supabase.from('sms_sends').select('phone').eq('status', 'sent')
-      const sentSet = new Set((alreadySent || []).map((r: any) => r.phone))
-      const seen = new Map<string, string>()
+      let sentSetList = new Set<string>()
+      if (audience !== 'custom') {
+        const { data: alreadySent } = await supabase.from('sms_sends').select('phone').eq('status', 'sent')
+        sentSetList = new Set((alreadySent || []).map((r: any) => r.phone))
+      }
+      const seenList = new Map<string, string>()
       for (const r of raw) {
         const n = normalizePhone(r.phone)
-        if (n && !seen.has(n) && !sentSet.has(n)) seen.set(n, r.email || '')
+        if (n && !seenList.has(n) && !sentSetList.has(n)) seenList.set(n, r.email || '')
       }
-      const recipients = Array.from(seen.entries()).map(([phone, email]) => ({ phone, email }))
+      const recipients = Array.from(seenList.entries()).map(([phone, email]) => ({ phone, email }))
       return new Response(JSON.stringify({ recipients }), {
         headers: { ...cors, 'Content-Type': 'application/json' },
       })
