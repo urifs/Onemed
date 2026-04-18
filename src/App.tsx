@@ -25,6 +25,7 @@ import PrivacyPage from "./pages/PrivacyPage";
 import DatabasePage from "./pages/DatabasePage";
 import EmailCampaignPage from "./pages/EmailCampaignPage";
 import WhatsAppPage from "./pages/WhatsAppPage";
+import SMSPage from "./pages/SMSPage";
 import NotFound from "./pages/NotFound";
 import WhatsAppButton from "./components/WhatsAppButton";
 
@@ -64,6 +65,7 @@ const App = () => (
             <Route path="/admin/database" element={<ProtectedRoute><DatabasePage /></ProtectedRoute>} />
             <Route path="/admin/email-campaign" element={<ProtectedRoute><EmailCampaignPage /></ProtectedRoute>} />
             <Route path="/admin/whatsapp" element={<ProtectedRoute><WhatsAppPage /></ProtectedRoute>} />
+            <Route path="/admin/sms" element={<ProtectedRoute><SMSPage /></ProtectedRoute>} />
 
             {/* Payment routes */}
             <Route path="/checkout" element={<CheckoutPage />} />
