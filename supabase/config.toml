@@ -1,5 +1,11 @@
 project_id = "wydloquewlbmxflacauv"
 
+[functions.create-trial-access]
+verify_jwt = false
+
+[functions.mp-create-payment]
+verify_jwt = false
+
 [functions.send-custom-email]
 verify_jwt = false
 
