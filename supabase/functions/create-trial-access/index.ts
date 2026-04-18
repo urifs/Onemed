@@ -240,33 +240,6 @@ serve(async (req) => {
       },
     }).then(() => {}).catch((e: any) => console.warn('Trial email falhou:', e))
 
-    if (whatsapp) {
-      const manychatApiKey = Deno.env.get('MANYCHAT_API_KEY')
-      if (manychatApiKey) {
-        const digits = String(whatsapp).replace(/\D/g, '')
-        const phone = digits.startsWith('55') ? '+' + digits : '+55' + digits
-        fetch('https://api.manychat.com/fb/subscriber/findByPhone?phone=' + encodeURIComponent(phone), {
-          headers: { Authorization: `Bearer ${manychatApiKey}` },
-        }).then(async r => {
-          const d = await r.json()
-          const sid = d.data?.id
-          if (sid) {
-            await fetch('https://api.manychat.com/fb/subscriber/addTagByName', {
-              method: 'POST',
-              headers: { Authorization: `Bearer ${manychatApiKey}`, 'Content-Type': 'application/json' },
-              body: JSON.stringify({ subscriber_id: sid, tag_name: 'trial_ativo' }),
-            })
-          } else {
-            await fetch('https://api.manychat.com/fb/subscriber/createSubscriber', {
-              method: 'POST',
-              headers: { Authorization: `Bearer ${manychatApiKey}`, 'Content-Type': 'application/json' },
-              body: JSON.stringify({ phone, email: normalizedEmail, has_opt_in_phone: true }),
-            })
-          }
-        }).catch(() => {})
-      }
-    }
-
     return jsonResponse(req, {
       success: true,
       accessId,
