@@ -16,6 +16,25 @@ import {
 } from 'lucide-react';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
+const GSM7_BASIC = new Set(
+  '@£$¥èéùìòÇ\nØø\rÅå\u0394_\u03A6\u0393\u039B\u03A9\u03A0\u03A8\u03A3\u0398\u039EÆæßÉ' +
+  ' !"#¤%&\'()*+,-./:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà'
+)
+const GSM7_EXTENDED = new Set('\f^{}\\[~]|€')
+
+function isGSM7(text: string): boolean {
+  for (const char of text) {
+    if (!GSM7_BASIC.has(char) && !GSM7_EXTENDED.has(char)) return false
+  }
+  return true
+}
+
+function countGSM7(text: string): number {
+  let n = 0
+  for (const char of text) n += GSM7_EXTENDED.has(char) ? 2 : 1
+  return n
+}
+
 type Audience =
   | 'trial_expired_today' | 'trial_expired_yesterday' | 'trial_expired_3d'
   | 'trial_expired_5d' | 'trial_expired_7d' | 'trial_expired_all'
@@ -408,20 +427,41 @@ export default function SMSPage() {
             <CardTitle className="text-base text-foreground">1. Mensagem</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex gap-3 p-3 rounded-lg border border-blue-500/20 bg-blue-500/5">
-              <Info className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />
-              <p className="text-xs text-muted-foreground">
-                SMS tem limite de <strong className="text-foreground">160 caracteres</strong> por mensagem.
-                Acima disso será cobrado como mensagem extra. Sem formatação.
-              </p>
-            </div>
+            {(() => {
+              const gsm7 = isGSM7(message)
+              const limit = gsm7 ? 160 : 70
+              const segLimit = gsm7 ? 153 : 67
+              const chars = gsm7 ? countGSM7(message) : message.length
+              const segments = chars <= limit ? 1 : Math.ceil(chars / segLimit)
+              return (
+                <div className="flex gap-3 p-3 rounded-lg border border-blue-500/20 bg-blue-500/5">
+                  <Info className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-muted-foreground">
+                    {message.trim() && !gsm7
+                      ? <>Sua mensagem contém caracteres <strong className="text-yellow-400">Unicode</strong> (ex: ã, â, ô, ê) — limite reduzido para <strong className="text-foreground">70 caracteres</strong> por SMS. Use apenas letras sem acento para o limite padrão de 160.</>
+                      : <>SMS suporta <strong className="text-foreground">160 caracteres</strong> (GSM-7). Acima disso, cada 153 chars = 1 SMS extra. Sem formatação.</>
+                    }
+                  </p>
+                </div>
+              )
+            })()}
 
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <Label className="text-sm text-muted-foreground">Texto da mensagem <span className="text-red-400">*</span></Label>
-                <span className={`text-xs font-medium ${message.length > 160 ? 'text-yellow-400' : message.length > 140 ? 'text-yellow-500/70' : 'text-muted-foreground'}`}>
-                  {message.length}/160 {message.length > 160 && `(+${Math.ceil((message.length - 160) / 153)} msg extra)`}
-                </span>
+                {(() => {
+                  const gsm7 = isGSM7(message)
+                  const limit = gsm7 ? 160 : 70
+                  const segLimit = gsm7 ? 153 : 67
+                  const chars = gsm7 ? countGSM7(message) : message.length
+                  const segments = chars <= limit ? 1 : Math.ceil(chars / segLimit)
+                  const over = chars > limit
+                  return (
+                    <span className={`text-xs font-medium ${over ? 'text-yellow-400' : chars > limit * 0.875 ? 'text-yellow-500/70' : 'text-muted-foreground'}`}>
+                      {chars}/{limit}{!gsm7 && ' Unicode'}{segments > 1 && ` · ${segments} SMS`}
+                    </span>
+                  )
+                })()}
               </div>
               <Textarea
                 value={message}

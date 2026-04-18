@@ -17,6 +17,8 @@ function normalizePhone(raw: string): string | null {
   const digits = raw.replace(/\D/g, '')
   if (!digits) return null
   if (digits.startsWith('55') && (digits.length === 12 || digits.length === 13)) return '+' + digits
+  // Brazilian number with leading 0 (e.g. 045991220048 → +5545991220048)
+  if (digits.startsWith('0') && (digits.length === 11 || digits.length === 12)) return '+55' + digits.slice(1)
   if (digits.length === 10 || digits.length === 11) return '+55' + digits
   if (digits.length >= 12 && digits.length <= 15) return '+' + digits
   return null
@@ -29,6 +31,8 @@ async function sendTwilioSMS(
   to: string,
   body: string,
 ): Promise<{ ok: boolean; error?: string }> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 15000)
   try {
     const res = await fetch(
       `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
@@ -39,12 +43,19 @@ async function sendTwilioSMS(
           'Content-Type': 'application/x-www-form-urlencoded',
         },
         body: new URLSearchParams({ To: to, From: from, Body: body }).toString(),
+        signal: controller.signal,
       }
     )
+    clearTimeout(timer)
     const data = await res.json()
     if (res.ok && data.sid) return { ok: true }
-    return { ok: false, error: data?.message || data?.code || JSON.stringify(data) }
+    const errMsg = data?.message
+      ? `${data.message}${data.code ? ` [código ${data.code}]` : ''}`
+      : data?.code || JSON.stringify(data)
+    return { ok: false, error: errMsg }
   } catch (e: unknown) {
+    clearTimeout(timer)
+    if (e instanceof Error && e.name === 'AbortError') return { ok: false, error: 'Timeout: sem resposta do Twilio em 15s' }
     return { ok: false, error: e instanceof Error ? e.message : 'Network error' }
   }
 }
