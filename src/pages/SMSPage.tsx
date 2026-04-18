@@ -160,7 +160,14 @@ export default function SMSPage() {
 
   async function callFn(fn: string, body: Record<string, unknown>) {
     const { data, error } = await supabase.functions.invoke(fn, { body });
-    if (error) throw new Error(error.message || 'Erro na função');
+    if (error) {
+      // Extract actual message from the function response body (FunctionsHttpError.context)
+      const ctx = (error as any)?.context;
+      const msg = (typeof ctx === 'object' && ctx !== null)
+        ? (ctx.error || ctx.message || JSON.stringify(ctx))
+        : (error.message || 'Erro na função');
+      throw new Error(String(msg));
+    }
     if (data?.error) throw new Error(data.error);
     return data;
   }

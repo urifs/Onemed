@@ -154,8 +154,13 @@ serve(async (req) => {
         raw = await fetchRecipients(supabase, audience)
       }
 
-      const { data: alreadySent } = await supabase.from('sms_sends').select('phone').eq('status', 'sent')
-      const sentSet = new Set((alreadySent || []).map((r: any) => r.phone))
+      // For custom lists, respect the numbers as-is (user explicitly chose them).
+      // For audience-based lists, skip numbers already sent to avoid duplicates.
+      let sentSet = new Set<string>()
+      if (audience !== 'custom') {
+        const { data: alreadySent } = await supabase.from('sms_sends').select('phone').eq('status', 'sent')
+        sentSet = new Set((alreadySent || []).map((r: any) => r.phone))
+      }
       const seen = new Map<string, string>()
       for (const r of raw) {
         const n = normalizePhone(r.phone)
@@ -208,14 +213,17 @@ serve(async (req) => {
       } else {
         raw = await fetchRecipients(supabase, audience)
       }
-      const { data: alreadySent } = await supabase.from('sms_sends').select('phone').eq('status', 'sent')
-      const sentSet = new Set((alreadySent || []).map((r: any) => r.phone))
-      const seen = new Map<string, string>()
+      let sentSet2 = new Set<string>()
+      if (audience !== 'custom') {
+        const { data: alreadySent } = await supabase.from('sms_sends').select('phone').eq('status', 'sent')
+        sentSet2 = new Set((alreadySent || []).map((r: any) => r.phone))
+      }
+      const seen2 = new Map<string, string>()
       for (const r of raw) {
         const n = normalizePhone(r.phone)
-        if (n && !seen.has(n) && !sentSet.has(n)) seen.set(n, r.email || '')
+        if (n && !seen2.has(n) && !sentSet2.has(n)) seen2.set(n, r.email || '')
       }
-      const recipients = Array.from(seen.entries()).map(([phone, email]) => ({ phone, email }))
+      const recipients = Array.from(seen2.entries()).map(([phone, email]) => ({ phone, email }))
       return new Response(JSON.stringify({ recipients }), {
         headers: { ...cors, 'Content-Type': 'application/json' },
       })
