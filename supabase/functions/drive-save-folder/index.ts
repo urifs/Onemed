@@ -2,6 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const ALLOWED_ORIGINS = ['https://onemedcursos.com.br', 'http://localhost:5173', 'http://localhost:3000']
+const GOOGLE_CLIENT_ID = '110017470335-2l6er8r451vj5hf3ob05rvolc2p4v9ku.apps.googleusercontent.com'
 
 function getCorsHeaders(req: Request) {
   const origin = req.headers.get('origin') || ''
@@ -10,6 +11,22 @@ function getCorsHeaders(req: Request) {
     'Access-Control-Allow-Origin': allowedOrigin,
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   }
+}
+
+async function refreshAccessToken(refreshToken: string, clientSecret: string): Promise<string> {
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      refresh_token: refreshToken,
+      client_id: GOOGLE_CLIENT_ID,
+      client_secret: clientSecret,
+      grant_type: 'refresh_token',
+    }),
+  })
+  const data = await res.json()
+  if (!res.ok || !data.access_token) throw new Error('Falha ao renovar token Google')
+  return data.access_token as string
 }
 
 serve(async (req) => {
@@ -21,29 +38,57 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey)
 
     const { folder_id } = await req.json()
+    const trimmedId = folder_id?.trim()
 
-    if (!folder_id?.trim()) {
+    if (!trimmedId) {
       return new Response(JSON.stringify({ error: 'folder_id é obrigatório' }), {
         status: 400, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
       })
     }
 
-    const { data: existing } = await supabase.from('drive_config').select('id').single()
+    const { data: existing } = await supabase.from('drive_config').select('*').maybeSingle()
+
+    let folderName = trimmedId
+    let accessToken: string | null = existing?.access_token ?? null
+    if (existing?.refresh_token) {
+      const expiry = existing.token_expiry ? new Date(existing.token_expiry) : null
+      if (!accessToken || !expiry || expiry < new Date()) {
+        const GOOGLE_CLIENT_SECRET = Deno.env.get('GOOGLE_CLIENT_SECRET')!
+        accessToken = await refreshAccessToken(existing.refresh_token, GOOGLE_CLIENT_SECRET)
+        await supabase.from('drive_config').update({
+          access_token: accessToken,
+          token_expiry: new Date(Date.now() + 3600 * 1000).toISOString(),
+        }).eq('id', existing.id)
+      }
+
+      try {
+        const res = await fetch(
+          `https://www.googleapis.com/drive/v3/files/${trimmedId}?fields=id,name`,
+          { headers: { Authorization: `Bearer ${accessToken}` } },
+        )
+        if (res.ok) {
+          const meta = await res.json()
+          if (meta?.name) folderName = meta.name
+        }
+      } catch (e) {
+        console.warn('Falha ao buscar nome da pasta no Drive:', e)
+      }
+    }
 
     if (existing) {
       await supabase.from('drive_config').update({
-        folder_id: folder_id.trim(),
-        folder_name: folder_id.trim(),
+        folder_id: trimmedId,
+        folder_name: folderName,
       }).eq('id', existing.id)
     } else {
       await supabase.from('drive_config').insert({
-        folder_id: folder_id.trim(),
-        folder_name: folder_id.trim(),
+        folder_id: trimmedId,
+        folder_name: folderName,
         connected: false,
       })
     }
 
-    return new Response(JSON.stringify({ success: true }), {
+    return new Response(JSON.stringify({ success: true, folder_name: folderName }), {
       headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
     })
   } catch (err: any) {
