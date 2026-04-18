@@ -139,7 +139,66 @@ serve(async (req) => {
     })
 
     const body = await req.json()
-    const { mode, audience, custom_numbers, message, delay_ms, batch_recipients } = body
+    const { mode, audience, custom_numbers, message, delay_ms, batch_recipients, job_id } = body
+
+    // ── CREATE JOB ───────────────────────────────────────────────────────────
+    if (mode === 'create-job') {
+      if (!message?.trim()) return new Response(JSON.stringify({ error: 'message é obrigatório' }), {
+        status: 400, headers: { ...cors, 'Content-Type': 'application/json' },
+      })
+
+      let raw: { phone: string; email: string }[] = []
+      if (audience === 'custom') {
+        raw = (custom_numbers || []).filter(Boolean).map((p: string) => ({ phone: p, email: '' }))
+      } else {
+        raw = await fetchRecipients(supabase, audience)
+      }
+
+      const { data: alreadySent } = await supabase.from('sms_sends').select('phone').eq('status', 'sent')
+      const sentSet = new Set((alreadySent || []).map((r: any) => r.phone))
+      const seen = new Map<string, string>()
+      for (const r of raw) {
+        const n = normalizePhone(r.phone)
+        if (n && !seen.has(n) && !sentSet.has(n)) seen.set(n, r.email || '')
+      }
+      const recipients = Array.from(seen.entries()).map(([phone, email]) => ({ phone, email }))
+
+      if (recipients.length === 0) return new Response(JSON.stringify({ error: 'Nenhum destinatário encontrado' }), {
+        status: 400, headers: { ...cors, 'Content-Type': 'application/json' },
+      })
+
+      const { data: newJob, error: insertErr } = await supabase.from('sms_jobs').insert({
+        status: 'scheduled',
+        audience,
+        message: message.trim(),
+        delay_ms: typeof delay_ms === 'number' ? Math.max(300, delay_ms) : 1000,
+        recipient_phones: recipients,
+        total: recipients.length,
+        processed_index: 0,
+        sent: 0,
+        failed: 0,
+      }).select('id').single()
+
+      if (insertErr) return new Response(JSON.stringify({ error: insertErr.message }), {
+        status: 500, headers: { ...cors, 'Content-Type': 'application/json' },
+      })
+
+      return new Response(JSON.stringify({ job_id: newJob.id, total: recipients.length }), {
+        headers: { ...cors, 'Content-Type': 'application/json' },
+      })
+    }
+
+    // ── CANCEL JOB ───────────────────────────────────────────────────────────
+    if (mode === 'cancel-job') {
+      if (!job_id) return new Response(JSON.stringify({ error: 'job_id é obrigatório' }), {
+        status: 400, headers: { ...cors, 'Content-Type': 'application/json' },
+      })
+      await supabase.from('sms_jobs').update({ status: 'cancelled' })
+        .eq('id', job_id).in('status', ['scheduled', 'running'])
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { ...cors, 'Content-Type': 'application/json' },
+      })
+    }
 
     // ── LIST RECIPIENTS ──────────────────────────────────────────────────────
     if (mode === 'list') {
