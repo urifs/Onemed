@@ -314,7 +314,7 @@ export default function SMSPage() {
               Disparos SMS
             </h1>
             <p className="text-muted-foreground mt-1 text-sm">
-              Via Twilio · Remetente: <span className="font-mono text-foreground">+1 978 754 6613</span>
+              Via Twilio · Remetente: <span className="font-mono text-foreground">+1 978 754 6713</span>
             </p>
           </div>
           <AlertDialog>
