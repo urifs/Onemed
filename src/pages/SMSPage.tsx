@@ -243,9 +243,18 @@ export default function SMSPage() {
       if (jobRow) await loadJob(jobRow as SmsJob);
 
       // Fire-and-forget: start first batch immediately without waiting for cron (up to 60s)
-      supabase.functions.invoke('run-sms-job', { body: { job_id } }).catch(() => {
-        // Cron will pick it up within 60s if this fails
-      });
+      fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/run-sms-job`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
+            apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ job_id }),
+        }
+      ).catch(() => { /* cron will pick it up within 60s */ });
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : 'Erro ao criar disparo');
     } finally {
