@@ -176,7 +176,7 @@ serve(async (req) => {
     // ── LIST TEMPLATES ───────────────────────────────────────────────────────
     if (mode === 'list-templates') {
       const res = await fetch(
-        `https://graph.facebook.com/v18.0/${whatsappWabaId}/message_templates?status=APPROVED&limit=50&fields=name,status,category,language,components`,
+        `https://graph.facebook.com/v18.0/${whatsappWabaId}/message_templates?limit=100&fields=name,status,category,language,components`,
         { headers: { 'Authorization': `Bearer ${whatsappToken}` } }
       )
       const data = await res.json()
