@@ -475,12 +475,28 @@ export default function SMSPage() {
               <Textarea
                 value={message}
                 onChange={e => { setMessage(e.target.value); setPreviewCount(null); }}
-                placeholder="OneMed: Seu trial expirou! Acesse onemedcursos.com.br e garanta seu acesso completo com 20% OFF usando o cupom ONEMED20."
+                placeholder="OneMed: Seu trial expirou! Acesse https://onemedcursos.com.br e garanta seu acesso completo com 20% OFF usando o cupom ONEMED20."
                 rows={5}
                 disabled={!!isJobActive}
                 className="bg-background border-border text-sm resize-none disabled:opacity-60"
               />
             </div>
+
+            {/* Link clickability tip */}
+            {(() => {
+              const hasUrl = /https?:\/\//i.test(message)
+              const hasBareUrl = /\b(onemedcursos\.com\.br|[a-z0-9-]+\.[a-z]{2,}\/\S*)/i.test(message) && !hasUrl
+              return hasBareUrl ? (
+                <div className="flex gap-2 p-3 rounded-lg border border-orange-500/30 bg-orange-500/5">
+                  <AlertTriangle className="w-4 h-4 text-orange-400 flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-muted-foreground">
+                    <span className="text-orange-400 font-medium">Link não clicável: </span>
+                    URLs sem <span className="font-mono text-foreground">https://</span> aparecem como texto simples no celular.
+                    Substitua por <span className="font-mono text-foreground">https://onemedcursos.com.br</span>
+                  </p>
+                </div>
+              ) : null
+            })()}
 
             {message.trim() && (
               <div className="p-3 rounded-lg border border-border bg-secondary/30">

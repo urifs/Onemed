@@ -104,10 +104,12 @@ serve(async (req) => {
       targetJobId = body?.job_id ?? null
     } catch { /* no body */ }
 
-    // Find next scheduled job (or specific job)
+    // Find next scheduled job due now (scheduled_at IS NULL or <= now)
+    const now = new Date().toISOString()
+    const dueFilter = `scheduled_at.is.null,scheduled_at.lte.${now}`
     const { data: job } = targetJobId
-      ? await supabase.from('sms_jobs').select('*').eq('id', targetJobId).eq('status', 'scheduled').maybeSingle()
-      : await supabase.from('sms_jobs').select('*').eq('status', 'scheduled').order('created_at', { ascending: true }).limit(1).maybeSingle()
+      ? await supabase.from('sms_jobs').select('*').eq('id', targetJobId).eq('status', 'scheduled').or(dueFilter).maybeSingle()
+      : await supabase.from('sms_jobs').select('*').eq('status', 'scheduled').or(dueFilter).order('created_at', { ascending: true }).limit(1).maybeSingle()
 
     if (!job) {
       return new Response(JSON.stringify({ ok: true, message: 'Nenhum job pendente' }), {

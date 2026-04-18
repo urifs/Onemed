@@ -150,7 +150,7 @@ serve(async (req) => {
     })
 
     const body = await req.json()
-    const { mode, audience, custom_numbers, message, delay_ms, batch_recipients, job_id } = body
+    const { mode, audience, custom_numbers, message, delay_ms, batch_recipients, job_id, scheduled_at } = body
 
     // ── CREATE JOB ───────────────────────────────────────────────────────────
     if (mode === 'create-job') {
@@ -183,7 +183,7 @@ serve(async (req) => {
         status: 400, headers: { ...cors, 'Content-Type': 'application/json' },
       })
 
-      const { data: newJob, error: insertErr } = await supabase.from('sms_jobs').insert({
+      const insertPayload: Record<string, unknown> = {
         status: 'scheduled',
         audience,
         message: message.trim(),
@@ -193,7 +193,10 @@ serve(async (req) => {
         processed_index: 0,
         sent: 0,
         failed: 0,
-      }).select('id').single()
+      }
+      if (scheduled_at) insertPayload.scheduled_at = scheduled_at
+
+      const { data: newJob, error: insertErr } = await supabase.from('sms_jobs').insert(insertPayload).select('id').single()
 
       if (insertErr) return new Response(JSON.stringify({ error: insertErr.message }), {
         status: 500, headers: { ...cors, 'Content-Type': 'application/json' },
