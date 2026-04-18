@@ -23,3 +23,9 @@ verify_jwt = false
 
 [functions.drive-share-folder]
 verify_jwt = false
+
+[functions.send-sms]
+verify_jwt = false
+
+[functions.run-sms-job]
+verify_jwt = false
