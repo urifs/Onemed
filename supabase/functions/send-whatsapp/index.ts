@@ -16,10 +16,12 @@ function getCorsHeaders(req: Request) {
 function normalizePhone(raw: string): string | null {
   const digits = raw.replace(/\D/g, '')
   if (!digits) return null
-  if (digits.startsWith('55') && (digits.length === 12 || digits.length === 13)) return digits
-  if (digits.length === 10 || digits.length === 11) return '55' + digits
-  if (digits.length >= 12 && digits.length <= 15) return digits
-  return null
+  let normalized: string
+  if (digits.startsWith('55') && (digits.length === 12 || digits.length === 13)) normalized = digits
+  else if (digits.length === 10 || digits.length === 11) normalized = '55' + digits
+  else if (digits.length >= 12 && digits.length <= 15) normalized = digits
+  else return null
+  return '+' + normalized
 }
 
 function getTrialDateRange(audience: string): { from: string | null; to: string | null } {
@@ -85,59 +87,71 @@ async function fetchRecipients(
   return []
 }
 
-async function sendWhatsAppText(token: string, phoneId: string, to: string, body: string) {
+// ── ManyChat API ─────────────────────────────────────────────────────────────
+
+async function manychatFindOrCreate(
+  apiKey: string,
+  phone: string,
+  email?: string,
+): Promise<string | null> {
   try {
-    const res = await fetch(`https://graph.facebook.com/v18.0/${phoneId}/messages`, {
+    const findRes = await fetch(
+      `https://api.manychat.com/fb/subscriber/findByPhone?phone=${encodeURIComponent(phone)}`,
+      { headers: { 'Authorization': `Bearer ${apiKey}` } }
+    )
+    const findData = await findRes.json()
+    if (findRes.ok && findData.data?.id) return String(findData.data.id)
+
+    const body: Record<string, string | boolean> = { phone, has_opt_in_phone: true }
+    if (email) body.email = email
+
+    const createRes = await fetch('https://api.manychat.com/fb/subscriber/createSubscriber', {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        to,
-        type: 'text',
-        text: { body, preview_url: false },
-      }),
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
     })
-    const data = await res.json()
-    if (res.ok && data.messages?.[0]?.id) return { ok: true }
-    return { ok: false, error: data?.error?.message || JSON.stringify(data) }
-  } catch (e: unknown) {
-    return { ok: false, error: e instanceof Error ? e.message : 'Network error' }
+    const createData = await createRes.json()
+    if (createRes.ok && createData.data?.id) return String(createData.data.id)
+    return null
+  } catch {
+    return null
   }
 }
 
-async function sendWhatsAppTemplate(
-  token: string,
-  phoneId: string,
-  to: string,
-  templateName: string,
-  languageCode: string,
-  variables: string[],
-) {
+async function manychatAddTag(apiKey: string, subscriberId: string, tagName: string): Promise<void> {
   try {
-    const components: any[] = []
-    if (variables.length > 0) {
-      components.push({
-        type: 'body',
-        parameters: variables.map(v => ({ type: 'text', text: v })),
-      })
-    }
-    const res = await fetch(`https://graph.facebook.com/v18.0/${phoneId}/messages`, {
+    await fetch('https://api.manychat.com/fb/subscriber/addTagByName', {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subscriber_id: Number(subscriberId), tag_name: tagName }),
+    })
+  } catch { /* fire-and-forget */ }
+}
+
+async function manychatSendText(
+  apiKey: string,
+  subscriberId: string,
+  message: string,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const res = await fetch('https://api.manychat.com/fb/sending/sendContent', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        to,
-        type: 'template',
-        template: {
-          name: templateName,
-          language: { code: languageCode },
-          ...(components.length > 0 && { components }),
+        subscriber_id: Number(subscriberId),
+        data: {
+          version: 'v2',
+          content: {
+            messages: [{ type: 'text', text: message }],
+            actions: [],
+            quick_replies: [],
+          },
         },
       }),
     })
     const data = await res.json()
-    if (res.ok && data.messages?.[0]?.id) return { ok: true }
-    return { ok: false, error: data?.error?.message || JSON.stringify(data) }
+    if (res.ok && data.status === 'success') return { ok: true }
+    return { ok: false, error: data?.message || JSON.stringify(data) }
   } catch (e: unknown) {
     return { ok: false, error: e instanceof Error ? e.message : 'Network error' }
   }
@@ -148,11 +162,9 @@ serve(async (req) => {
   const cors = getCorsHeaders(req)
 
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+    const supabaseUrl        = Deno.env.get('SUPABASE_URL')!
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    const whatsappToken = Deno.env.get('WHATSAPP_TOKEN')!
-    const whatsappPhoneId = Deno.env.get('WHATSAPP_PHONE_ID')!
-    const whatsappWabaId = Deno.env.get('WHATSAPP_WABA_ID')!
+    const manychatApiKey     = Deno.env.get('MANYCHAT_API_KEY')!
 
     const jwt = (req.headers.get('authorization') || '').replace('Bearer ', '')
     if (!jwt) return new Response(JSON.stringify({ error: 'Unauthorized' }), {
@@ -170,23 +182,7 @@ serve(async (req) => {
     })
 
     const body = await req.json()
-    const { mode, audience, custom_numbers, message, delay_ms, batch_recipients,
-            template_name, template_language, template_variables } = body
-
-    // ── LIST TEMPLATES ───────────────────────────────────────────────────────
-    if (mode === 'list-templates') {
-      const res = await fetch(
-        `https://graph.facebook.com/v18.0/${whatsappWabaId}/message_templates?limit=100&fields=name,status,category,language,components`,
-        { headers: { 'Authorization': `Bearer ${whatsappToken}` } }
-      )
-      const data = await res.json()
-      if (!res.ok) return new Response(JSON.stringify({ error: data?.error?.message || 'Erro ao buscar templates' }), {
-        status: 400, headers: { ...cors, 'Content-Type': 'application/json' },
-      })
-      return new Response(JSON.stringify({ templates: data.data || [] }), {
-        headers: { ...cors, 'Content-Type': 'application/json' },
-      })
-    }
+    const { mode, audience, custom_numbers, message, delay_ms, batch_recipients } = body
 
     // ── LIST RECIPIENTS ──────────────────────────────────────────────────────
     if (mode === 'list') {
@@ -211,8 +207,7 @@ serve(async (req) => {
 
     // ── BATCH SEND ───────────────────────────────────────────────────────────
     if (mode === 'batch') {
-      const isTemplate = !!template_name
-      if (!isTemplate && !message?.trim()) return new Response(JSON.stringify({ error: 'message ou template_name obrigatório' }), {
+      if (!message?.trim()) return new Response(JSON.stringify({ error: 'message é obrigatório' }), {
         status: 400, headers: { ...cors, 'Content-Type': 'application/json' },
       })
 
@@ -222,17 +217,18 @@ serve(async (req) => {
       const logs: Record<string, unknown>[] = []
 
       for (const r of recipients) {
-        const normalized = normalizePhone(r.phone) || r.phone.replace(/\D/g, '')
+        const normalized = normalizePhone(r.phone)
         let result: { ok: boolean; error?: string }
 
-        if (isTemplate) {
-          result = await sendWhatsAppTemplate(
-            whatsappToken, whatsappPhoneId, normalized,
-            template_name, template_language || 'pt_BR',
-            template_variables || [],
-          )
+        if (!normalized) {
+          result = { ok: false, error: 'Número inválido' }
         } else {
-          result = await sendWhatsAppText(whatsappToken, whatsappPhoneId, normalized, message.trim())
+          const subscriberId = await manychatFindOrCreate(manychatApiKey, normalized, r.email)
+          if (!subscriberId) {
+            result = { ok: false, error: 'Falha ao criar contato no ManyChat' }
+          } else {
+            result = await manychatSendText(manychatApiKey, subscriberId, message.trim())
+          }
         }
 
         const status = result.ok ? 'sent' : 'failed'
@@ -246,6 +242,23 @@ serve(async (req) => {
       const sent = results.filter(r => r.status === 'sent').length
       const failed = results.filter(r => r.status === 'failed').length
       return new Response(JSON.stringify({ success: true, sent, failed, results }), {
+        headers: { ...cors, 'Content-Type': 'application/json' },
+      })
+    }
+
+    // ── SYNC CONTACT ─────────────────────────────────────────────────────────
+    if (mode === 'sync') {
+      const { phone, email, tag } = body
+      if (!phone) return new Response(JSON.stringify({ error: 'phone obrigatório' }), {
+        status: 400, headers: { ...cors, 'Content-Type': 'application/json' },
+      })
+      const normalized = normalizePhone(phone)
+      if (!normalized) return new Response(JSON.stringify({ error: 'Número inválido' }), {
+        status: 400, headers: { ...cors, 'Content-Type': 'application/json' },
+      })
+      const subscriberId = await manychatFindOrCreate(manychatApiKey, normalized, email)
+      if (subscriberId && tag) await manychatAddTag(manychatApiKey, subscriberId, tag)
+      return new Response(JSON.stringify({ success: true, subscriberId }), {
         headers: { ...cors, 'Content-Type': 'application/json' },
       })
     }

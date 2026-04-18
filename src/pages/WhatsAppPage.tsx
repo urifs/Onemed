@@ -6,72 +6,24 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Input } from '@/components/ui/input';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import {
   MessageSquare, Users, CheckCircle2, XCircle, Loader2, Send,
-  AlertTriangle, Info, Clock, StopCircle, Trash2, RefreshCw,
-  FileText, Eye, LayoutTemplate,
+  AlertTriangle, Info, Clock, StopCircle, Trash2, Eye, ExternalLink,
 } from 'lucide-react';
 
 const BATCH_SIZE = 12;
-
-// ── Tipos ────────────────────────────────────────────────────────────────────
 
 type Audience =
   | 'trial_expired_today' | 'trial_expired_yesterday' | 'trial_expired_3d'
   | 'trial_expired_5d' | 'trial_expired_7d' | 'trial_expired_all'
   | 'trial_active' | 'buyers_approved' | 'buyers_all' | 'all_with_whatsapp' | 'custom';
 
-interface WaTemplate {
-  name: string;
-  status: string;
-  category: string;
-  language: string;
-  components: WaComponent[];
-}
-
-interface WaComponent {
-  type: string;
-  text?: string;
-  buttons?: { type: string; text: string; url?: string; phone_number?: string }[];
-}
-
 interface ProgressItem {
   phone: string;
   email?: string;
   status: 'pending' | 'sent' | 'failed';
   error?: string;
-}
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-const STATUS_MAP: Record<string, { label: string; className: string }> = {
-  APPROVED: { label: 'Ativo', className: 'bg-green-500/20 text-green-400 border-green-500/30' },
-  PENDING:  { label: 'Em análise', className: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' },
-  REJECTED: { label: 'Rejeitado', className: 'bg-red-500/20 text-red-400 border-red-500/30' },
-  PAUSED:   { label: 'Pausado', className: 'bg-gray-500/20 text-gray-400 border-gray-500/30' },
-  DISABLED: { label: 'Desativado', className: 'bg-gray-500/20 text-gray-400 border-gray-500/30' },
-};
-
-const CATEGORY_MAP: Record<string, string> = {
-  MARKETING: 'Marketing',
-  UTILITY: 'Utilidade',
-  AUTHENTICATION: 'Autenticação',
-};
-
-function getBodyComponent(t: WaTemplate): WaComponent | undefined {
-  return t.components.find(c => c.type === 'BODY');
-}
-
-function extractVariables(text: string): string[] {
-  const matches = text.match(/\{\{(\d+)\}\}/g) || [];
-  const nums = [...new Set(matches.map(m => parseInt(m.replace(/\D/g, ''))))].sort((a, b) => a - b);
-  return nums.map(n => `{{${n}}}`);
-}
-
-function fillVariables(text: string, values: Record<string, string>): string {
-  return text.replace(/\{\{(\d+)\}\}/g, (match, n) => values[`{{${n}}}`] || match);
 }
 
 const AUDIENCE_GROUPS = [
@@ -98,30 +50,12 @@ const AUDIENCE_GROUPS = [
   },
 ];
 
-// ── Componente principal ──────────────────────────────────────────────────────
-
 export default function WhatsAppPage() {
-  // Templates
-  const [templates, setTemplates] = useState<WaTemplate[]>([]);
-  const [loadingTemplates, setLoadingTemplates] = useState(false);
-
-  // Modo: 'template' | 'freetext'
-  const [sendMode, setSendMode] = useState<'template' | 'freetext'>('template');
-
-  // Template selecionado
-  const [selectedTemplate, setSelectedTemplate] = useState<WaTemplate | null>(null);
-  const [templateVars, setTemplateVars] = useState<Record<string, string>>({});
-
-  // Texto livre
   const [message, setMessage] = useState('');
-
-  // Público
   const [audience, setAudience] = useState<Audience>('trial_expired_today');
   const [customNumbers, setCustomNumbers] = useState('');
   const [recipients, setRecipients] = useState<{ phone: string; email?: string }[]>([]);
   const [previewing, setPreviewing] = useState(false);
-
-  // Envio
   const [delayMs, setDelayMs] = useState(1500);
   const [sending, setSending] = useState(false);
   const [progress, setProgress] = useState<ProgressItem[]>([]);
@@ -132,11 +66,10 @@ export default function WhatsAppPage() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) loadTemplates();
+      if (!session) toast.error('Sessão não encontrada. Faça login novamente.');
     });
   }, []);
 
-  // ── API helper ──────────────────────────────────────────────────────────────
   async function callFn(body: Record<string, unknown>) {
     const { data, error } = await supabase.functions.invoke('send-whatsapp', { body });
     if (error) throw new Error(error.message || 'Erro na função');
@@ -144,30 +77,6 @@ export default function WhatsAppPage() {
     return data;
   }
 
-  // ── Carregar templates ──────────────────────────────────────────────────────
-  async function loadTemplates() {
-    setLoadingTemplates(true);
-    try {
-      const data = await callFn({ mode: 'list-templates' });
-      setTemplates(data.templates || []);
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Erro ao carregar templates');
-    } finally {
-      setLoadingTemplates(false);
-    }
-  }
-
-  function handleSelectTemplate(t: WaTemplate) {
-    setSelectedTemplate(t);
-    const body = getBodyComponent(t);
-    const vars = body?.text ? extractVariables(body.text) : [];
-    const init: Record<string, string> = {};
-    vars.forEach(v => { init[v] = ''; });
-    setTemplateVars(init);
-    resetSendState();
-  }
-
-  // ── Preview ─────────────────────────────────────────────────────────────────
   async function handlePreview() {
     setPreviewing(true);
     setRecipients([]);
@@ -187,20 +96,9 @@ export default function WhatsAppPage() {
     }
   }
 
-  // ── Enviar ──────────────────────────────────────────────────────────────────
   async function handleSend() {
-    if (sendMode === 'template' && !selectedTemplate) {
-      toast.error('Selecione um template aprovado'); return;
-    }
-    if (sendMode === 'template' && selectedTemplate?.status !== 'APPROVED') {
-      toast.error('Este template ainda não foi aprovado pela Meta'); return;
-    }
-    if (sendMode === 'freetext' && !message.trim()) {
-      toast.error('Digite a mensagem antes de enviar'); return;
-    }
-    if (audience === 'custom' && !customNumbers.trim()) {
-      toast.error('Adicione pelo menos um número'); return;
-    }
+    if (!message.trim()) { toast.error('Digite a mensagem antes de enviar'); return; }
+    if (audience === 'custom' && !customNumbers.trim()) { toast.error('Adicione pelo menos um número'); return; }
 
     setSending(true);
     setDone(false);
@@ -230,24 +128,16 @@ export default function WhatsAppPage() {
         if (stopRef.current) break;
         const batch = allRecipients.slice(i, i + BATCH_SIZE);
 
-        const batchPayload: Record<string, unknown> = {
-          mode: 'batch',
-          audience,
-          delay_ms: delayMs,
-          batch_recipients: batch,
-        };
-
-        if (sendMode === 'template' && selectedTemplate) {
-          const vars = Object.values(templateVars).filter(Boolean);
-          batchPayload.template_name = selectedTemplate.name;
-          batchPayload.template_language = selectedTemplate.language;
-          batchPayload.template_variables = vars;
-        } else {
-          batchPayload.message = message.trim();
-        }
-
         let batchData: any = null;
-        try { batchData = await callFn(batchPayload); } catch { /* mark as failed below */ }
+        try {
+          batchData = await callFn({
+            mode: 'batch',
+            audience,
+            message: message.trim(),
+            delay_ms: delayMs,
+            batch_recipients: batch,
+          });
+        } catch { /* mark as failed below */ }
 
         if (!batchData) {
           setProgress(prev => {
@@ -305,11 +195,6 @@ export default function WhatsAppPage() {
   const doneCount = progress.filter(p => p.status !== 'pending').length;
   const progressPct = totalProgress > 0 ? Math.round((doneCount / totalProgress) * 100) : 0;
 
-  const approvedTemplates = templates.filter(t => t.status === 'APPROVED');
-  const bodyText = selectedTemplate ? getBodyComponent(selectedTemplate)?.text || '' : '';
-  const templateVarKeys = Object.keys(templateVars);
-  const previewText = fillVariables(bodyText, templateVars);
-
   return (
     <AdminLayout>
       <div className="max-w-4xl mx-auto space-y-6">
@@ -322,7 +207,7 @@ export default function WhatsAppPage() {
               Disparos WhatsApp
             </h1>
             <p className="text-muted-foreground mt-1 text-sm">
-              API Oficial WhatsApp Business · Remetente: <span className="text-foreground font-mono">+55 63 9953-5519</span>
+              Via ManyChat · Contatos sincronizados automaticamente
             </p>
           </div>
           <AlertDialog>
@@ -352,91 +237,21 @@ export default function WhatsAppPage() {
         {/* Boas práticas */}
         <div className="flex gap-3 p-4 rounded-lg border border-yellow-500/30 bg-yellow-500/5">
           <AlertTriangle className="w-5 h-5 text-yellow-500 flex-shrink-0 mt-0.5" />
-          <p className="text-sm text-muted-foreground">
-            <span className="text-yellow-400 font-medium">Boas práticas: </span>
-            Envie entre <strong className="text-foreground">8h–20h</strong> · Limite de <strong className="text-foreground">1.000 msg/dia</strong> no tier inicial ·
-            Para cold outreach (trials expirados) use sempre um <strong className="text-foreground">template aprovado</strong>.
-          </p>
+          <div className="text-sm text-muted-foreground space-y-1">
+            <p>
+              <span className="text-yellow-400 font-medium">Boas práticas: </span>
+              Envie entre <strong className="text-foreground">8h–20h</strong> · Respeite o limite diário do seu plano ManyChat.
+            </p>
+            <p>
+              Para <strong className="text-foreground">cold outreach</strong> (trials expirados), use o recurso de
+              {' '}<strong className="text-foreground">Broadcasts</strong> do ManyChat com template aprovado.{' '}
+              <a href="https://app.manychat.com/fb4733147/sending" target="_blank" rel="noopener noreferrer"
+                className="text-green-400 inline-flex items-center gap-1 hover:underline">
+                Abrir ManyChat <ExternalLink className="w-3 h-3" />
+              </a>
+            </p>
+          </div>
         </div>
-
-        {/* ── Seção: Templates ─────────────────────────────────────────────── */}
-        <Card className="bg-background-paper border-border">
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base text-foreground flex items-center gap-2">
-                <LayoutTemplate className="w-4 h-4 text-muted-foreground" />
-                Templates de mensagem
-              </CardTitle>
-              <Button variant="outline" size="sm" onClick={loadTemplates} disabled={loadingTemplates}
-                className="border-border text-muted-foreground hover:text-foreground">
-                {loadingTemplates
-                  ? <Loader2 className="w-4 h-4 animate-spin" />
-                  : <RefreshCw className="w-4 h-4" />}
-                <span className="ml-2">{loadingTemplates ? 'Carregando...' : 'Atualizar'}</span>
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {templates.length === 0 && !loadingTemplates && (
-              <p className="text-sm text-muted-foreground text-center py-4">Nenhum template encontrado na conta.</p>
-            )}
-            {loadingTemplates && (
-              <div className="flex items-center justify-center py-6">
-                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
-              </div>
-            )}
-            {templates.length > 0 && (
-              <div className="space-y-2">
-                {templates.map(t => {
-                  const st = STATUS_MAP[t.status] || { label: t.status, className: 'bg-gray-500/20 text-gray-400 border-gray-500/30' };
-                  const body = getBodyComponent(t);
-                  const isSelected = selectedTemplate?.name === t.name && selectedTemplate?.language === t.language;
-                  const isApproved = t.status === 'APPROVED';
-                  return (
-                    <div
-                      key={`${t.name}-${t.language}`}
-                      onClick={() => isApproved ? handleSelectTemplate(t) : undefined}
-                      className={`rounded-lg border p-3 transition-colors ${
-                        isApproved ? 'cursor-pointer' : 'cursor-default opacity-60'
-                      } ${
-                        isSelected
-                          ? 'bg-green-500/10 border-green-500/40'
-                          : 'border-border hover:bg-secondary/50'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                          <span className={`font-mono text-sm font-medium ${isSelected ? 'text-green-400' : 'text-foreground'}`}>
-                            {t.name}
-                          </span>
-                          <span className="text-xs text-muted-foreground">
-                            {CATEGORY_MAP[t.category] || t.category}
-                          </span>
-                          <span className="text-xs text-muted-foreground">·</span>
-                          <span className="text-xs text-muted-foreground">{t.language}</span>
-                        </div>
-                        <span className={`text-xs px-2 py-0.5 rounded-full border font-medium flex-shrink-0 ${st.className}`}>
-                          {st.label}
-                        </span>
-                      </div>
-                      {body?.text && (
-                        <p className="text-xs text-muted-foreground mt-2 line-clamp-2 ml-6">
-                          {body.text}
-                        </p>
-                      )}
-                      {!isApproved && (
-                        <p className="text-xs text-yellow-500/80 mt-1 ml-6">
-                          {t.status === 'PENDING' ? 'Aguardando aprovação da Meta para ser usado' : 'Template indisponível para envio'}
-                        </p>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
 
         {/* ── Seção: Mensagem ──────────────────────────────────────────────── */}
         <Card className="bg-background-paper border-border">
@@ -444,155 +259,46 @@ export default function WhatsAppPage() {
             <CardTitle className="text-base text-foreground">1. Mensagem</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* Toggle modo */}
-            <div className="flex gap-2">
-              {[
-                { key: 'template' as const, label: 'Template aprovado', icon: LayoutTemplate },
-                { key: 'freetext' as const, label: 'Texto livre (24h)', icon: MessageSquare },
-              ].map(opt => {
-                const Icon = opt.icon;
-                return (
-                  <button key={opt.key} onClick={() => { setSendMode(opt.key); resetSendState(); }}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
-                      sendMode === opt.key
-                        ? 'bg-green-500/15 border-green-500/40 text-green-400'
-                        : 'border-border text-muted-foreground hover:text-foreground hover:bg-secondary'
-                    }`}>
-                    <Icon className="w-4 h-4" />
-                    {opt.label}
-                  </button>
-                );
-              })}
+            <div className="flex gap-3 p-3 rounded-lg border border-blue-500/20 bg-blue-500/5">
+              <Info className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-muted-foreground">
+                Esta função envia texto livre via ManyChat e funciona para contatos dentro da janela de <strong className="text-foreground">24h</strong>.
+                Para contatos frios, use o painel de Broadcasts do ManyChat.
+              </p>
             </div>
 
-            {/* Modo Template */}
-            {sendMode === 'template' && (
-              <div className="space-y-4">
-                {!selectedTemplate ? (
-                  <div className="flex gap-3 p-3 rounded-lg border border-blue-500/20 bg-blue-500/5">
-                    <Info className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />
-                    <p className="text-sm text-muted-foreground">
-                      Selecione um template <span className="text-green-400 font-medium">Ativo</span> na lista acima para continuar.
-                      Apenas templates aprovados pela Meta podem ser enviados.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2 p-2 rounded-lg bg-green-500/10 border border-green-500/30">
-                      <CheckCircle2 className="w-4 h-4 text-green-400" />
-                      <span className="text-sm text-green-400 font-medium">{selectedTemplate.name}</span>
-                      <span className="text-xs text-muted-foreground ml-auto">{selectedTemplate.language}</span>
-                    </div>
-
-                    {/* Variáveis */}
-                    {templateVarKeys.length > 0 && (
-                      <div className="space-y-2">
-                        <Label className="text-sm text-muted-foreground">Preencha as variáveis do template</Label>
-                        {templateVarKeys.map(key => (
-                          <div key={key} className="flex items-center gap-2">
-                            <span className="text-xs font-mono text-muted-foreground bg-secondary px-2 py-1 rounded w-10 text-center flex-shrink-0">
-                              {key}
-                            </span>
-                            <Input
-                              value={templateVars[key]}
-                              onChange={e => setTemplateVars(prev => ({ ...prev, [key]: e.target.value }))}
-                              placeholder={`Valor para ${key}`}
-                              className="bg-background border-border text-sm h-8"
-                            />
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Preview */}
-                    {bodyText && (
-                      <div>
-                        <Label className="text-sm text-muted-foreground mb-1.5 block flex items-center gap-1">
-                          <Eye className="w-3 h-3" /> Preview
-                        </Label>
-                        <div className="bg-[#e5ddd5] rounded-lg p-4">
-                          <div className="bg-white rounded-lg px-3 py-2 max-w-xs shadow-sm">
-                            <p className="text-[13px] text-gray-800 whitespace-pre-wrap break-words leading-relaxed"
-                              dangerouslySetInnerHTML={{
-                                __html: previewText
-                                  .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-                                  .replace(/\*(.*?)\*/g, '<strong>$1</strong>')
-                                  .replace(/_(.*?)_/g, '<em>$1</em>')
-                                  .replace(/\n/g, '<br/>'),
-                              }}
-                            />
-                            {/* Botões do template */}
-                            {selectedTemplate.components.filter(c => c.type === 'BUTTONS').map((c, i) => (
-                              <div key={i} className="mt-2 border-t border-gray-100 pt-2 space-y-1">
-                                {c.buttons?.map((btn, j) => (
-                                  <div key={j} className="text-center text-[12px] text-blue-500 font-medium py-0.5">
-                                    {btn.text}
-                                  </div>
-                                ))}
-                              </div>
-                            ))}
-                            <p className="text-[10px] text-gray-400 text-right mt-1">00:00 ✓✓</p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <Label className="text-sm text-muted-foreground">Texto da mensagem <span className="text-red-400">*</span></Label>
+                <span className={`text-xs ${message.length > 1000 ? 'text-yellow-400' : 'text-muted-foreground'}`}>{message.length} caracteres</span>
               </div>
-            )}
+              <Textarea
+                value={message}
+                onChange={e => { setMessage(e.target.value); resetSendState(); }}
+                placeholder={`Digite sua mensagem aqui...\n\nUse *asteriscos* para negrito e emojis à vontade 🎓`}
+                rows={8}
+                className="bg-background border-border text-sm resize-none font-mono"
+              />
+            </div>
 
-            {/* Modo Texto livre */}
-            {sendMode === 'freetext' && (
-              <div className="space-y-3">
-                <div className="flex gap-3 p-3 rounded-lg border border-yellow-500/20 bg-yellow-500/5">
-                  <AlertTriangle className="w-4 h-4 text-yellow-500 flex-shrink-0 mt-0.5" />
-                  <p className="text-xs text-muted-foreground">
-                    <span className="text-yellow-400 font-medium">Atenção: </span>
-                    Texto livre só é entregue se o destinatário <strong className="text-foreground">mandou mensagem para o seu número nas últimas 24h</strong>.
-                    Para trials e cold outreach, use <strong className="text-foreground">Template aprovado</strong>.
-                  </p>
-                </div>
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <Label className="text-sm text-muted-foreground">Texto da mensagem <span className="text-red-400">*</span></Label>
-                    <span className={`text-xs ${message.length > 1000 ? 'text-yellow-400' : 'text-muted-foreground'}`}>{message.length} caracteres</span>
-                  </div>
-                  <Textarea
-                    value={message}
-                    onChange={e => { setMessage(e.target.value); resetSendState(); }}
-                    placeholder={`Digite sua mensagem aqui...\n\nUse *asteriscos* para negrito, _sublinhado_ para itálico e emojis à vontade 🎓`}
-                    rows={8}
-                    className="bg-background border-border text-sm resize-none font-mono"
-                  />
-                  <div className="flex items-center gap-4 mt-2">
-                    <span className="text-xs text-muted-foreground flex items-center gap-1"><Info className="w-3 h-3" /> Formatação:</span>
-                    {[{ s: '*texto*', r: 'negrito' }, { s: '_texto_', r: 'itálico' }, { s: '~texto~', r: 'tachado' }].map(t => (
-                      <span key={t.s} className="text-xs text-muted-foreground">
-                        <span className="font-mono text-foreground">{t.s}</span> → {t.r}
-                      </span>
-                    ))}
+            {message.trim() && (
+              <div>
+                <Label className="text-sm text-muted-foreground mb-1.5 block">Preview</Label>
+                <div className="bg-[#e5ddd5] rounded-lg p-4">
+                  <div className="bg-white rounded-lg px-3 py-2 max-w-xs shadow-sm">
+                    <p className="text-[13px] text-gray-800 whitespace-pre-wrap break-words leading-relaxed"
+                      dangerouslySetInnerHTML={{
+                        __html: message
+                          .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                          .replace(/\*(.*?)\*/g, '<strong>$1</strong>')
+                          .replace(/_(.*?)_/g, '<em>$1</em>')
+                          .replace(/~(.*?)~/g, '<del>$1</del>')
+                          .replace(/\n/g, '<br/>'),
+                      }}
+                    />
+                    <p className="text-[10px] text-gray-400 text-right mt-1">00:00 ✓✓</p>
                   </div>
                 </div>
-                {message.trim() && (
-                  <div>
-                    <Label className="text-sm text-muted-foreground mb-1.5 block">Preview</Label>
-                    <div className="bg-[#e5ddd5] rounded-lg p-4">
-                      <div className="bg-white rounded-lg px-3 py-2 max-w-xs shadow-sm">
-                        <p className="text-[13px] text-gray-800 whitespace-pre-wrap break-words leading-relaxed"
-                          dangerouslySetInnerHTML={{
-                            __html: message
-                              .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-                              .replace(/\*(.*?)\*/g, '<strong>$1</strong>')
-                              .replace(/_(.*?)_/g, '<em>$1</em>')
-                              .replace(/~(.*?)~/g, '<del>$1</del>')
-                              .replace(/\n/g, '<br/>'),
-                          }}
-                        />
-                        <p className="text-[10px] text-gray-400 text-right mt-1">00:00 ✓✓</p>
-                      </div>
-                    </div>
-                  </div>
-                )}
               </div>
             )}
           </CardContent>
@@ -697,8 +403,7 @@ export default function WhatsAppPage() {
             </div>
 
             <div className="flex gap-3 flex-wrap">
-              <Button onClick={handleSend}
-                disabled={sending || (sendMode === 'template' && (!selectedTemplate || selectedTemplate.status !== 'APPROVED')) || (sendMode === 'freetext' && !message.trim())}
+              <Button onClick={handleSend} disabled={sending || !message.trim()}
                 className="bg-green-600 hover:bg-green-700 text-white" size="lg">
                 {sending
                   ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Enviando... não feche a página</>

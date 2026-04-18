@@ -243,6 +243,35 @@ serve(async (req) => {
       } catch (emailErr: any) {
         console.error('Email error:', emailErr?.message || emailErr)
       }
+
+      // Sync buyer to ManyChat — fire and forget
+      const manychatApiKey = Deno.env.get('MANYCHAT_API_KEY')
+      if (manychatApiKey && buyer.whatsapp) {
+        const digits = buyer.whatsapp.replace(/\D/g, '')
+        const phone = digits.startsWith('55') ? '+' + digits : '+55' + digits
+        fetch('https://api.manychat.com/fb/subscriber/findByPhone?phone=' + encodeURIComponent(phone), {
+          headers: { 'Authorization': `Bearer ${manychatApiKey}` },
+        }).then(async r => {
+          const d = await r.json()
+          let sid = d.data?.id
+          if (!sid) {
+            const cr = await fetch('https://api.manychat.com/fb/subscriber/createSubscriber', {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${manychatApiKey}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ phone, email: buyer.email, has_opt_in_phone: true }),
+            })
+            const cd = await cr.json()
+            sid = cd.data?.id
+          }
+          if (sid) {
+            await fetch('https://api.manychat.com/fb/subscriber/addTagByName', {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${manychatApiKey}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ subscriber_id: sid, tag_name: 'comprador_aprovado' }),
+            })
+          }
+        }).catch(() => {})
+      }
     }
 
     return new Response('ok', { headers: getCorsHeaders(req) })
