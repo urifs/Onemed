@@ -246,7 +246,7 @@ serve(async (req) => {
       })
     }
 
-    // ── SYNC CONTACT ─────────────────────────────────────────────────────────
+    // ── SYNC CONTACT (individual) ─────────────────────────────────────────────
     if (mode === 'sync') {
       const { phone, email, tag } = body
       if (!phone) return new Response(JSON.stringify({ error: 'phone obrigatório' }), {
@@ -259,6 +259,39 @@ serve(async (req) => {
       const subscriberId = await manychatFindOrCreate(manychatApiKey, normalized, email)
       if (subscriberId && tag) await manychatAddTag(manychatApiKey, subscriberId, tag)
       return new Response(JSON.stringify({ success: true, subscriberId }), {
+        headers: { ...cors, 'Content-Type': 'application/json' },
+      })
+    }
+
+    // ── BULK SYNC (audience → ManyChat tag) ──────────────────────────────────
+    if (mode === 'bulk-sync') {
+      const tag: string | undefined = body.tag
+      let raw: { phone: string; email: string }[] = []
+      if (audience === 'custom') {
+        raw = (custom_numbers || []).filter(Boolean).map((p: string) => ({ phone: p, email: '' }))
+      } else {
+        raw = await fetchRecipients(supabase, audience)
+      }
+
+      const seen = new Map<string, string>()
+      for (const r of raw) {
+        const n = normalizePhone(r.phone)
+        if (n && !seen.has(n)) seen.set(n, r.email || '')
+      }
+
+      let synced = 0, failed = 0
+      for (const [phone, email] of seen.entries()) {
+        const subscriberId = await manychatFindOrCreate(manychatApiKey, phone, email)
+        if (subscriberId) {
+          if (tag) await manychatAddTag(manychatApiKey, subscriberId, tag)
+          synced++
+        } else {
+          failed++
+        }
+        await new Promise(resolve => setTimeout(resolve, 150))
+      }
+
+      return new Response(JSON.stringify({ success: true, synced, failed, total: seen.size }), {
         headers: { ...cors, 'Content-Type': 'application/json' },
       })
     }
