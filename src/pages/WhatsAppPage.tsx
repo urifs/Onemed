@@ -130,7 +130,11 @@ export default function WhatsAppPage() {
   const [done, setDone] = useState(false);
   const stopRef = useRef(false);
 
-  useEffect(() => { loadTemplates(); }, []);
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) loadTemplates();
+    });
+  }, []);
 
   // ── API helper ──────────────────────────────────────────────────────────────
   async function callFn(body: Record<string, unknown>) {
