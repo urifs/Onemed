@@ -85,28 +85,59 @@ async function fetchRecipients(
   return []
 }
 
-async function sendWhatsApp(token: string, phoneId: string, to: string, body: string) {
+async function sendWhatsAppText(token: string, phoneId: string, to: string, body: string) {
   try {
-    const res = await fetch(
-      `https://graph.facebook.com/v18.0/${phoneId}/messages`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          messaging_product: 'whatsapp',
-          to,
-          type: 'text',
-          text: { body, preview_url: false },
-        }),
-      }
-    )
+    const res = await fetch(`https://graph.facebook.com/v18.0/${phoneId}/messages`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to,
+        type: 'text',
+        text: { body, preview_url: false },
+      }),
+    })
     const data = await res.json()
     if (res.ok && data.messages?.[0]?.id) return { ok: true }
-    const errMsg = data?.error?.message || data?.error?.error_data?.details || JSON.stringify(data)
-    return { ok: false, error: errMsg }
+    return { ok: false, error: data?.error?.message || JSON.stringify(data) }
+  } catch (e: unknown) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Network error' }
+  }
+}
+
+async function sendWhatsAppTemplate(
+  token: string,
+  phoneId: string,
+  to: string,
+  templateName: string,
+  languageCode: string,
+  variables: string[],
+) {
+  try {
+    const components: any[] = []
+    if (variables.length > 0) {
+      components.push({
+        type: 'body',
+        parameters: variables.map(v => ({ type: 'text', text: v })),
+      })
+    }
+    const res = await fetch(`https://graph.facebook.com/v18.0/${phoneId}/messages`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to,
+        type: 'template',
+        template: {
+          name: templateName,
+          language: { code: languageCode },
+          ...(components.length > 0 && { components }),
+        },
+      }),
+    })
+    const data = await res.json()
+    if (res.ok && data.messages?.[0]?.id) return { ok: true }
+    return { ok: false, error: data?.error?.message || JSON.stringify(data) }
   } catch (e: unknown) {
     return { ok: false, error: e instanceof Error ? e.message : 'Network error' }
   }
@@ -121,6 +152,7 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const whatsappToken = Deno.env.get('WHATSAPP_TOKEN')!
     const whatsappPhoneId = Deno.env.get('WHATSAPP_PHONE_ID')!
+    const whatsappWabaId = Deno.env.get('WHATSAPP_WABA_ID')!
 
     const jwt = (req.headers.get('authorization') || '').replace('Bearer ', '')
     if (!jwt) return new Response(JSON.stringify({ error: 'Unauthorized' }), {
@@ -138,9 +170,25 @@ serve(async (req) => {
     })
 
     const body = await req.json()
-    const { mode, audience, custom_numbers, message, delay_ms, batch_recipients } = body
+    const { mode, audience, custom_numbers, message, delay_ms, batch_recipients,
+            template_name, template_language, template_variables } = body
 
-    // ── MODO LIST ────────────────────────────────────────────────────────────
+    // ── LIST TEMPLATES ───────────────────────────────────────────────────────
+    if (mode === 'list-templates') {
+      const res = await fetch(
+        `https://graph.facebook.com/v18.0/${whatsappWabaId}/message_templates?status=APPROVED&limit=50&fields=name,status,category,language,components`,
+        { headers: { 'Authorization': `Bearer ${whatsappToken}` } }
+      )
+      const data = await res.json()
+      if (!res.ok) return new Response(JSON.stringify({ error: data?.error?.message || 'Erro ao buscar templates' }), {
+        status: 400, headers: { ...cors, 'Content-Type': 'application/json' },
+      })
+      return new Response(JSON.stringify({ templates: data.data || [] }), {
+        headers: { ...cors, 'Content-Type': 'application/json' },
+      })
+    }
+
+    // ── LIST RECIPIENTS ──────────────────────────────────────────────────────
     if (mode === 'list') {
       let raw: { phone: string; email: string }[] = []
       if (audience === 'custom') {
@@ -148,10 +196,8 @@ serve(async (req) => {
       } else {
         raw = await fetchRecipients(supabase, audience)
       }
-
       const { data: alreadySent } = await supabase.from('whatsapp_sends').select('phone').eq('status', 'sent')
       const sentSet = new Set((alreadySent || []).map((r: any) => r.phone))
-
       const seen = new Map<string, string>()
       for (const r of raw) {
         const n = normalizePhone(r.phone)
@@ -163,11 +209,13 @@ serve(async (req) => {
       })
     }
 
-    // ── MODO BATCH ───────────────────────────────────────────────────────────
+    // ── BATCH SEND ───────────────────────────────────────────────────────────
     if (mode === 'batch') {
-      if (!message?.trim()) return new Response(JSON.stringify({ error: 'message obrigatório' }), {
+      const isTemplate = !!template_name
+      if (!isTemplate && !message?.trim()) return new Response(JSON.stringify({ error: 'message ou template_name obrigatório' }), {
         status: 400, headers: { ...cors, 'Content-Type': 'application/json' },
       })
+
       const recipients: { phone: string; email?: string }[] = batch_recipients || []
       const delayMs = typeof delay_ms === 'number' ? Math.max(500, delay_ms) : 1500
       const results: { phone: string; email?: string; status: string; error?: string }[] = []
@@ -175,7 +223,18 @@ serve(async (req) => {
 
       for (const r of recipients) {
         const normalized = normalizePhone(r.phone) || r.phone.replace(/\D/g, '')
-        const result = await sendWhatsApp(whatsappToken, whatsappPhoneId, normalized, message.trim())
+        let result: { ok: boolean; error?: string }
+
+        if (isTemplate) {
+          result = await sendWhatsAppTemplate(
+            whatsappToken, whatsappPhoneId, normalized,
+            template_name, template_language || 'pt_BR',
+            template_variables || [],
+          )
+        } else {
+          result = await sendWhatsAppText(whatsappToken, whatsappPhoneId, normalized, message.trim())
+        }
+
         const status = result.ok ? 'sent' : 'failed'
         results.push({ phone: r.phone, email: r.email, status, error: result.error })
         logs.push({ phone: r.phone, email: r.email || null, status, audience: audience || 'batch' })
@@ -191,7 +250,7 @@ serve(async (req) => {
       })
     }
 
-    return new Response(JSON.stringify({ error: 'mode inválido. Use "list" ou "batch"' }), {
+    return new Response(JSON.stringify({ error: 'mode inválido' }), {
       status: 400, headers: { ...cors, 'Content-Type': 'application/json' },
     })
 
