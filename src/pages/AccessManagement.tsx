@@ -113,23 +113,74 @@ export default function AccessManagement() {
     }
   };
 
-  const revokeAccess = async (id: string) => {
-    const { error } = await supabase.from('accesses').update({ status: 'revoked' }).eq('id', id);
-    if (error) toast.error('Erro ao revogar');
-    else { toast.success('Acesso revogado'); fetchAccesses(); }
+  // Revoga no Google Drive (se houver permissão) e atualiza status.
+  const revokeAccess = async (access: any) => {
+    try {
+      if (access.drive_permission_id) {
+        const { data, error } = await supabase.functions.invoke('drive-revoke-access', {
+          body: { accessId: access.id, finalStatus: 'revoked' },
+        });
+        if (error || data?.error) throw new Error(data?.error || error?.message);
+        if (data?.errors?.length) {
+          toast.warning(`Acesso revogado no DB, mas Drive reportou: ${data.errors[0]}`);
+        } else {
+          toast.success('Acesso revogado (Drive + DB)');
+        }
+      } else {
+        const { error } = await supabase.from('accesses').update({ status: 'revoked' }).eq('id', access.id);
+        if (error) throw error;
+        toast.success('Acesso revogado');
+      }
+      fetchAccesses();
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao revogar');
+    }
   };
 
-  const deleteAccess = async (id: string) => {
-    const { error } = await supabase.from('accesses').delete().eq('id', id);
-    if (error) toast.error('Erro ao deletar');
-    else { toast.success('Acesso deletado'); fetchAccesses(); }
+  // Revoga no Drive antes de deletar o registro.
+  const deleteAccess = async (access: any) => {
+    try {
+      if (access.drive_permission_id) {
+        const { data, error } = await supabase.functions.invoke('drive-revoke-access', {
+          body: { accessId: access.id, finalStatus: 'revoked' },
+        });
+        if (error || data?.error) throw new Error(data?.error || error?.message);
+      }
+      const { error: delErr } = await supabase.from('accesses').delete().eq('id', access.id);
+      if (delErr) throw delErr;
+      toast.success('Acesso deletado');
+      fetchAccesses();
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao deletar');
+    }
   };
 
-  const renewAccess = async (id: string) => {
-    const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
-    const { error } = await supabase.from('accesses').update({ status: 'active', expires_at: expiresAt }).eq('id', id);
-    if (error) toast.error('Erro ao renovar');
-    else { toast.success('Acesso renovado'); fetchAccesses(); }
+  // Renova por +30 min. Se a permissão do Drive foi removida, compartilha novamente.
+  const renewAccess = async (access: any) => {
+    try {
+      const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+      const { error } = await supabase
+        .from('accesses')
+        .update({ status: 'active', expires_at: expiresAt })
+        .eq('id', access.id);
+      if (error) throw error;
+
+      if (!access.drive_permission_id) {
+        const { data, error: shareErr } = await supabase.functions.invoke('drive-share-folder', {
+          body: { email: access.email, accessId: access.id },
+        });
+        if (shareErr || data?.error) {
+          toast.warning('Acesso renovado, mas Drive não pôde ser re-compartilhado');
+        } else {
+          toast.success('Acesso renovado e Drive re-compartilhado');
+        }
+      } else {
+        toast.success('Acesso renovado');
+      }
+      fetchAccesses();
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao renovar');
+    }
   };
 
   const getRemainingTime = (access: any) => {
@@ -275,11 +326,11 @@ export default function AccessManagement() {
                             >
                               {sharingId === access.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FolderOpen className="w-3.5 h-3.5" />}
                             </button>
-                            <button onClick={() => renewAccess(access.id)} className="p-1.5 text-muted-foreground hover:text-accent-success" title="Renovar">
+                            <button onClick={() => renewAccess(access)} className="p-1.5 text-muted-foreground hover:text-accent-success" title="Renovar">
                               <RefreshCw className="w-3.5 h-3.5" />
                             </button>
                             {access.status === 'active' && (
-                              <button onClick={() => revokeAccess(access.id)} className="p-1.5 text-muted-foreground hover:text-primary" title="Revogar">
+                              <button onClick={() => revokeAccess(access)} className="p-1.5 text-muted-foreground hover:text-primary" title="Revogar">
                                 <XCircle className="w-3.5 h-3.5" />
                               </button>
                             )}
@@ -296,7 +347,7 @@ export default function AccessManagement() {
                                 </AlertDialogHeader>
                                 <AlertDialogFooter>
                                   <AlertDialogCancel className="bg-secondary border-border text-foreground">Cancelar</AlertDialogCancel>
-                                  <AlertDialogAction onClick={() => deleteAccess(access.id)} className="bg-primary text-primary-foreground">Deletar</AlertDialogAction>
+                                  <AlertDialogAction onClick={() => deleteAccess(access)} className="bg-primary text-primary-foreground">Deletar</AlertDialogAction>
                                 </AlertDialogFooter>
                               </AlertDialogContent>
                             </AlertDialog>

@@ -9,7 +9,7 @@ function getCorsHeaders(req: Request) {
   const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0]
   return {
     'Access-Control-Allow-Origin': allowedOrigin,
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-secret',
   }
 }
 
@@ -27,146 +27,216 @@ async function refreshAccessToken(refreshToken: string, clientSecret: string): P
     }),
   })
   const data = await res.json()
-  return data.access_token
+  if (!res.ok || !data.access_token) {
+    throw new Error('Failed to refresh Google token: ' + JSON.stringify(data))
+  }
+  return data.access_token as string
+}
+
+// ─── CONSTANT-TIME COMPARE ───────────────────────────────────────────────────
+async function secureCompare(a: string, b: string): Promise<boolean> {
+  const encoder = new TextEncoder()
+  const key = await crypto.subtle.importKey(
+    'raw', encoder.encode('timing-safe-compare'),
+    { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+  )
+  const [sigA, sigB] = await Promise.all([
+    crypto.subtle.sign('HMAC', key, encoder.encode(a)),
+    crypto.subtle.sign('HMAC', key, encoder.encode(b)),
+  ])
+  const a8 = new Uint8Array(sigA)
+  const b8 = new Uint8Array(sigB)
+  let diff = 0
+  for (let i = 0; i < 32; i++) diff |= a8[i] ^ b8[i]
+  return diff === 0
+}
+
+type Access = {
+  id: string
+  email: string
+  drive_folder_id: string | null
+  drive_permission_id: string | null
+  expires_at: string | null
+}
+
+// Revoga uma única permissão no Google Drive (retorna true se OK ou 404).
+async function revokeDrivePermission(
+  folderId: string,
+  permissionId: string,
+  accessToken: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const res = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${folderId}/permissions/${permissionId}`,
+    { method: 'DELETE', headers: { Authorization: `Bearer ${accessToken}` } },
+  )
+  if (res.ok || res.status === 404) return { ok: true }
+  const err = await res.json().catch(() => ({}))
+  return { ok: false, error: err?.error?.message || `HTTP ${res.status}` }
 }
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: getCorsHeaders(req) })
 
   try {
-    // ── Verificação de CRON_SECRET (ativa somente se o secret estiver configurado) ──
-    const cronSecret = Deno.env.get('CRON_SECRET')
-    if (cronSecret) {
-      const providedSecret = req.headers.get('x-cron-secret') || ''
-      if (providedSecret !== cronSecret) {
-        console.error('drive-revoke-access: x-cron-secret inválido ou ausente')
-        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-          status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
-        })
-      }
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    const supabase    = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false } })
+
+    // Parse body (pode ser {} para modo cron, ou { accessId, finalStatus } para admin)
+    let body: { accessId?: string; finalStatus?: 'revoked' | 'expired' } = {}
+    if (req.method !== 'GET') {
+      try { body = await req.json() } catch { body = {} }
     }
 
-    const GOOGLE_CLIENT_SECRET = Deno.env.get('GOOGLE_CLIENT_SECRET')!
-    const supabaseUrl  = Deno.env.get('SUPABASE_URL')!
-    const supabaseKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    const supabase     = createClient(supabaseUrl, supabaseKey)
+    const singleMode = Boolean(body.accessId)
 
-    const now = new Date().toISOString()
-
-    // Step 1: Mark expired accesses WITHOUT permission_id as expired immediately
-    const { data: expiredWithoutPerm } = await supabase
-      .from('accesses')
-      .update({ status: 'expired' })
-      .eq('access_type', 'trial')
-      .eq('status', 'active')
-      .is('drive_permission_id', null)
-      .lte('expires_at', now)
-      .select('id, email')
-
-    const markedExpired = expiredWithoutPerm?.length || 0
-    if (markedExpired > 0) {
-      console.log(`Marked ${markedExpired} accesses as expired (no Drive permission)`)
-    }
-
-    // Step 2: Find expired accesses WITH permission_id (need Drive revocation)
-    const { data: expiredAccesses, error: fetchErr } = await supabase
-      .from('accesses')
-      .select('id, email, drive_permission_id, drive_folder_id, expires_at')
-      .eq('access_type', 'trial')
-      .eq('status', 'active')
-      .not('drive_permission_id', 'is', null)
-      .lte('expires_at', now)
-
-    if (fetchErr) throw fetchErr
-
-    if (!expiredAccesses || expiredAccesses.length === 0) {
-      return new Response(JSON.stringify({ revoked: 0, markedExpired }), {
-        headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
-      })
-    }
-
-    // Get drive config for token
-    const { data: config, error: configErr } = await supabase
-      .from('drive_config')
-      .select('*')
-      .single()
-
-    if (configErr || !config?.connected) {
-      // Drive not connected — just mark them as expired without revoking
-      const ids = expiredAccesses.map(a => a.id)
-      for (const id of ids) {
-        await supabase.from('accesses').update({ status: 'expired', drive_permission_id: null }).eq('id', id)
-      }
-      return new Response(JSON.stringify({ revoked: 0, markedExpired: markedExpired + ids.length, note: 'Drive não conectado, acesso expirado sem revogar permissão' }), {
-        headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
-      })
-    }
-
-    let accessToken = config.access_token
-    const expiry    = config.token_expiry ? new Date(config.token_expiry) : null
-    if (!expiry || expiry < new Date()) {
-      if (!config.refresh_token) {
-        for (const access of expiredAccesses) {
-          await supabase.from('accesses').update({ status: 'expired', drive_permission_id: null }).eq('id', access.id)
+    // ── Autorização ──────────────────────────────────────────────────────────
+    // Modo admin (singleMode): exige service role key OU JWT de admin
+    // Modo cron (batch):       exige x-cron-secret = CRON_SECRET (quando configurado)
+    if (singleMode) {
+      const authHeader = req.headers.get('Authorization') || ''
+      let authorized = false
+      if (authHeader.startsWith('Bearer ')) {
+        const token = authHeader.replace('Bearer ', '')
+        if (await secureCompare(token, supabaseKey)) {
+          authorized = true
+        } else {
+          const { data: { user } } = await supabase.auth.getUser(token)
+          if (user) {
+            const { data: role } = await supabase
+              .from('user_roles')
+              .select('role')
+              .eq('user_id', user.id)
+              .eq('role', 'admin')
+              .maybeSingle()
+            if (role) authorized = true
+          }
         }
-        return new Response(JSON.stringify({ revoked: 0, markedExpired: markedExpired + expiredAccesses.length, note: 'Token expirado, acesso expirado sem revogar permissão' }), {
-          headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
+      }
+      if (!authorized) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
         })
       }
-      accessToken = await refreshAccessToken(config.refresh_token, GOOGLE_CLIENT_SECRET)
-      await supabase.from('drive_config').update({
-        access_token: accessToken,
-        token_expiry: new Date(Date.now() + 3600 * 1000).toISOString(),
-      }).eq('id', config.id)
+    } else {
+      const cronSecret = Deno.env.get('CRON_SECRET')
+      if (cronSecret) {
+        const provided = req.headers.get('x-cron-secret') || ''
+        if (!(await secureCompare(provided, cronSecret))) {
+          console.error('drive-revoke-access: x-cron-secret inválido')
+          return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+            status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
+          })
+        }
+      }
     }
 
+    // ── Buscar os acessos a revogar ──────────────────────────────────────────
+    let targets: Access[] = []
+
+    if (singleMode) {
+      const { data, error } = await supabase
+        .from('accesses')
+        .select('id, email, drive_folder_id, drive_permission_id, expires_at')
+        .eq('id', body.accessId!)
+        .maybeSingle()
+      if (error) throw error
+      if (!data) {
+        return new Response(JSON.stringify({ error: 'Acesso não encontrado' }), {
+          status: 404, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
+        })
+      }
+      targets = [data as Access]
+    } else {
+      const now = new Date().toISOString()
+      const { data, error } = await supabase
+        .from('accesses')
+        .select('id, email, drive_folder_id, drive_permission_id, expires_at')
+        .eq('access_type', 'trial')
+        .eq('status', 'active')
+        .lte('expires_at', now)
+      if (error) throw error
+      targets = (data || []) as Access[]
+    }
+
+    if (targets.length === 0) {
+      return new Response(JSON.stringify({ revoked: 0, markedExpired: 0 }), {
+        headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
+      })
+    }
+
+    // ── Preparar token do Google Drive (só se algum target tiver perm_id) ───
+    const needsDrive = targets.some(t => t.drive_permission_id)
+    let accessToken: string | null = null
+    let fallbackFolderId: string | null = null
+    let driveAvailable = false
+
+    if (needsDrive) {
+      const { data: config } = await supabase.from('drive_config').select('*').maybeSingle()
+      if (config?.connected && config.folder_id) {
+        fallbackFolderId = config.folder_id
+        accessToken = config.access_token
+        const expiry = config.token_expiry ? new Date(config.token_expiry) : null
+        if (!expiry || expiry < new Date()) {
+          if (config.refresh_token) {
+            try {
+              const GOOGLE_CLIENT_SECRET = Deno.env.get('GOOGLE_CLIENT_SECRET')!
+              accessToken = await refreshAccessToken(config.refresh_token, GOOGLE_CLIENT_SECRET)
+              await supabase.from('drive_config').update({
+                access_token: accessToken,
+                token_expiry: new Date(Date.now() + 3600 * 1000).toISOString(),
+              }).eq('id', config.id)
+            } catch (e: any) {
+              console.error('Refresh token failed:', e.message)
+            }
+          }
+        }
+        driveAvailable = Boolean(accessToken)
+      }
+    }
+
+    // ── Processar cada acesso ───────────────────────────────────────────────
+    const finalStatus = singleMode ? (body.finalStatus || 'revoked') : 'expired'
     let revoked = 0
+    let markedExpired = 0
     const errors: string[] = []
 
-    for (const access of expiredAccesses) {
-      try {
-        const folderId = access.drive_folder_id || config.folder_id
+    for (const t of targets) {
+      const folderId = t.drive_folder_id || fallbackFolderId
 
-        // Mark as expired first (avoid retrying on errors)
-        await supabase.from('accesses').update({
-          status: 'expired',
-          drive_permission_id: null,
-        }).eq('id', access.id)
-
-        if (!folderId || !access.drive_permission_id) {
+      if (t.drive_permission_id && folderId && driveAvailable && accessToken) {
+        const res = await revokeDrivePermission(folderId, t.drive_permission_id, accessToken)
+        if (res.ok) {
           revoked++
-          continue
-        }
-
-        // Revoke permission from Google Drive
-        const revokeRes = await fetch(
-          `https://www.googleapis.com/drive/v3/files/${folderId}/permissions/${access.drive_permission_id}`,
-          {
-            method: 'DELETE',
-            headers: { 'Authorization': `Bearer ${accessToken}` },
-          }
-        )
-
-        if (revokeRes.ok || revokeRes.status === 404) {
-          revoked++
-          console.log(`Revoked Drive access for ${access.email}`)
         } else {
-          const errBody = await revokeRes.json().catch(() => ({}))
-          console.warn(`Failed to revoke Drive for ${access.email}: ${errBody?.error?.message || revokeRes.status}`)
-          errors.push(`${access.email}: ${errBody?.error?.message || revokeRes.status}`)
+          errors.push(`${t.email}: ${res.error}`)
         }
-      } catch (e: any) {
-        errors.push(`${access.email}: ${e.message}`)
+      } else if (t.drive_permission_id) {
+        // Existe perm mas Drive está indisponível — não zeramos perm_id
+        // para que a próxima execução tente novamente.
+        errors.push(`${t.email}: Drive indisponível, mantendo perm_id para retry`)
+        continue
+      } else {
+        markedExpired++
       }
+
+      await supabase
+        .from('accesses')
+        .update({ status: finalStatus, drive_permission_id: null })
+        .eq('id', t.id)
     }
 
-    return new Response(JSON.stringify({ revoked, markedExpired, errors }), {
-      headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
+    const payload = singleMode
+      ? { success: true, accessId: body.accessId, revoked, markedExpired, errors }
+      : { revoked, markedExpired, errors }
+
+    return new Response(JSON.stringify(payload), {
+      headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
     })
   } catch (err: any) {
-    console.error(err)
-    return new Response(JSON.stringify({ error: err.message }), {
-      status: 500, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
+    console.error('drive-revoke-access error:', err)
+    return new Response(JSON.stringify({ error: err.message || 'Internal error' }), {
+      status: 500, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
     })
   }
 })
