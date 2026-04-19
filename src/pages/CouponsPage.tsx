@@ -7,15 +7,22 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { formatDateSP } from '@/lib/utils';
-import { Tag, Plus, Pencil, Trash2, Percent, X, Check, AlertCircle } from 'lucide-react';
+import { Tag, Plus, Pencil, Trash2, X } from 'lucide-react';
+
+const PLAN_LABELS: Record<string, string> = {
+  all:      'Ambos',
+  annual:   'Só Anual',
+  lifetime: 'Só Vitalício',
+};
 
 export default function CouponsPage() {
   const [coupons, setCoupons] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<any>(null);
-  const [form, setForm] = useState({ code: '', discount_percent: '', description: '', active: true, max_uses: '' });
+  const [form, setForm] = useState({ code: '', discount_percent: '', description: '', active: true, max_uses: '', allowed_plans: 'all' });
   const [submitting, setSubmitting] = useState(false);
 
   const fetchCoupons = useCallback(async () => {
@@ -26,14 +33,37 @@ export default function CouponsPage() {
 
   useEffect(() => { fetchCoupons(); }, [fetchCoupons]);
 
-  const openCreate = () => { setEditing(null); setForm({ code: '', discount_percent: '', description: '', active: true, max_uses: '' }); setShowModal(true); };
-  const openEdit = (c: any) => { setEditing(c); setForm({ code: c.code, discount_percent: String(c.discount_percent), description: c.description || '', active: c.active, max_uses: c.max_uses ? String(c.max_uses) : '' }); setShowModal(true); };
+  const openCreate = () => {
+    setEditing(null);
+    setForm({ code: '', discount_percent: '', description: '', active: true, max_uses: '', allowed_plans: 'all' });
+    setShowModal(true);
+  };
+
+  const openEdit = (c: any) => {
+    setEditing(c);
+    setForm({
+      code: c.code,
+      discount_percent: String(c.discount_percent),
+      description: c.description || '',
+      active: c.active,
+      max_uses: c.max_uses ? String(c.max_uses) : '',
+      allowed_plans: c.allowed_plans || 'all',
+    });
+    setShowModal(true);
+  };
 
   const submit = async () => {
     if (!form.code || !form.discount_percent) { toast.error('Preencha os campos obrigatórios'); return; }
     setSubmitting(true);
     try {
-      const payload = { code: form.code.toUpperCase(), discount_percent: parseInt(form.discount_percent), description: form.description || null, active: form.active, max_uses: form.max_uses ? parseInt(form.max_uses) : null };
+      const payload = {
+        code: form.code.toUpperCase(),
+        discount_percent: parseInt(form.discount_percent),
+        description: form.description || null,
+        active: form.active,
+        max_uses: form.max_uses ? parseInt(form.max_uses) : null,
+        allowed_plans: form.allowed_plans,
+      };
       if (editing) {
         await supabase.from('coupons').update(payload).eq('id', editing.id);
         toast.success('Cupom atualizado!');
@@ -77,7 +107,7 @@ export default function CouponsPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-border">
-                    {['Código', 'Desconto', 'Descrição', 'Usos', 'Ativo', 'Expira', ''].map(h => (
+                    {['Código', 'Desconto', 'Planos', 'Descrição', 'Usos', 'Ativo', 'Expira', ''].map(h => (
                       <th key={h} className="text-left px-4 py-3 text-xs font-mono uppercase text-muted-foreground">{h}</th>
                     ))}
                   </tr>
@@ -87,6 +117,7 @@ export default function CouponsPage() {
                     <tr key={c.id} className="border-b border-border/40 hover:bg-secondary/30 transition-colors">
                       <td className="px-4 py-3 text-sm font-mono font-bold text-foreground">{c.code}</td>
                       <td className="px-4 py-3 text-sm text-primary font-semibold">{c.discount_percent}%</td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground">{PLAN_LABELS[c.allowed_plans || 'all']}</td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">{c.description || '—'}</td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">{c.times_used || 0}{c.max_uses ? `/${c.max_uses}` : ''}</td>
                       <td className="px-4 py-3">
@@ -126,6 +157,19 @@ export default function CouponsPage() {
               <div className="space-y-2">
                 <Label className="text-foreground">Desconto (%) *</Label>
                 <Input type="number" min="1" max="100" value={form.discount_percent} onChange={e => setForm(f => ({ ...f, discount_percent: e.target.value }))} className="bg-secondary border-border text-foreground" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-foreground">Válido para</Label>
+                <Select value={form.allowed_plans} onValueChange={v => setForm(f => ({ ...f, allowed_plans: v }))}>
+                  <SelectTrigger className="bg-secondary border-border text-foreground">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-background-paper border-border">
+                    <SelectItem value="all">Ambos os planos</SelectItem>
+                    <SelectItem value="annual">Só Plano Anual (R$ 199)</SelectItem>
+                    <SelectItem value="lifetime">Só Plano Vitalício (R$ 299,90)</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2">
                 <Label className="text-foreground">Descrição</Label>

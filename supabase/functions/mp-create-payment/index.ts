@@ -140,6 +140,14 @@ serve(async (req) => {
             status: 400, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
           })
         }
+        // Verificar restrição de plano
+        const allowedPlans = coupon.allowed_plans || 'all'
+        if (allowedPlans !== 'all' && allowedPlans !== plan) {
+          const planName = allowedPlans === 'annual' ? 'Plano Anual' : 'Plano Vitalício'
+          return new Response(JSON.stringify({ error: `Este cupom é válido apenas para o ${planName}` }), {
+            status: 400, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
+          })
+        }
         discountPercent = coupon.discount_percent
         appliedCoupon   = coupon.id
       }
