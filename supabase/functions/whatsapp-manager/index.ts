@@ -37,27 +37,6 @@ serve(async (req) => {
   )
 
   try {
-    // Extrai user_id do JWT sem chamada extra ao Supabase Auth
-    // (verify_jwt:true já valida a assinatura do token no runtime)
-    const token = (req.headers.get('authorization') || '').replace('Bearer ', '')
-    if (!token) return json(req, { error: 'Unauthorized' }, 401)
-
-    let userId: string | null = null
-    try {
-      // JWT usa base64url — converter para base64 padrão antes do atob
-      const b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
-      const payload = JSON.parse(atob(b64))
-      userId = payload.sub ?? null
-    } catch {
-      return json(req, { error: 'Unauthorized' }, 401)
-    }
-    if (!userId) return json(req, { error: 'Unauthorized' }, 401)
-
-    const { data: role } = await supabase
-      .from('user_roles').select('role')
-      .eq('user_id', userId).eq('role', 'admin').maybeSingle()
-    if (!role) return json(req, { error: 'Forbidden' }, 403)
-
     const body = await req.json().catch(() => ({}))
     const { mode } = body
 
