@@ -95,6 +95,31 @@ serve(async (req) => {
     let replyText: string | null = null
     let errorMsg: string | null = null
 
+    // Verifica se esse contato já recebeu resposta automática antes (anti-duplicidade)
+    if (matched && config.auto_reply_message) {
+      const { data: alreadyReplied } = await supabase
+        .from('whatsapp_messages')
+        .select('id')
+        .eq('remote_jid', remoteJid)
+        .eq('replied', true)
+        .limit(1)
+        .maybeSingle()
+
+      if (alreadyReplied) {
+        // Contato já respondido — loga a mensagem mas não responde
+        await supabase.from('whatsapp_messages').insert({
+          message_id: messageId,
+          remote_jid: remoteJid,
+          phone_number: phone,
+          message_text: text,
+          replied: false,
+          reply_text: null,
+          error: null,
+        })
+        return new Response('ok', { status: 200 })
+      }
+    }
+
     if (matched && config.auto_reply_message) {
       const apiUrl = (config.evolution_api_url as string).replace(/\/$/, '')
       const inst = config.instance_name || 'onemed'
