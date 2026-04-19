@@ -37,16 +37,23 @@ serve(async (req) => {
   )
 
   try {
-    // Verificação de admin
+    // Extrai user_id do JWT sem chamada extra ao Supabase Auth
+    // (verify_jwt:true já valida a assinatura do token no runtime)
     const token = (req.headers.get('authorization') || '').replace('Bearer ', '')
     if (!token) return json(req, { error: 'Unauthorized' }, 401)
 
-    const { data: { user } } = await supabase.auth.getUser(token)
-    if (!user) return json(req, { error: 'Unauthorized' }, 401)
+    let userId: string | null = null
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]))
+      userId = payload.sub ?? null
+    } catch {
+      return json(req, { error: 'Unauthorized' }, 401)
+    }
+    if (!userId) return json(req, { error: 'Unauthorized' }, 401)
 
     const { data: role } = await supabase
       .from('user_roles').select('role')
-      .eq('user_id', user.id).eq('role', 'admin').maybeSingle()
+      .eq('user_id', userId).eq('role', 'admin').maybeSingle()
     if (!role) return json(req, { error: 'Forbidden' }, 403)
 
     const body = await req.json().catch(() => ({}))
