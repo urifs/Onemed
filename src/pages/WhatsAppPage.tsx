@@ -94,45 +94,35 @@ export default function WhatsAppPage() {
     }
   };
 
-  // Verifica status diretamente na Evolution API
-  const fetchStatus = async (url = apiUrl, key = apiKey, inst = instanceName) => {
-    if (!url.trim() || !key.trim()) { setStatus('not_configured'); return; }
+  // Chama Edge Function diretamente via fetch (evita problemas do supabase.functions.invoke)
+  const callManager = async (mode: string): Promise<any> => {
+    const resp = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/whatsapp-manager`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({ mode }),
+      },
+    );
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || data?.error) throw new Error(data?.error || `HTTP ${resp.status}`);
+    return data;
+  };
+
+  // Verifica status via Edge Function (proxy para Evolution API)
+  const fetchStatus = async () => {
     setStatusLoading(true);
     try {
-      const base = url.replace(/\/$/, '');
-      const name = inst.trim() || 'onemed';
-      const stateRes = await fetch(`${base}/instance/connectionState/${name}`, {
-        headers: { apikey: key },
-      }).catch(() => null);
-
-      if (!stateRes || !stateRes.ok) { setStatus('disconnected'); return; }
-      const stateData = await stateRes.json().catch(() => ({}));
-      const state: string = stateData.instance?.state || stateData.state || '';
-
-      if (state === 'open') {
-        setStatus('connected');
-        try {
-          const infoRes = await fetch(`${base}/instance/fetchInstances?instanceName=${name}`, { headers: { apikey: key } });
-          if (infoRes.ok) {
-            const raw = await infoRes.json().catch(() => []);
-            const arr = Array.isArray(raw) ? raw : [raw];
-            const found = arr.find((i: any) => i.instance?.instanceName === name || i.instanceName === name);
-            setPhone(found?.instance?.owner?.replace('@s.whatsapp.net', '') || found?.owner?.replace('@s.whatsapp.net', '') || null);
-          }
-        } catch { /* best effort */ }
-      } else {
-        try {
-          const qrRes = await fetch(`${base}/instance/connect/${name}`, { headers: { apikey: key } });
-          if (qrRes.ok) {
-            const qrData = await qrRes.json().catch(() => ({}));
-            const qr = qrData.base64 || qrData.qrcode?.base64 || null;
-            setQrcode(qr);
-            setStatus(qr ? 'connecting' : 'disconnected');
-          } else {
-            setStatus('disconnected');
-          }
-        } catch { setStatus('disconnected'); }
-      }
+      const data = await callManager('get-status');
+      setStatus(data.status || 'not_configured');
+      setQrcode(data.qrcode || null);
+      setPhone(data.phone || null);
+    } catch {
+      /* silent — status polling */
     } finally {
       setStatusLoading(false);
     }
@@ -154,9 +144,8 @@ export default function WhatsAppPage() {
     fetchConfig().then(() => fetchMessages());
   }, []);
 
-  // Busca status quando a config está pronta (passa valores atuais explicitamente)
   useEffect(() => {
-    if (isConfigured) fetchStatus(apiUrl, apiKey, instanceName);
+    if (isConfigured) fetchStatus();
   }, [isConfigured]);
 
   // Polling a cada 30 segundos quando configurado
@@ -165,7 +154,7 @@ export default function WhatsAppPage() {
     if (status === 'not_configured') return;
 
     intervalRef.current = setInterval(() => {
-      fetchStatus(apiUrl, apiKey, instanceName);
+      fetchStatus();
       fetchMessages();
     }, 30_000);
 
@@ -199,7 +188,7 @@ export default function WhatsAppPage() {
     if (error) { toast.error('Erro ao salvar configuração: ' + error.message); return; }
     toast.success('Configuração salva!');
     setIsConfigured(true);
-    fetchStatus(apiUrl.trim(), apiKey.trim(), instanceName.trim() || 'onemed');
+    fetchStatus();
   };
 
   // Salva resposta automática direto no banco
@@ -226,47 +215,12 @@ export default function WhatsAppPage() {
   };
 
   const connectWhatsApp = async () => {
-    if (!apiUrl.trim() || !apiKey.trim()) {
-      toast.error('Configure a URL e a Chave da API primeiro');
-      return;
-    }
     setConnecting(true);
     try {
-      const base = apiUrl.replace(/\/$/, '');
-      const inst = instanceName.trim() || 'onemed';
-      const webhookUrl = 'https://jrrybiohwqabsdurqudc.supabase.co/functions/v1/whatsapp-webhook';
-
-      // Cria instância (403/409 = já existe, continua normalmente)
-      const createRes = await fetch(`${base}/instance/create`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', apikey: apiKey },
-        body: JSON.stringify({
-          instanceName: inst,
-          integration: 'WHATSAPP-BAILEYS',
-          qrcode: true,
-          webhook: { url: webhookUrl, byEvents: true, base64: true, events: ['MESSAGES_UPSERT'] },
-        }),
-      }).catch(() => null);
-
-      if (createRes && !createRes.ok && createRes.status !== 403 && createRes.status !== 409) {
-        const err = await createRes.json().catch(() => ({}));
-        const msg = (err as any)?.response?.message?.[0] || (err as any)?.message || `Erro ${createRes.status}`;
-        throw new Error(msg);
-      }
-
-      // Obtém QR Code
-      const qrRes = await fetch(`${base}/instance/connect/${inst}`, { headers: { apikey: apiKey } });
-      if (!qrRes.ok) throw new Error(`Erro ${qrRes.status} ao obter QR Code`);
-      const qrData = await qrRes.json().catch(() => ({}));
-      const qr = qrData.base64 || qrData.qrcode?.base64 || null;
-
-      if (qr) {
-        setQrcode(qr);
-        setStatus('connecting');
-        toast.success('QR Code gerado! Escaneie com o WhatsApp Business.');
-      } else {
-        fetchStatus(apiUrl, apiKey, inst);
-      }
+      const data = await callManager('create-instance');
+      if (data?.qrcode) setQrcode(data.qrcode);
+      setStatus('connecting');
+      toast.success('QR Code gerado! Escaneie com o WhatsApp Business.');
     } catch (e: any) {
       toast.error('Erro ao conectar: ' + (e.message || 'Tente novamente'));
     } finally {
@@ -278,15 +232,7 @@ export default function WhatsAppPage() {
     if (!confirm('Deseja desconectar o WhatsApp Business?')) return;
     setDisconnecting(true);
     try {
-      const base = apiUrl.replace(/\/$/, '');
-      const inst = instanceName.trim() || 'onemed';
-      await fetch(`${base}/instance/logout/${inst}`, {
-        method: 'DELETE',
-        headers: { apikey: apiKey },
-      }).catch(() => null);
-      if (configId) {
-        await supabase.from('whatsapp_config').update({ connected: false, phone_number: null }).eq('id', configId);
-      }
+      await callManager('disconnect');
       setStatus('disconnected');
       setQrcode(null);
       setPhone(null);
@@ -474,7 +420,7 @@ export default function WhatsAppPage() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => fetchStatus(apiUrl, apiKey, instanceName)}
+                  onClick={fetchStatus}
                   disabled={statusLoading}
                   className="text-muted-foreground hover:text-foreground gap-1"
                 >
