@@ -48,6 +48,9 @@ type ConnStatus = 'not_configured' | 'disconnected' | 'connecting' | 'connected'
 export default function WhatsAppPage() {
   const { session } = useAuth();
 
+  // ID da linha de configuração (para updates)
+  const [configId, setConfigId] = useState<string | null>(null);
+
   // Campos de configuração da API
   const [apiUrl, setApiUrl] = useState('');
   const [apiKey, setApiKey] = useState('');
@@ -76,13 +79,12 @@ export default function WhatsAppPage() {
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const invoke = (fn: string, body: object) =>
-    supabase.functions.invoke(fn, { body });
-
+  // Lê config direto do banco (sem Edge Function)
   const fetchConfig = async () => {
-    const { data } = await invoke('whatsapp-manager', { mode: 'get-config' });
-    if (data?.config) {
-      const c: WaConfig = data.config;
+    const { data } = await supabase.from('whatsapp_config').select('*').maybeSingle();
+    if (data) {
+      const c = data as WaConfig & { id: string };
+      setConfigId(c.id);
       setApiUrl(c.evolution_api_url || '');
       setApiKey(c.evolution_api_key || '');
       setInstanceName(c.instance_name || 'onemed');
@@ -92,9 +94,12 @@ export default function WhatsAppPage() {
     }
   };
 
+  // Verifica status via Edge Function (precisa falar com Evolution API)
   const fetchStatus = async () => {
     setStatusLoading(true);
-    const { data } = await invoke('whatsapp-manager', { mode: 'get-status' });
+    const { data } = await supabase.functions.invoke('whatsapp-manager', {
+      body: { mode: 'get-status' },
+    });
     setStatusLoading(false);
     if (data) {
       setStatus(data.status || 'not_configured');
@@ -103,17 +108,20 @@ export default function WhatsAppPage() {
     }
   };
 
+  // Lê mensagens direto do banco (sem Edge Function)
   const fetchMessages = async () => {
     setMessagesLoading(true);
-    const { data } = await invoke('whatsapp-manager', { mode: 'get-messages' });
+    const { data } = await supabase
+      .from('whatsapp_messages')
+      .select('*')
+      .order('received_at', { ascending: false })
+      .limit(50);
     setMessagesLoading(false);
-    if (data?.messages) setMessages(data.messages);
+    if (data) setMessages(data as WaMessage[]);
   };
 
   useEffect(() => {
-    fetchConfig().then(() => {
-      fetchMessages();
-    });
+    fetchConfig().then(() => fetchMessages());
   }, []);
 
   // Busca status quando a config está pronta
@@ -136,44 +144,62 @@ export default function WhatsAppPage() {
     };
   }, [status]);
 
+  // Salva config API direto no banco
   const saveApiConfig = async () => {
     if (!apiUrl.trim() || !apiKey.trim()) {
       toast.error('Preencha a URL e a Chave da API');
       return;
     }
     setSavingConfig(true);
-    const { error } = await invoke('whatsapp-manager', {
-      mode: 'save-config',
+    const patch = {
       evolution_api_url: apiUrl.trim(),
       evolution_api_key: apiKey.trim(),
       instance_name: instanceName.trim() || 'onemed',
-    });
+      updated_at: new Date().toISOString(),
+    };
+    let error;
+    if (configId) {
+      ({ error } = await supabase.from('whatsapp_config').update(patch).eq('id', configId));
+    } else {
+      const res = await supabase.from('whatsapp_config').insert(patch).select('id').single();
+      error = res.error;
+      if (!error && res.data) setConfigId(res.data.id);
+    }
     setSavingConfig(false);
-    if (error) { toast.error('Erro ao salvar configuração'); return; }
+    if (error) { toast.error('Erro ao salvar configuração: ' + error.message); return; }
     toast.success('Configuração salva!');
     setIsConfigured(true);
     fetchStatus();
   };
 
+  // Salva resposta automática direto no banco
   const saveAutoReply = async () => {
     if (!autoReplyMessage.trim()) {
       toast.error('Digite a mensagem de resposta automática');
       return;
     }
     setSavingReply(true);
-    const { error } = await invoke('whatsapp-manager', {
-      mode: 'save-config',
+    const patch = {
       trigger_keyword: triggerKeyword.trim() || 'Tenho interesse',
       auto_reply_message: autoReplyMessage.trim(),
-    });
+      updated_at: new Date().toISOString(),
+    };
+    let error;
+    if (configId) {
+      ({ error } = await supabase.from('whatsapp_config').update(patch).eq('id', configId));
+    } else {
+      ({ error } = await supabase.from('whatsapp_config').insert(patch));
+    }
     setSavingReply(false);
-    if (error) { toast.error('Erro ao salvar'); return; }
+    if (error) { toast.error('Erro ao salvar: ' + error.message); return; }
     toast.success('Resposta automática salva!');
   };
 
   const connectWhatsApp = async () => {
     setConnecting(true);
-    const { data, error } = await invoke('whatsapp-manager', { mode: 'create-instance' });
+    const { data, error } = await supabase.functions.invoke('whatsapp-manager', {
+      body: { mode: 'create-instance' },
+    });
     setConnecting(false);
     if (error || data?.error) {
       toast.error(data?.error || 'Erro ao conectar. Verifique a URL e a Chave da API.');
@@ -187,7 +213,9 @@ export default function WhatsAppPage() {
   const disconnectWhatsApp = async () => {
     if (!confirm('Deseja desconectar o WhatsApp Business?')) return;
     setDisconnecting(true);
-    const { error } = await invoke('whatsapp-manager', { mode: 'disconnect' });
+    const { error } = await supabase.functions.invoke('whatsapp-manager', {
+      body: { mode: 'disconnect' },
+    });
     setDisconnecting(false);
     if (error) { toast.error('Erro ao desconectar'); return; }
     setStatus('disconnected');
