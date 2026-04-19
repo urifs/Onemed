@@ -30,7 +30,7 @@ export default function TrialUsersPage() {
       const [trialsData, buyersData, waSends] = await Promise.all([
         fetchAllRows((f, t) => supabase.from('accesses').select('*').eq('access_type', 'trial').order('created_at', { ascending: false }).range(f, t)),
         fetchAllRows((f, t) => supabase.from('buyers').select('email').eq('status', 'approved').range(f, t)),
-        fetchAllRows((f, t) => supabase.from('whatsapp_sends').select('phone, status').range(f, t)),
+        fetchAllRows((f, t) => supabase.from('whatsapp_sends').select('phone, status').range(f, t)).catch(() => []),
       ]);
       const buyerEmails = new Set((buyersData || []).map((b: any) => b.email.toLowerCase()));
       const all = (trialsData || []).filter(t => !buyerEmails.has(t.email.toLowerCase()));
