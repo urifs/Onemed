@@ -159,8 +159,8 @@ serve(async (req) => {
         }),
       })
 
-      // 409 = instância já existe, continua normalmente
-      if (!createRes.ok && createRes.status !== 409) {
+      // 409 ou 403 = instância já existe, continua normalmente
+      if (!createRes.ok && createRes.status !== 409 && createRes.status !== 403) {
         const err = await createRes.json().catch(() => ({}))
         return json(req, { error: (err as any).message || `Erro ${createRes.status} ao criar instância` }, 400)
       }
