@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { formatDateTimeSP, todayStartISO, fetchAllRows } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Users, Phone, Mail, Clock, Search, Filter, RefreshCw, MessageCircle, UserCheck, CheckCircle2, XCircle } from 'lucide-react';
+import { Users, Phone, Mail, Clock, Search, Filter, RefreshCw, MessageCircle, UserCheck, CheckCircle2, XCircle, Send } from 'lucide-react';
 import { WhatsAppLink } from '@/components/WhatsAppLink';
 
 export default function TrialUsersPage() {
@@ -18,6 +18,7 @@ export default function TrialUsersPage() {
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [syncingManychat, setSyncingManychat] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [waSentPhones, setWaSentPhones] = useState<Set<string>>(new Set());
@@ -88,6 +89,29 @@ export default function TrialUsersPage() {
     }
   }, [fetchData]);
 
+  const syncManychat = useCallback(async () => {
+    setSyncingManychat(true);
+    try {
+      const { data: { session: s } } = await supabase.auth.getSession();
+      const token = s?.access_token;
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-manychat-contacts`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+        },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erro na sincronização');
+      toast.success(`Manychat: ${data.synced} sincronizados${data.failed ? `, ${data.failed} com erro` : ''}`);
+    } catch (err: any) {
+      toast.error('Erro ao sincronizar com Manychat: ' + (err?.message || 'desconhecido'));
+    } finally {
+      setSyncingManychat(false);
+    }
+  }, []);
+
   useEffect(() => {
     let result = trials;
     if (search) result = result.filter(t => t.email.includes(search) || (t.whatsapp || '').includes(search));
@@ -114,6 +138,16 @@ export default function TrialUsersPage() {
             <p className="text-muted-foreground mt-1">Usuários que utilizaram o acesso de teste</p>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={syncManychat}
+              disabled={syncingManychat}
+              className="flex items-center gap-2 border-border text-foreground hover:bg-secondary"
+            >
+              <Send className={`w-4 h-4 ${syncingManychat ? 'animate-pulse' : ''}`} />
+              {syncingManychat ? 'Sincronizando...' : 'Sync Manychat'}
+            </Button>
             <Button
               variant="outline"
               size="sm"

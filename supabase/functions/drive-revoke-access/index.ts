@@ -54,9 +54,36 @@ async function secureCompare(a: string, b: string): Promise<boolean> {
 type Access = {
   id: string
   email: string
+  whatsapp: string | null
   drive_folder_id: string | null
   drive_permission_id: string | null
   expires_at: string | null
+}
+
+function normalizePhone(phone: string): string | null {
+  const digits = phone.replace(/\D/g, '')
+  if (digits.length < 8) return null
+  if (phone.trim().startsWith('+')) return phone.trim()
+  if (digits.length === 10 || digits.length === 11) return '+55' + digits
+  if (digits.length >= 12) return '+' + digits
+  return '+55' + digits
+}
+
+async function syncToManychat(whatsapp: string, apiKey: string): Promise<void> {
+  const normalized = normalizePhone(whatsapp)
+  if (!normalized) return
+  try {
+    await fetch('https://api.manychat.com/fb/subscriber/createByPhone', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ phone: normalized }),
+    })
+  } catch (e: any) {
+    console.error('Manychat sync error:', e.message)
+  }
 }
 
 // Revoga uma única permissão no Google Drive (retorna true se OK ou 404).
@@ -137,7 +164,7 @@ serve(async (req) => {
     if (singleMode) {
       const { data, error } = await supabase
         .from('accesses')
-        .select('id, email, drive_folder_id, drive_permission_id, expires_at')
+        .select('id, email, whatsapp, drive_folder_id, drive_permission_id, expires_at')
         .eq('id', body.accessId!)
         .maybeSingle()
       if (error) throw error
@@ -151,7 +178,7 @@ serve(async (req) => {
       const now = new Date().toISOString()
       const { data, error } = await supabase
         .from('accesses')
-        .select('id, email, drive_folder_id, drive_permission_id, expires_at')
+        .select('id, email, whatsapp, drive_folder_id, drive_permission_id, expires_at')
         .eq('access_type', 'trial')
         .eq('status', 'active')
         .lte('expires_at', now)
@@ -197,6 +224,7 @@ serve(async (req) => {
 
     // ── Processar cada acesso ───────────────────────────────────────────────
     const finalStatus = singleMode ? (body.finalStatus || 'revoked') : 'expired'
+    const manychatKey = Deno.env.get('MANYCHAT_API_KEY')
     let revoked = 0
     let markedExpired = 0
     const errors: string[] = []
@@ -224,6 +252,11 @@ serve(async (req) => {
         .from('accesses')
         .update({ status: finalStatus, drive_permission_id: null })
         .eq('id', t.id)
+
+      // Sincroniza com Manychat (fire-and-forget, só em expiração de cron)
+      if (!singleMode && t.whatsapp && manychatKey) {
+        syncToManychat(t.whatsapp, manychatKey)
+      }
     }
 
     const payload = singleMode
