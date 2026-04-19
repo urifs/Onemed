@@ -44,7 +44,9 @@ serve(async (req) => {
 
     let userId: string | null = null
     try {
-      const payload = JSON.parse(atob(token.split('.')[1]))
+      // JWT usa base64url — converter para base64 padrão antes do atob
+      const b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
+      const payload = JSON.parse(atob(b64))
       userId = payload.sub ?? null
     } catch {
       return json(req, { error: 'Unauthorized' }, 401)
