@@ -65,6 +65,11 @@ export default function WhatsAppPage() {
   const [connecting, setConnecting] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
 
+  // Pairing code (alternativa ao QR)
+  const [pairingNumber, setPairingNumber] = useState('');
+  const [pairingCode, setPairingCode] = useState<string | null>(null);
+  const [pairingLoading, setPairingLoading] = useState(false);
+
   // Resposta automática
   const [triggerKeyword, setTriggerKeyword] = useState('Tenho interesse');
   const [autoReplyMessage, setAutoReplyMessage] = useState('');
@@ -268,6 +273,42 @@ export default function WhatsAppPage() {
       toast.error('Erro ao conectar: ' + (e.message || 'Tente novamente'));
     } finally {
       setConnecting(false);
+    }
+  };
+
+  const requestPairingCode = async () => {
+    const num = pairingNumber.replace(/\D/g, '');
+    if (!num || num.length < 10) { toast.error('Digite o número com DDD e código do país (ex: 5511999998888)'); return; }
+    if (!apiUrl.trim() || !apiKey.trim()) { toast.error('Configure a API primeiro'); return; }
+    setPairingLoading(true);
+    setPairingCode(null);
+    try {
+      const base = apiUrl.replace(/\/$/, '');
+      const inst = instanceName.trim() || 'onomed';
+
+      // Garante que a instância existe
+      await fetch(`${base}/instance/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: apiKey },
+        body: JSON.stringify({ instanceName: inst, integration: 'WHATSAPP-BAILEYS', qrcode: false }),
+      }).catch(() => null);
+
+      const res = await fetch(`${base}/instance/pairing-code/${inst}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: apiKey },
+        body: JSON.stringify({ number: num }),
+      });
+      if (!res.ok) throw new Error(`Erro ${res.status}`);
+      const data = await res.json().catch(() => ({}));
+      const code: string = data.pairingCode || data.code || data.pairing_code || '';
+      if (!code) throw new Error('Código não retornado pela API');
+      setPairingCode(code);
+      setStatus('connecting');
+      toast.success('Código gerado! Digite-o no WhatsApp em Dispositivos conectados.');
+    } catch (e: any) {
+      toast.error('Erro ao gerar código: ' + (e.message || 'Tente novamente'));
+    } finally {
+      setPairingLoading(false);
     }
   };
 
@@ -492,6 +533,44 @@ export default function WhatsAppPage() {
                     <RefreshCw className={`w-3.5 h-3.5 ${statusLoading ? 'animate-spin' : ''}`} />
                     Gerar novo QR Code agora
                   </Button>
+                </div>
+              )}
+
+              {/* Pairing Code — alternativa ao QR */}
+              {status !== 'connected' && (
+                <div className="border border-border rounded-xl p-4 space-y-3 bg-secondary/20">
+                  <p className="text-sm font-medium text-foreground">
+                    QR Code não funciona? Use o código numérico:
+                  </p>
+                  <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside leading-relaxed">
+                    <li>Abra o WhatsApp Business → Mais opções (⋮) → Dispositivos conectados</li>
+                    <li>Toque em <strong>Conectar dispositivo</strong> → <strong>Conectar com número de telefone</strong></li>
+                    <li>Digite o código de 8 dígitos exibido abaixo</li>
+                  </ol>
+                  <div className="flex gap-2">
+                    <input
+                      value={pairingNumber}
+                      onChange={e => setPairingNumber(e.target.value)}
+                      placeholder="5511999998888 (com código do país)"
+                      className="flex-1 h-9 rounded-md border border-border bg-secondary text-foreground px-3 text-sm placeholder:text-muted-foreground"
+                    />
+                    <Button
+                      size="sm"
+                      onClick={requestPairingCode}
+                      disabled={pairingLoading}
+                      className="bg-primary hover:bg-primary-hover text-primary-foreground gap-1.5 shrink-0"
+                    >
+                      {pairingLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                      {pairingLoading ? 'Gerando...' : 'Gerar código'}
+                    </Button>
+                  </div>
+                  {pairingCode && (
+                    <div className="flex flex-col items-center gap-1 py-3 rounded-lg bg-primary/10 border border-primary/20">
+                      <p className="text-xs text-muted-foreground">Digite esse código no WhatsApp:</p>
+                      <p className="text-3xl font-mono font-bold tracking-widest text-primary">{pairingCode}</p>
+                      <p className="text-xs text-muted-foreground">O código expira em ~60 segundos</p>
+                    </div>
+                  )}
                 </div>
               )}
 
