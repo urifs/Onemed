@@ -161,15 +161,16 @@ export default function WhatsAppPage() {
     if (isConfigured && apiUrl && apiKey) fetchStatus();
   }, [isConfigured, apiUrl, apiKey]);
 
-  // Polling a cada 30 segundos quando configurado
+  // Polling: 20s quando aguardando QR (QR expira em ~60s), 30s nos demais estados
   useEffect(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
     if (status === 'not_configured') return;
 
+    const interval = status === 'connecting' ? 20_000 : 30_000;
     intervalRef.current = setInterval(() => {
       fetchStatus();
-      fetchMessages();
-    }, 30_000);
+      if (status !== 'connecting') fetchMessages();
+    }, interval);
 
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
@@ -474,13 +475,23 @@ export default function WhatsAppPage() {
                   <p className="text-sm text-muted-foreground text-center px-4">
                     Abra o <strong>WhatsApp Business</strong> → <strong>Dispositivos conectados</strong> → <strong>Conectar dispositivo</strong>
                   </p>
-                  <div className="bg-white p-4 rounded-xl shadow-sm">
-                    <img src={qrcode} alt="QR Code WhatsApp" className="w-52 h-52" />
+                  <div className="bg-white p-3 rounded-xl shadow-sm">
+                    <img src={qrcode} alt="QR Code WhatsApp" className="w-72 h-72" />
                   </div>
                   <p className="text-xs text-muted-foreground flex items-center gap-1.5">
                     <Clock className="w-3 h-3" />
-                    QR Code expira em ~60s · atualiza automaticamente a cada 30s
+                    QR Code expira em ~60s · atualiza automaticamente a cada 20s
                   </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={fetchStatus}
+                    disabled={statusLoading}
+                    className="border-border text-muted-foreground hover:text-foreground gap-1.5 text-xs"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${statusLoading ? 'animate-spin' : ''}`} />
+                    Gerar novo QR Code agora
+                  </Button>
                 </div>
               )}
 
