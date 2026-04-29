@@ -6,7 +6,7 @@ export const WhatsAppButton = () => {
 
   if (location.pathname !== '/') return null;
 
-  const phoneNumber = '5545991220048';
+  const phoneNumber = '5563999191551';
   const message = 'Olá! Tenho interesse no OneMed.';
   const url = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
 

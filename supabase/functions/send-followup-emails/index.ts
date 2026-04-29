@@ -16,7 +16,7 @@ function getCorsHeaders(req: Request) {
 const SITE_URL = 'https://onemedcursos.com.br'
 const SITE_NAME = 'OneMed'
 const FROM_EMAIL = 'noreply@onemedcursos.com.br'
-const WHATSAPP_URL = 'https://wa.me/5545991220048?text=Ol%C3%A1!%20Tenho%20interesse%20no%20OneMed.'
+const WHATSAPP_URL = 'https://wa.me/5563999191551?text=Ol%C3%A1!%20Tenho%20interesse%20no%20OneMed.'
 
 interface FollowupConfig {
   days: number

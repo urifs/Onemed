@@ -40,7 +40,7 @@ export const LandingFooter = () => {
             <div className="flex items-center gap-6 text-sm text-muted-foreground">
               <Link to="/termos" className="hover:text-foreground transition-colors">Termos de Uso</Link>
               <Link to="/privacidade" className="hover:text-foreground transition-colors">Privacidade</Link>
-              <a href="https://wa.me/5545991220048" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">Suporte</a>
+              <a href="https://wa.me/5563999191551" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">Suporte</a>
             </div>
 
             <p className="text-xs text-muted-foreground">

@@ -17,7 +17,7 @@ export default function PrivacyPage() {
             ['3. Compartilhamento', 'Seus dados são compartilhados com Google (para acesso ao Drive) e Mercado Pago (para processamento de pagamentos). Não vendemos seus dados.'],
             ['4. Segurança', 'Utilizamos criptografia SSL e boas práticas de segurança para proteger suas informações.'],
             ['5. Seus Direitos', 'Você pode solicitar a exclusão dos seus dados a qualquer momento entrando em contato pelo WhatsApp.'],
-            ['6. Contato', 'WhatsApp: (45) 99122-0048'],
+            ['6. Contato', 'WhatsApp: (63) 99919-1551'],
           ].map(([title, content]) => (
             <div key={title} className="space-y-2">
               <h2 className="font-secondary text-xl font-semibold text-foreground">{title}</h2>
