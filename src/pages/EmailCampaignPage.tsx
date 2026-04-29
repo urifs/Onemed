@@ -35,6 +35,25 @@ function spLocalToUTC(localStr: string): string {
 type TemplateType = 'followup_1d' | 'followup_7d' | 'followup_30d' | 'free_trial' | 'custom';
 type RecipientType = 'trials' | 'buyers' | 'both' | 'manual';
 type SendMode = 'now' | 'scheduled';
+type TrialPeriod = '20h' | '2d' | '5d' | '7d' | '15d' | '30d' | 'all';
+
+const TRIAL_PERIOD_OPTIONS: { id: TrialPeriod; label: string }[] = [
+  { id: '20h', label: 'Últimas 20h'    },
+  { id: '2d',  label: 'Últimos 2 dias' },
+  { id: '5d',  label: 'Últimos 5 dias' },
+  { id: '7d',  label: 'Últimos 7 dias' },
+  { id: '15d', label: 'Últimos 15 dias'},
+  { id: '30d', label: 'Últimos 30 dias'},
+  { id: 'all', label: 'Todos'           },
+];
+
+function getPeriodCutoff(period: TrialPeriod): string | null {
+  if (period === 'all') return null;
+  const now = new Date();
+  const hours: Record<TrialPeriod, number> = { '20h': 20, '2d': 48, '5d': 120, '7d': 168, '15d': 360, '30d': 720, all: 0 };
+  now.setHours(now.getHours() - hours[period]);
+  return now.toISOString();
+}
 
 interface FollowupFields {
   subject: string;
@@ -130,6 +149,7 @@ export default function EmailCampaignPage() {
 
   // Recipients
   const [recipientType, setRecipientType] = useState<RecipientType>('trials');
+  const [trialPeriod, setTrialPeriod] = useState<TrialPeriod>('all');
   const [recipients, setRecipients] = useState<string[]>([]);
   const [manualEmails, setManualEmails] = useState('');
   const [loadingRecipients, setLoadingRecipients] = useState(false);
@@ -159,14 +179,13 @@ export default function EmailCampaignPage() {
 
   // ── Fetch recipients ────────────────────────────────────────────────────────
 
-  const fetchRecipients = useCallback(async (type: RecipientType) => {
+  const fetchRecipients = useCallback(async (type: RecipientType, period: TrialPeriod) => {
     // Sequence guard: descarta resultados de fetches anteriores
     const seq = ++fetchSeqRef.current;
     setLoadingRecipients(true);
 
     const PAGE_SIZE = 1000;
 
-    // Busca todas as páginas de uma query paginada
     const fetchAllPages = async <T extends { email?: string }>(
       builder: () => ReturnType<typeof supabase.from>
     ): Promise<string[]> => {
@@ -187,11 +206,14 @@ export default function EmailCampaignPage() {
 
     try {
       const all: string[] = [];
+      const cutoff = getPeriodCutoff(period);
 
       if (type === 'trials' || type === 'both') {
-        const emails = await fetchAllPages(() =>
-          supabase.from('accesses').select('email').eq('access_type', 'trial')
-        );
+        const emails = await fetchAllPages(() => {
+          let q = supabase.from('accesses').select('email').eq('access_type', 'trial');
+          if (cutoff) q = (q as any).gte('created_at', cutoff);
+          return q;
+        });
         all.push(...emails);
       }
 
@@ -221,8 +243,8 @@ export default function EmailCampaignPage() {
       setLoadingRecipients(false);
       return;
     }
-    fetchRecipients(recipientType);
-  }, [recipientType, fetchRecipients]);
+    fetchRecipients(recipientType, trialPeriod);
+  }, [recipientType, trialPeriod, fetchRecipients]);
 
   // ── Server-side campaign runner ──────────────────────────────────────────────
 
@@ -721,6 +743,26 @@ export default function EmailCampaignPage() {
                     </button>
                   ))}
                 </div>
+                {(recipientType === 'trials' || recipientType === 'both') && (
+                  <div className="space-y-1.5">
+                    <Label className="text-muted-foreground text-xs uppercase font-mono">Período dos trials</Label>
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {TRIAL_PERIOD_OPTIONS.map(opt => (
+                        <button
+                          key={opt.id}
+                          onClick={() => setTrialPeriod(opt.id)}
+                          className={`px-2 py-2 rounded-lg border text-xs font-medium transition-colors ${
+                            trialPeriod === opt.id
+                              ? 'border-primary bg-primary/10 text-primary'
+                              : 'border-border text-muted-foreground hover:bg-secondary'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {recipientType === 'manual' && (
                   <div className="space-y-1.5">
                     <Label className="text-muted-foreground text-xs uppercase font-mono">Lista de emails (um por linha ou separados por vírgula)</Label>
