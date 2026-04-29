@@ -37,8 +37,8 @@ const FOLLOWUP_CONFIGS: FollowupConfig[] = [
     couponCode: 'ONEMED10',
     discount: 10,
     subjectText: 'Sentimos sua falta!',
-    message: 'Notamos que voce experimentou nosso conteudo ontem. Esperamos que tenha gostado!',
-    urgency: 'Aproveite nossa oferta especial e garanta acesso ilimitado a todo o conteudo.',
+    message: 'Notamos que você experimentou nosso conteúdo ontem. Esperamos que tenha gostado!',
+    urgency: 'Aproveite nossa oferta especial e garanta acesso ilimitado a todo o conteúdo.',
     annualPrice: 'R$ 179,10',
     lifetimePrice: 'R$ 269,10',
   },
@@ -48,8 +48,8 @@ const FOLLOWUP_CONFIGS: FollowupConfig[] = [
     couponCode: 'ONEMED20',
     discount: 20,
     subjectText: 'Uma semana se passou...',
-    message: 'Faz uma semana que voce testou o OneMed. Sentimos sua falta!',
-    urgency: 'Milhares de medicos ja garantiram acesso. Nao fique de fora!',
+    message: 'Faz uma semana que você testou o OneMed. Sentimos sua falta!',
+    urgency: 'Milhares de médicos já garantiram acesso. Não fique de fora!',
     annualPrice: 'R$ 159,20',
     lifetimePrice: 'R$ 239,20',
   },
@@ -58,9 +58,9 @@ const FOLLOWUP_CONFIGS: FollowupConfig[] = [
     type: 'followup_30d',
     couponCode: 'ONEMED30',
     discount: 30,
-    subjectText: 'Ultima chance!',
-    message: 'Faz um mes que voce conheceu o OneMed. Esta pode ser sua ultima oportunidade!',
-    urgency: 'Garanta seu acesso agora e transforme sua carreira medica.',
+    subjectText: 'Última chance!',
+    message: 'Faz um mês que você conheceu o OneMed. Esta pode ser sua última oportunidade!',
+    urgency: 'Garanta seu acesso agora e transforme sua carreira médica.',
     annualPrice: 'R$ 139,30',
     lifetimePrice: 'R$ 209,30',
   },
@@ -128,7 +128,7 @@ function getBaseTemplate(content: string, title: string): string {
                 <tr>
                   <td style="text-align: center;">
                     <p style="color: #64748B; font-size: 14px; margin: 0 0 10px;">
-                      O maior acervo de conteudos medicos da America Latina
+                      O maior acervo de conteúdos médicos da América Latina
                     </p>
                     <p style="color: #475569; font-size: 12px; margin: 0;">
                       &copy; 2026 OneMed. Todos os direitos reservados.
@@ -154,7 +154,7 @@ function getFollowupEmailHtml(email: string, cfg: FollowupConfig): string {
     </h1>
 
     <p style="color: #94A3B8; font-size: 16px; line-height: 1.6; margin: 0 0 20px;">
-      Ola!
+      Olá!
     </p>
 
     <p style="color: #94A3B8; font-size: 16px; line-height: 1.6; margin: 0 0 20px;">
@@ -189,14 +189,14 @@ function getFollowupEmailHtml(email: string, cfg: FollowupConfig): string {
     </table>
 
     <h2 style="color: white; font-size: 20px; margin: 30px 0 15px;">
-      O que voce esta perdendo:
+      O que você está perdendo:
     </h2>
 
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
       <tr><td style="padding: 10px 0;"><span style="color: #EF4444; font-size: 16px;">•</span><span style="color: #CBD5E1; font-size: 15px; margin-left: 10px;">+530 cursos de medicina</span></td></tr>
-      <tr><td style="padding: 10px 0;"><span style="color: #EF4444; font-size: 16px;">•</span><span style="color: #CBD5E1; font-size: 15px; margin-left: 10px;">+9.000 livros medicos atualizados</span></td></tr>
-      <tr><td style="padding: 10px 0;"><span style="color: #EF4444; font-size: 16px;">•</span><span style="color: #CBD5E1; font-size: 15px; margin-left: 10px;">Material completo para Residencia e Revalida</span></td></tr>
-      <tr><td style="padding: 10px 0;"><span style="color: #EF4444; font-size: 16px;">•</span><span style="color: #CBD5E1; font-size: 15px; margin-left: 10px;">Atualizacoes constantes</span></td></tr>
+      <tr><td style="padding: 10px 0;"><span style="color: #EF4444; font-size: 16px;">•</span><span style="color: #CBD5E1; font-size: 15px; margin-left: 10px;">+9.000 livros médicos atualizados</span></td></tr>
+      <tr><td style="padding: 10px 0;"><span style="color: #EF4444; font-size: 16px;">•</span><span style="color: #CBD5E1; font-size: 15px; margin-left: 10px;">Material completo para Residência e Revalida</span></td></tr>
+      <tr><td style="padding: 10px 0;"><span style="color: #EF4444; font-size: 16px;">•</span><span style="color: #CBD5E1; font-size: 15px; margin-left: 10px;">Atualizações constantes</span></td></tr>
     </table>
 
     <!-- Prices side by side -->
@@ -204,7 +204,7 @@ function getFollowupEmailHtml(email: string, cfg: FollowupConfig): string {
       <tr>
         <td style="background-color: #1a1a1a; border-radius: 12px; padding: 20px;">
           <p style="color: #22C55E; font-size: 14px; text-align: center; margin: 0 0 15px;">
-            Precos com seu cupom de ${cfg.discount}% de desconto:
+            Preços com seu cupom de ${cfg.discount}% de desconto:
           </p>
           <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
             <tr>
@@ -215,7 +215,7 @@ function getFollowupEmailHtml(email: string, cfg: FollowupConfig): string {
                 <p style="color: #94A3B8; font-size: 12px; margin: 5px 0 0;">12 meses de acesso</p>
               </td>
               <td style="width: 50%; padding: 10px; text-align: center;">
-                <p style="color: #64748B; font-size: 12px; margin: 0;">PLANO VITALICIO</p>
+                <p style="color: #64748B; font-size: 12px; margin: 0;">PLANO VITALÍCIO</p>
                 <p style="color: #64748B; font-size: 14px; margin: 5px 0; text-decoration: line-through;">R$ 299,90</p>
                 <p style="color: #22C55E; font-size: 24px; font-weight: bold; margin: 0;">${cfg.lifetimePrice}</p>
                 <p style="color: #94A3B8; font-size: 12px; margin: 5px 0 0;">Acesso para sempre</p>
@@ -241,7 +241,7 @@ function getFollowupEmailHtml(email: string, cfg: FollowupConfig): string {
     </p>
 
     <p style="color: #475569; font-size: 12px; text-align: center; margin: 16px 0 0;">
-      Este email foi enviado para <strong style="color: #94A3B8;">${email}</strong> pois voce experimentou o OneMed gratuitamente.
+      Este email foi enviado para <strong style="color: #94A3B8;">${email}</strong> pois você experimentou o OneMed gratuitamente.
     </p>
   `
   return getBaseTemplate(content, `${cfg.subjectText} - ${SITE_NAME}`)
