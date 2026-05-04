@@ -131,10 +131,14 @@ serve(async (req) => {
     const { email, whatsapp } = await req.json().catch(() => ({}))
 
     if (!email || !EMAIL_REGEX.test(email)) {
-      return jsonResponse(req, { error: 'Email inválido' }, 400)
+      return jsonResponse(req, { error: 'E-mail inválido' }, 400)
     }
 
     const normalizedEmail = String(email).toLowerCase().trim()
+
+    if (!normalizedEmail.endsWith('@gmail.com')) {
+      return jsonResponse(req, { error: 'Por favor, use um e-mail Gmail (@gmail.com). O acesso ao Drive funciona melhor com Gmail.' }, 400)
+    }
 
     // ── Rate limit por IP ──
     const clientIp = (req.headers.get('x-forwarded-for') || '').split(',')[0].trim()

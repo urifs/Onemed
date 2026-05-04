@@ -66,6 +66,11 @@ export default function Index() {
     e.preventDefault();
     if (!email) return;
 
+    if (!email.toLowerCase().endsWith('@gmail.com')) {
+      toast.error('Use um e-mail Gmail (@gmail.com). O acesso ao Drive funciona melhor com Gmail.', { duration: 6000 });
+      return;
+    }
+
     if (!showWhatsappField) {
       setShowWhatsappField(true);
       return;

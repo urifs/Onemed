@@ -164,7 +164,11 @@ export default function CheckoutPage() {
 
   const validateCustomerData = () => {
     if (!customerEmail.trim() || !customerEmail.includes('@')) {
-      toast.error('Informe um email válido');
+      toast.error('Informe um e-mail válido');
+      return false;
+    }
+    if (!customerEmail.toLowerCase().endsWith('@gmail.com')) {
+      toast.error('Use um e-mail Gmail (@gmail.com). O acesso ao Drive funciona melhor com Gmail.', { duration: 6000 });
       return false;
     }
     if (!customerWhatsapp.trim() || customerWhatsapp.replace(/\D/g, '').length < 10) {
