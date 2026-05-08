@@ -13,6 +13,74 @@ function getCorsHeaders(req: Request) {
   }
 }
 
+// ─── GOOGLE DRIVE (inline — evita dependência de drive-share-folder) ──────────
+const GOOGLE_CLIENT_ID = '110017470335-2l6er8r451vj5hf3ob05rvolc2p4v9ku.apps.googleusercontent.com'
+
+async function refreshGoogleToken(refreshToken: string, clientSecret: string): Promise<string> {
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      refresh_token: refreshToken,
+      client_id: GOOGLE_CLIENT_ID,
+      client_secret: clientSecret,
+      grant_type: 'refresh_token',
+    }),
+  })
+  const data = await res.json()
+  if (!res.ok || !data.access_token) throw new Error('Falha ao renovar token do Google: ' + JSON.stringify(data))
+  return data.access_token as string
+}
+
+async function shareDriveFolderInline(
+  supabase: ReturnType<typeof createClient>,
+  email: string,
+  accessId: string,
+): Promise<void> {
+  const GOOGLE_CLIENT_SECRET = Deno.env.get('GOOGLE_CLIENT_SECRET')!
+  const { data: config } = await supabase.from('drive_config').select('*').maybeSingle()
+  if (!config?.connected || !config.folder_id) {
+    console.warn('Drive: config ausente ou não conectado')
+    return
+  }
+
+  let accessToken = config.access_token
+  const expiry = config.token_expiry ? new Date(config.token_expiry) : null
+  if (!expiry || expiry < new Date()) {
+    if (!config.refresh_token) { console.error('Drive: sem refresh_token'); return }
+    accessToken = await refreshGoogleToken(config.refresh_token, GOOGLE_CLIENT_SECRET)
+    await supabase.from('drive_config').update({
+      access_token: accessToken,
+      token_expiry: new Date(Date.now() + 3600 * 1000).toISOString(),
+    }).eq('id', config.id)
+    console.log('Drive: token renovado')
+  }
+
+  const permRes = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${config.folder_id}/permissions`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ role: 'reader', type: 'user', emailAddress: email, sendNotificationEmail: false }),
+    }
+  )
+  const perm = await permRes.json()
+  if (!permRes.ok) {
+    console.error('Drive share error para', email, ':', JSON.stringify(perm))
+    return
+  }
+
+  // Salva o permissionId para que o cron possa revogar se necessário
+  if (accessId) {
+    await supabase.from('accesses').update({
+      drive_permission_id: perm.id,
+      drive_folder_id: config.folder_id,
+    }).eq('id', accessId)
+  }
+
+  console.log('Drive: pasta compartilhada com', email, 'permissionId:', perm.id)
+}
+
 // ─── HMAC VERIFICATION (Mercado Pago) ─────────────────────────────────────────
 // Doc: https://www.mercadopago.com.br/developers/pt/docs/your-integrations/notifications/webhooks
 // x-signature header: ts=<timestamp>,v1=<hmac_sha256_hex>
@@ -215,14 +283,22 @@ serve(async (req) => {
         }
       }
 
-      // Share Drive folder with the buyer's email
+      // Share Drive folder inline (sem depender de drive-share-folder)
+      // Busca o accessId recém-criado para salvar drive_permission_id
+      const { data: newAccess } = await supabase
+        .from('accesses')
+        .select('id')
+        .eq('email', buyer.email)
+        .eq('access_type', 'paid')
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
       try {
-        const driveRes = await supabase.functions.invoke('drive-share-folder', {
-          body: { email: buyer.email }
-        })
-        console.log('Drive folder shared with:', buyer.email, 'result:', JSON.stringify(driveRes.data))
+        await shareDriveFolderInline(supabase, buyer.email, newAccess?.id || '')
       } catch (driveErr: any) {
-        console.error('Drive share error:', driveErr?.message || driveErr)
+        console.error('Drive share error para', buyer.email, ':', driveErr?.message || driveErr)
       }
 
       // Send access confirmation email

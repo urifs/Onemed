@@ -30,26 +30,6 @@ async function refreshAccessToken(refreshToken: string, clientSecret: string): P
   return data.access_token
 }
 
-// ─── CONSTANT-TIME COMPARISON ─────────────────────────────────────────────────
-// Previne timing attacks ao comparar tokens/secrets
-async function secureCompare(a: string, b: string): Promise<boolean> {
-  const encoder = new TextEncoder()
-  // HMAC ambos com a mesma chave fixa — output sempre 32 bytes (SHA-256)
-  const key = await crypto.subtle.importKey(
-    'raw', encoder.encode('timing-safe-compare'), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
-  )
-  const [sigA, sigB] = await Promise.all([
-    crypto.subtle.sign('HMAC', key, encoder.encode(a)),
-    crypto.subtle.sign('HMAC', key, encoder.encode(b)),
-  ])
-  const a8 = new Uint8Array(sigA)
-  const b8 = new Uint8Array(sigB)
-  // Loop sempre 32 iterações — sem early exit
-  let diff = 0
-  for (let i = 0; i < 32; i++) diff |= a8[i] ^ b8[i]
-  return diff === 0
-}
-
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: getCorsHeaders(req) })
 
@@ -59,18 +39,17 @@ serve(async (req) => {
     const supabaseKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabase     = createClient(supabaseUrl, supabaseKey)
 
-    // Proteção: apenas chamadas com service role key (internas) ou JWT de admin
+    // Proteção: aceita chamadas internas (service role key ou sem header) ou JWT de admin
     const authHeader = req.headers.get('Authorization') || ''
     let isAuthorized = false
 
     if (authHeader.startsWith('Bearer ')) {
       const token = authHeader.replace('Bearer ', '')
-
-      // ── Comparação constant-time com service role key (chamadas internas) ──
-      if (await secureCompare(token, supabaseKey)) {
+      // Chamada interna com service role key (comparação direta)
+      if (token === supabaseKey) {
         isAuthorized = true
       } else {
-        // Verificar JWT de admin para chamadas do painel
+        // JWT de admin via painel
         const { data: { user }, error } = await supabase.auth.getUser(token)
         if (!error && user) {
           const { data: roleData } = await supabase
@@ -83,7 +62,7 @@ serve(async (req) => {
         }
       }
     } else {
-      // Chamadas sem header (internas via supabase.functions.invoke com service role)
+      // Sem header — chamada interna via supabase.functions.invoke
       isAuthorized = true
     }
 
