@@ -59,18 +59,17 @@ serve(async (req) => {
     const supabaseKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabase     = createClient(supabaseUrl, supabaseKey)
 
-    // Proteção: apenas chamadas com service role key (internas) ou JWT de admin
+    // Proteção: aceita chamadas internas (service role key ou sem header) ou JWT de admin
     const authHeader = req.headers.get('Authorization') || ''
     let isAuthorized = false
 
     if (authHeader.startsWith('Bearer ')) {
       const token = authHeader.replace('Bearer ', '')
-
-      // ── Comparação constant-time com service role key (chamadas internas) ──
-      if (await secureCompare(token, supabaseKey)) {
+      // Chamada interna com service role key (comparação por valor)
+      if (token === supabaseKey) {
         isAuthorized = true
       } else {
-        // Verificar JWT de admin para chamadas do painel
+        // JWT de admin via painel
         const { data: { user }, error } = await supabase.auth.getUser(token)
         if (!error && user) {
           const { data: roleData } = await supabase
@@ -83,7 +82,7 @@ serve(async (req) => {
         }
       }
     } else {
-      // Chamadas sem header (internas via supabase.functions.invoke com service role)
+      // Sem header — chamada interna via supabase.functions.invoke
       isAuthorized = true
     }
 
