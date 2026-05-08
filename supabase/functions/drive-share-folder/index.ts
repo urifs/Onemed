@@ -45,7 +45,7 @@ serve(async (req) => {
 
     if (authHeader.startsWith('Bearer ')) {
       const token = authHeader.replace('Bearer ', '')
-      // Chamada interna com service role key (comparação direta)
+      // Chamada interna com service role key (comparação por valor)
       if (token === supabaseKey) {
         isAuthorized = true
       } else {

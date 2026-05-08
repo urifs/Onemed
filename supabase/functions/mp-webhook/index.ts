@@ -71,12 +71,10 @@ async function shareDriveFolderInline(
   }
 
   // Salva o permissionId para que o cron possa revogar se necessário
-  if (accessId) {
-    await supabase.from('accesses').update({
-      drive_permission_id: perm.id,
-      drive_folder_id: config.folder_id,
-    }).eq('id', accessId)
-  }
+  await supabase.from('accesses').update({
+    drive_permission_id: perm.id,
+    drive_folder_id: config.folder_id,
+  }).eq('id', accessId)
 
   console.log('Drive: pasta compartilhada com', email, 'permissionId:', perm.id)
 }
