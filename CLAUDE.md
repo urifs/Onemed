@@ -498,3 +498,80 @@ onemed/
 ### 2026-03-28 (sessão remota)
 - `TrialUsersPage`: lista de trials agora exclui usuários que compraram (busca buyers aprovados em paralelo e filtra por email)
 - CLAUDE.md reescrito com documentação completa de todos os fluxos e credenciais
+
+### 2026-05-15 (sessão remota — Meta Ads + CAPI) — PR #2
+
+**Problema:** Pixel client-side perdia atribuição de compras após redirect do Mercado Pago.
+Causa: iOS Safari e bloqueadores destroem o cookie `_fbp` durante o redirect externo.
+Solução: Meta Conversions API (CAPI) server-side disparado diretamente no `mp-webhook`.
+
+**Arquivos alterados:**
+
+| Arquivo | Mudança |
+|---------|---------|
+| `supabase/functions/mp-webhook/index.ts` | Adicionada `sendMetaCAPIEvent()` — dispara evento `Purchase` server-side para ambos os pixels quando `status === 'approved'` |
+| `src/pages/CheckoutPage.tsx` | Captura cookies `_fbp` e `_fbc` no insert da tabela `buyers` via `getCookie()` |
+| `src/pages/PaymentSuccessPage.tsx` | Passa `eventID: "purchase_${paymentId}"` ao pixel client-side para deduplicação |
+| `src/lib/pixel.ts` | Parâmetro `eventId?` adicionado em `trackPurchase()` |
+| `supabase/migrations/20260515000001_buyers_meta_capi.sql` | Colunas `fbp TEXT` e `fbc TEXT` adicionadas à tabela `buyers` |
+
+**Fluxo CAPI implementado:**
+```
+Checkout → captura _fbp/_fbc → salva em buyers.fbp / buyers.fbc
+Compra aprovada MP → mp-webhook → status === 'approved'
+  → sendMetaCAPIEvent()
+    → SHA-256(email) + SHA-256(phone) + SHA-256(first/last name)
+    → fbp e fbc passados sem hash (são IDs de browser, não PII)
+    → POST para ambos os pixels via Graph API v19.0
+    → event_id: "purchase_{paymentId}" ← deduplica com pixel client-side
+```
+
+**Secret necessário no Supabase:**
+
+| Variável | Status | Descrição |
+|----------|--------|-----------|
+| `META_CAPI_ACCESS_TOKEN` | ✅ Configurado | Long-lived token 60d, vence **2026-07-14** |
+
+---
+
+## Meta Ads — Contexto Geral
+
+> Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
+
+| Campo | Valor |
+|-------|-------|
+| Ad Account | `act_1663353514467679` |
+| Pixel 1 | `797374160058274` ("Site onemed") |
+| Pixel 2 | `2400702203708115` ("Onemed SIte BM2") |
+| App Meta | `973460608407204` ("Tokenonemed") |
+
+### Campanha ativa (criada 2026-05-15)
+
+- Objetivo: `OUTCOME_SALES` → `PURCHASE`
+- Budget: R$ 700/dia (CBO)
+- Bid: `LOWEST_COST_WITHOUT_CAP`
+- Audience: Advantage+ · Brasil · 22+ anos
+- Status: ACTIVE — **não alterar até 22/05/2026** (fase de aprendizado)
+
+### Renovação do META_CAPI_ACCESS_TOKEN
+
+**⚠️ Renovar em: 2026-07-09** (5 dias antes do vencimento em 2026-07-14)
+
+```bash
+# 1. Gere um novo short-lived token em:
+#    developers.facebook.com/tools/explorer (app Tokenonemed)
+#    Permissões: ads_management, ads_read, business_management
+
+# 2. Exchange para 60 dias (substitua SHORT_LIVED_TOKEN):
+curl "https://graph.facebook.com/oauth/access_token\
+?grant_type=fb_exchange_token\
+&client_id=973460608407204\
+&client_secret=****\
+&fb_exchange_token=SHORT_LIVED_TOKEN"
+
+# 3. Salvar no Supabase (substitua LONG_TOKEN e MGMT_KEY):
+curl -X POST "https://api.supabase.com/v1/projects/jrrybiohwqabsdurqudc/secrets" \
+  -H "Authorization: Bearer MGMT_KEY" \
+  -H "Content-Type: application/json" \
+  -d '[{"name":"META_CAPI_ACCESS_TOKEN","value":"LONG_TOKEN"}]'
+```
