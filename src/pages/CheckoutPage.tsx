@@ -184,6 +184,9 @@ export default function CheckoutPage() {
     try {
       const ref = `onemed_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 
+      const getCookie = (name: string) =>
+        document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`))?.[1] ?? null;
+
       const { error: buyerErr } = await supabase.from('buyers').insert({
         email: customerEmail.toLowerCase().trim(),
         name: customerName.trim() || null,
@@ -194,6 +197,8 @@ export default function CheckoutPage() {
         external_reference: ref,
         upsell_purchased: upsellSelected,
         upsell2_purchased: upsell2Selected,
+        fbp: getCookie('_fbp'),
+        fbc: getCookie('_fbc'),
       });
       if (buyerErr) throw buyerErr;
 

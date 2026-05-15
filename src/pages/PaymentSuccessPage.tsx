@@ -37,7 +37,8 @@ export default function PaymentSuccessPage() {
           trackPurchase(
             info.plan,
             info.plan === 'lifetime' ? 299.90 : 199,
-            'redirect'
+            'redirect',
+            paymentId ? `purchase_${paymentId}` : undefined
           );
         }
       } catch { /* ignore */ }

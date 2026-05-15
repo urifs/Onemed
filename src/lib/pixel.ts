@@ -48,16 +48,18 @@ export const trackInitiateCheckout = (plan: string, value: number) => {
 };
 
 /**
- * Rastreia o evento Purchase - quando uma compra é concluída
+ * Rastreia o evento Purchase - quando uma compra é concluída.
+ * eventId deve ser `purchase_${paymentId}` para deduplicação com CAPI server-side.
  */
 export const trackPurchase = (
   plan: string,
   value: number,
-  paymentMethod: string
+  paymentMethod: string,
+  eventId?: string
 ) => {
   if (!isFbqAvailable()) return;
 
-  window.fbq!('track', 'Purchase', {
+  const params = {
     content_name: plan === 'lifetime' ? 'Plano Vitalício' : 'Plano Anual',
     content_category: 'Subscription',
     content_ids: [plan],
@@ -66,9 +68,15 @@ export const trackPurchase = (
     currency: 'BRL',
     num_items: 1,
     payment_method: paymentMethod,
-  });
+  };
 
-  console.log('[Meta Pixel] Purchase tracked:', { plan, value, paymentMethod });
+  if (eventId) {
+    window.fbq!('track', 'Purchase', params, { eventID: eventId });
+  } else {
+    window.fbq!('track', 'Purchase', params);
+  }
+
+  console.log('[Meta Pixel] Purchase tracked:', { plan, value, paymentMethod, eventId });
 };
 
 /**

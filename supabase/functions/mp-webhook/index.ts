@@ -1,6 +1,89 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
+// ─── META CAPI ────────────────────────────────────────────────────────────────
+const CAPI_PIXEL_IDS = ['797374160058274', '2400702203708115']
+
+async function sha256hex(value: string): Promise<string> {
+  const data = new TextEncoder().encode(value.toLowerCase().trim())
+  const buf = await crypto.subtle.digest('SHA-256', data)
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+async function sendMetaCAPIEvent(opts: {
+  email: string
+  name?: string | null
+  phone?: string | null
+  fbp?: string | null
+  fbc?: string | null
+  value: number
+  plan: string
+  paymentId: string
+}): Promise<void> {
+  const accessToken = Deno.env.get('META_CAPI_ACCESS_TOKEN')
+  if (!accessToken) {
+    console.warn('META_CAPI_ACCESS_TOKEN not set — skipping CAPI')
+    return
+  }
+
+  const userData: Record<string, string> = {
+    em: await sha256hex(opts.email),
+  }
+
+  if (opts.phone) {
+    const digits = opts.phone.replace(/\D/g, '')
+    if (digits.length >= 8) userData.ph = await sha256hex(digits)
+  }
+
+  if (opts.name) {
+    const parts = opts.name.trim().split(/\s+/)
+    if (parts[0]) userData.fn = await sha256hex(parts[0])
+    if (parts.length > 1) userData.ln = await sha256hex(parts[parts.length - 1])
+  }
+
+  // fbp/fbc são passados sem hash — já são identificadores do navegador
+  if (opts.fbp) userData.fbp = opts.fbp
+  if (opts.fbc) userData.fbc = opts.fbc
+
+  const payload = {
+    data: [{
+      event_name: 'Purchase',
+      event_time: Math.floor(Date.now() / 1000),
+      event_id: `purchase_${opts.paymentId}`, // deduplicação com o pixel client-side
+      action_source: 'website',
+      event_source_url: 'https://onemedcursos.com.br/payment/success',
+      user_data: userData,
+      custom_data: {
+        value: opts.value,
+        currency: 'BRL',
+        content_name: opts.plan === 'lifetime' ? 'Plano Vitalício' : 'Plano Anual',
+        content_category: 'Subscription',
+        content_ids: [opts.plan],
+        content_type: 'product',
+        num_items: 1,
+        order_id: opts.paymentId,
+      },
+    }],
+  }
+
+  for (const pixelId of CAPI_PIXEL_IDS) {
+    try {
+      const res = await fetch(
+        `https://graph.facebook.com/v19.0/${pixelId}/events?access_token=${accessToken}`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }
+      )
+      const json = await res.json()
+      if (!res.ok) {
+        console.error(`CAPI error pixel ${pixelId}:`, JSON.stringify(json))
+      } else {
+        console.log(`CAPI Purchase OK pixel ${pixelId}, events_received:`, json.events_received)
+      }
+    } catch (err: any) {
+      console.error(`CAPI network error pixel ${pixelId}:`, err.message)
+    }
+  }
+}
+
 // ─── CORS ─────────────────────────────────────────────────────────────────────
 const ALLOWED_ORIGINS = ['https://onemedcursos.com.br', 'http://localhost:5173', 'http://localhost:3000']
 
@@ -297,6 +380,22 @@ serve(async (req) => {
         await shareDriveFolderInline(supabase, buyer.email, newAccess?.id || '')
       } catch (driveErr: any) {
         console.error('Drive share error para', buyer.email, ':', driveErr?.message || driveErr)
+      }
+
+      // Send Meta CAPI Purchase event (server-side — independente de cookies do browser)
+      try {
+        await sendMetaCAPIEvent({
+          email: buyer.email,
+          name: buyer.name,
+          phone: buyer.whatsapp,
+          fbp: buyer.fbp ?? null,
+          fbc: buyer.fbc ?? null,
+          value: payment.transaction_amount ?? buyer.amount ?? 0,
+          plan: buyer.plan,
+          paymentId: String(paymentId),
+        })
+      } catch (capiErr: any) {
+        console.error('CAPI error:', capiErr.message)
       }
 
       // Send access confirmation email
