@@ -5,6 +5,7 @@ import { OneMedMockup, MOCKUP_DURATION } from './OneMedMockup';
 import { OneMedHUD, HUD_DURATION } from './OneMedHUD';
 import { OneMedMedical, MEDICAL_DURATION } from './OneMedMedical';
 import { OneMedShowcase, SHOWCASE_DURATION } from './OneMedShowcase';
+import { OneMedTiktok, TIKTOK_DURATION } from './OneMedTiktok';
 
 export const RemotionRoot: React.FC = () => {
   return (
@@ -53,6 +54,14 @@ export const RemotionRoot: React.FC = () => {
         id="OneMedShowcase"
         component={OneMedShowcase}
         durationInFrames={SHOWCASE_DURATION}
+        fps={30}
+        width={1080}
+        height={1920}
+      />
+      <Composition
+        id="OneMedTiktok"
+        component={OneMedTiktok}
+        durationInFrames={TIKTOK_DURATION}
         fps={30}
         width={1080}
         height={1920}
