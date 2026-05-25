@@ -1,0 +1,15 @@
+export const theme = {
+  bg: '#050505',
+  bgPaper: '#0a0a0a',
+  primary: '#ef4444',
+  primaryDim: 'rgba(239,68,68,0.15)',
+  primaryGlow: 'rgba(239,68,68,0.5)',
+  white: '#ffffff',
+  muted: '#6b7280',
+  mutedLight: '#9ca3af',
+  border: '#1f1f1f',
+  success: '#10b981',
+  fontHead: "'Outfit', 'Helvetica Neue', Arial, sans-serif",
+  fontBody: "'Inter', 'Helvetica Neue', Arial, sans-serif",
+  fontMono: "'JetBrains Mono', 'Courier New', monospace",
+};
