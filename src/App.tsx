@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
@@ -31,6 +32,14 @@ import WhatsAppButton from "./components/WhatsAppButton";
 
 const queryClient = new QueryClient();
 
+const FbclidCapture = () => {
+  useEffect(() => {
+    const fbclid = new URLSearchParams(window.location.search).get('fbclid')
+    if (fbclid) localStorage.setItem('om_fbclid', fbclid)
+  }, [])
+  return null
+}
+
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading, isAdmin } = useAuth();
   if (loading) return (
@@ -49,6 +58,7 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
+          <FbclidCapture />
           <Routes>
             {/* Public routes */}
             <Route path="/" element={<Index />} />

@@ -16,6 +16,7 @@ async function sendMetaCAPIEvent(opts: {
   phone?: string | null
   fbp?: string | null
   fbc?: string | null
+  fbclid?: string | null
   value: number
   plan: string
   paymentId: string
@@ -42,8 +43,10 @@ async function sendMetaCAPIEvent(opts: {
   }
 
   // fbp/fbc são passados sem hash — já são identificadores do navegador
+  // fbc pode ter se perdido no redirect; reconstrói do fbclid raw se necessário
+  const fbc = opts.fbc || (opts.fbclid ? `fb.1.${Math.floor(Date.now() / 1000)}.${opts.fbclid}` : undefined)
   if (opts.fbp) userData.fbp = opts.fbp
-  if (opts.fbc) userData.fbc = opts.fbc
+  if (fbc) userData.fbc = fbc
 
   const payload = {
     data: [{
@@ -390,6 +393,7 @@ serve(async (req) => {
           phone: buyer.whatsapp,
           fbp: buyer.fbp ?? null,
           fbc: buyer.fbc ?? null,
+          fbclid: buyer.fbclid ?? null,
           value: payment.transaction_amount ?? buyer.amount ?? 0,
           plan: buyer.plan,
           paymentId: String(paymentId),
