@@ -2,6 +2,7 @@ import React from 'react';
 import { Composition } from 'remotion';
 import { OneMedVideo, TOTAL_FRAMES } from './OneMedVideo';
 import { OneMedMockup, MOCKUP_DURATION } from './OneMedMockup';
+import { OneMedHUD, HUD_DURATION } from './OneMedHUD';
 
 export const RemotionRoot: React.FC = () => {
   return (
@@ -26,6 +27,14 @@ export const RemotionRoot: React.FC = () => {
         id="OneMedMockup"
         component={OneMedMockup}
         durationInFrames={MOCKUP_DURATION}
+        fps={30}
+        width={1080}
+        height={1920}
+      />
+      <Composition
+        id="OneMedHUD"
+        component={OneMedHUD}
+        durationInFrames={HUD_DURATION}
         fps={30}
         width={1080}
         height={1920}
