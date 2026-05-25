@@ -6,7 +6,8 @@
   "scripts": {
     "studio": "remotion studio src/index.ts",
     "render": "remotion render src/index.ts OneMedPromo out/onemed-promo.mp4",
-    "render:wide": "remotion render src/index.ts OneMedPromoWide out/onemed-promo-wide.mp4"
+    "render:wide": "remotion render src/index.ts OneMedPromoWide out/onemed-promo-wide.mp4",
+    "render:mockup": "remotion render src/index.ts OneMedMockup out/onemed-mockup.mp4"
   },
   "keywords": [],
   "author": "",
