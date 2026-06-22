@@ -116,12 +116,22 @@ export default function BuyersPage() {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+          <Card className="bg-background-paper border-border lg:col-span-1">
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-sm text-muted-foreground">Total</p>
+                <DollarSign className="w-4 h-4 text-accent-success" />
+              </div>
+              <p className="font-secondary text-2xl font-bold text-foreground">
+                {loading ? '—' : `R$ ${buyers.reduce((s, b) => s + (b.amount || 0), 0).toFixed(2)}`}
+              </p>
+            </CardContent>
+          </Card>
           {[
-            { label: 'Total Geral', value: loading ? '—' : buyers.length, icon: Users, color: 'text-primary' },
-            { label: 'Total Hoje', value: stats?.total ?? '—', icon: Users, color: 'text-muted-foreground' },
-            { label: 'Aprovados Hoje', value: stats?.approved ?? '—', icon: CheckCircle, color: 'text-accent-success' },
+            { label: 'Compradores', value: loading ? '—' : buyers.length, icon: Users, color: 'text-primary' },
             { label: 'Receita Hoje', value: stats ? `R$ ${stats.revenue.toFixed(2)}` : '—', icon: DollarSign, color: 'text-accent-warning' },
+            { label: 'Aprovados Hoje', value: stats?.approved ?? '—', icon: CheckCircle, color: 'text-accent-success' },
             { label: 'Vitalícios Hoje', value: stats?.lifetime ?? '—', icon: TrendingUp, color: 'text-accent-info' },
           ].map((s, i) => (
             <Card key={i} className="bg-background-paper border-border">
