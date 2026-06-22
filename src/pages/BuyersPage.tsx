@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { formatDateTimeSP, todayStartISO, fetchAllRows } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { DollarSign, Users, Clock, TrendingUp, Mail, Calendar, Phone, Trash2, UserPlus, Loader2, RefreshCw, CheckCircle, XCircle, X } from 'lucide-react';
+import { DollarSign, Users, Clock, TrendingUp, Mail, Calendar, Phone, Trash2, UserPlus, Loader2, RefreshCw, CheckCircle, XCircle, X, Download } from 'lucide-react';
 import { WhatsAppLink } from '@/components/WhatsAppLink';
 
 export default function BuyersPage() {
@@ -72,6 +72,17 @@ export default function BuyersPage() {
     else { toast.success('Deletado'); fetchData(); }
   };
 
+  const exportTxt = () => {
+    const lines = buyers.map(b => `${b.email} ${b.whatsapp || ''}`.trimEnd());
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `compradores_${new Date().toISOString().slice(0, 10)}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const filtered = buyers.filter(b =>
     !search || b.email.toLowerCase().includes(search.toLowerCase()) || (b.name || '').toLowerCase().includes(search.toLowerCase()) || (b.whatsapp || '').includes(search)
   );
@@ -94,15 +105,21 @@ export default function BuyersPage() {
             <h1 className="font-secondary text-3xl font-bold text-foreground">Compradores</h1>
             <p className="text-muted-foreground mt-1">Gerencie os compradores do OneMed</p>
           </div>
-          <Button onClick={() => setShowModal(true)} className="bg-primary hover:bg-primary-hover text-primary-foreground gap-2">
-            <UserPlus className="w-4 h-4" /> Novo Comprador
-          </Button>
+          <div className="flex gap-2">
+            <Button onClick={exportTxt} disabled={loading || buyers.length === 0} variant="outline" className="border-border text-muted-foreground hover:text-foreground gap-2">
+              <Download className="w-4 h-4" /> Exportar TXT
+            </Button>
+            <Button onClick={() => setShowModal(true)} className="bg-primary hover:bg-primary-hover text-primary-foreground gap-2">
+              <UserPlus className="w-4 h-4" /> Novo Comprador
+            </Button>
+          </div>
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
           {[
-            { label: 'Total Hoje', value: stats?.total ?? '—', icon: Users, color: 'text-primary' },
+            { label: 'Total Geral', value: loading ? '—' : buyers.length, icon: Users, color: 'text-primary' },
+            { label: 'Total Hoje', value: stats?.total ?? '—', icon: Users, color: 'text-muted-foreground' },
             { label: 'Aprovados Hoje', value: stats?.approved ?? '—', icon: CheckCircle, color: 'text-accent-success' },
             { label: 'Receita Hoje', value: stats ? `R$ ${stats.revenue.toFixed(2)}` : '—', icon: DollarSign, color: 'text-accent-warning' },
             { label: 'Vitalícios Hoje', value: stats?.lifetime ?? '—', icon: TrendingUp, color: 'text-accent-info' },
@@ -113,7 +130,7 @@ export default function BuyersPage() {
                   <p className="text-sm text-muted-foreground">{s.label}</p>
                   <s.icon className={`w-4 h-4 ${s.color}`} />
                 </div>
-                <p className="font-secondary text-2xl font-bold text-foreground">{loading ? '—' : s.value}</p>
+                <p className="font-secondary text-2xl font-bold text-foreground">{s.value}</p>
               </CardContent>
             </Card>
           ))}
