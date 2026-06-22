@@ -124,7 +124,7 @@ export default function BuyersPage() {
                 <DollarSign className="w-4 h-4 text-accent-success" />
               </div>
               <p className="font-secondary text-2xl font-bold text-foreground">
-                {loading ? '—' : `R$ ${buyers.reduce((s, b) => s + (b.amount || 0), 0).toFixed(2)}`}
+                {loading ? '—' : `R$ ${buyers.reduce((s, b) => s + (b.amount || 0), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
               </p>
             </CardContent>
           </Card>
