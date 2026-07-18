@@ -91,25 +91,32 @@ function lessonType(mimeType: string): string {
   return 'other'
 }
 
+// Order matters: earlier entries win when a title matches more than one
+// category (e.g. "RadioPosts - Tomografia na Emergência" must hit Radiologia
+// before the generic Emergência bucket). Specific/narrow categories are
+// checked before broad catch-alls like "Extensivo & Intensivo".
 const CATS: [string, string[]][] = [
-  ['Cardiologia & ECG', ['cardio', 'ecg', 'eletro', 'incor', 'dislipidem', 'ausculta', 'littman', 'infarto', 'dr neif', 'metas', 'facilitando eletro']],
-  ['Emergência, PS & Trauma', ['emergênc', 'emergenc', 'herlon', 'meustaff', 'raciocínio', 'raciocinio', 'ps zerado', 'pszerado', 'ps medway', 'ps med', 'sala de parada', 'sutura', 'intubaç', 'ventilaç', 'trauma', 'escola de emerg', 'treinamento em emerg', 'sangramento', 'aep', 'pronto atendimento', 'bora salvar', ' cdt', 'medway - pronto']],
-  ['Prescrições & Plantão', ['prescriç', 'prescric', 'medicações no ps', 'medicacoes', 'anamnese', 'plantão', 'plantao', 'antibiotico', 'antibiótico', 'atb']],
-  ['Pediatria', ['pediatr', 'sbp -']],
-  ['Cirurgia & GO', ['cirurg', 'ginecolog', 'obstetr', 'go papers', 'r4 go', 'r+ go']],
+  ['Pediatria', ['pediatr', 'sbp -', 'emergência pediátrica', 'emergencia pediatrica', 'atendimento pediátrico', 'atendimento pediatrico', 'aep -']],
+  ['Cardiologia & ECG', ['cardio', 'ecg', 'eletrocardiogra', 'medeletro', 'medneif', 'med neif', 'incor', 'dislipidem', 'ausculta', 'littman', 'infarto', 'metas', 'facilitando eletro']],
   ['Radiologia & Imagem', ['radiolog', 'radiop', 'você radiolog', 'voce radiolog', 'usg', 'ultrassonog', 'tomografia', 'imagem', 'medimagem']],
-  ['Semiologia & Clínica', ['semiolog', 'exame clínico', 'exame clinico', 'clínica médica', 'clinica medica', 'celmo', 'aps101']],
+  ['Prescrições & Plantão', ['prescriç', 'prescric', 'medicações no ps', 'medicacoes', 'anamnese', 'plantão', 'plantao', 'antibiotico', 'antibiótico', 'atb']],
+  ['Revalida', ['revalida', 'hardwork', 'hardtopics', 'alphamed', 'redbook', 'revalideii', 'foco no crm', 'exclusive']],
+  ['Intercâmbio & Carreira Internacional', ['usmle', 'reino unido', 'estágio', 'estagio', ' eua', 'exterior', 'inglês', 'ingles', 'idiomas', 'mundo afora', 'cv premium', 'cv medical', 'rd medicine', 'english pronunciation']],
+  ['Emergência, PS & Trauma', ['emergênc', 'emergenc', 'herlon', 'meustaff', 'raciocínio', 'raciocinio', 'ps zerado', 'pszerado', 'ps medway', 'ps med', 'sala de parada', 'sutura', 'intubaç', 'ventilaç', 'trauma', 'escola de emerg', 'treinamento em emerg', 'sangramento', 'pronto atendimento', 'bora salvar', ' cdt', 'medway - pronto', 'uti ', 'terapia intensiva', 'acls', 'intubaclass', 'ventilamed', 'emerg.simm']],
+  ['Cirurgia & GO', ['cirurg', 'ginecolog', 'obstetr', 'go papers', 'r4 go', 'r+ go']],
+  ['Semiologia & Clínica', ['semiolog', 'exame clínico', 'exame clinico', 'clínica médica', 'clinica medica', 'celmo', 'aps101', 'clinica medico']],
   ['Farmacologia & Bioquímica', ['farmacolog', 'bioquím', 'bioquim']],
-  ['Especialidades', ['dermato', 'endocrino', 'anestesi', 'anestreview', 'psiquiatr', 'psicopat', 'neuro', 'pneumolog', 'nefro', 'gasometria', 'esporte', 'laboratorial', 'diabetes', 'terapia intensiva']],
+  ['Especialidades', ['dermato', 'endocrino', 'anestesi', 'anestreview', 'psiquiatr', 'psicopat', 'neuro', 'pneumolog', 'nefro', 'gasometria', 'esporte', 'laboratorial', 'diabetes', 'ortopedia', 'ortoacademy', 'infectoflix', 'infecto', 'clube de revistas', 'diretrizes', 'paulo muzy']],
   ['Anatomia & Ciclo Básico', ['anatom', 'ciclo básico', 'ciclo basico', 'internato', 'muscleflix']],
-  ['Resumos, Cards & Livros', ['resumo', 'mapas mentais', 'medcards', 'flashcard', 'memorex', 'memorimed', 'livros', 'medlivros', 'apostila']],
+  ['Resumos, Cards & Livros', ['resumo', 'mapas mentais', 'medcards', 'flashcard', 'memorex', 'memorimed', 'livros', 'medlivros', 'apostila', 'planner', 'planilha', 'fichas', 'medrout']],
   ['Banco de Questões & Simulados', ['banco de quest', 'banco quest', 'quest', 'simulad', 'provas', 'compilad', 'osce', 'medfoco', 'caderno']],
-  ['Grandes Cursos · Extensivo R1', ['medcof', 'medcurso', 'medway', 'extensivo', 'semiextensivo', 'sanarflix', 'sanar', 'afya', 'eu médico residente', 'eu medico residente', 'intensiv', 'medcel', 'aristo', 'estratégia med']],
-  ['Revalida & Internacional', ['revalida', 'hardwork', 'hardtopics', 'crm', 'usmle', 'reino unido', 'eua', 'exterior', 'inglês', 'ingles', 'idiomas']],
-  ['Carreira, Gestão & Marketing', ['marketing', 'instagram', 'empreendedor', 'ia para', 'direito médico', 'ética', 'etica', 'perícia', 'pericia', 'legista', 'escolha de espec', 'caminho das espec', 'praxys', 'progeb', 'saúde da família', 'saude da familia', 'medicina intuitiva', 'como se preparar', 'produtividade']],
+  ['Extensivo & Intensivo · Residência', ['medcof', 'medcurso', 'medway', 'extensivo', 'semiextensivo', 'sanarflix', 'sanar', 'afya', 'eu médico residente', 'eu medico residente', 'intensiv', 'medcel', 'aristo', 'jj mentoria', 'estratégia med', 'casal med', 'cpmed', 'med grupo', 'descomplicando a medicina']],
+  ['Carreira, Gestão & Marketing', ['marketing', 'instagram', 'empreendedor', 'ia para', 'direito médico', 'ética', 'etica', 'perícia', 'pericia', 'legista', 'escolha de espec', 'caminho das espec', 'praxys', 'progeb', 'saúde da família', 'saude da familia', 'medicina intuitiva', 'como se preparar', 'produtividade', 'características', 'atitudes', 'hospitais públicos', 'blindar', 'erros que impedem', 'sexto ano', 'programa ppa', 'renda na faculdade']],
 ]
 function categoryOf(name: string): string {
-  const s = name.toLowerCase()
+  // Strip known false-positive substrings before matching (e.g. "Distúrbios
+  // Hidroeletrolíticos" contains "eletro" but has nothing to do with ECG).
+  const s = name.toLowerCase().replace(/hidroeletrol[íi]tic\w*/g, '')
   for (const [label, keys] of CATS) if (keys.some(k => s.includes(k))) return label
   return 'Outros cursos'
 }
