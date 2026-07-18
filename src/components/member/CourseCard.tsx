@@ -17,7 +17,7 @@ export function CourseCard({ course, progressPercent }: CourseCardProps) {
   return (
     <button
       onClick={() => navigate(`/membros/curso/${course.slug}`)}
-      className="group flex-shrink-0 w-[192px] sm:w-[208px] text-left"
+      className="group flex flex-col self-start w-full text-left"
     >
       <div className="relative aspect-video rounded-xl overflow-hidden border border-border transition-all duration-200 group-hover:-translate-y-1 group-hover:border-primary/50 group-hover:shadow-[0_18px_40px_-16px_rgba(239,68,68,0.5)]">
         <CourseCover title={course.title} coverImageUrl={course.cover_image_url} coverSource={course.cover_source} />

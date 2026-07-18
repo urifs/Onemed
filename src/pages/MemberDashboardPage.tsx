@@ -6,6 +6,7 @@ import { useAuth } from '@/context/AuthContext';
 import { MemberHeader } from '@/components/member/MemberHeader';
 import { CourseCard } from '@/components/member/CourseCard';
 import { CourseCover } from '@/components/member/CourseCover';
+import { CategorySidebar } from '@/components/member/CategorySidebar';
 import { CATEGORY_ORDER } from '@/lib/courseCategories';
 import { formatDuration } from '@/lib/utils';
 import type { Database } from '@/integrations/supabase/types';
@@ -24,6 +25,17 @@ export default function MemberDashboardPage() {
   const [continueList, setContinueList] = useState<ProgressRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
+
+  const handleQueryChange = (value: string) => {
+    setQuery(value);
+    if (value.trim()) setActiveCategory(null);
+  };
+
+  const handleSelectCategory = (category: string | null) => {
+    setActiveCategory(category);
+    setQuery('');
+  };
 
   useEffect(() => {
     let alive = true;
@@ -66,6 +78,19 @@ export default function MemberDashboardPage() {
     return order.filter(cat => byCat.has(cat)).map(cat => ({ category: cat, items: byCat.get(cat)! }));
   }, [filtered]);
 
+  const categoryList = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const c of courses) counts.set(c.category, (counts.get(c.category) || 0) + 1);
+    const order = [...CATEGORY_ORDER];
+    for (const key of counts.keys()) if (!order.includes(key)) order.push(key);
+    return order.filter(cat => counts.has(cat)).map(cat => ({ name: cat, count: counts.get(cat)! }));
+  }, [courses]);
+
+  const categoryCourses = useMemo(() => {
+    if (!activeCategory) return [];
+    return courses.filter(c => c.category === activeCategory);
+  }, [courses, activeCategory]);
+
   const featured = continueList[0]?.courses || courses.find(c => c.category === 'Grandes Cursos · Extensivo R1') || courses[0];
   const featuredProgressPct = continueList[0] && continueList[0].lessons?.duration_seconds
     ? Math.min(100, (continueList[0].watched_seconds / continueList[0].lessons.duration_seconds) * 100)
@@ -82,9 +107,9 @@ export default function MemberDashboardPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <MemberHeader query={query} onQueryChange={setQuery} />
+      <MemberHeader query={query} onQueryChange={handleQueryChange} />
 
-      {!searching && featured && (
+      {!searching && !activeCategory && featured && (
         <section className="max-w-[1400px] mx-auto px-4 md:px-8 pt-6">
           <div className="relative rounded-2xl overflow-hidden border border-border min-h-[280px] md:min-h-[340px] flex items-end shadow-[0_30px_70px_-40px_rgba(239,68,68,0.4)]">
             <div className="absolute inset-0">
@@ -130,35 +155,56 @@ export default function MemberDashboardPage() {
         </section>
       )}
 
-      <main className="max-w-[1400px] mx-auto px-4 md:px-8 pb-16 pt-8 space-y-9">
-        {searching ? (
-          <section>
-            <h2 className="font-secondary text-lg font-bold text-foreground mb-1">
-              Resultados para "{query}"
-            </h2>
-            <p className="text-sm text-muted-foreground mb-5">
-              {filtered.length} curso{filtered.length !== 1 ? 's' : ''} encontrado{filtered.length !== 1 ? 's' : ''}
-            </p>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-x-4 gap-y-7">
-              {filtered.map(c => <CourseCard key={c.id} course={c} />)}
-            </div>
-          </section>
-        ) : (
-          <>
-            {continueList.length > 0 && (
-              <Row
-                title="Continuar assistindo"
-                items={continueList.filter(p => p.courses).map(p => ({
-                  course: p.courses as Course,
-                  progressPercent: p.lessons?.duration_seconds ? (p.watched_seconds / p.lessons.duration_seconds) * 100 : undefined,
-                }))}
-              />
+      <main className="max-w-[1400px] mx-auto px-4 md:px-8 pb-16 pt-8">
+        <div className="md:flex md:items-start md:gap-8">
+          <CategorySidebar
+            categories={categoryList}
+            active={activeCategory}
+            onSelect={handleSelectCategory}
+            totalCount={courses.length}
+          />
+
+          <div className="flex-1 min-w-0 space-y-9">
+            {searching ? (
+              <section>
+                <h2 className="font-secondary text-lg font-bold text-foreground mb-1">
+                  Resultados para "{query}"
+                </h2>
+                <p className="text-sm text-muted-foreground mb-5">
+                  {filtered.length} curso{filtered.length !== 1 ? 's' : ''} encontrado{filtered.length !== 1 ? 's' : ''}
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-8 items-start">
+                  {filtered.map(c => <CourseCard key={c.id} course={c} />)}
+                </div>
+              </section>
+            ) : activeCategory ? (
+              <section>
+                <h2 className="font-secondary text-lg font-bold text-foreground mb-1">{activeCategory}</h2>
+                <p className="text-sm text-muted-foreground mb-5">
+                  {categoryCourses.length} curso{categoryCourses.length !== 1 ? 's' : ''}
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-8 items-start">
+                  {categoryCourses.map(c => <CourseCard key={c.id} course={c} />)}
+                </div>
+              </section>
+            ) : (
+              <>
+                {continueList.length > 0 && (
+                  <Row
+                    title="Continuar assistindo"
+                    items={continueList.filter(p => p.courses).map(p => ({
+                      course: p.courses as Course,
+                      progressPercent: p.lessons?.duration_seconds ? (p.watched_seconds / p.lessons.duration_seconds) * 100 : undefined,
+                    }))}
+                  />
+                )}
+                {rows.map(row => (
+                  <Row key={row.category} title={row.category} items={row.items.map(course => ({ course }))} />
+                ))}
+              </>
             )}
-            {rows.map(row => (
-              <Row key={row.category} title={row.category} items={row.items.map(course => ({ course }))} />
-            ))}
-          </>
-        )}
+          </div>
+        </div>
       </main>
     </div>
   );
@@ -172,9 +218,11 @@ function Row({ title, items }: { title: string; items: { course: Course; progres
         <h2 className="font-secondary text-[17px] font-bold text-foreground">{title}</h2>
         <span className="text-xs text-muted-foreground tabular-nums">{items.length}</span>
       </div>
-      <div className="flex gap-3.5 overflow-x-auto pb-3 -mx-1 px-1 scrollbar-thin">
+      <div className="flex items-start gap-3.5 overflow-x-auto pb-3 -mx-1 px-1 scrollbar-thin">
         {items.map(({ course, progressPercent }) => (
-          <CourseCard key={course.id} course={course} progressPercent={progressPercent} />
+          <div key={course.id} className="w-[168px] sm:w-[192px] shrink-0">
+            <CourseCard course={course} progressPercent={progressPercent} />
+          </div>
         ))}
       </div>
     </section>
