@@ -24,6 +24,8 @@ export default function MemberDashboardPage() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [continueList, setContinueList] = useState<ProgressRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [retryTick, setRetryTick] = useState(0);
   const [query, setQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
 
@@ -40,24 +42,38 @@ export default function MemberDashboardPage() {
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [{ data: coursesData }, progressResult] = await Promise.all([
-        supabase.from('courses').select('*').eq('active', true).order('sort_order').order('title'),
-        user
-          ? supabase
-              .from('lesson_progress')
-              .select('*, lessons(*), courses(*)')
-              .eq('user_id', user.id)
-              .order('last_watched_at', { ascending: false })
-              .limit(12)
-          : Promise.resolve({ data: [] as ProgressRow[] }),
-      ]);
-      if (!alive) return;
-      setCourses(coursesData || []);
-      setContinueList(((progressResult as any).data || []) as ProgressRow[]);
-      setLoading(false);
+      try {
+        const [{ data: coursesData, error: coursesErr }, progressResult] = await Promise.all([
+          supabase.from('courses').select('*').eq('active', true).order('sort_order').order('title'),
+          user
+            ? supabase
+                .from('lesson_progress')
+                .select('*, lessons(*), courses(*)')
+                .eq('user_id', user.id)
+                .order('last_watched_at', { ascending: false })
+                .limit(12)
+            : Promise.resolve({ data: [] as ProgressRow[] }),
+        ]);
+        if (coursesErr) throw coursesErr;
+        if (!alive) return;
+        setCourses(coursesData || []);
+        setContinueList(((progressResult as any).data || []) as ProgressRow[]);
+        setLoadError(false);
+      } catch (err) {
+        console.error('Failed to load member dashboard', err);
+        if (!alive) return;
+        setLoadError(true);
+      } finally {
+        if (alive) setLoading(false);
+      }
     })();
     return () => { alive = false; };
-  }, [user]);
+  }, [user, retryTick]);
+
+  const handleRetry = () => {
+    setLoading(true);
+    setRetryTick(t => t + 1);
+  };
 
   const filtered = useMemo(() => {
     const q = normalizeSearch(query);
@@ -135,6 +151,21 @@ export default function MemberDashboardPage() {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (loadError && courses.length === 0) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4 px-4 text-center">
+        <p className="text-foreground font-secondary text-xl font-bold">Não foi possível carregar os cursos</p>
+        <p className="text-muted-foreground text-sm max-w-xs">Verifique sua conexão e tente novamente.</p>
+        <button
+          onClick={handleRetry}
+          className="inline-flex items-center gap-2 bg-primary hover:bg-primary-hover text-primary-foreground font-semibold px-5 py-2.5 rounded-xl transition-colors"
+        >
+          Tentar novamente
+        </button>
       </div>
     );
   }
