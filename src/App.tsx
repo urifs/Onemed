@@ -15,6 +15,7 @@ import MemberDashboardPage from "./pages/MemberDashboardPage";
 import CourseDetailPage from "./pages/CourseDetailPage";
 import Dashboard from "./pages/Dashboard";
 import AccessManagement from "./pages/AccessManagement";
+import MembersPage from "./pages/MembersPage";
 import DriveSettings from "./pages/DriveSettings";
 import CheckoutPage from "./pages/CheckoutPage";
 import PaymentSuccessPage from "./pages/PaymentSuccessPage";
@@ -87,6 +88,7 @@ const App = () => (
             {/* Protected admin routes */}
             <Route path="/admin" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/admin/access" element={<ProtectedRoute><AccessManagement /></ProtectedRoute>} />
+            <Route path="/admin/membros" element={<ProtectedRoute><MembersPage /></ProtectedRoute>} />
             <Route path="/admin/drive" element={<ProtectedRoute><DriveSettings /></ProtectedRoute>} />
             <Route path="/admin/buyers" element={<ProtectedRoute><BuyersPage /></ProtectedRoute>} />
             <Route path="/admin/trials" element={<ProtectedRoute><TrialUsersPage /></ProtectedRoute>} />

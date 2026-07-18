@@ -18,7 +18,6 @@ import {
   Smartphone,
   MessageCircle,
   GraduationCap,
-  ExternalLink,
 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -28,7 +27,7 @@ import { AdminPWAHead } from '@/components/AdminPWAHead';
 const navItems = [
   { path: '/admin', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/admin/access', label: 'Acessos', icon: UserCheck },
-  { path: '/membros', label: 'Área de Membros', icon: GraduationCap, external: true },
+  { path: '/admin/membros', label: 'Área de Membros', icon: GraduationCap },
   { path: '/admin/buyers', label: 'Compradores', icon: DollarSign },
   { path: '/admin/trials', label: 'Usuários Trial', icon: Users },
   { path: '/admin/coupons', label: 'Cupons', icon: Tag },
@@ -89,19 +88,7 @@ export const AdminLayout = ({ children }: { children: React.ReactNode }) => {
 
         {/* Navigation */}
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-          {navItems.map(item => item.external ? (
-            <a
-              key={item.path}
-              href={item.path}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors duration-150 text-muted-foreground hover:text-foreground hover:bg-secondary"
-            >
-              <item.icon className="w-4 h-4 flex-shrink-0" />
-              {item.label}
-              <ExternalLink className="w-3 h-3 ml-auto opacity-50" />
-            </a>
-          ) : (
+          {navItems.map(item => (
             <Link
               key={item.path}
               to={item.path}
