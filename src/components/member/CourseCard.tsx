@@ -38,7 +38,10 @@ export function CourseCard({ course, progressPercent }: CourseCardProps) {
           </div>
         )}
       </div>
-      <p className="text-xs text-muted-foreground mt-1.5">
+      <p className="text-[13px] sm:text-sm font-semibold text-foreground mt-2 leading-snug line-clamp-2">
+        {course.title}
+      </p>
+      <p className="text-xs text-muted-foreground mt-1">
         {typeof progressPercent === 'number' && progressPercent > 0
           ? `${Math.round(progressPercent)}% concluído`
           : formatDuration(course.total_duration_seconds) || `${course.material_count} materiais`}
