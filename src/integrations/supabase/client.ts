@@ -8,7 +8,7 @@ const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
 
-const FETCH_TIMEOUT_MS = 20000;
+const FETCH_TIMEOUT_MS = 10000;
 // A few admin-triggered batch jobs legitimately run longer than a normal
 // query (member-sync-library crawls large courses; run-email-campaign has
 // its own 6-minute per-batch allowance) — exempt them from the blanket timeout.
