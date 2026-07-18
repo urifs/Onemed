@@ -22,6 +22,23 @@ const TYPE_ICON: Record<string, typeof Play> = {
   video: Play, pdf: FileText, doc: File, audio: Music, image: ImageIcon, other: File,
 };
 
+function groupLessonsByModule(items: Lesson[], modules: CourseModule[]): { title: string; lessons: Lesson[] }[] {
+  const byModule = new Map<string | null, Lesson[]>();
+  for (const l of items) {
+    const key = l.module_id;
+    if (!byModule.has(key)) byModule.set(key, []);
+    byModule.get(key)!.push(l);
+  }
+  const result: { title: string; lessons: Lesson[] }[] = [];
+  const root = byModule.get(null);
+  if (root?.length) result.push({ title: 'Conteúdo geral', lessons: root });
+  for (const mod of modules) {
+    const modItems = byModule.get(mod.id);
+    if (modItems?.length) result.push({ title: mod.title, lessons: modItems });
+  }
+  return result;
+}
+
 export default function CourseDetailPage() {
   const { slug } = useParams<{ slug: string }>();
   const [searchParams] = useSearchParams();
@@ -32,7 +49,7 @@ export default function CourseDetailPage() {
   const [modules, setModules] = useState<CourseModule[]>([]);
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [progressMap, setProgressMap] = useState<Record<string, Progress>>({});
-  const [tab, setTab] = useState<'aulas' | 'comunidade'>('aulas');
+  const [tab, setTab] = useState<'aulas' | 'arquivos' | 'comunidade'>('aulas');
   const [activeLesson, setActiveLesson] = useState<Lesson | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [retryTick, setRetryTick] = useState(0);
@@ -76,29 +93,26 @@ export default function CourseDetailPage() {
   useEffect(() => {
     if (autoOpenId && lessons.length > 0 && !activeLesson) {
       const found = lessons.find(l => l.id === autoOpenId);
-      if (found) setActiveLesson(found);
+      if (found) {
+        setActiveLesson(found);
+        setTab(found.type === 'video' ? 'aulas' : 'arquivos');
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoOpenId, lessons]);
 
-  const groups = useMemo(() => {
-    const byModule = new Map<string | null, Lesson[]>();
-    for (const l of lessons) {
-      const key = l.module_id;
-      if (!byModule.has(key)) byModule.set(key, []);
-      byModule.get(key)!.push(l);
-    }
-    const result: { title: string; lessons: Lesson[] }[] = [];
-    const root = byModule.get(null);
-    if (root?.length) result.push({ title: 'Conteúdo geral', lessons: root });
-    for (const mod of modules) {
-      const items = byModule.get(mod.id);
-      if (items?.length) result.push({ title: mod.title, lessons: items });
-    }
-    return result;
-  }, [lessons, modules]);
-
-  const orderedLessons = useMemo(() => groups.flatMap(g => g.lessons), [groups]);
+  // Videos and every other file type (PDFs, apostilas, etc.) are shown as
+  // separate tabs — "Aulas" only ever lists video media, "Arquivos" lists
+  // everything else — each grouped by module independently.
+  const videoLessons = useMemo(() => lessons.filter(l => l.type === 'video'), [lessons]);
+  const fileLessons = useMemo(() => lessons.filter(l => l.type !== 'video'), [lessons]);
+  const videoGroups = useMemo(() => groupLessonsByModule(videoLessons, modules), [videoLessons, modules]);
+  const fileGroups = useMemo(() => groupLessonsByModule(fileLessons, modules), [fileLessons, modules]);
+  const orderedVideoLessons = useMemo(() => videoGroups.flatMap(g => g.lessons), [videoGroups]);
+  const orderedFileLessons = useMemo(() => fileGroups.flatMap(g => g.lessons), [fileGroups]);
+  // Prev/next in the player stays within the same kind as the open lesson —
+  // watching a video steps to the next video, not into a PDF.
+  const activeOrderedLessons = activeLesson?.type === 'video' ? orderedVideoLessons : orderedFileLessons;
 
   const handleProgress = async (lessonId: string, watchedSeconds: number, completed: boolean) => {
     if (!user || !course) return;
@@ -116,7 +130,7 @@ export default function CourseDetailPage() {
     }, { onConflict: 'user_id,lesson_id' });
   };
 
-  const activeIndex = activeLesson ? orderedLessons.findIndex(l => l.id === activeLesson.id) : -1;
+  const activeIndex = activeLesson ? activeOrderedLessons.findIndex(l => l.id === activeLesson.id) : -1;
 
   if (course === undefined) {
     if (loadError) {
@@ -173,11 +187,11 @@ export default function CourseDetailPage() {
           </div>
           <h1 className="font-secondary text-2xl md:text-3xl font-bold text-foreground mb-3">{stripYearFromTitle(course.title)}</h1>
           <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-sm text-muted-foreground mb-6">
-            <span>{course.lesson_count} aula{course.lesson_count !== 1 ? 's' : ''}</span>
+            <span>{videoLessons.length} aula{videoLessons.length !== 1 ? 's' : ''}</span>
             {course.total_duration_seconds > 0 && (
               <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" /> {formatDuration(course.total_duration_seconds)}</span>
             )}
-            {course.material_count > 0 && <span>{course.material_count} materiais</span>}
+            {fileLessons.length > 0 && <span>{fileLessons.length} arquivo{fileLessons.length !== 1 ? 's' : ''}</span>}
           </div>
         </div>
       </section>
@@ -191,6 +205,12 @@ export default function CourseDetailPage() {
             Aulas
           </button>
           <button
+            onClick={() => setTab('arquivos')}
+            className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${tab === 'arquivos' ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+          >
+            Arquivos
+          </button>
+          <button
             onClick={() => setTab('comunidade')}
             className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${tab === 'comunidade' ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
           >
@@ -199,49 +219,25 @@ export default function CourseDetailPage() {
         </div>
 
         {tab === 'aulas' ? (
-          <div className="space-y-8">
-            {groups.length === 0 && (
+          <>
+            {lessons.length === 0 && (
               <p className="text-muted-foreground text-sm">Este curso ainda está sendo sincronizado. Volte em instantes.</p>
             )}
-            {groups.map(group => (
-              <div key={group.title}>
-                <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-2.5">{group.title}</h3>
-                <div className="rounded-xl border border-border overflow-hidden divide-y divide-border">
-                  {group.lessons.map(lesson => {
-                    const Icon = TYPE_ICON[lesson.type] || File;
-                    const p = progressMap[lesson.id];
-                    const pct = p && lesson.duration_seconds ? Math.min(100, (p.watched_seconds / lesson.duration_seconds) * 100) : 0;
-                    return (
-                      <button
-                        key={lesson.id}
-                        onClick={() => setActiveLesson(lesson)}
-                        className="w-full flex items-center gap-3.5 px-4 py-3.5 bg-card hover:bg-secondary text-left transition-colors group"
-                      >
-                        <div className="w-9 h-9 rounded-full bg-secondary group-hover:bg-primary/15 flex items-center justify-center shrink-0 transition-colors">
-                          {p?.completed ? (
-                            <CheckCircle2 className="w-4 h-4 text-accent-success" />
-                          ) : (
-                            <Icon className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" fill={lesson.type === 'video' ? 'currentColor' : 'none'} />
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-foreground truncate">{lesson.title}</p>
-                          {pct > 0 && !p?.completed && (
-                            <div className="h-1 w-24 rounded-full bg-secondary mt-1.5 overflow-hidden">
-                              <div className="h-full bg-primary" style={{ width: `${pct}%` }} />
-                            </div>
-                          )}
-                        </div>
-                        <span className="text-xs text-muted-foreground tabular-nums shrink-0">
-                          {lesson.type === 'video' ? formatDuration(lesson.duration_seconds) : formatFileSize(lesson.size_bytes)}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
+            {lessons.length > 0 && videoGroups.length === 0 && (
+              <p className="text-muted-foreground text-sm">Nenhuma aula em vídeo neste curso.</p>
+            )}
+            <LessonGroupList groups={videoGroups} progressMap={progressMap} onSelect={setActiveLesson} />
+          </>
+        ) : tab === 'arquivos' ? (
+          <>
+            {lessons.length === 0 && (
+              <p className="text-muted-foreground text-sm">Este curso ainda está sendo sincronizado. Volte em instantes.</p>
+            )}
+            {lessons.length > 0 && fileGroups.length === 0 && (
+              <p className="text-muted-foreground text-sm">Nenhum arquivo complementar neste curso.</p>
+            )}
+            <LessonGroupList groups={fileGroups} progressMap={progressMap} onSelect={setActiveLesson} />
+          </>
         ) : (
           <CommunityTab courseId={course.id} />
         )}
@@ -255,11 +251,62 @@ export default function CourseDetailPage() {
           onClose={() => setActiveLesson(null)}
           onProgress={handleProgress}
           hasPrev={activeIndex > 0}
-          hasNext={activeIndex >= 0 && activeIndex < orderedLessons.length - 1}
-          onPrev={() => activeIndex > 0 && setActiveLesson(orderedLessons[activeIndex - 1])}
-          onNext={() => activeIndex < orderedLessons.length - 1 && setActiveLesson(orderedLessons[activeIndex + 1])}
+          hasNext={activeIndex >= 0 && activeIndex < activeOrderedLessons.length - 1}
+          onPrev={() => activeIndex > 0 && setActiveLesson(activeOrderedLessons[activeIndex - 1])}
+          onNext={() => activeIndex < activeOrderedLessons.length - 1 && setActiveLesson(activeOrderedLessons[activeIndex + 1])}
         />
       )}
+    </div>
+  );
+}
+
+function LessonGroupList({
+  groups, progressMap, onSelect,
+}: {
+  groups: { title: string; lessons: Lesson[] }[];
+  progressMap: Record<string, Progress>;
+  onSelect: (lesson: Lesson) => void;
+}) {
+  return (
+    <div className="space-y-8">
+      {groups.map(group => (
+        <div key={group.title}>
+          <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-2.5">{group.title}</h3>
+          <div className="rounded-xl border border-border overflow-hidden divide-y divide-border">
+            {group.lessons.map(lesson => {
+              const Icon = TYPE_ICON[lesson.type] || File;
+              const p = progressMap[lesson.id];
+              const pct = p && lesson.duration_seconds ? Math.min(100, (p.watched_seconds / lesson.duration_seconds) * 100) : 0;
+              return (
+                <button
+                  key={lesson.id}
+                  onClick={() => onSelect(lesson)}
+                  className="w-full flex items-center gap-3.5 px-4 py-3.5 bg-card hover:bg-secondary text-left transition-colors group"
+                >
+                  <div className="w-9 h-9 rounded-full bg-secondary group-hover:bg-primary/15 flex items-center justify-center shrink-0 transition-colors">
+                    {p?.completed ? (
+                      <CheckCircle2 className="w-4 h-4 text-accent-success" />
+                    ) : (
+                      <Icon className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" fill={lesson.type === 'video' ? 'currentColor' : 'none'} />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-foreground truncate">{lesson.title}</p>
+                    {pct > 0 && !p?.completed && (
+                      <div className="h-1 w-24 rounded-full bg-secondary mt-1.5 overflow-hidden">
+                        <div className="h-full bg-primary" style={{ width: `${pct}%` }} />
+                      </div>
+                    )}
+                  </div>
+                  <span className="text-xs text-muted-foreground tabular-nums shrink-0">
+                    {lesson.type === 'video' ? formatDuration(lesson.duration_seconds) : formatFileSize(lesson.size_bytes)}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
