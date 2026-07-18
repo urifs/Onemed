@@ -6,7 +6,8 @@ import { toast } from 'sonner';
 import AdminLayout from '@/components/AdminLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { FolderOpen, CheckCircle, AlertCircle, RefreshCw, Folder, Loader2 } from 'lucide-react';
+import { FolderOpen, CheckCircle, AlertCircle, RefreshCw, Folder, Loader2, GraduationCap } from 'lucide-react';
+import { extractFunctionErrorMessage } from '@/lib/utils';
 
 const GOOGLE_CLIENT_ID = '110017470335-2l6er8r451vj5hf3ob05rvolc2p4v9ku.apps.googleusercontent.com';
 
@@ -148,6 +149,9 @@ export default function DriveSettings() {
           <FolderConfig driveStatus={driveStatus} onRefresh={fetchStatus} />
         )}
 
+        {/* Course Library Sync */}
+        {driveStatus?.connected && <SyncCoursesCard />}
+
         {/* Info */}
         <Card className="bg-background-paper border-border">
           <CardContent className="p-6">
@@ -164,6 +168,81 @@ export default function DriveSettings() {
         </Card>
       </div>
     </AdminLayout>
+  );
+}
+
+interface SyncProgress {
+  coursesCreated: number;
+  coursesResynced: number;
+  lessonsImported: number;
+  batches: number;
+}
+
+function SyncCoursesCard() {
+  const [running, setRunning] = useState(false);
+  const [progress, setProgress] = useState<SyncProgress | null>(null);
+
+  const runSync = async () => {
+    setRunning(true);
+    setProgress(null);
+    let cursor: string | undefined = undefined;
+    const totals: SyncProgress = { coursesCreated: 0, coursesResynced: 0, lessonsImported: 0, batches: 0 };
+    try {
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const { data, error } = await supabase.functions.invoke('member-sync-library', {
+          body: { cursor, batchSize: 4, forceResync: true },
+        });
+        if (error || data?.error) {
+          const msg = data?.error || await extractFunctionErrorMessage(error, 'Erro ao sincronizar cursos');
+          throw new Error(msg);
+        }
+        totals.batches += 1;
+        totals.coursesCreated += data.coursesCreated || 0;
+        totals.coursesResynced += data.coursesResynced || 0;
+        totals.lessonsImported += data.lessonsImported || 0;
+        setProgress({ ...totals });
+        cursor = data.cursor || undefined;
+        if (data.done) break;
+      }
+      toast.success(`Sincronização concluída: ${totals.coursesCreated} cursos novos, ${totals.coursesResynced} atualizados, ${totals.lessonsImported} aulas importadas.`);
+    } catch (e: any) {
+      toast.error(e.message || 'Erro ao sincronizar cursos');
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <Card className="bg-background-paper border-border">
+      <CardHeader>
+        <CardTitle className="text-base font-medium text-foreground flex items-center gap-2">
+          <GraduationCap className="w-5 h-5 text-primary" />
+          Biblioteca de Cursos
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          Espelha a pasta "Cursos + Livros" do Drive para a área de membros (/membros). Pode rodar quantas vezes
+          quiser — cursos e aulas já importados não são duplicados, e conteúdo novo que você adicionar no Drive
+          é detectado e importado.
+        </p>
+        {progress && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            {running && <Loader2 className="w-4 h-4 animate-spin text-primary shrink-0" />}
+            <span>
+              {progress.coursesCreated} curso{progress.coursesCreated !== 1 ? 's' : ''} novo{progress.coursesCreated !== 1 ? 's' : ''} ·{' '}
+              {progress.coursesResynced} atualizado{progress.coursesResynced !== 1 ? 's' : ''} ·{' '}
+              {progress.lessonsImported} aulas · lote {progress.batches}
+            </span>
+          </div>
+        )}
+        <Button onClick={runSync} disabled={running} className="bg-primary hover:bg-primary-hover text-primary-foreground gap-2">
+          {running ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+          {running ? 'Sincronizando…' : 'Sincronizar Cursos'}
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
 
