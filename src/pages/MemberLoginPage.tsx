@@ -7,12 +7,11 @@ import { extractFunctionErrorMessage } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Stethoscope, Mail, ArrowRight, CheckCircle2, Sparkles } from 'lucide-react';
+import { Stethoscope, Mail, ArrowRight, Sparkles } from 'lucide-react';
 
 export default function MemberLoginPage() {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
-  const [sent, setSent] = useState(false);
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
 
@@ -27,13 +26,17 @@ export default function MemberLoginPage() {
     try {
       const { data, error } = await supabase.functions.invoke('member-auth-request', { body: { email } });
       if (error || data?.error) {
-        const msg = data?.error || await extractFunctionErrorMessage(error, 'Erro ao enviar o link');
+        const msg = data?.error || await extractFunctionErrorMessage(error, 'Erro ao entrar');
         throw new Error(msg);
       }
-      setSent(true);
+      const { error: sessionErr } = await supabase.auth.setSession({
+        access_token: data.access_token,
+        refresh_token: data.refresh_token,
+      });
+      if (sessionErr) throw sessionErr;
+      navigate('/membros', { replace: true });
     } catch (err: any) {
       toast.error(err.message || 'Não encontramos acesso ativo para este email');
-    } finally {
       setLoading(false);
     }
   };
@@ -54,65 +57,44 @@ export default function MemberLoginPage() {
         </Link>
 
         <div className="glass-strong rounded-2xl p-8 border border-border glow-red">
-          {!sent ? (
-            <>
-              <div className="text-center mb-8">
-                <h1 className="font-secondary text-2xl font-bold text-foreground mb-2">Área de Membros</h1>
-                <p className="text-muted-foreground text-sm">Acesse seus cursos, aulas e materiais</p>
+          <div className="text-center mb-8">
+            <h1 className="font-secondary text-2xl font-bold text-foreground mb-2">Área de Membros</h1>
+            <p className="text-muted-foreground text-sm">Acesse seus cursos, aulas e materiais</p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-foreground">Email cadastrado</Label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  placeholder="voce@email.com"
+                  autoFocus
+                  className="pl-10 h-12 bg-secondary border-border text-foreground placeholder:text-muted-foreground focus:border-primary/50"
+                />
               </div>
-
-              <form onSubmit={handleSubmit} className="space-y-5">
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium text-foreground">Email cadastrado</Label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input
-                      type="email"
-                      value={email}
-                      onChange={e => setEmail(e.target.value)}
-                      placeholder="voce@email.com"
-                      autoFocus
-                      className="pl-10 h-12 bg-secondary border-border text-foreground placeholder:text-muted-foreground focus:border-primary/50"
-                    />
-                  </div>
-                </div>
-
-                <Button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full h-12 bg-primary hover:bg-primary-hover text-primary-foreground font-semibold gap-2"
-                >
-                  {loading ? (
-                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  ) : (
-                    <>Enviar link de acesso <ArrowRight className="w-4 h-4" /></>
-                  )}
-                </Button>
-
-                <p className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground pt-1">
-                  <Sparkles className="w-3.5 h-3.5 text-primary" />
-                  Sem senha — só o link direto no seu email
-                </p>
-              </form>
-            </>
-          ) : (
-            <div className="text-center py-4">
-              <div className="w-14 h-14 mx-auto mb-5 rounded-full bg-accent-success/10 flex items-center justify-center">
-                <CheckCircle2 className="w-7 h-7 text-accent-success" />
-              </div>
-              <h2 className="font-secondary text-xl font-bold text-foreground mb-2">Verifique seu email</h2>
-              <p className="text-muted-foreground text-sm leading-relaxed mb-1">
-                Enviamos um link de acesso para
-              </p>
-              <p className="text-foreground font-medium mb-6">{email}</p>
-              <button
-                onClick={() => setSent(false)}
-                className="text-sm text-primary hover:text-primary-hover transition-colors"
-              >
-                Usar outro email
-              </button>
             </div>
-          )}
+
+            <Button
+              type="submit"
+              disabled={loading}
+              className="w-full h-12 bg-primary hover:bg-primary-hover text-primary-foreground font-semibold gap-2"
+            >
+              {loading ? (
+                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <>Entrar <ArrowRight className="w-4 h-4" /></>
+              )}
+            </Button>
+
+            <p className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground pt-1">
+              <Sparkles className="w-3.5 h-3.5 text-primary" />
+              Sem senha — só o email cadastrado na compra
+            </p>
+          </form>
         </div>
 
         <p className="text-center mt-6">
