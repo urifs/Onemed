@@ -129,7 +129,8 @@ upsell2:   R$   9,90  — complemento 2
 | `/admin/login` | `LoginPage.tsx` | Público | Login admin |
 | `/admin/register` | `RegisterPage.tsx` | Público | Cadastro admin |
 | `/admin` | `Dashboard.tsx` | Protegido | Métricas diárias |
-| `/admin/access` | `AccessManagement.tsx` | Protegido | Gerenciar todos os acessos |
+| `/admin/access` | `AccessManagement.tsx` | Protegido | Gerenciar acessos (fluxo antigo de trial/Drive) |
+| `/admin/membros` | `MembersPage.tsx` | Protegido | Gerenciar acesso à área de membros (cursos) |
 | `/admin/buyers` | `BuyersPage.tsx` | Protegido | Gerenciar compradores |
 | `/admin/trials` | `TrialUsersPage.tsx` | Protegido | Ver usuários trial (exclui convertidos) |
 | `/admin/coupons` | `CouponsPage.tsx` | Protegido | CRUD de cupons |
@@ -553,10 +554,13 @@ porque o login era bloqueado antes.
 |---------|---------|
 | `supabase/migrations/20260718200000_member_auth_admin_bypass.sql` | Nova função `is_admin_email(_email)` — checa se o email pertence a um usuário com role `admin` |
 | `supabase/functions/member-auth-request/index.ts` | Gate do magic link agora libera também quando `is_admin_email` é true, sem exigir trial/compra |
-| `src/components/AdminLayout.tsx` | Novo item de navegação "Área de Membros" no painel admin → abre `/membros` em nova aba (a sessão do admin já é válida lá, sem precisar de magic link) |
+| `src/pages/MembersPage.tsx` (novo, rota `/admin/membros`) | Página dedicada de gerenciamento da área de membros: lista de membros (grants manuais + compradores), diálogo "Conceder Acesso" (Vitalício/Anual, sem acoplar com Drive), stats de cursos/categorias, botão "Abrir Área de Membros" |
+| `src/components/AdminLayout.tsx` | Novo item de navegação "Área de Membros" → aponta para `/admin/membros` (dentro do painel, não mais um link externo cru) |
 
-Gerenciar acessos (criar acesso manual para qualquer email) já existia em `/admin/access`
-(`AccessManagement.tsx`) — nenhuma tela nova foi necessária para isso.
+`AccessManagement.tsx` (`/admin/access`) é do fluxo antigo de trial via Google Drive
+(duração em minutos, compartilhamento automático de pasta) — não serve para conceder acesso
+à plataforma de cursos nova. `MembersPage` insere direto em `accesses` com `access_type`
+`lifetime`/`annual` e `status='active'`, sem chamar `drive-share-folder`.
 
 ---
 
