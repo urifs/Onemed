@@ -34,7 +34,13 @@ export default function MemberLoginPage() {
         refresh_token: data.refresh_token,
       });
       if (sessionErr) throw sessionErr;
-      navigate('/membros', { replace: true });
+      // Full reload instead of a router navigate — AuthContext's `user` state
+      // updates off the onAuthStateChange event, which fires asynchronously
+      // relative to setSession()'s own promise. Navigating client-side risked
+      // landing on /membros before that event caught up, so the route saw a
+      // stale `user: null` and got stuck. A reload re-inits AuthContext from
+      // the session setSession() already persisted to localStorage — no race.
+      window.location.href = '/membros';
     } catch (err: any) {
       toast.error(err.message || 'Não encontramos acesso ativo para este email');
       setLoading(false);
