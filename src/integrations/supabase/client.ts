@@ -8,11 +8,37 @@ const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
 
+const FETCH_TIMEOUT_MS = 20000;
+// A few admin-triggered batch jobs legitimately run longer than a normal
+// query (member-sync-library crawls large courses; run-email-campaign has
+// its own 6-minute per-batch allowance) — exempt them from the blanket timeout.
+const TIMEOUT_EXEMPT = /\/functions\/v1\/(member-sync-library|run-email-campaign)/;
+
+// Without this, a request that never settles (dropped connection, a stuck
+// proxy, a backgrounded tab resuming mid-request) leaves its promise pending
+// forever — any page awaiting it gets stuck on its loading state until a hard
+// reload. This guarantees every Supabase call either resolves or rejects.
+function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+  if (TIMEOUT_EXEMPT.test(url)) return fetch(input, init);
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  if (init.signal) {
+    if (init.signal.aborted) controller.abort();
+    else init.signal.addEventListener('abort', () => controller.abort(), { once: true });
+  }
+  return fetch(input, { ...init, signal: controller.signal }).finally(() => clearTimeout(timeoutId));
+}
+
 export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: {
     storage: localStorage,
     persistSession: true,
     autoRefreshToken: true,
     lock: (_name: string, _acquireTimeout: number, fn: () => Promise<unknown>) => fn(),
-  }
+  },
+  global: {
+    fetch: fetchWithTimeout,
+  },
 });

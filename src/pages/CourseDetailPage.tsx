@@ -34,32 +34,44 @@ export default function CourseDetailPage() {
   const [progressMap, setProgressMap] = useState<Record<string, Progress>>({});
   const [tab, setTab] = useState<'aulas' | 'comunidade'>('aulas');
   const [activeLesson, setActiveLesson] = useState<Lesson | null>(null);
+  const [loadError, setLoadError] = useState(false);
+  const [retryTick, setRetryTick] = useState(0);
   const autoOpenId = searchParams.get('lesson');
 
   useEffect(() => {
     let alive = true;
     (async () => {
-      const { data: courseRow } = await supabase.from('courses').select('*').eq('slug', slug).eq('active', true).maybeSingle();
-      if (!alive) return;
-      setCourse(courseRow || null);
-      if (!courseRow) return;
+      try {
+        const { data: courseRow, error: courseErr } = await supabase.from('courses').select('*').eq('slug', slug).eq('active', true).maybeSingle();
+        if (courseErr) throw courseErr;
+        if (!alive) return;
+        setCourse(courseRow || null);
+        if (!courseRow) return;
 
-      const [{ data: moduleRows }, { data: lessonRows }, progressResult] = await Promise.all([
-        supabase.from('course_modules').select('*').eq('course_id', courseRow.id).order('sort_order'),
-        supabase.from('lessons').select('*').eq('course_id', courseRow.id).order('sort_order'),
-        user
-          ? supabase.from('lesson_progress').select('*').eq('course_id', courseRow.id).eq('user_id', user.id)
-          : Promise.resolve({ data: [] as Progress[] }),
-      ]);
-      if (!alive) return;
-      setModules(moduleRows || []);
-      setLessons(lessonRows || []);
-      const map: Record<string, Progress> = {};
-      for (const p of ((progressResult as any).data || []) as Progress[]) map[p.lesson_id] = p;
-      setProgressMap(map);
+        const [{ data: moduleRows, error: modErr }, { data: lessonRows, error: lesErr }, progressResult] = await Promise.all([
+          supabase.from('course_modules').select('*').eq('course_id', courseRow.id).order('sort_order'),
+          supabase.from('lessons').select('*').eq('course_id', courseRow.id).order('sort_order'),
+          user
+            ? supabase.from('lesson_progress').select('*').eq('course_id', courseRow.id).eq('user_id', user.id)
+            : Promise.resolve({ data: [] as Progress[] }),
+        ]);
+        if (modErr) throw modErr;
+        if (lesErr) throw lesErr;
+        if (!alive) return;
+        setModules(moduleRows || []);
+        setLessons(lessonRows || []);
+        const map: Record<string, Progress> = {};
+        for (const p of ((progressResult as any).data || []) as Progress[]) map[p.lesson_id] = p;
+        setProgressMap(map);
+        setLoadError(false);
+      } catch (err) {
+        console.error('Failed to load course', err);
+        if (!alive) return;
+        setLoadError(true);
+      }
     })();
     return () => { alive = false; };
-  }, [slug, user]);
+  }, [slug, user, retryTick]);
 
   useEffect(() => {
     if (autoOpenId && lessons.length > 0 && !activeLesson) {
@@ -107,6 +119,20 @@ export default function CourseDetailPage() {
   const activeIndex = activeLesson ? orderedLessons.findIndex(l => l.id === activeLesson.id) : -1;
 
   if (course === undefined) {
+    if (loadError) {
+      return (
+        <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4 px-4 text-center">
+          <p className="text-foreground font-secondary text-xl font-bold">Não foi possível carregar o curso</p>
+          <p className="text-muted-foreground text-sm max-w-xs">Verifique sua conexão e tente novamente.</p>
+          <button
+            onClick={() => setRetryTick(t => t + 1)}
+            className="inline-flex items-center gap-2 bg-primary hover:bg-primary-hover text-primary-foreground font-semibold px-5 py-2.5 rounded-xl transition-colors"
+          >
+            Tentar novamente
+          </button>
+        </div>
+      );
+    }
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />

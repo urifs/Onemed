@@ -21,13 +21,19 @@ export function CommunityTab({ courseId }: { courseId: string }) {
   const [posting, setPosting] = useState(false);
 
   const load = async () => {
-    const { data } = await supabase
-      .from('course_comments')
-      .select('id, body, created_at, user_id, profiles(name, email)')
-      .eq('course_id', courseId)
-      .order('created_at', { ascending: false });
-    setComments(((data as any) || []) as Comment[]);
-    setLoading(false);
+    try {
+      const { data, error } = await supabase
+        .from('course_comments')
+        .select('id, body, created_at, user_id, profiles(name, email)')
+        .eq('course_id', courseId)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      setComments(((data as any) || []) as Comment[]);
+    } catch (err) {
+      console.error('Failed to load comments', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [courseId]);
