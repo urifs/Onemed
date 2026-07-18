@@ -88,7 +88,7 @@ export default function MemberDashboardPage() {
         <section className="max-w-[1400px] mx-auto px-4 md:px-8 pt-6">
           <div className="relative rounded-2xl overflow-hidden border border-border min-h-[280px] md:min-h-[340px] flex items-end shadow-[0_30px_70px_-40px_rgba(239,68,68,0.4)]">
             <div className="absolute inset-0">
-              <CourseCover title={featured.title} coverImageUrl={featured.cover_image_url} iconClassName="text-9xl" />
+              <CourseCover title={featured.title} coverImageUrl={featured.cover_image_url} coverSource={featured.cover_source} iconClassName="text-9xl" />
             </div>
             <div className="absolute inset-0 bg-gradient-to-t from-background via-background/55 to-transparent" />
             <div className="absolute inset-0 bg-gradient-to-r from-background/70 via-transparent to-transparent" />

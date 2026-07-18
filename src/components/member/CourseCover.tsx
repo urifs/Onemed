@@ -9,13 +9,16 @@ function hashStr(s: string): number {
 interface CourseCoverProps {
   title: string;
   coverImageUrl?: string | null;
+  /** 'curated' = real hero photography, fills the frame. 'logo' = brand mark badged
+   *  on top of our gradient (avoids stretching a logo to fill a 16:10 box). */
+  coverSource?: string | null;
   className?: string;
   iconClassName?: string;
 }
 
-/** Brand-consistent red-gradient cover, used whenever a course has no researched cover image yet. */
-export function CourseCover({ title, coverImageUrl, className, iconClassName }: CourseCoverProps) {
-  if (coverImageUrl) {
+/** Brand-consistent red-gradient cover, used whenever a course has no researched cover photo yet. */
+export function CourseCover({ title, coverImageUrl, coverSource, className, iconClassName }: CourseCoverProps) {
+  if (coverImageUrl && coverSource === 'curated') {
     return (
       <img
         src={coverImageUrl}
@@ -50,9 +53,15 @@ export function CourseCover({ title, coverImageUrl, className, iconClassName }: 
             'repeating-linear-gradient(115deg, transparent 0 22px, rgba(255,255,255,.6) 22px 23px)',
         }}
       />
-      <span className={cn('relative font-secondary font-extrabold text-white/15 select-none', iconClassName || 'text-6xl')}>
-        {title.trim().charAt(0).toUpperCase() || '+'}
-      </span>
+      {coverImageUrl && coverSource === 'logo' ? (
+        <div className="relative w-[62%] h-[46%] rounded-lg bg-white/95 shadow-[0_8px_24px_-8px_rgba(0,0,0,0.5)] flex items-center justify-center p-3">
+          <img src={coverImageUrl} alt={title} loading="lazy" className="max-w-full max-h-full object-contain" />
+        </div>
+      ) : (
+        <span className={cn('relative font-secondary font-extrabold text-white/15 select-none', iconClassName || 'text-6xl')}>
+          {title.trim().charAt(0).toUpperCase() || '+'}
+        </span>
+      )}
     </div>
   );
 }

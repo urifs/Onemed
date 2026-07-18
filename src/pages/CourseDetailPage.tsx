@@ -131,7 +131,7 @@ export default function CourseDetailPage() {
 
       <section className="relative">
         <div className="relative h-[220px] md:h-[280px] overflow-hidden">
-          <CourseCover title={course.title} coverImageUrl={course.cover_image_url} iconClassName="text-9xl" />
+          <CourseCover title={course.title} coverImageUrl={course.cover_image_url} coverSource={course.cover_source} iconClassName="text-9xl" />
           <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-background/10" />
         </div>
         <div className="max-w-[1000px] mx-auto px-4 md:px-8 -mt-16 relative">

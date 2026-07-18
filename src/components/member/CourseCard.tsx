@@ -20,7 +20,7 @@ export function CourseCard({ course, progressPercent }: CourseCardProps) {
       className="group flex-shrink-0 w-[192px] sm:w-[208px] text-left"
     >
       <div className="relative aspect-video rounded-xl overflow-hidden border border-border transition-all duration-200 group-hover:-translate-y-1 group-hover:border-primary/50 group-hover:shadow-[0_18px_40px_-16px_rgba(239,68,68,0.5)]">
-        <CourseCover title={course.title} coverImageUrl={course.cover_image_url} />
+        <CourseCover title={course.title} coverImageUrl={course.cover_image_url} coverSource={course.cover_source} />
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
         <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
           <div className="w-11 h-11 rounded-full bg-black/55 border border-white/25 backdrop-blur flex items-center justify-center">
