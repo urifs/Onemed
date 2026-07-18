@@ -8,7 +8,7 @@ import { CourseCard } from '@/components/member/CourseCard';
 import { CourseCover } from '@/components/member/CourseCover';
 import { CategorySidebar } from '@/components/member/CategorySidebar';
 import { CATEGORY_ORDER } from '@/lib/courseCategories';
-import { formatDuration } from '@/lib/utils';
+import { formatDuration, stripYearFromTitle } from '@/lib/utils';
 import type { Database } from '@/integrations/supabase/types';
 
 type Course = Database['public']['Tables']['courses']['Row'];
@@ -113,7 +113,7 @@ export default function MemberDashboardPage() {
         <section className="max-w-[1400px] mx-auto px-4 md:px-8 pt-6">
           <div className="relative rounded-2xl overflow-hidden border border-border min-h-[280px] md:min-h-[340px] flex items-end shadow-[0_30px_70px_-40px_rgba(239,68,68,0.4)]">
             <div className="absolute inset-0">
-              <CourseCover title={featured.title} coverImageUrl={featured.cover_image_url} coverSource={featured.cover_source} iconClassName="text-9xl" />
+              <CourseCover title={featured.title} showTitle={false} />
             </div>
             <div className="absolute inset-0 bg-gradient-to-t from-background via-background/55 to-transparent" />
             <div className="absolute inset-0 bg-gradient-to-r from-background/70 via-transparent to-transparent" />
@@ -123,7 +123,7 @@ export default function MemberDashboardPage() {
                 {continueList[0] ? 'Continue de onde parou' : 'Destaque'}
               </span>
               <h1 className="font-secondary text-2xl md:text-4xl font-bold text-foreground leading-tight mb-3">
-                {featured.title}
+                {stripYearFromTitle(featured.title)}
               </h1>
               <p className="text-muted-foreground text-sm md:text-base mb-6 line-clamp-2">
                 {featured.description || `${featured.lesson_count} aulas · ${formatDuration(featured.total_duration_seconds) || `${featured.material_count} materiais`}`}

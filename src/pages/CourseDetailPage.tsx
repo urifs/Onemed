@@ -10,7 +10,7 @@ import { CourseCover } from '@/components/member/CourseCover';
 import { LessonPlayer } from '@/components/member/LessonPlayer';
 import { CommunityTab } from '@/components/member/CommunityTab';
 import { CATEGORY_ICON } from '@/lib/courseCategories';
-import { formatDuration, formatFileSize } from '@/lib/utils';
+import { formatDuration, formatFileSize, stripYearFromTitle } from '@/lib/utils';
 import type { Database } from '@/integrations/supabase/types';
 
 type Course = Database['public']['Tables']['courses']['Row'];
@@ -131,7 +131,7 @@ export default function CourseDetailPage() {
 
       <section className="relative">
         <div className="relative h-[220px] md:h-[280px] overflow-hidden">
-          <CourseCover title={course.title} coverImageUrl={course.cover_image_url} coverSource={course.cover_source} iconClassName="text-9xl" />
+          <CourseCover title={course.title} showTitle={false} />
           <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-background/10" />
         </div>
         <div className="max-w-[1000px] mx-auto px-4 md:px-8 -mt-16 relative">
@@ -145,7 +145,7 @@ export default function CourseDetailPage() {
             <CategoryIcon className="w-4 h-4 text-primary" />
             <span className="text-xs font-semibold uppercase tracking-wide text-primary">{course.category}</span>
           </div>
-          <h1 className="font-secondary text-2xl md:text-3xl font-bold text-foreground mb-3">{course.title}</h1>
+          <h1 className="font-secondary text-2xl md:text-3xl font-bold text-foreground mb-3">{stripYearFromTitle(course.title)}</h1>
           <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-sm text-muted-foreground mb-6">
             <span>{course.lesson_count} aula{course.lesson_count !== 1 ? 's' : ''}</span>
             {course.total_duration_seconds > 0 && (
@@ -224,7 +224,7 @@ export default function CourseDetailPage() {
       {activeLesson && (
         <LessonPlayer
           lesson={activeLesson}
-          courseTitle={course.title}
+          courseTitle={stripYearFromTitle(course.title)}
           initialWatchedSeconds={progressMap[activeLesson.id]?.watched_seconds}
           onClose={() => setActiveLesson(null)}
           onProgress={handleProgress}
