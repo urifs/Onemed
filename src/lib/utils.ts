@@ -117,6 +117,17 @@ export function stripYearFromTitle(title: string): string {
   return s || title;
 }
 
+// Case/accent/spacing-insensitive search key — "Médcurso 2026", "medcurso2026"
+// and "MEDCURSO  2026" all normalize to the same string, so search doesn't
+// require the user to type accents or match spacing/case exactly.
+export function normalizeSearch(text: string): string {
+  return text
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
+}
+
 export function formatWhatsApp(value: string, countryCode: string): string {
   const nums = value.replace(/\D/g, '');
   if (countryCode === '+55') {
