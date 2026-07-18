@@ -63,11 +63,12 @@ serve(async (req) => {
     if (lessonErr || !lesson) return jsonResponse(req, { error: 'Aula não encontrada' }, 404)
 
     const email = (user.email || '').toLowerCase()
-    const [{ data: activeAccess }, { data: buyer }] = await Promise.all([
+    const [{ data: activeAccess }, { data: buyer }, { data: isAdmin }] = await Promise.all([
       supabase.from('accesses').select('id').eq('email', email).eq('status', 'active').limit(1).maybeSingle(),
       supabase.from('buyers').select('id').eq('email', email).eq('access_granted', true).limit(1).maybeSingle(),
+      supabase.rpc('has_role', { _user_id: user.id, _role: 'admin' }),
     ])
-    if (!activeAccess && !buyer) return jsonResponse(req, { error: 'Sem acesso ativo' }, 403)
+    if (!activeAccess && !buyer && !isAdmin) return jsonResponse(req, { error: 'Sem acesso ativo' }, 403)
 
     const exp = Math.floor(Date.now() / 1000) + TOKEN_TTL_SECONDS
     const payload = b64urlEncode(JSON.stringify({ lid: lesson.id, uid: user.id, exp }))

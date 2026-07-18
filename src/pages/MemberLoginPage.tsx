@@ -7,7 +7,7 @@ import { extractFunctionErrorMessage } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { GraduationCap, Mail, ArrowRight, CheckCircle2, Sparkles } from 'lucide-react';
+import { Stethoscope, Mail, ArrowRight, CheckCircle2, Sparkles } from 'lucide-react';
 
 export default function MemberLoginPage() {
   const [email, setEmail] = useState('');
@@ -48,7 +48,7 @@ export default function MemberLoginPage() {
       <div className="relative z-10 w-full max-w-md">
         <Link to="/" className="flex items-center justify-center gap-3 mb-8">
           <div className="w-10 h-10 bg-primary/15 rounded-xl flex items-center justify-center">
-            <GraduationCap className="w-6 h-6 text-primary" />
+            <Stethoscope className="w-6 h-6 text-primary" />
           </div>
           <span className="font-secondary font-bold text-2xl text-foreground">OneMed</span>
         </Link>
