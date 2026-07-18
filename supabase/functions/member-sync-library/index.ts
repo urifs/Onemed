@@ -52,7 +52,7 @@ async function refreshAccessToken(refreshToken: string, clientSecret: string): P
 async function driveList(accessToken: string, folderId: string, pageToken?: string): Promise<any> {
   const params = new URLSearchParams({
     q: `'${folderId}' in parents and trashed=false`,
-    fields: 'nextPageToken, files(id,name,mimeType,size,videoMediaMetadata(durationMillis))',
+    fields: 'nextPageToken, files(id,name,mimeType,size,videoMediaMetadata(durationMillis),shortcutDetails)',
     pageSize: '200',
     orderBy: 'folder,name_natural',
   })
@@ -89,6 +89,21 @@ function lessonType(mimeType: string): string {
   if (mimeType?.startsWith('audio/')) return 'audio'
   if (mimeType?.startsWith('image/')) return 'image'
   return 'other'
+}
+
+const SHORTCUT_MIME = 'application/vnd.google-apps.shortcut'
+const FOLDER_MIME = 'application/vnd.google-apps.folder'
+
+// Drive shortcuts (e.g. a course folder mirrored via "Add shortcut to Drive")
+// never carry mimeType='...folder' themselves — the real folder/file lives at
+// shortcutDetails.targetId. Resolve here so shortcuts sync exactly like real
+// folders/files instead of silently vanishing from every listing.
+function resolveShortcut(f: any): { id: string; mimeType: string } | null {
+  if (f.mimeType !== SHORTCUT_MIME) return { id: f.id, mimeType: f.mimeType }
+  const targetId = f.shortcutDetails?.targetId
+  const targetMimeType = f.shortcutDetails?.targetMimeType
+  if (!targetId || !targetMimeType) return null // broken/inaccessible shortcut
+  return { id: targetId, mimeType: targetMimeType }
 }
 
 // Order matters: earlier entries win when a title matches more than one
@@ -191,10 +206,13 @@ serve(async (req) => {
     const knownFolderIds = new Set((existingCourses || []).map(c => c.drive_folder_id))
     const courseIdByFolderId = new Map((existingCourses || []).map(c => [c.drive_folder_id, c.id]))
 
-    // Top-level page of course folders
+    // Top-level page of course folders. Includes shortcut-type entries too —
+    // several courses (e.g. "MEDCURSO 2026", "MEDCOF 2026") live in the root
+    // as "Add shortcut to Drive" links rather than real folders, and Drive
+    // never reports a shortcut's mimeType as '...folder' — resolved below.
     const params = new URLSearchParams({
-      q: `'${ROOT_FOLDER_ID}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
-      fields: 'nextPageToken, files(id,name)',
+      q: `'${ROOT_FOLDER_ID}' in parents and (mimeType='${FOLDER_MIME}' or mimeType='${SHORTCUT_MIME}') and trashed=false`,
+      fields: 'nextPageToken, files(id,name,mimeType,shortcutDetails)',
       pageSize: String(batchSize),
       orderBy: 'name_natural',
     })
@@ -207,7 +225,13 @@ serve(async (req) => {
       throw new Error(`Drive top-level list failed: ${err.error?.message || topRes.status}`)
     }
     const topData = await topRes.json()
-    const courseFolders: { id: string; name: string }[] = topData.files || []
+    const courseFolders: { id: string; name: string }[] = (topData.files || [])
+      .map((f: any) => {
+        const resolved = resolveShortcut(f)
+        if (!resolved || resolved.mimeType !== FOLDER_MIME) return null // broken shortcut or points at a file, not a course
+        return { id: resolved.id, name: f.name }
+      })
+      .filter((f: any): f is { id: string; name: string } => !!f)
 
     let coursesCreated = 0
     let coursesResynced = 0
@@ -280,34 +304,39 @@ serve(async (req) => {
           for (const f of files) {
             if (lessonCount >= MAX_LESSONS_PER_COURSE) break
 
-            if (f.mimeType === 'application/vnd.google-apps.folder') {
+            const resolved = resolveShortcut(f)
+            if (!resolved) continue // broken/inaccessible shortcut
+
+            if (resolved.mimeType === FOLDER_MIME) {
               if (depth < MAX_MODULE_DEPTH) {
                 const { data: modRow } = await supabase.from('course_modules').upsert({
                   course_id: course.id,
-                  drive_folder_id: f.id,
+                  drive_folder_id: resolved.id,
                   title: f.name.trim(),
                   sort_order: sortCounter++,
                 }, { onConflict: 'course_id,drive_folder_id' }).select('id').single()
                 modulesImported++
-                await crawl(f.id, modRow?.id ?? moduleId, depth + 1)
+                await crawl(resolved.id, modRow?.id ?? moduleId, depth + 1)
               } else {
                 // deep nesting flattens into the nearest module
-                await crawl(f.id, moduleId, depth + 1)
+                await crawl(resolved.id, moduleId, depth + 1)
               }
             } else {
-              const type = lessonType(f.mimeType)
-              const duration = f.videoMediaMetadata?.durationMillis
+              const type = lessonType(resolved.mimeType)
+              // Shortcut targets don't carry videoMediaMetadata/size on the
+              // shortcut item itself — only real files do.
+              const duration = f.mimeType !== SHORTCUT_MIME && f.videoMediaMetadata?.durationMillis
                 ? Math.round(Number(f.videoMediaMetadata.durationMillis) / 1000)
                 : null
               pendingLessons.push({
                 course_id: course.id,
                 module_id: moduleId,
-                drive_file_id: f.id,
+                drive_file_id: resolved.id,
                 title: f.name.trim(),
                 type,
-                mime_type: f.mimeType,
+                mime_type: resolved.mimeType,
                 duration_seconds: duration,
-                size_bytes: f.size ? Number(f.size) : null,
+                size_bytes: f.mimeType !== SHORTCUT_MIME && f.size ? Number(f.size) : null,
                 sort_order: sortCounter++,
               })
               await flushLessons()
