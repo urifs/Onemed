@@ -91,6 +91,21 @@ export function formatFileSize(bytes: number | null | undefined): string {
   return `${value.toFixed(value >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
+// supabase.functions.invoke() on a non-2xx response returns a generic
+// "Edge Function returned a non-2xx status code" in error.message — the
+// real { error: "..." } body lives on error.context (a Response). Read it.
+export async function extractFunctionErrorMessage(error: any, fallback: string): Promise<string> {
+  if (!error) return fallback;
+  const ctx = error.context;
+  if (ctx && typeof ctx.json === 'function') {
+    try {
+      const body = await (typeof ctx.clone === 'function' ? ctx.clone() : ctx).json();
+      if (body?.error) return body.error;
+    } catch { /* response wasn't JSON — fall through */ }
+  }
+  return error.message || fallback;
+}
+
 export function formatWhatsApp(value: string, countryCode: string): string {
   const nums = value.replace(/\D/g, '');
   if (countryCode === '+55') {

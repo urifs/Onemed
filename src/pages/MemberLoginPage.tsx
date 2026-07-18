@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
+import { extractFunctionErrorMessage } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -25,7 +26,10 @@ export default function MemberLoginPage() {
     setLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke('member-auth-request', { body: { email } });
-      if (error || data?.error) throw new Error(data?.error || error?.message || 'Erro ao enviar o link');
+      if (error || data?.error) {
+        const msg = data?.error || await extractFunctionErrorMessage(error, 'Erro ao enviar o link');
+        throw new Error(msg);
+      }
       setSent(true);
     } catch (err: any) {
       toast.error(err.message || 'Não encontramos acesso ativo para este email');
