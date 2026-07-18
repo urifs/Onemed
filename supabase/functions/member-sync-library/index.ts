@@ -118,22 +118,42 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: getCorsHeaders(req) })
 
   try {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    const supabase = createClient(supabaseUrl, supabaseKey)
+
+    // Two ways in: the x-cron-secret used by the automated backfill, or a
+    // logged-in admin session (the "Sincronizar Cursos" button in /admin/drive).
     const SYNC_SECRET = Deno.env.get('MEMBER_SYNC_SECRET')
     const provided = req.headers.get('x-cron-secret') || ''
-    if (!SYNC_SECRET || !(await secureCompare(provided, SYNC_SECRET))) {
+    const cronOk = !!SYNC_SECRET && (await secureCompare(provided, SYNC_SECRET))
+
+    let adminOk = false
+    if (!cronOk) {
+      const jwt = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
+      if (jwt) {
+        const { data: userData } = await supabase.auth.getUser(jwt)
+        if (userData?.user) {
+          const { data: isAdmin } = await supabase.rpc('has_role', { _user_id: userData.user.id, _role: 'admin' })
+          adminOk = !!isAdmin
+        }
+      }
+    }
+
+    if (!cronOk && !adminOk) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
       })
     }
 
     const GOOGLE_CLIENT_SECRET = Deno.env.get('GOOGLE_CLIENT_SECRET')!
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    const supabase = createClient(supabaseUrl, supabaseKey)
 
     const body = await req.json().catch(() => ({}))
     const cursor: string | undefined = body.cursor || undefined
     const batchSize: number = Math.min(Math.max(Number(body.batchSize) || 6, 1), 20)
+    // Admin-triggered syncs re-crawl courses we've already imported too, so
+    // lessons/materials added to Drive after the first import get picked up.
+    const forceResync: boolean = !!body.forceResync && adminOk
 
     const { data: config, error: cfgErr } = await supabase.from('drive_config').select('*').single()
     if (cfgErr || !config?.connected) {
@@ -159,9 +179,10 @@ serve(async (req) => {
 
     // Known slugs (across all previous batches) so we skip duplicate folders
     // that mirror the same course from a different backup Google account.
-    const { data: existingCourses } = await supabase.from('courses').select('slug, drive_folder_id')
+    const { data: existingCourses } = await supabase.from('courses').select('id, slug, drive_folder_id')
     const knownSlugs = new Set((existingCourses || []).map(c => c.slug))
     const knownFolderIds = new Set((existingCourses || []).map(c => c.drive_folder_id))
+    const courseIdByFolderId = new Map((existingCourses || []).map(c => [c.drive_folder_id, c.id]))
 
     // Top-level page of course folders
     const params = new URLSearchParams({
@@ -182,35 +203,48 @@ serve(async (req) => {
     const courseFolders: { id: string; name: string }[] = topData.files || []
 
     let coursesCreated = 0
+    let coursesResynced = 0
     let coursesSkippedDuplicate = 0
     let lessonsImported = 0
     let modulesImported = 0
 
     for (const folder of courseFolders) {
-      if (knownFolderIds.has(folder.id)) { continue } // already synced this exact folder before
+      let courseRow: { id: string } | null = null
 
-      const baseSlug = slugify(folder.name)
-      let slug = baseSlug
-      if (knownSlugs.has(slug)) {
-        coursesSkippedDuplicate++
-        continue // same course already mirrored from another Drive account — keep the canonical one
+      if (knownFolderIds.has(folder.id)) {
+        if (!forceResync) continue // already synced this exact folder before
+        const existingId = courseIdByFolderId.get(folder.id)
+        if (!existingId) continue
+        courseRow = { id: existingId }
+        coursesResynced++
+      } else {
+        const baseSlug = slugify(folder.name)
+        const slug = baseSlug
+        if (knownSlugs.has(slug)) {
+          coursesSkippedDuplicate++
+          continue // same course already mirrored from another Drive account — keep the canonical one
+        }
+        knownSlugs.add(slug)
+        knownFolderIds.add(folder.id)
+
+        const { data: newCourseRow, error: courseErr } = await supabase.from('courses').insert({
+          drive_folder_id: folder.id,
+          title: folder.name.trim(),
+          slug,
+          category: categoryOf(folder.name),
+          synced_at: new Date().toISOString(),
+        }).select('id').single()
+
+        if (courseErr || !newCourseRow) {
+          console.error('course insert failed', folder.name, courseErr)
+          continue
+        }
+        courseRow = newCourseRow
+        coursesCreated++
       }
-      knownSlugs.add(slug)
-      knownFolderIds.add(folder.id)
 
-      const { data: courseRow, error: courseErr } = await supabase.from('courses').insert({
-        drive_folder_id: folder.id,
-        title: folder.name.trim(),
-        slug,
-        category: categoryOf(folder.name),
-        synced_at: new Date().toISOString(),
-      }).select('id').single()
-
-      if (courseErr || !courseRow) {
-        console.error('course insert failed', folder.name, courseErr)
-        continue
-      }
-      coursesCreated++
+      if (!courseRow) continue
+      const course = courseRow
 
       // Recursive crawl: course folder -> modules (subfolders) -> lessons (files).
       // Lesson rows are batched and flushed in chunks instead of one upsert per
@@ -242,7 +276,7 @@ serve(async (req) => {
             if (f.mimeType === 'application/vnd.google-apps.folder') {
               if (depth < MAX_MODULE_DEPTH) {
                 const { data: modRow } = await supabase.from('course_modules').upsert({
-                  course_id: courseRow.id,
+                  course_id: course.id,
                   drive_folder_id: f.id,
                   title: f.name.trim(),
                   sort_order: sortCounter++,
@@ -259,7 +293,7 @@ serve(async (req) => {
                 ? Math.round(Number(f.videoMediaMetadata.durationMillis) / 1000)
                 : null
               pendingLessons.push({
-                course_id: courseRow.id,
+                course_id: course.id,
                 module_id: moduleId,
                 drive_file_id: f.id,
                 title: f.name.trim(),
@@ -287,7 +321,7 @@ serve(async (req) => {
         lesson_count: lessonCount,
         material_count: materialCount,
         total_duration_seconds: totalDuration,
-      }).eq('id', courseRow.id)
+      }).eq('id', course.id)
     }
 
     const nextCursor = topData.nextPageToken || null
@@ -297,6 +331,7 @@ serve(async (req) => {
       cursor: nextCursor,
       coursesInBatch: courseFolders.length,
       coursesCreated,
+      coursesResynced,
       coursesSkippedDuplicate,
       modulesImported,
       lessonsImported,
