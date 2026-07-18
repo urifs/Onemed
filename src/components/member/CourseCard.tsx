@@ -20,7 +20,7 @@ export function CourseCard({ course, progressPercent }: CourseCardProps) {
       className="group flex flex-col self-start w-full text-left"
     >
       <div className="relative aspect-video rounded-xl overflow-hidden border border-border transition-all duration-200 group-hover:-translate-y-1 group-hover:border-primary/50 group-hover:shadow-[0_18px_40px_-16px_rgba(239,68,68,0.5)]">
-        <CourseCover title={course.title} coverImageUrl={course.cover_image_url} coverSource={course.cover_source} />
+        <CourseCover title={course.title} titleClassName="text-[13px] sm:text-sm" />
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
         <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
           <div className="w-11 h-11 rounded-full bg-black/55 border border-white/25 backdrop-blur flex items-center justify-center">
@@ -38,8 +38,7 @@ export function CourseCard({ course, progressPercent }: CourseCardProps) {
           </div>
         )}
       </div>
-      <p className="mt-2 text-sm font-medium text-foreground leading-snug line-clamp-2">{course.title}</p>
-      <p className="text-xs text-muted-foreground mt-0.5">
+      <p className="text-xs text-muted-foreground mt-1.5">
         {typeof progressPercent === 'number' && progressPercent > 0
           ? `${Math.round(progressPercent)}% concluído`
           : formatDuration(course.total_duration_seconds) || `${course.material_count} materiais`}

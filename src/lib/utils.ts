@@ -106,6 +106,17 @@ export async function extractFunctionErrorMessage(error: any, fallback: string):
   return error.message || fallback;
 }
 
+// Strips standalone 4-digit years (1900-2099) from a course title for display —
+// "Medcof 2025" -> "Medcof". Leaves ordinals ("2º Edição") and other numbers
+// ("+5mil", "R3") alone since those aren't 4-digit year tokens.
+export function stripYearFromTitle(title: string): string {
+  let s = title.replace(/\b(19|20)\d{2}\b/g, ' ');
+  s = s.replace(/\(\s*\)/g, ' ').replace(/\[\s*\]/g, ' ');
+  s = s.replace(/\s{2,}/g, ' ').trim();
+  s = s.replace(/^[-–—\s]+|[-–—\s]+$/g, '').trim();
+  return s || title;
+}
+
 export function formatWhatsApp(value: string, countryCode: string): string {
   const nums = value.replace(/\D/g, '');
   if (countryCode === '+55') {

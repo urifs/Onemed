@@ -1,4 +1,4 @@
-import { cn } from '@/lib/utils';
+import { cn, stripYearFromTitle } from '@/lib/utils';
 
 function hashStr(s: string): number {
   let h = 0;
@@ -8,27 +8,14 @@ function hashStr(s: string): number {
 
 interface CourseCoverProps {
   title: string;
-  coverImageUrl?: string | null;
-  /** 'curated' = real hero photography, fills the frame. 'logo' = brand mark badged
-   *  on top of our gradient (avoids stretching a logo to fill a 16:10 box). */
-  coverSource?: string | null;
   className?: string;
-  iconClassName?: string;
+  /** Hide the in-tile title — used where the title is already shown nearby (e.g. hero banners). */
+  showTitle?: boolean;
+  titleClassName?: string;
 }
 
-/** Brand-consistent red-gradient cover, used whenever a course has no researched cover photo yet. */
-export function CourseCover({ title, coverImageUrl, coverSource, className, iconClassName }: CourseCoverProps) {
-  if (coverImageUrl && coverSource === 'curated') {
-    return (
-      <img
-        src={coverImageUrl}
-        alt={title}
-        loading="lazy"
-        className={cn('w-full h-full object-cover', className)}
-      />
-    );
-  }
-
+/** Brand red-gradient tile with the course name set in bold, impactful type. */
+export function CourseCover({ title, className, showTitle = true, titleClassName }: CourseCoverProps) {
   const h = hashStr(title);
   const angle = 115 + (h % 50);
   const l1 = 9 + (h % 6);
@@ -53,14 +40,15 @@ export function CourseCover({ title, coverImageUrl, coverSource, className, icon
             'repeating-linear-gradient(115deg, transparent 0 22px, rgba(255,255,255,.6) 22px 23px)',
         }}
       />
-      {coverImageUrl && coverSource === 'logo' ? (
-        <div className="relative w-[62%] h-[46%] rounded-lg bg-white/95 shadow-[0_8px_24px_-8px_rgba(0,0,0,0.5)] flex items-center justify-center p-3">
-          <img src={coverImageUrl} alt={title} loading="lazy" className="max-w-full max-h-full object-contain" />
-        </div>
-      ) : (
-        <span className={cn('relative font-secondary font-extrabold text-white/15 select-none', iconClassName || 'text-6xl')}>
-          {title.trim().charAt(0).toUpperCase() || '+'}
-        </span>
+      {showTitle && (
+        <p
+          className={cn(
+            'relative font-secondary font-extrabold text-white text-center leading-[1.15] tracking-tight px-4 line-clamp-4 [text-shadow:0_2px_12px_rgba(0,0,0,0.5)]',
+            titleClassName || 'text-[15px] sm:text-base',
+          )}
+        >
+          {stripYearFromTitle(title)}
+        </p>
       )}
     </div>
   );
