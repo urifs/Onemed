@@ -278,13 +278,58 @@ serve(async (req) => {
       const course = courseRow
 
       // Recursive crawl: course folder -> modules (subfolders) -> lessons (files).
-      // Lesson rows are batched and flushed in chunks instead of one upsert per
-      // file — with courses that hold hundreds/thousands of files, awaiting a
-      // round-trip per row blew past the edge function's idle timeout.
-      let lessonCount = 0
+      // Files are only collected here (module folders are still created
+      // immediately) — turning them into lesson rows is deferred until the
+      // whole course has been walked, so videos can be sorted ahead of every
+      // other file type instead of just following Drive's listing order.
+      let moduleSortCounter = 0
+      const collected: { f: any; resolved: { id: string; mimeType: string }; moduleId: string | null }[] = []
+
+      async function crawl(folderId: string, moduleId: string | null, depth: number) {
+        let pageToken: string | undefined = undefined
+        do {
+          const page = await driveList(accessToken, folderId, pageToken)
+          const files: any[] = page.files || []
+          for (const f of files) {
+            if (collected.length >= MAX_LESSONS_PER_COURSE) break
+
+            const resolved = resolveShortcut(f)
+            if (!resolved) continue // broken/inaccessible shortcut
+
+            if (resolved.mimeType === FOLDER_MIME) {
+              if (depth < MAX_MODULE_DEPTH) {
+                const { data: modRow } = await supabase.from('course_modules').upsert({
+                  course_id: course.id,
+                  drive_folder_id: resolved.id,
+                  title: f.name.trim(),
+                  sort_order: moduleSortCounter++,
+                }, { onConflict: 'course_id,drive_folder_id' }).select('id').single()
+                modulesImported++
+                await crawl(resolved.id, modRow?.id ?? moduleId, depth + 1)
+              } else {
+                // deep nesting flattens into the nearest module
+                await crawl(resolved.id, moduleId, depth + 1)
+              }
+            } else {
+              collected.push({ f, resolved, moduleId })
+            }
+          }
+          pageToken = page.nextPageToken
+        } while (pageToken && collected.length < MAX_LESSONS_PER_COURSE)
+      }
+
+      await crawl(folder.id, null, 0)
+
+      // Video media always comes first, every other file type after — stable
+      // within each bucket so files otherwise keep Drive's original order.
+      const ordered = [
+        ...collected.filter(c => lessonType(c.resolved.mimeType) === 'video'),
+        ...collected.filter(c => lessonType(c.resolved.mimeType) !== 'video'),
+      ]
+
       let materialCount = 0
       let totalDuration = 0
-      let sortCounter = 0
+      let lessonSortCounter = 0
       const pendingLessons: any[] = []
       const LESSON_FLUSH_SIZE = 250
 
@@ -296,61 +341,30 @@ serve(async (req) => {
         if (error) console.error('lesson batch upsert failed', folder.name, error)
       }
 
-      async function crawl(folderId: string, moduleId: string | null, depth: number) {
-        let pageToken: string | undefined = undefined
-        do {
-          const page = await driveList(accessToken, folderId, pageToken)
-          const files: any[] = page.files || []
-          for (const f of files) {
-            if (lessonCount >= MAX_LESSONS_PER_COURSE) break
-
-            const resolved = resolveShortcut(f)
-            if (!resolved) continue // broken/inaccessible shortcut
-
-            if (resolved.mimeType === FOLDER_MIME) {
-              if (depth < MAX_MODULE_DEPTH) {
-                const { data: modRow } = await supabase.from('course_modules').upsert({
-                  course_id: course.id,
-                  drive_folder_id: resolved.id,
-                  title: f.name.trim(),
-                  sort_order: sortCounter++,
-                }, { onConflict: 'course_id,drive_folder_id' }).select('id').single()
-                modulesImported++
-                await crawl(resolved.id, modRow?.id ?? moduleId, depth + 1)
-              } else {
-                // deep nesting flattens into the nearest module
-                await crawl(resolved.id, moduleId, depth + 1)
-              }
-            } else {
-              const type = lessonType(resolved.mimeType)
-              // Shortcut targets don't carry videoMediaMetadata/size on the
-              // shortcut item itself — only real files do.
-              const duration = f.mimeType !== SHORTCUT_MIME && f.videoMediaMetadata?.durationMillis
-                ? Math.round(Number(f.videoMediaMetadata.durationMillis) / 1000)
-                : null
-              pendingLessons.push({
-                course_id: course.id,
-                module_id: moduleId,
-                drive_file_id: resolved.id,
-                title: f.name.trim(),
-                type,
-                mime_type: resolved.mimeType,
-                duration_seconds: duration,
-                size_bytes: f.mimeType !== SHORTCUT_MIME && f.size ? Number(f.size) : null,
-                sort_order: sortCounter++,
-              })
-              await flushLessons()
-              lessonCount++
-              if (type !== 'video') materialCount++
-              if (duration) totalDuration += duration
-            }
-          }
-          pageToken = page.nextPageToken
-        } while (pageToken && lessonCount < MAX_LESSONS_PER_COURSE)
+      for (const { f, resolved, moduleId } of ordered) {
+        const type = lessonType(resolved.mimeType)
+        // Shortcut targets don't carry videoMediaMetadata/size on the
+        // shortcut item itself — only real files do.
+        const duration = f.mimeType !== SHORTCUT_MIME && f.videoMediaMetadata?.durationMillis
+          ? Math.round(Number(f.videoMediaMetadata.durationMillis) / 1000)
+          : null
+        pendingLessons.push({
+          course_id: course.id,
+          module_id: moduleId,
+          drive_file_id: resolved.id,
+          title: f.name.trim(),
+          type,
+          mime_type: resolved.mimeType,
+          duration_seconds: duration,
+          size_bytes: f.mimeType !== SHORTCUT_MIME && f.size ? Number(f.size) : null,
+          sort_order: lessonSortCounter++,
+        })
+        await flushLessons()
+        if (type !== 'video') materialCount++
+        if (duration) totalDuration += duration
       }
-
-      await crawl(folder.id, null, 0)
       await flushLessons(true)
+      const lessonCount = ordered.length
       lessonsImported += lessonCount
 
       await supabase.from('courses').update({
