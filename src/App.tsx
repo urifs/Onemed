@@ -10,6 +10,9 @@ import { AuthProvider, useAuth } from "@/context/AuthContext";
 import Index from "./pages/Index";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
+import MemberLoginPage from "./pages/MemberLoginPage";
+import MemberDashboardPage from "./pages/MemberDashboardPage";
+import CourseDetailPage from "./pages/CourseDetailPage";
 import Dashboard from "./pages/Dashboard";
 import AccessManagement from "./pages/AccessManagement";
 import DriveSettings from "./pages/DriveSettings";
@@ -51,6 +54,17 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
+const MemberProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+  const { user, loading } = useAuth();
+  if (loading) return (
+    <div className="flex min-h-screen items-center justify-center bg-background">
+      <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+  if (!user) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+};
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
@@ -64,6 +78,11 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/admin/login" element={<LoginPage />} />
             <Route path="/admin/register" element={<RegisterPage />} />
+
+            {/* Member platform */}
+            <Route path="/login" element={<MemberLoginPage />} />
+            <Route path="/membros" element={<MemberProtectedRoute><MemberDashboardPage /></MemberProtectedRoute>} />
+            <Route path="/membros/curso/:slug" element={<MemberProtectedRoute><CourseDetailPage /></MemberProtectedRoute>} />
 
             {/* Protected admin routes */}
             <Route path="/admin" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
