@@ -91,19 +91,26 @@ serve(async (req) => {
     // Redeem the link ourselves instead of emailing it — GoTrue returns the
     // session as a URL fragment on the 303 redirect, so we read it off the
     // Location header without ever exposing the underlying magic link.
-    const verifyUrl = `${supabaseUrl}/auth/v1/verify?token=${linkData.properties.hashed_token}&type=magiclink&redirect_to=${encodeURIComponent(ALLOWED_ORIGINS[0])}`
-    const verifyRes = await fetch(verifyUrl, { redirect: 'manual' })
-    const location = verifyRes.headers.get('location')
-    if (!location) {
-      console.error('verify redeem missing location', verifyRes.status)
-      return jsonResponse(req, { error: 'Não foi possível concluir o login. Tente novamente.' }, 500)
+    // A buyer's very first login has no confirmed auth.users row yet, so
+    // GoTrue files the token as a "signup" confirmation instead of a
+    // "magiclink" one — verifying with the wrong type reports it as expired.
+    // Try both; whichever matches the token's real type wins.
+    const hashedToken = linkData.properties.hashed_token
+    let access_token: string | null = null
+    let refresh_token: string | null = null
+    for (const verifyType of ['magiclink', 'signup']) {
+      const verifyUrl = `${supabaseUrl}/auth/v1/verify?token=${hashedToken}&type=${verifyType}&redirect_to=${encodeURIComponent(ALLOWED_ORIGINS[0])}`
+      const verifyRes = await fetch(verifyUrl, { redirect: 'manual' })
+      const location = verifyRes.headers.get('location')
+      if (!location) continue
+      const fragment = new URLSearchParams(new URL(location).hash.slice(1))
+      access_token = fragment.get('access_token')
+      refresh_token = fragment.get('refresh_token')
+      if (access_token && refresh_token) break
     }
 
-    const fragment = new URLSearchParams(new URL(location).hash.slice(1))
-    const access_token = fragment.get('access_token')
-    const refresh_token = fragment.get('refresh_token')
     if (!access_token || !refresh_token) {
-      console.error('verify redeem missing tokens', location)
+      console.error('verify redeem failed for both magiclink and signup types')
       return jsonResponse(req, { error: 'Não foi possível concluir o login. Tente novamente.' }, 500)
     }
 
