@@ -91,11 +91,45 @@ export default function MemberDashboardPage() {
     return courses.filter(c => c.category === activeCategory);
   }, [courses, activeCategory]);
 
-  const featured = continueList[0]?.courses || courses.find(c => c.category === 'Grandes Cursos · Extensivo R1') || courses[0];
-  const featuredProgressPct = continueList[0] && continueList[0].lessons?.duration_seconds
+  // Hero rotation: the in-progress course (if any) leads, followed by the
+  // biggest flagship courses — ranked by lesson_count as a proxy for "maior
+  // nome" — so the destaque card cycles through the platform's best content.
+  const featuredPool = useMemo(() => {
+    const flagship = courses
+      .filter(c => c.category === 'Extensivo & Intensivo · Residência')
+      .slice()
+      .sort((a, b) => b.lesson_count - a.lesson_count)
+      .slice(0, 8);
+    const pool: Course[] = [];
+    const seen = new Set<string>();
+    const continuing = continueList[0]?.courses;
+    if (continuing) { pool.push(continuing); seen.add(continuing.id); }
+    for (const c of flagship) { if (!seen.has(c.id)) { pool.push(c); seen.add(c.id); } }
+    if (pool.length === 0 && courses[0]) pool.push(courses[0]);
+    return pool;
+  }, [courses, continueList]);
+
+  const [featuredIndex, setFeaturedIndex] = useState(0);
+  const [heroPaused, setHeroPaused] = useState(false);
+
+  useEffect(() => {
+    setFeaturedIndex(0);
+  }, [featuredPool.length]);
+
+  useEffect(() => {
+    if (heroPaused || featuredPool.length < 2) return;
+    const id = setInterval(() => {
+      setFeaturedIndex(i => (i + 1) % featuredPool.length);
+    }, 3000);
+    return () => clearInterval(id);
+  }, [heroPaused, featuredPool.length]);
+
+  const featured = featuredPool[featuredIndex];
+  const isContinuing = continueList[0]?.courses?.id === featured?.id;
+  const featuredProgressPct = isContinuing && continueList[0]?.lessons?.duration_seconds
     ? Math.min(100, (continueList[0].watched_seconds / continueList[0].lessons.duration_seconds) * 100)
     : 0;
-  const featuredLessonId = continueList[0]?.courses?.id === featured?.id ? continueList[0]?.lesson_id : undefined;
+  const featuredLessonId = isContinuing ? continueList[0]?.lesson_id : undefined;
 
   if (loading) {
     return (
@@ -111,16 +145,20 @@ export default function MemberDashboardPage() {
 
       {!searching && !activeCategory && featured && (
         <section className="max-w-[1400px] mx-auto px-4 md:px-8 pt-6">
-          <div className="relative rounded-2xl overflow-hidden border border-border min-h-[280px] md:min-h-[340px] flex items-end shadow-[0_30px_70px_-40px_rgba(239,68,68,0.4)]">
-            <div className="absolute inset-0">
+          <div
+            className="relative rounded-2xl overflow-hidden border border-border min-h-[280px] md:min-h-[340px] flex items-end shadow-[0_30px_70px_-40px_rgba(239,68,68,0.4)]"
+            onMouseEnter={() => setHeroPaused(true)}
+            onMouseLeave={() => setHeroPaused(false)}
+          >
+            <div key={`${featured.id}-cover`} className="absolute inset-0 animate-fade-in">
               <CourseCover title={featured.title} showTitle={false} />
             </div>
             <div className="absolute inset-0 bg-gradient-to-t from-background via-background/55 to-transparent" />
             <div className="absolute inset-0 bg-gradient-to-r from-background/70 via-transparent to-transparent" />
-            <div className="relative p-6 md:p-10 max-w-xl">
+            <div key={`${featured.id}-copy`} className="relative p-6 md:p-10 max-w-xl animate-fade-in">
               <span className="inline-flex items-center gap-1.5 text-[11px] font-bold tracking-widest uppercase text-primary mb-3">
                 <span className="w-1.5 h-1.5 rounded-full bg-primary shadow-[0_0_0_4px_rgba(239,68,68,0.2)]" />
-                {continueList[0] ? 'Continue de onde parou' : 'Destaque'}
+                {isContinuing ? 'Continue de onde parou' : 'Destaque'}
               </span>
               <h1 className="font-secondary text-2xl md:text-4xl font-bold text-foreground leading-tight mb-3">
                 {stripYearFromTitle(featured.title)}
@@ -133,7 +171,7 @@ export default function MemberDashboardPage() {
                   onClick={() => navigate(`/membros/curso/${featured.slug}${featuredLessonId ? `?lesson=${featuredLessonId}` : ''}`)}
                   className="inline-flex items-center gap-2 bg-primary hover:bg-primary-hover text-primary-foreground font-semibold px-6 py-3 rounded-xl transition-colors"
                 >
-                  <Play className="w-4 h-4" fill="currentColor" /> {continueList[0] ? 'Continuar assistindo' : 'Ver curso'}
+                  <Play className="w-4 h-4" fill="currentColor" /> {isContinuing ? 'Continuar assistindo' : 'Ver curso'}
                 </button>
                 <button
                   onClick={() => navigate(`/membros/curso/${featured.slug}`)}
@@ -151,6 +189,19 @@ export default function MemberDashboardPage() {
                 </div>
               )}
             </div>
+
+            {featuredPool.length > 1 && (
+              <div className="absolute bottom-4 right-4 md:bottom-6 md:right-6 flex items-center gap-1.5">
+                {featuredPool.map((c, i) => (
+                  <button
+                    key={c.id}
+                    onClick={() => setFeaturedIndex(i)}
+                    aria-label={`Ver destaque ${i + 1}`}
+                    className={`h-1.5 rounded-full transition-all ${i === featuredIndex ? 'w-6 bg-primary' : 'w-1.5 bg-white/30 hover:bg-white/50'}`}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         </section>
       )}
