@@ -534,6 +534,32 @@ Compra aprovada MP → mp-webhook → status === 'approved'
 
 ---
 
+### 2026-07-18 (sessão remota) — acesso de admin à área de membros
+
+**Problema relatado:** "menu hamburguer com as categorias não aparece no mobile" em `/membros`.
+
+**Investigação:** o componente `CategorySidebar` e o build de CSS/Tailwind foram auditados e
+reproduzidos localmente (build idêntico ao bundle de produção, byte a byte) — ambos corretos,
+o `md:hidden`/`md:block` geram media queries normalmente. O sintoma real era outro: o dono da
+conta (admin, sem nunca ter feito trial ou comprado um plano) não conseguia sequer entrar em
+`/membros`, porque `member-auth-request` (o gate do login por magic link) só liberava o link
+para emails com linha ativa em `accesses` ou `buyers` — `is_member()` já tinha bypass de admin
+(migration `20260718160000_is_member_admin_bypass.sql`), mas esse bypass nunca era alcançado
+porque o login era bloqueado antes.
+
+**Correção:**
+
+| Arquivo | Mudança |
+|---------|---------|
+| `supabase/migrations/20260718200000_member_auth_admin_bypass.sql` | Nova função `is_admin_email(_email)` — checa se o email pertence a um usuário com role `admin` |
+| `supabase/functions/member-auth-request/index.ts` | Gate do magic link agora libera também quando `is_admin_email` é true, sem exigir trial/compra |
+| `src/components/AdminLayout.tsx` | Novo item de navegação "Área de Membros" no painel admin → abre `/membros` em nova aba (a sessão do admin já é válida lá, sem precisar de magic link) |
+
+Gerenciar acessos (criar acesso manual para qualquer email) já existia em `/admin/access`
+(`AccessManagement.tsx`) — nenhuma tela nova foi necessária para isso.
+
+---
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management

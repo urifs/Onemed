@@ -3,7 +3,7 @@
 // Passwordless login gate for the member platform (/membros).
 //   1. Validate email
 //   2. Rate limit (5 tentativas / 15min por IP)
-//   3. Confirm the email has an active trial or a completed purchase
+//   3. Confirm the email has an active trial/purchase, or belongs to an admin
 //   4. Provision (or reuse) the Supabase Auth user + generate a magic link
 //   5. Send a branded email via Resend with the sign-in button
 // ─────────────────────────────────────────────────────────────────────────────
@@ -115,12 +115,13 @@ serve(async (req) => {
       return jsonResponse(req, { error: 'Muitas tentativas. Tente novamente em alguns minutos.', retryAfterSeconds: rate.retryAfterSeconds }, 429)
     }
 
-    const [{ data: activeAccess }, { data: buyer }] = await Promise.all([
+    const [{ data: activeAccess }, { data: buyer }, { data: isAdminEmail }] = await Promise.all([
       supabase.from('accesses').select('id').eq('email', email).eq('status', 'active').limit(1).maybeSingle(),
       supabase.from('buyers').select('id').eq('email', email).eq('access_granted', true).limit(1).maybeSingle(),
+      supabase.rpc('is_admin_email', { _email: email }),
     ])
 
-    if (!activeAccess && !buyer) {
+    if (!activeAccess && !buyer && !isAdminEmail) {
       return jsonResponse(req, { error: 'Nenhum acesso ativo encontrado para este email. Faça um trial gratuito ou verifique sua compra.' }, 404)
     }
 
