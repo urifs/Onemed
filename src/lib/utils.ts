@@ -74,6 +74,23 @@ export async function fetchAllRows<T = any>(
   return all;
 }
 
+export function formatDuration(totalSeconds: number | null | undefined): string {
+  if (!totalSeconds || totalSeconds <= 0) return '';
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.round((totalSeconds % 3600) / 60);
+  if (h > 0) return `${h}h ${String(m).padStart(2, '0')}min`;
+  return `${m}min`;
+}
+
+export function formatFileSize(bytes: number | null | undefined): string {
+  if (!bytes || bytes <= 0) return '';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let value = bytes;
+  let i = 0;
+  while (value >= 1024 && i < units.length - 1) { value /= 1024; i++; }
+  return `${value.toFixed(value >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
 export function formatWhatsApp(value: string, countryCode: string): string {
   const nums = value.replace(/\D/g, '');
   if (countryCode === '+55') {
