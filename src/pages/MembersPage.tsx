@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import {
   UserPlus, Search, XCircle, Loader2, GraduationCap, ExternalLink,
-  Users, BookOpen, FolderOpen, RefreshCw, Upload,
+  Users, BookOpen, FolderOpen, RefreshCw, Upload, CheckCircle2, UserCheck, AlertTriangle,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -292,10 +292,30 @@ export default function MembersPage() {
                   </div>
 
                   {bulkResult && (
-                    <div className="rounded-lg border border-border bg-secondary/50 p-3 text-sm space-y-1">
-                      <p className="text-accent-success font-medium">{bulkResult.granted} acesso(s) concedido(s)</p>
-                      {bulkResult.skipped > 0 && <p className="text-muted-foreground">{bulkResult.skipped} já tinham acesso (pulados)</p>}
-                      {bulkResult.invalid > 0 && <p className="text-muted-foreground">{bulkResult.invalid} linha(s) inválida(s) ignorada(s)</p>}
+                    <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 space-y-2.5">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Resultado da importação</p>
+                      <div className="flex items-center gap-2.5">
+                        <CheckCircle2 className="w-5 h-5 text-accent-success shrink-0" />
+                        <span className="text-sm text-foreground">
+                          <span className="font-bold text-accent-success text-base">{bulkResult.granted}</span> acesso(s) concedido(s)
+                        </span>
+                      </div>
+                      {bulkResult.skipped > 0 && (
+                        <div className="flex items-center gap-2.5">
+                          <UserCheck className="w-5 h-5 text-blue-400 shrink-0" />
+                          <span className="text-sm text-foreground">
+                            <span className="font-bold text-blue-400 text-base">{bulkResult.skipped}</span> já tinham acesso à área de membros — não foram duplicados
+                          </span>
+                        </div>
+                      )}
+                      {bulkResult.invalid > 0 && (
+                        <div className="flex items-center gap-2.5">
+                          <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
+                          <span className="text-sm text-foreground">
+                            <span className="font-bold text-amber-400 text-base">{bulkResult.invalid}</span> linha(s) inválida(s) ignorada(s)
+                          </span>
+                        </div>
+                      )}
                     </div>
                   )}
 
