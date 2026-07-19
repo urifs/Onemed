@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { X, ChevronLeft, ChevronRight, Loader2, Download } from 'lucide-react';
 import { useLessonStreamUrl } from '@/hooks/useLessonStream';
+import { PdfViewer } from './PdfViewer';
 import type { Database } from '@/integrations/supabase/types';
 
 type Lesson = Database['public']['Tables']['lessons']['Row'];
@@ -112,7 +113,7 @@ export function LessonPlayer({
             onEnded={handleEnded}
           />
         ) : lesson.type === 'pdf' ? (
-          <iframe src={src} title={lesson.title} className="w-full h-full bg-white rounded-lg border-0" />
+          <PdfViewer url={src} title={lesson.title} />
         ) : (
           <div className="text-center">
             <p className="text-white/70 text-sm mb-4">Pré-visualização não disponível para este tipo de arquivo.</p>

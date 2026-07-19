@@ -310,6 +310,11 @@ serve(async (req) => {
                 // deep nesting flattens into the nearest module
                 await crawl(resolved.id, moduleId, depth + 1)
               }
+            } else if (resolved.mimeType === 'text/html') {
+              // Stray .html exports (e.g. a Google Doc downloaded as "Web
+              // Page") aren't real course material — skip so they don't show
+              // up as a broken/unplayable "arquivo" in the member area.
+              continue
             } else {
               collected.push({ f, resolved, moduleId })
             }
