@@ -111,7 +111,17 @@ serve(async (req) => {
     if (contentRange) outHeaders.set('Content-Range', contentRange)
     const contentLength = driveRes.headers.get('content-length')
     if (contentLength) outHeaders.set('Content-Length', contentLength)
-    outHeaders.set('Content-Disposition', `inline; filename="${(lesson.title || 'arquivo').replace(/"/g, "'")}"`)
+    // HTTP header values must stay ASCII — course titles are Portuguese and
+    // routinely carry accents ("Questões", "Inéditas"), which silently
+    // dropped this whole header (no error, just missing from the response).
+    // Without Content-Disposition the browser fell back to treating the PDF
+    // as a generic download instead of rendering it inline in the iframe.
+    // Keep a sanitized ASCII filename for older clients and add the RFC 5987
+    // UTF-8 form for everyone else.
+    const rawName = lesson.title || 'arquivo'
+    const asciiName = rawName.replace(/[^\x20-\x7E]/g, '_').replace(/"/g, "'")
+    const encodedName = encodeURIComponent(rawName)
+    outHeaders.set('Content-Disposition', `inline; filename="${asciiName}"; filename*=UTF-8''${encodedName}`)
 
     if (req.method === 'HEAD') {
       return new Response(null, { status: driveRes.status, headers: outHeaders })
