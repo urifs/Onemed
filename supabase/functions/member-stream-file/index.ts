@@ -40,7 +40,10 @@ async function refreshAccessToken(refreshToken: string, clientSecret: string): P
     }),
   })
   const data = await res.json()
-  if (!res.ok || !data.access_token) throw new Error('Failed to refresh Google token')
+  if (!res.ok || !data.access_token) {
+    console.error('Google token refresh failed', res.status, JSON.stringify(data))
+    throw new Error('Failed to refresh Google token')
+  }
   return data.access_token as string
 }
 
