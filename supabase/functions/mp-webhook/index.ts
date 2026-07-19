@@ -341,22 +341,38 @@ serve(async (req) => {
         return new Response('ok', { headers: getCorsHeaders(req) })
       }
 
-      // Check if paid access already exists (extra safety net)
+      // Annual plans expire a year out; lifetime never does. This also backs
+      // the account panel's "Renovar Assinatura" flow — without an expiry,
+      // an annual purchase looked identical to a lifetime one.
+      const accessType = buyer.plan === 'lifetime' ? 'lifetime' : 'paid'
+      const expiresAt = buyer.plan === 'annual' ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString() : null
+
       const { data: existingAccess } = await supabase
         .from('accesses')
-        .select('id')
+        .select('id, access_type')
         .eq('email', buyer.email)
         .eq('status', 'active')
         .neq('access_type', 'trial')
+        .order('created_at', { ascending: false })
         .limit(1)
+        .maybeSingle()
 
-      if (existingAccess && existingAccess.length > 0) {
-        console.log('Active paid access already exists for:', buyer.email, '— skipping insert')
+      if (existingAccess?.access_type === 'lifetime') {
+        console.log('Already has lifetime access for:', buyer.email, '— skipping')
+      } else if (existingAccess) {
+        // A renewal purchase — extend the same row instead of leaving its
+        // old (possibly already-past) expiry untouched.
+        const { error: updateErr } = await supabase.from('accesses').update({
+          access_type: accessType, status: 'active', expires_at: expiresAt, whatsapp: buyer.whatsapp,
+        }).eq('id', existingAccess.id)
+        if (updateErr) console.error('Error renewing access:', updateErr.message)
+        else console.log('Access renewed for:', buyer.email)
       } else {
         const { error: accessErr } = await supabase.from('accesses').insert({
           email: buyer.email,
-          access_type: 'paid',
+          access_type: accessType,
           status: 'active',
+          expires_at: expiresAt,
           whatsapp: buyer.whatsapp,
         })
 
@@ -373,7 +389,7 @@ serve(async (req) => {
         .from('accesses')
         .select('id')
         .eq('email', buyer.email)
-        .eq('access_type', 'paid')
+        .neq('access_type', 'trial')
         .eq('status', 'active')
         .order('created_at', { ascending: false })
         .limit(1)

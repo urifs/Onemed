@@ -1,0 +1,66 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// OneMed · member-account-info
+// Returns the logged-in member's own plan/expiry — accesses and buyers are
+// admin-only tables under RLS, so a member can't just select their own row;
+// this looks it up with the service role, scoped to the caller's own email.
+// ─────────────────────────────────────────────────────────────────────────────
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
+const ALLOWED_ORIGINS = ['https://onemedcursos.com.br', 'http://localhost:5173', 'http://localhost:3000']
+
+function getCorsHeaders(req: Request) {
+  const origin = req.headers.get('origin') || ''
+  const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0]
+  return {
+    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  }
+}
+
+function jsonResponse(req: Request, body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
+  })
+}
+
+serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response(null, { headers: getCorsHeaders(req) })
+
+  try {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    const supabase = createClient(supabaseUrl, serviceKey)
+
+    const jwt = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
+    if (!jwt) return jsonResponse(req, { error: 'Não autenticado' }, 401)
+    const { data: userData } = await supabase.auth.getUser(jwt)
+    if (!userData?.user) return jsonResponse(req, { error: 'Sessão inválida' }, 401)
+    const user = userData.user
+    const email = (user.email || '').toLowerCase()
+
+    const [{ data: isAdmin }, { data: buyer }, { data: accessRows }] = await Promise.all([
+      supabase.rpc('has_role', { _user_id: user.id, _role: 'admin' }),
+      supabase.from('buyers').select('plan, created_at')
+        .eq('email', email).eq('access_granted', true)
+        .order('created_at', { ascending: false }).limit(1).maybeSingle(),
+      supabase.from('accesses').select('access_type, expires_at, granted_at')
+        .eq('email', email).eq('status', 'active').neq('access_type', 'trial'),
+    ])
+
+    const isLifetime = !!isAdmin || buyer?.plan === 'lifetime' || (accessRows || []).some(a => a.access_type === 'lifetime')
+
+    let expiresAt: string | null = null
+    if (!isLifetime) {
+      const expiries = (accessRows || []).map(a => a.expires_at).filter((d): d is string => !!d)
+      if (expiries.length > 0) expiresAt = expiries.sort().at(-1)!
+    }
+
+    const plan = isAdmin ? 'admin' : (buyer?.plan || accessRows?.[0]?.access_type || null)
+
+    return jsonResponse(req, { email, plan, isLifetime, isAdmin: !!isAdmin, expiresAt })
+  } catch (err: any) {
+    console.error(err)
+    return jsonResponse(req, { error: err.message }, 500)
+  }
+})
