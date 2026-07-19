@@ -26,6 +26,13 @@ export function PdfViewer({ url, title }: { url: string; title: string }) {
       try {
         const pdf = await pdfjsLib.getDocument({ url }).promise;
         const containerWidth = container.clientWidth || 800;
+        // Canvas backing-store resolution defaults to 1 pixel per CSS pixel —
+        // on a phone with devicePixelRatio 2-3x, a page fit to the container
+        // width in "regular" pixels gets stretched across 2-3x as many
+        // physical pixels, which is exactly the blur reported. Render at
+        // devicePixelRatio (floored at 1.5 so even standard displays stay
+        // crisp) and let CSS scale it back down to the same display size.
+        const outputScale = Math.min(Math.max(window.devicePixelRatio || 1, 1.5), 3);
         for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
           if (cancelled) return;
           const page = await pdf.getPage(pageNum);
@@ -34,13 +41,20 @@ export function PdfViewer({ url, title }: { url: string; title: string }) {
           const viewport = page.getViewport({ scale });
 
           const canvas = document.createElement('canvas');
-          canvas.className = 'w-full h-auto shadow-lg mb-3 rounded';
-          canvas.width = viewport.width;
-          canvas.height = viewport.height;
+          canvas.className = 'shadow-lg mb-3 rounded';
+          canvas.width = Math.floor(viewport.width * outputScale);
+          canvas.height = Math.floor(viewport.height * outputScale);
+          canvas.style.width = `${viewport.width}px`;
+          canvas.style.height = `${viewport.height}px`;
           const ctx = canvas.getContext('2d');
           if (!ctx || cancelled) return;
           container.appendChild(canvas);
-          await page.render({ canvasContext: ctx, viewport, canvas }).promise;
+          await page.render({
+            canvasContext: ctx,
+            viewport,
+            canvas,
+            transform: [outputScale, 0, 0, outputScale, 0, 0],
+          }).promise;
           if (pageNum === 1 && !cancelled) setLoading(false);
         }
       } catch (err) {
