@@ -4,11 +4,12 @@ import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
 import { extractFunctionErrorMessage, formatDateSP } from '@/lib/utils';
+import { usePwaInstall } from '@/hooks/usePwaInstall';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { User, LogOut, MessageCircle, RefreshCw, Loader2, Save } from 'lucide-react';
+import { User, LogOut, MessageCircle, RefreshCw, Loader2, Save, Download, Share } from 'lucide-react';
 
 const SUPPORT_PHONE = '5563999191551';
 const PLAN_LABELS: Record<string, string> = {
@@ -32,6 +33,8 @@ export function AccountMenu() {
   const [name, setName] = useState('');
   const [savingName, setSavingName] = useState(false);
   const [renewing, setRenewing] = useState(false);
+  const [showIosHelp, setShowIosHelp] = useState(false);
+  const { installed, isIOS, canInstallDirectly, promptInstall } = usePwaInstall();
 
   const loadInfo = useCallback(async () => {
     if (!user) return;
@@ -187,6 +190,26 @@ export function AccountMenu() {
                 </Button>
               )}
             </div>
+
+            {!installed && (isIOS || canInstallDirectly) && (
+              <div className="p-4 space-y-2">
+                <Button
+                  onClick={() => (isIOS ? setShowIosHelp(v => !v) : promptInstall())}
+                  variant="outline"
+                  size="sm"
+                  className="w-full border-border text-foreground hover:bg-secondary gap-1.5"
+                >
+                  <Download className="w-3.5 h-3.5" /> Instalar App
+                </Button>
+                {showIosHelp && (
+                  <p className="text-xs text-muted-foreground leading-relaxed flex items-start gap-1.5">
+                    <Share className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                    Toque em <strong className="text-foreground">Compartilhar</strong> na barra do Safari e depois em{' '}
+                    <strong className="text-foreground">"Adicionar à Tela de Início"</strong>.
+                  </p>
+                )}
+              </div>
+            )}
 
             <div className="p-2">
               <a
