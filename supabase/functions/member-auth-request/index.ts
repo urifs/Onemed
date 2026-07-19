@@ -119,6 +119,14 @@ serve(async (req) => {
       return jsonResponse(req, { error: 'Não foi possível concluir o login. Tente novamente.' }, 500)
     }
 
+    // Limite de 2 dispositivos simultâneos por conta: mantém só as sessões
+    // mais recentes (a que acabou de ser criada entra nessa contagem), o que
+    // derruba o refresh token do dispositivo mais antigo no próximo refresh.
+    if (linkData.user?.id) {
+      const { error: limitErr } = await supabase.rpc('enforce_session_limit', { _user_id: linkData.user.id, _max_sessions: 2 })
+      if (limitErr) console.error('enforce_session_limit error', limitErr)
+    }
+
     return jsonResponse(req, { success: true, access_token, refresh_token })
   } catch (err: any) {
     console.error(err)

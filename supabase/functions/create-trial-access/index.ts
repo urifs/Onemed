@@ -92,7 +92,15 @@ async function issueSession(supabase: ReturnType<typeof createClient>, supabaseU
     const fragment = new URLSearchParams(new URL(location).hash.slice(1))
     const access_token = fragment.get('access_token')
     const refresh_token = fragment.get('refresh_token')
-    if (access_token && refresh_token) return { access_token, refresh_token }
+    if (access_token && refresh_token) {
+      // Limite de 2 dispositivos simultâneos: mantém só as sessões mais
+      // recentes, derrubando o refresh token do dispositivo mais antigo.
+      if (linkData.user?.id) {
+        const { error: limitErr } = await supabase.rpc('enforce_session_limit', { _user_id: linkData.user.id, _max_sessions: 2 })
+        if (limitErr) console.error('enforce_session_limit error', limitErr)
+      }
+      return { access_token, refresh_token }
+    }
   }
   return null
 }
