@@ -12,7 +12,7 @@ import { User, LogOut, MessageCircle, RefreshCw, Loader2, Save } from 'lucide-re
 
 const SUPPORT_PHONE = '5563999191551';
 const PLAN_LABELS: Record<string, string> = {
-  lifetime: 'Vitalício', annual: 'Anual', paid: 'Pago', trial: 'Trial', admin: 'Administrador',
+  lifetime: 'Vitalício', annual: 'Anual', paid: 'Pago', trial: 'Teste Grátis (30 min)', admin: 'Administrador',
 };
 
 interface AccountInfo {
@@ -32,6 +32,7 @@ export function AccountMenu() {
   const [name, setName] = useState('');
   const [savingName, setSavingName] = useState(false);
   const [renewing, setRenewing] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
 
   const loadInfo = useCallback(async () => {
     if (!user) return;
@@ -52,6 +53,12 @@ export function AccountMenu() {
   }, [user]);
 
   useEffect(() => { if (open) loadInfo(); }, [open, loadInfo]);
+
+  useEffect(() => {
+    if (!open || info?.plan !== 'trial') return;
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [open, info?.plan]);
 
   const saveName = async () => {
     if (!user) return;
@@ -110,10 +117,22 @@ export function AccountMenu() {
     navigate('/login');
   };
 
+  const isTrial = info?.plan === 'trial';
+
   const daysRemaining = (() => {
     if (!info?.expiresAt) return null;
     const diff = new Date(info.expiresAt).getTime() - Date.now();
     return Math.ceil(diff / (24 * 60 * 60 * 1000));
+  })();
+
+  const trialRemaining = (() => {
+    if (!isTrial || !info?.expiresAt) return null;
+    const diffMs = new Date(info.expiresAt).getTime() - now;
+    if (diffMs <= 0) return 'Expirado';
+    const totalSeconds = Math.floor(diffMs / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')} restantes`;
   })();
 
   const planLabel = info?.plan ? (PLAN_LABELS[info.plan] || info.plan) : '—';
@@ -167,23 +186,25 @@ export function AccountMenu() {
                 <span className="text-foreground font-medium">
                   {info?.isLifetime
                     ? 'Vitalício'
-                    : info?.expiresAt
-                      ? (daysRemaining !== null && daysRemaining < 0
-                          ? 'Expirado'
-                          : `${daysRemaining}d · ${formatDateSP(info.expiresAt)}`)
-                      : '—'}
+                    : isTrial
+                      ? trialRemaining
+                      : info?.expiresAt
+                        ? (daysRemaining !== null && daysRemaining < 0
+                            ? 'Expirado'
+                            : `${daysRemaining}d · ${formatDateSP(info.expiresAt)}`)
+                        : '—'}
                 </span>
               </div>
 
               {!info?.isLifetime && !info?.isAdmin && (
                 <Button
-                  onClick={handleRenew}
+                  onClick={isTrial ? () => navigate('/checkout') : handleRenew}
                   disabled={renewing}
                   size="sm"
                   className="w-full mt-2 bg-primary hover:bg-primary-hover text-primary-foreground gap-1.5"
                 >
                   {renewing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                  {renewing ? 'Abrindo pagamento...' : 'Renovar Assinatura'}
+                  {renewing ? 'Abrindo pagamento...' : isTrial ? 'Adquirir Acesso Completo' : 'Renovar Assinatura'}
                 </Button>
               )}
             </div>

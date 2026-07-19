@@ -45,18 +45,31 @@ serve(async (req) => {
         .eq('email', email).eq('access_granted', true)
         .order('created_at', { ascending: false }).limit(1).maybeSingle(),
       supabase.from('accesses').select('access_type, expires_at, granted_at')
-        .eq('email', email).eq('status', 'active').neq('access_type', 'trial'),
+        .eq('email', email).eq('status', 'active'),
     ])
 
-    const isLifetime = !!isAdmin || buyer?.plan === 'lifetime' || (accessRows || []).some(a => a.access_type === 'lifetime')
+    const nonTrialRows = (accessRows || []).filter(a => a.access_type !== 'trial')
+    const trialRows = (accessRows || []).filter(a => a.access_type === 'trial')
+
+    const isLifetime = !!isAdmin || buyer?.plan === 'lifetime' || nonTrialRows.some(a => a.access_type === 'lifetime')
 
     let expiresAt: string | null = null
-    if (!isLifetime) {
-      const expiries = (accessRows || []).map(a => a.expires_at).filter((d): d is string => !!d)
+    let plan: string | null = null
+
+    if (isAdmin) {
+      plan = 'admin'
+    } else if (isLifetime) {
+      plan = 'lifetime'
+    } else if (nonTrialRows.length > 0 || buyer) {
+      // Comprador (pago/anual) tem prioridade sobre um trial antigo que ainda esteja ativo
+      plan = buyer?.plan || nonTrialRows[0]?.access_type || null
+      const expiries = nonTrialRows.map(a => a.expires_at).filter((d): d is string => !!d)
+      if (expiries.length > 0) expiresAt = expiries.sort().at(-1)!
+    } else if (trialRows.length > 0) {
+      plan = 'trial'
+      const expiries = trialRows.map(a => a.expires_at).filter((d): d is string => !!d)
       if (expiries.length > 0) expiresAt = expiries.sort().at(-1)!
     }
-
-    const plan = isAdmin ? 'admin' : (buyer?.plan || accessRows?.[0]?.access_type || null)
 
     return jsonResponse(req, { email, plan, isLifetime, isAdmin: !!isAdmin, expiresAt })
   } catch (err: any) {
