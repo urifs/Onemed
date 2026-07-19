@@ -9,11 +9,31 @@ import { Label } from '@/components/ui/label';
 import { formatDateTimeSP, fetchAllRows } from '@/lib/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 import {
   UserPlus, Search, XCircle, Loader2, GraduationCap, ExternalLink,
-  Users, BookOpen, FolderOpen, RefreshCw,
+  Users, BookOpen, FolderOpen, RefreshCw, Upload,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const BULK_CHUNK_SIZE = 300;
+
+function extractEmails(raw: string): string[] {
+  // Accepts one-per-line, comma/semicolon-separated, or a messy paste with
+  // other text around each address — pull out anything email-shaped.
+  const matches = raw.match(/[^\s,;<>"']+@[^\s,;<>"']+\.[^\s,;<>"']+/g) || [];
+  const seen = new Set<string>();
+  const emails: string[] = [];
+  for (const m of matches) {
+    const email = m.trim().toLowerCase().replace(/[.,;]+$/, '');
+    if (EMAIL_REGEX.test(email) && !seen.has(email)) {
+      seen.add(email);
+      emails.push(email);
+    }
+  }
+  return emails;
+}
 
 interface MemberRow {
   email: string;
@@ -33,6 +53,13 @@ export default function MembersPage() {
   const [newEmail, setNewEmail] = useState('');
   const [newPlan, setNewPlan] = useState('lifetime');
   const [adding, setAdding] = useState(false);
+
+  const [isBulkOpen, setIsBulkOpen] = useState(false);
+  const [bulkText, setBulkText] = useState('');
+  const [bulkPlan, setBulkPlan] = useState('lifetime');
+  const [bulkImporting, setBulkImporting] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
+  const [bulkResult, setBulkResult] = useState<{ granted: number; skipped: number; invalid: number } | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -105,6 +132,64 @@ export default function MembersPage() {
     }
   };
 
+  const handleBulkFile = async (file: File) => {
+    const text = await file.text();
+    setBulkText(prev => (prev ? `${prev}\n${text}` : text));
+  };
+
+  const bulkImport = async () => {
+    const candidates = extractEmails(bulkText);
+    const invalidCount = (bulkText.split(/\r?\n/).map(l => l.trim()).filter(Boolean).length) - candidates.length;
+    if (candidates.length === 0) { toast.error('Nenhum email válido encontrado no texto'); return; }
+
+    setBulkImporting(true);
+    setBulkResult(null);
+    setBulkProgress({ done: 0, total: candidates.length });
+    try {
+      // Anyone who already has active access (any grant type, or a purchase)
+      // gets skipped instead of a redundant second row.
+      const [{ data: existingAccesses }, { data: existingBuyers }] = await Promise.all([
+        fetchAllRows((f, t) => supabase.from('accesses').select('email').eq('status', 'active').range(f, t)),
+        fetchAllRows((f, t) => supabase.from('buyers').select('email').eq('access_granted', true).range(f, t)),
+      ]);
+      const covered = new Set([
+        ...(existingAccesses || []).map((a: any) => a.email.toLowerCase()),
+        ...(existingBuyers || []).map((b: any) => b.email.toLowerCase()),
+      ]);
+
+      const toInsert = candidates.filter(e => !covered.has(e));
+      const skipped = candidates.length - toInsert.length;
+      const expiresAt = bulkPlan === 'annual'
+        ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
+        : null;
+
+      let granted = 0;
+      for (let i = 0; i < toInsert.length; i += BULK_CHUNK_SIZE) {
+        const chunk = toInsert.slice(i, i + BULK_CHUNK_SIZE);
+        const { error } = await supabase.from('accesses').insert(
+          chunk.map(email => ({ email, access_type: bulkPlan, status: 'active', expires_at: expiresAt }))
+        );
+        if (error) throw error;
+        granted += chunk.length;
+        setBulkProgress({ done: Math.min(i + BULK_CHUNK_SIZE, toInsert.length), total: toInsert.length });
+      }
+
+      setBulkResult({ granted, skipped, invalid: Math.max(invalidCount, 0) });
+      toast.success(`${granted} acesso(s) concedido(s)`);
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao importar');
+    } finally {
+      setBulkImporting(false);
+      setBulkProgress(null);
+    }
+  };
+
+  const closeBulkDialog = (open: boolean) => {
+    setIsBulkOpen(open);
+    if (!open) { setBulkText(''); setBulkResult(null); }
+  };
+
   const revokeAccess = async (accessId: string) => {
     try {
       const { error } = await supabase.from('accesses').update({ status: 'revoked' }).eq('id', accessId);
@@ -160,6 +245,65 @@ export default function MembersPage() {
                   <Button onClick={grantAccess} disabled={adding} className="w-full bg-primary hover:bg-primary-hover text-primary-foreground gap-2">
                     {adding ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                     {adding ? 'Concedendo...' : 'Conceder Acesso'}
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            <Dialog open={isBulkOpen} onOpenChange={closeBulkDialog}>
+              <DialogTrigger asChild>
+                <Button variant="outline" className="gap-2 border-border text-foreground hover:bg-secondary">
+                  <Upload className="w-4 h-4" /> Importar em Massa
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="bg-background-paper border-border max-w-lg">
+                <DialogHeader>
+                  <DialogTitle className="text-foreground">Importar Acessos em Massa</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 pt-2">
+                  <div className="space-y-2">
+                    <Label className="text-foreground">Emails (um por linha, ou cole uma lista/TXT)</Label>
+                    <Textarea
+                      value={bulkText}
+                      onChange={e => setBulkText(e.target.value)}
+                      placeholder={'aluno1@email.com\naluno2@email.com\naluno3@email.com'}
+                      rows={8}
+                      className="bg-secondary border-border text-foreground font-mono text-xs"
+                    />
+                    <label className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline cursor-pointer">
+                      <Upload className="w-3 h-3" /> ou selecione um arquivo .txt
+                      <input
+                        type="file"
+                        accept=".txt,text/plain"
+                        className="hidden"
+                        onChange={e => { const f = e.target.files?.[0]; if (f) handleBulkFile(f); e.target.value = ''; }}
+                      />
+                    </label>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-foreground">Plano</Label>
+                    <Select value={bulkPlan} onValueChange={setBulkPlan}>
+                      <SelectTrigger className="bg-secondary border-border text-foreground"><SelectValue /></SelectTrigger>
+                      <SelectContent className="bg-background-paper border-border">
+                        <SelectItem value="lifetime">Vitalício</SelectItem>
+                        <SelectItem value="annual">Anual (365 dias)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {bulkResult && (
+                    <div className="rounded-lg border border-border bg-secondary/50 p-3 text-sm space-y-1">
+                      <p className="text-accent-success font-medium">{bulkResult.granted} acesso(s) concedido(s)</p>
+                      {bulkResult.skipped > 0 && <p className="text-muted-foreground">{bulkResult.skipped} já tinham acesso (pulados)</p>}
+                      {bulkResult.invalid > 0 && <p className="text-muted-foreground">{bulkResult.invalid} linha(s) inválida(s) ignorada(s)</p>}
+                    </div>
+                  )}
+
+                  <Button onClick={bulkImport} disabled={bulkImporting || !bulkText.trim()} className="w-full bg-primary hover:bg-primary-hover text-primary-foreground gap-2">
+                    {bulkImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                    {bulkImporting
+                      ? `Importando... ${bulkProgress ? `${bulkProgress.done}/${bulkProgress.total}` : ''}`
+                      : 'Importar e Conceder Acesso'}
                   </Button>
                 </div>
               </DialogContent>
