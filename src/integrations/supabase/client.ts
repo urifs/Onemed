@@ -31,29 +31,21 @@ function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}): Pro
   return fetch(input, { ...init, signal: controller.signal }).finally(() => clearTimeout(timeoutId));
 }
 
-// GoTrueClient serializes session-mutating calls (getSession, refreshSession,
-// setSession, signOut) through this lock so overlapping calls — e.g. the
-// background auto-refresh timer firing while a page's own getSession() is
-// still in flight — don't race each other. The previous override here just
-// called fn() with no serialization at all, which is what navigator.locks
-// exists to prevent; two concurrent calls could interleave inside GoTrue's
-// internal state machine and leave a caller's promise waiting on a slot that
-// never resolves — a stuck page that only a hard reload clears. This chains
-// every call through a single in-memory queue instead, so callers still get
-// FIFO serialization without depending on the Web Locks API.
-let lockChain: Promise<unknown> = Promise.resolve();
-function serializedLock<T>(_name: string, _acquireTimeout: number, fn: () => Promise<T>): Promise<T> {
-  const result = lockChain.then(fn, fn);
-  lockChain = result.then(() => undefined, () => undefined);
-  return result;
-}
-
+// No custom `lock` here — this version of @supabase/auth-js dedupes
+// concurrent refreshes itself and explicitly documents its own lock
+// primitives as a legacy path kept only for backwards-compatible imports
+// ("TODO(v3): remove legacy lock path", all over GoTrueClient). Supplying
+// any custom lock function (this project previously had two: a no-op, then
+// a hand-rolled FIFO queue) forces the client onto that legacy path instead
+// of the modern lockless default — and neither hand-rolled version honored
+// `acquireTimeout`, the internal budget GoTrueClient relies on to fail fast
+// instead of blocking. That's what left users stuck on a loading spinner
+// after login. Trust the library's own default.
 export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: {
     storage: localStorage,
     persistSession: true,
     autoRefreshToken: true,
-    lock: serializedLock,
   },
   global: {
     fetch: fetchWithTimeout,
