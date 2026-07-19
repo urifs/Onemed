@@ -63,17 +63,22 @@ serve(async (req) => {
 
     if (!EMAIL_REGEX.test(email)) return jsonResponse(req, { error: 'Email inválido' }, 400)
 
-    const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() || 'unknown'
-    const rate = await checkRateLimit(supabase, ip)
-    if (!rate.allowed) {
-      return jsonResponse(req, { error: 'Muitas tentativas. Tente novamente em alguns minutos.', retryAfterSeconds: rate.retryAfterSeconds }, 429)
-    }
-
     const [{ data: activeAccess }, { data: buyer }, { data: isAdminEmail }] = await Promise.all([
       supabase.from('accesses').select('id').eq('email', email).eq('status', 'active').limit(1).maybeSingle(),
       supabase.from('buyers').select('id').eq('email', email).eq('access_granted', true).limit(1).maybeSingle(),
       supabase.rpc('is_admin_email', { _email: email }),
     ])
+
+    // Admins juggle this login constantly while testing/debugging the
+    // platform itself — rate limiting them out of their own site is a
+    // self-inflicted lockout, not abuse prevention.
+    if (!isAdminEmail) {
+      const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() || 'unknown'
+      const rate = await checkRateLimit(supabase, ip)
+      if (!rate.allowed) {
+        return jsonResponse(req, { error: 'Muitas tentativas. Tente novamente em alguns minutos.', retryAfterSeconds: rate.retryAfterSeconds }, 429)
+      }
+    }
 
     if (!activeAccess && !buyer && !isAdminEmail) {
       return jsonResponse(req, { error: 'Nenhum acesso ativo encontrado para este email. Faça um trial gratuito ou verifique sua compra.' }, 404)
