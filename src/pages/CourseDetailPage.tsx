@@ -57,6 +57,12 @@ export default function CourseDetailPage() {
 
   useEffect(() => {
     let alive = true;
+    setCourse(undefined);
+    setModules([]);
+    setLessons([]);
+    setProgressMap({});
+    setActiveLesson(null);
+    setLoadError(false);
     (async () => {
       try {
         const { data: courseRow, error: courseErr } = await supabase.from('courses').select('*').eq('slug', slug).eq('active', true).maybeSingle();
