@@ -1,8 +1,7 @@
 import { useState } from 'react';
-import { LayoutGrid, Menu, type LucideIcon } from 'lucide-react';
+import { LayoutGrid, Menu, X, type LucideIcon } from 'lucide-react';
 import { CATEGORY_ICON } from '@/lib/courseCategories';
 import { cn } from '@/lib/utils';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 
 interface CategoryEntry {
   name: string;
@@ -54,20 +53,35 @@ export function CategorySidebar({ categories, active, onSelect, totalCount }: Ca
         </div>
       </aside>
 
-      {/* Mobile: hamburger trigger opens a drawer with the full category list */}
+      {/* Mobile: hamburger trigger opens a drawer with the full category list.
+          Plain fixed-overlay implementation (same recipe as LessonPlayer)
+          instead of the Radix Sheet primitive — keeps this to one proven
+          pattern rather than a second, untested overlay mechanism. */}
       <div className="md:hidden mb-5">
-        <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-          <SheetTrigger asChild>
-            <button className="inline-flex items-center gap-2 max-w-full px-3.5 py-2 rounded-lg bg-secondary border border-border text-sm font-medium text-foreground">
-              <Menu className="w-4 h-4 shrink-0" />
-              <span className="truncate">{active || 'Categorias'}</span>
-            </button>
-          </SheetTrigger>
-          <SheetContent side="left" className="w-[85vw] max-w-xs overflow-y-auto">
-            <SheetHeader>
-              <SheetTitle>Categorias</SheetTitle>
-            </SheetHeader>
-            <div className="mt-4 space-y-0.5">
+        <button
+          onClick={() => setMobileOpen(true)}
+          className="inline-flex items-center gap-2 max-w-full px-3.5 py-2 rounded-lg bg-secondary border border-border text-sm font-medium text-foreground"
+        >
+          <Menu className="w-4 h-4 shrink-0" />
+          <span className="truncate">{active || 'Categorias'}</span>
+        </button>
+      </div>
+
+      {mobileOpen && (
+        <div className="md:hidden fixed inset-0 z-50 flex">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setMobileOpen(false)} />
+          <div className="relative w-[80vw] max-w-xs h-full bg-background border-r border-border overflow-y-auto p-5 animate-fade-in">
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Categorias</p>
+              <button
+                onClick={() => setMobileOpen(false)}
+                aria-label="Fechar"
+                className="w-8 h-8 rounded-full bg-secondary border border-border flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="space-y-0.5">
               <SidebarItem
                 label="Todos os cursos"
                 count={totalCount}
@@ -86,9 +100,9 @@ export function CategorySidebar({ categories, active, onSelect, totalCount }: Ca
                 />
               ))}
             </div>
-          </SheetContent>
-        </Sheet>
-      </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
