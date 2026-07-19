@@ -95,7 +95,7 @@ export const HeroSection = ({
           <form onSubmit={onSubmit} className="space-y-3 max-w-md">
             <Input
               type="email"
-              placeholder="Seu email do Google"
+              placeholder="Seu melhor email"
               value={email}
               onChange={e => setEmail(e.target.value)}
               className="h-12 bg-secondary border-border text-foreground placeholder:text-muted-foreground focus:border-primary/50"

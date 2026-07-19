@@ -3,10 +3,12 @@
 // Fluxo enxuto:
 //   1. Validar email + WhatsApp
 //   2. Bloquear quem já é comprador aprovado ou já fez trial
-//   3. Compartilhar a pasta no Google Drive (síncrono — sem sucesso aqui, não
-//      cria registro; o cron depende do drive_permission_id para revogar)
-//   4. Inserir access com expires_at = now + 30min
-//   5. Disparar email e ManyChat em fire-and-forget (não bloqueia a resposta)
+//   3. Inserir access com expires_at = now + 30min (dá acesso à área de
+//      membros/membros — não compartilha mais pasta do Google Drive)
+//   4. Gerar sessão instantânea (mesmo truque do member-auth-request) pra
+//      já devolver o usuário logado direto em /membros, sem precisar de link
+//      por email
+//   5. Disparar email de confirmação em fire-and-forget (não bloqueia)
 // ─────────────────────────────────────────────────────────────────────────────
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -70,53 +72,29 @@ async function checkRateLimit(
   return { allowed: true }
 }
 
-// ─── GOOGLE DRIVE ────────────────────────────────────────────────────────────
-const GOOGLE_CLIENT_ID = '110017470335-2l6er8r451vj5hf3ob05rvolc2p4v9ku.apps.googleusercontent.com'
-
-async function refreshGoogleToken(refreshToken: string, clientSecret: string): Promise<string> {
-  const res = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      refresh_token: refreshToken,
-      client_id: GOOGLE_CLIENT_ID,
-      client_secret: clientSecret,
-      grant_type: 'refresh_token',
-    }),
-  })
-  const data = await res.json()
-  if (!res.ok || !data.access_token) throw new Error('Falha ao renovar token do Google')
-  return data.access_token as string
-}
-
-async function shareDriveFolder(
-  supabase: ReturnType<typeof createClient>,
-  email: string,
-): Promise<{ folderId: string; folderName: string | null; permissionId: string } | null> {
-  const { data: config } = await supabase.from('drive_config').select('*').maybeSingle()
-  if (!config?.connected || !config.folder_id) return null
-
-  let accessToken = config.access_token
-  const expiry = config.token_expiry ? new Date(config.token_expiry) : null
-  if (!expiry || expiry < new Date()) {
-    if (!config.refresh_token) throw new Error('Google Drive não autenticado (sem refresh token)')
-    const GOOGLE_CLIENT_SECRET = Deno.env.get('GOOGLE_CLIENT_SECRET')!
-    accessToken = await refreshGoogleToken(config.refresh_token, GOOGLE_CLIENT_SECRET)
-    await supabase.from('drive_config').update({
-      access_token: accessToken,
-      token_expiry: new Date(Date.now() + 3600 * 1000).toISOString(),
-    }).eq('id', config.id)
+// Redeems a fresh magic link server-side instead of emailing it, so the
+// caller gets a ready-to-use session back in the same response — same
+// technique as member-auth-request. A first-ever login has no confirmed
+// auth.users row yet, so GoTrue files the token as a "signup" confirmation
+// instead of a "magiclink" one; try both.
+async function issueSession(supabase: ReturnType<typeof createClient>, supabaseUrl: string, email: string) {
+  const { data: linkData, error: linkErr } = await supabase.auth.admin.generateLink({ type: 'magiclink', email })
+  if (linkErr || !linkData?.properties?.hashed_token) {
+    console.error('generateLink error', linkErr)
+    return null
   }
-
-  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${config.folder_id}/permissions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
-    body: JSON.stringify({ role: 'reader', type: 'user', emailAddress: email, sendNotificationEmail: false }),
-  })
-  const perm = await res.json()
-  if (!res.ok) throw new Error(perm?.error?.message || 'Falha ao compartilhar pasta')
-
-  return { folderId: config.folder_id, folderName: config.folder_name ?? null, permissionId: perm.id }
+  const hashedToken = linkData.properties.hashed_token
+  for (const verifyType of ['magiclink', 'signup']) {
+    const verifyUrl = `${supabaseUrl}/auth/v1/verify?token=${hashedToken}&type=${verifyType}&redirect_to=${encodeURIComponent(ALLOWED_ORIGINS[0])}`
+    const verifyRes = await fetch(verifyUrl, { redirect: 'manual' })
+    const location = verifyRes.headers.get('location')
+    if (!location) continue
+    const fragment = new URLSearchParams(new URL(location).hash.slice(1))
+    const access_token = fragment.get('access_token')
+    const refresh_token = fragment.get('refresh_token')
+    if (access_token && refresh_token) return { access_token, refresh_token }
+  }
+  return null
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -135,10 +113,6 @@ serve(async (req) => {
     }
 
     const normalizedEmail = String(email).toLowerCase().trim()
-
-    if (!normalizedEmail.endsWith('@gmail.com')) {
-      return jsonResponse(req, { error: 'Por favor, use um e-mail Gmail (@gmail.com). O acesso ao Drive funciona melhor com Gmail.' }, 400)
-    }
 
     // ── Rate limit por IP ──
     const clientIp = (req.headers.get('x-forwarded-for') || '').split(',')[0].trim()
@@ -164,7 +138,7 @@ serve(async (req) => {
       }, 409)
     }
 
-    // ── Se já tem trial ativo, devolve o tempo restante ──
+    // ── Se já tem trial, devolve sessão (ativo) ou bloqueia (expirado) ──
     const { data: existing } = await supabase
       .from('accesses')
       .select('id, status, expires_at')
@@ -176,11 +150,13 @@ serve(async (req) => {
       if (existing.status === 'active' && existing.expires_at) {
         const diffMs = new Date(existing.expires_at).getTime() - Date.now()
         if (diffMs > 0) {
+          const session = await issueSession(supabase, supabaseUrl, normalizedEmail)
           return jsonResponse(req, {
             alreadyActive: true,
             email: normalizedEmail,
             minutesRemaining: Math.floor(diffMs / 60000),
             secondsRemaining: Math.floor((diffMs % 60000) / 1000),
+            ...(session || {}),
           })
         }
       }
@@ -189,20 +165,7 @@ serve(async (req) => {
       }, 409)
     }
 
-    // ── Compartilhar Drive SÍNCRONO — se falhar, não criamos acesso ──
-    let drive: { folderId: string; folderName: string | null; permissionId: string } | null = null
-    try {
-      drive = await shareDriveFolder(supabase, normalizedEmail)
-    } catch (e: any) {
-      console.error('Drive share falhou:', e.message)
-      return jsonResponse(req, { error: 'Não foi possível liberar o acesso à pasta. Tente novamente em instantes.' }, 503)
-    }
-
-    if (!drive) {
-      return jsonResponse(req, { error: 'Sistema temporariamente indisponível (Drive não conectado).' }, 503)
-    }
-
-    // ── Criar registro de acesso com perm_id já salvo ──
+    // ── Criar registro de acesso ──
     const accessId = crypto.randomUUID()
     const expiresAt = new Date(Date.now() + TRIAL_DURATION_MINUTES * 60 * 1000).toISOString()
 
@@ -213,35 +176,20 @@ serve(async (req) => {
       access_type: 'trial',
       status: 'active',
       expires_at: expiresAt,
-      drive_folder_id: drive.folderId,
-      drive_folder_name: drive.folderName,
-      drive_permission_id: drive.permissionId,
     })
 
-    if (insertError) {
-      // Rollback: remove a permissão do Drive pois o registro não foi criado.
-      try {
-        const { data: cfg } = await supabase.from('drive_config').select('access_token').maybeSingle()
-        if (cfg?.access_token) {
-          await fetch(
-            `https://www.googleapis.com/drive/v3/files/${drive.folderId}/permissions/${drive.permissionId}`,
-            { method: 'DELETE', headers: { Authorization: `Bearer ${cfg.access_token}` } },
-          )
-        }
-      } catch { /* best effort */ }
-      throw insertError
+    if (insertError) throw insertError
+
+    const session = await issueSession(supabase, supabaseUrl, normalizedEmail)
+    if (!session) {
+      return jsonResponse(req, { error: 'Acesso criado, mas não foi possível iniciar a sessão. Tente entrar em /login.' }, 500)
     }
 
     // ── Side-effects fire-and-forget ──
     supabase.from('visits').insert({ page: 'trial', user_agent: '' }).then(() => {}).catch(() => {})
 
     supabase.functions.invoke('send-access-email', {
-      body: {
-        to: normalizedEmail,
-        type: 'trial_access',
-        folderId: drive.folderId,
-        folderName: drive.folderName,
-      },
+      body: { to: normalizedEmail, type: 'trial_access' },
     }).then(() => {}).catch((e: any) => console.warn('Trial email falhou:', e))
 
     return jsonResponse(req, {
@@ -250,6 +198,7 @@ serve(async (req) => {
       email: normalizedEmail,
       minutesRemaining: TRIAL_DURATION_MINUTES,
       secondsRemaining: 0,
+      ...session,
     })
   } catch (err: any) {
     console.error('create-trial-access error:', err)
