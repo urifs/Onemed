@@ -1,18 +1,16 @@
-// Deliberately does nothing beyond existing — this app deploys hotfixes
-// constantly, and a service worker that caches/intercepts navigation or
-// script requests risks serving stale (or briefly broken) code after every
-// deploy, which is exactly what happened right after this file first shipped
-// with a cache-first/network-first strategy: it left users stuck on a
-// spinner after login until they force-reloaded.
-//
-// A service worker with zero fetch interception is still enough for Chrome's
-// PWA install criteria (manifest + HTTPS + a registered service worker) —
-// every request just falls through to the network exactly as if there were
-// no service worker at all.
+// The PWA install feature for /membros has been removed — this file only
+// exists to reach any browser that already registered the old (buggy)
+// service worker and make it undo itself: wipe every cache, unregister,
+// and reload any open tab so nobody stays stuck on whatever it was doing.
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.map((key) => caches.delete(key))))
+    (async () => {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((key) => caches.delete(key)));
+      await self.registration.unregister();
+      const clients = await self.clients.matchAll({ type: 'window' });
+      clients.forEach((client) => client.navigate(client.url));
+    })()
   );
-  self.clients.claim();
 });
