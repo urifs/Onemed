@@ -61,6 +61,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         initialized.current = true;
         setLoading(false);
         clearTimeout(timeout);
+        showDiagnosticBanner('Auth resolvido');
       }
     })();
 

@@ -51,6 +51,14 @@ export default function MemberDashboardPage() {
 
   useEffect(() => {
     let alive = true;
+    // Temporary instrumentation: pinpoint whether a stuck loading screen is
+    // this fetch never settling at all (neither resolving nor rejecting —
+    // fetchWithTimeout should force a rejection within 10s, but a stuck
+    // report on an iPad showed no error banner at all, so confirm here).
+    const stuckWatchdog = setTimeout(() => {
+      if (alive) showDiagnosticBanner('Cursos ainda carregando após 8s — a requisição não resolveu nem falhou.');
+    }, 8000);
+    showDiagnosticBanner('Iniciando busca de cursos...');
     (async () => {
       try {
         const [{ data: coursesData, error: coursesErr }, progressResult] = await Promise.all([
@@ -69,16 +77,18 @@ export default function MemberDashboardPage() {
         setCourses(coursesData || []);
         setContinueList(((progressResult as any).data || []) as ProgressRow[]);
         setLoadError(false);
+        showDiagnosticBanner(`Cursos carregados: ${(coursesData || []).length}`);
       } catch (err: any) {
         console.error('Failed to load member dashboard', err);
         showDiagnosticBanner(`Falha ao carregar cursos: ${err?.message || err}`);
         if (!alive) return;
         setLoadError(true);
       } finally {
+        clearTimeout(stuckWatchdog);
         if (alive) setLoading(false);
       }
     })();
-    return () => { alive = false; };
+    return () => { alive = false; clearTimeout(stuckWatchdog); };
   }, [user, retryTick]);
 
   const handleRetry = () => {
