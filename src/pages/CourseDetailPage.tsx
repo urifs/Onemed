@@ -44,6 +44,13 @@ function filterLessons(items: Lesson[], query: string): Lesson[] {
   return items.filter(l => matchesSearch(l.title || '', query));
 }
 
+// Images only show up after every PDF (and every other file type) — a
+// stable sort so it only moves images to the end, leaving everything else
+// in its original relative order.
+function sortImagesLast(items: Lesson[]): Lesson[] {
+  return [...items].sort((a, b) => (a.type === 'image' ? 1 : 0) - (b.type === 'image' ? 1 : 0));
+}
+
 export default function CourseDetailPage() {
   const { slug } = useParams<{ slug: string }>();
   const [searchParams] = useSearchParams();
@@ -132,7 +139,7 @@ export default function CourseDetailPage() {
   const videoLessons = useMemo(() => lessons.filter(l => l.type === 'video'), [lessons]);
   const fileLessons = useMemo(() => lessons.filter(l => l.type !== 'video'), [lessons]);
   const filteredVideoLessons = useMemo(() => filterLessons(videoLessons, query), [videoLessons, query]);
-  const filteredFileLessons = useMemo(() => filterLessons(fileLessons, query), [fileLessons, query]);
+  const filteredFileLessons = useMemo(() => sortImagesLast(filterLessons(fileLessons, query)), [fileLessons, query]);
   const videoGroups = useMemo(() => groupLessonsByModule(filteredVideoLessons, modules), [filteredVideoLessons, modules]);
   const fileGroups = useMemo(() => groupLessonsByModule(filteredFileLessons, modules), [filteredFileLessons, modules]);
   const orderedVideoLessons = useMemo(() => videoGroups.flatMap(g => g.lessons), [videoGroups]);
