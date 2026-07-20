@@ -143,7 +143,7 @@ upsell2:   R$   9,90  — complemento 2
 
 | Função | Acionado por | Descrição |
 |--------|-------------|-----------|
-| `create-trial-access` | Frontend (landing) | Cria trial de 30min + compartilha Drive + envia email |
+| `create-trial-access` | Frontend (landing) | Cria trial de 30min de acesso à área de membros + login instantâneo (sem Drive) + envia email |
 | `mp-create-payment` | Frontend (checkout) | Valida plano, calcula preço, gera preferência MP |
 | `mp-webhook` | Mercado Pago (HTTP) | Processa pagamento aprovado → libera acesso permanente |
 | `drive-share-folder` | Interna (service-to-service) | Compartilha pasta Drive com email via Google API |
@@ -160,7 +160,11 @@ upsell2:   R$   9,90  — complemento 2
 
 ### Fluxo 1 — Trial Gratuito
 
-**Objetivo:** Dar ao usuário 30 minutos de acesso ao conteúdo no Google Drive.
+**Objetivo:** Dar ao usuário 30 minutos de acesso direto à área de membros (`/membros`).
+
+> Reescrito em 2026-07-19 — **não compartilha mais pasta do Google Drive.** O trial
+> antigo (que dava acesso a uma pasta do Drive) foi substituído por acesso real à
+> plataforma de cursos nova, igual a um comprador, só que por tempo limitado.
 
 ```
 Usuário acessa / (landing)
@@ -170,13 +174,15 @@ Usuário acessa / (landing)
       ├── valida formato de email (regex)
       ├── verifica rate limit (5 tentativas / 15min por IP)
       ├── verifica se já é comprador aprovado → 409
-      ├── verifica se já tem trial ativo → retorna tempo restante
+      ├── verifica se já tem trial ativo → devolve sessão (login instantâneo) + tempo restante
       ├── verifica se já usou trial (expirado) → 409
       ├── cria registro em accesses (access_type='trial', expires_at=now+30min)
-      ├── chama drive-share-folder (fire-and-forget)
-      └── chama send-access-email tipo 'trial_access' (fire-and-forget)
-  → frontend exibe countdown de 30 minutos em tempo real
-  → ao expirar, mostra tela de "acesso encerrado"
+      ├── gera sessão instantânea (mesmo truque de magiclink/signup do member-auth-request)
+      │     e chama enforce_session_limit (máx. 2 dispositivos simultâneos por conta)
+      └── chama send-access-email tipo 'trial_access' (fire-and-forget) — aponta pra /login
+  → frontend faz supabase.auth.setSession() com os tokens recebidos e redireciona pra /membros
+  → TrialCountdownBar (widget flutuante) mostra o tempo restante + botão "Adquirir Acesso"
+  → ao expirar, redireciona pra /checkout
 ```
 
 **Tabelas afetadas:** `accesses` (insert), `rate_limits` (update), `visits` (insert)
@@ -561,6 +567,40 @@ porque o login era bloqueado antes.
 (duração em minutos, compartilhamento automático de pasta) — não serve para conceder acesso
 à plataforma de cursos nova. `MembersPage` insere direto em `accesses` com `access_type`
 `lifetime`/`annual` e `status='active'`, sem chamar `drive-share-folder`.
+
+---
+
+### 2026-07-19/20 (sessão remota) — trial sem Drive, limite de dispositivos, correções na área de membros
+
+**Trial gratuito reescrito** (ver Fluxo 1 acima): `create-trial-access` parou de compartilhar
+pasta do Google Drive e passou a dar acesso direto à área de membros por 30 min, com login
+instantâneo (mesmo redeem de magiclink/signup do `member-auth-request`). `TrialCountdownBar.tsx`
+(novo) é o widget flutuante com o tempo restante + botão "Adquirir Acesso" (`→ /checkout`),
+montado no `MemberHeader`. `TrialSuccessSection.tsx` (tela antiga de instruções do Drive) foi
+removida. Email de boas-vindas do trial (`send-access-email`) aponta pra `/login` em vez do Drive.
+
+**Bug encontrado e corrigido:** `member-account-info` excluía explicitamente
+`access_type='trial'` da busca (resquício de quando só existia pra compradores) — todo usuário em
+trial recebia `plan: null`, então o contador flutuante nunca aparecia e o menu de conta
+(`AccountMenu.tsx`) mostrava Plano/Acesso em branco. Corrigido pra incluir trial quando não há
+plano pago/vitalício ativo; `AccountMenu` agora mostra "Teste Grátis (30 min)" com contagem
+regressiva em mm:ss ao vivo e troca "Renovar Assinatura" por "Adquirir Acesso Completo" pra quem
+está em trial.
+
+**Limite de 2 dispositivos simultâneos por conta:** nova função `enforce_session_limit(user_id,
+max_sessions=2)` (migration `20260719210000_enforce_session_device_limit.sql`) apaga as sessões
+mais antigas de `auth.sessions` além do limite — como `auth.refresh_tokens` referencia a sessão,
+isso invalida o refresh token do dispositivo mais antigo. Chamada logo após todo login na área de
+membros (`member-auth-request` e `create-trial-access`). `AuthContext` agora distingue um
+`SIGNED_OUT` manual de um forçado (refresh token morto) e dispara `KickedOutModal.tsx` (novo,
+montado no root do `App.tsx`) explicando que a conta já está em outros 2 dispositivos e que um
+novo login derrubou esta sessão, com botão de WhatsApp pro suporte caso não tenha sido o próprio
+usuário.
+
+**Outros ajustes:** captcha simples ("Não sou um robô", 3s de trava) em `/login`; botão "Entrar"
+no header da landing (`LandingHeader.tsx`) linkando pra `/login`; resultado da importação em
+massa de emails em `/admin/membros` (que já ignorava emails que já tinham acesso, sem duplicar)
+ganhou destaque visual com ícones/cores por categoria (concedidos/já tinham acesso/inválidos).
 
 ---
 
