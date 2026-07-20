@@ -31,6 +31,51 @@ function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}): Pro
   return fetch(input, { ...init, signal: controller.signal }).finally(() => clearTimeout(timeoutId));
 }
 
+// Some iPads (institutional/MDM-managed ones especially) ship Safari with
+// Private Browsing or "Block All Cookies" turned on, which makes plain
+// `localStorage` throw synchronously on access instead of just failing
+// quietly. Since GoTrueClient reads storage as part of initializing the
+// session, an uncaught throw there happens inside a bare (non-try/catch'd)
+// effect callback and never reaches the 5s loading failsafe in
+// AuthContext — leaving the app stuck on its initial spinner forever, on
+// every reload, because the same throw happens identically every time.
+// This wrapper guarantees storage access never throws: it prefers real
+// localStorage, but falls back to an in-memory store (session is lost on
+// reload in that case, but the app actually loads instead of freezing).
+function createSafeStorage() {
+  const memory = new Map<string, string>();
+  let localStorageOk = true;
+  try {
+    const testKey = '__onemed_storage_test__';
+    localStorage.setItem(testKey, '1');
+    localStorage.removeItem(testKey);
+  } catch {
+    localStorageOk = false;
+  }
+
+  return {
+    getItem(key: string) {
+      try {
+        return localStorageOk ? localStorage.getItem(key) : (memory.get(key) ?? null);
+      } catch {
+        return memory.get(key) ?? null;
+      }
+    },
+    setItem(key: string, value: string) {
+      try {
+        if (localStorageOk) { localStorage.setItem(key, value); return; }
+      } catch { /* fall through to memory */ }
+      memory.set(key, value);
+    },
+    removeItem(key: string) {
+      try {
+        if (localStorageOk) { localStorage.removeItem(key); return; }
+      } catch { /* fall through to memory */ }
+      memory.delete(key);
+    },
+  };
+}
+
 // No custom `lock` here — this version of @supabase/auth-js dedupes
 // concurrent refreshes itself and explicitly documents its own lock
 // primitives as a legacy path kept only for backwards-compatible imports
@@ -43,7 +88,7 @@ function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}): Pro
 // after login. Trust the library's own default.
 export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: {
-    storage: localStorage,
+    storage: createSafeStorage(),
     persistSession: true,
     autoRefreshToken: true,
   },

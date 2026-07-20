@@ -39,19 +39,28 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     // Safety timeout — never stay loading more than 5s
     const timeout = setTimeout(() => setLoading(false), 5000);
 
-    // Initial session load
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      hadSession.current = !!session?.user;
-      if (session?.user) {
-        const admin = await checkAdmin(session.user.id);
-        setIsAdmin(admin);
+    // Initial session load — wrapped so a thrown/rejected getSession() (seen
+    // on some locked-down Safari setups, e.g. iPads with Private Browsing or
+    // cookies blocked) can't skip past the failsafe above and leave the app
+    // stuck on the loading spinner forever.
+    (async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        setSession(session);
+        setUser(session?.user ?? null);
+        hadSession.current = !!session?.user;
+        if (session?.user) {
+          const admin = await checkAdmin(session.user.id);
+          setIsAdmin(admin);
+        }
+      } catch (err) {
+        console.error('getSession failed', err);
+      } finally {
+        initialized.current = true;
+        setLoading(false);
+        clearTimeout(timeout);
       }
-      initialized.current = true;
-      setLoading(false);
-      clearTimeout(timeout);
-    });
+    })();
 
     // Listen for subsequent auth changes (login, logout, token refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
