@@ -282,6 +282,17 @@ serve(async (req) => {
       })
     }
 
+    // Um JWT válido só prova que é um usuário logado — inclusive um trial de
+    // 30min descartável. Sem essa checagem, qualquer membro podia usar esta
+    // função como relay pra mandar email arbitrário usando o domínio/Resend
+    // da OneMed.
+    const { data: isAdmin } = await supabase.rpc('has_role', { _user_id: user.id, _role: 'admin' })
+    if (!isAdmin) {
+      return new Response(JSON.stringify({ error: 'Unauthorized: admin only' }), {
+        status: 403, headers: { ...cors, 'Content-Type': 'application/json' },
+      })
+    }
+
     const { to, subject, templateType, templateData } = await req.json()
 
     if (!to || !subject || !templateType) {

@@ -221,8 +221,14 @@ serve(async (req) => {
     if (cronSecret && providedCron === cronSecret) {
       authed = true
     } else if (jwt) {
+      // Um JWT válido só prova que é um usuário logado — inclusive um trial
+      // de 30min descartável. Sem checar a role, qualquer membro conseguia
+      // disparar um envio de campanha de email em massa.
       const { data: { user } } = await supabase.auth.getUser(jwt)
-      if (user) authed = true
+      if (user) {
+        const { data: isAdmin } = await supabase.rpc('has_role', { _user_id: user.id, _role: 'admin' })
+        authed = !!isAdmin
+      }
     } else if (!cronSecret) {
       authed = true
     }
