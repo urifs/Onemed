@@ -173,7 +173,7 @@ export default function CourseDetailPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <MemberHeader query="" onQueryChange={() => navigate('/membros')} />
+      <MemberHeader query="" onQueryChange={(value) => navigate(`/membros?q=${encodeURIComponent(value)}`)} />
 
       <section className="relative">
         <div className="relative h-[220px] md:h-[280px] overflow-hidden">

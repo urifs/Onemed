@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Play, Info } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
@@ -21,13 +21,22 @@ type ProgressRow = Database['public']['Tables']['lesson_progress']['Row'] & {
 export default function MemberDashboardPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [courses, setCourses] = useState<Course[]>([]);
   const [continueList, setContinueList] = useState<ProgressRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [retryTick, setRetryTick] = useState(0);
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(() => searchParams.get('q') || '');
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
+
+  // Chegando de dentro de um curso (busca redireciona pra cá com ?q=...) —
+  // limpa o parâmetro da URL depois de capturar o valor inicial, senão ele
+  // fica preso lá mesmo quando o usuário edita a busca.
+  useEffect(() => {
+    if (searchParams.get('q')) setSearchParams({}, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleQueryChange = (value: string) => {
     setQuery(value);
