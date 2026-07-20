@@ -11,7 +11,6 @@ import { LessonPlayer } from '@/components/member/LessonPlayer';
 import { CommunityTab } from '@/components/member/CommunityTab';
 import { CATEGORY_ICON } from '@/lib/courseCategories';
 import { formatDuration, formatFileSize, matchesSearch, stripYearFromTitle, withTimeout } from '@/lib/utils';
-import { showDiagnosticBanner } from '@/lib/diagnosticBanner';
 import type { Database } from '@/integrations/supabase/types';
 
 type Course = Database['public']['Tables']['courses']['Row'];
@@ -107,9 +106,8 @@ export default function CourseDetailPage() {
         for (const p of ((progressResult as any).data || []) as Progress[]) map[p.lesson_id] = p;
         setProgressMap(map);
         setLoadError(false);
-      } catch (err: any) {
+      } catch (err) {
         console.error('Failed to load course', err);
-        showDiagnosticBanner(`Falha ao carregar curso: ${err?.message || err}`);
         if (!alive) return;
         setLoadError(true);
       }

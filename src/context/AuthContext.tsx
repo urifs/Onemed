@@ -1,6 +1,5 @@
 import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { showDiagnosticBanner } from '@/lib/diagnosticBanner';
 import type { User, Session } from '@supabase/supabase-js';
 
 interface AuthContextType {
@@ -54,14 +53,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           const admin = await checkAdmin(session.user.id);
           setIsAdmin(admin);
         }
-      } catch (err: any) {
+      } catch (err) {
         console.error('getSession failed', err);
-        showDiagnosticBanner(`Falha ao iniciar sessão: ${err?.message || err}`);
       } finally {
         initialized.current = true;
         setLoading(false);
         clearTimeout(timeout);
-        showDiagnosticBanner('Auth resolvido');
       }
     })();
 
