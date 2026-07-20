@@ -9,6 +9,7 @@ import { CourseCover } from '@/components/member/CourseCover';
 import { CategorySidebar } from '@/components/member/CategorySidebar';
 import { CATEGORY_ORDER } from '@/lib/courseCategories';
 import { formatDuration, matchesSearch, stripYearFromTitle } from '@/lib/utils';
+import { showDiagnosticBanner } from '@/lib/diagnosticBanner';
 import type { Database } from '@/integrations/supabase/types';
 
 type Course = Database['public']['Tables']['courses']['Row'];
@@ -68,8 +69,9 @@ export default function MemberDashboardPage() {
         setCourses(coursesData || []);
         setContinueList(((progressResult as any).data || []) as ProgressRow[]);
         setLoadError(false);
-      } catch (err) {
+      } catch (err: any) {
         console.error('Failed to load member dashboard', err);
+        showDiagnosticBanner(`Falha ao carregar cursos: ${err?.message || err}`);
         if (!alive) return;
         setLoadError(true);
       } finally {

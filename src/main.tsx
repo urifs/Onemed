@@ -1,7 +1,22 @@
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import { RootErrorBoundary } from "./components/RootErrorBoundary.tsx";
+import { showDiagnosticBanner } from "./lib/diagnosticBanner";
 import "./index.css";
+
+// Deliberately has zero dependency on React, so it still shows up even if
+// React itself fails to mount or crashes before any error boundary exists
+// to catch it. A stuck loading spinner with no visible error is
+// undiagnosable from a screenshot; this turns whatever actually failed
+// into readable text at the bottom of the screen.
+window.addEventListener('error', (e) => {
+  showDiagnosticBanner(`Erro: ${e.message} (${e.filename}:${e.lineno})`);
+});
+window.addEventListener('unhandledrejection', (e) => {
+  const reason = e.reason;
+  const msg = reason instanceof Error ? `${reason.name}: ${reason.message}` : String(reason);
+  showDiagnosticBanner(`Promise rejeitada: ${msg}`);
+});
 
 // The member-area PWA service worker registered a fetch handler that
 // intercepted /membros navigation and cached scripts — right after it
