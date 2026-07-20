@@ -10,7 +10,7 @@ import { CourseCover } from '@/components/member/CourseCover';
 import { LessonPlayer } from '@/components/member/LessonPlayer';
 import { CommunityTab } from '@/components/member/CommunityTab';
 import { CATEGORY_ICON } from '@/lib/courseCategories';
-import { formatDuration, formatFileSize, stripYearFromTitle } from '@/lib/utils';
+import { formatDuration, formatFileSize, normalizeSearch, stripYearFromTitle } from '@/lib/utils';
 import type { Database } from '@/integrations/supabase/types';
 
 type Course = Database['public']['Tables']['courses']['Row'];
@@ -39,6 +39,12 @@ function groupLessonsByModule(items: Lesson[], modules: CourseModule[]): { title
   return result;
 }
 
+function filterLessons(items: Lesson[], query: string): Lesson[] {
+  const q = normalizeSearch(query);
+  if (!q) return items;
+  return items.filter(l => normalizeSearch(l.title || '').includes(q));
+}
+
 export default function CourseDetailPage() {
   const { slug } = useParams<{ slug: string }>();
   const [searchParams] = useSearchParams();
@@ -53,6 +59,7 @@ export default function CourseDetailPage() {
   const [activeLesson, setActiveLesson] = useState<Lesson | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [retryTick, setRetryTick] = useState(0);
+  const [query, setQuery] = useState('');
   const autoOpenId = searchParams.get('lesson');
 
   useEffect(() => {
@@ -112,8 +119,10 @@ export default function CourseDetailPage() {
   // everything else — each grouped by module independently.
   const videoLessons = useMemo(() => lessons.filter(l => l.type === 'video'), [lessons]);
   const fileLessons = useMemo(() => lessons.filter(l => l.type !== 'video'), [lessons]);
-  const videoGroups = useMemo(() => groupLessonsByModule(videoLessons, modules), [videoLessons, modules]);
-  const fileGroups = useMemo(() => groupLessonsByModule(fileLessons, modules), [fileLessons, modules]);
+  const filteredVideoLessons = useMemo(() => filterLessons(videoLessons, query), [videoLessons, query]);
+  const filteredFileLessons = useMemo(() => filterLessons(fileLessons, query), [fileLessons, query]);
+  const videoGroups = useMemo(() => groupLessonsByModule(filteredVideoLessons, modules), [filteredVideoLessons, modules]);
+  const fileGroups = useMemo(() => groupLessonsByModule(filteredFileLessons, modules), [filteredFileLessons, modules]);
   const orderedVideoLessons = useMemo(() => videoGroups.flatMap(g => g.lessons), [videoGroups]);
   const orderedFileLessons = useMemo(() => fileGroups.flatMap(g => g.lessons), [fileGroups]);
   // Prev/next in the player stays within the same kind as the open lesson —
@@ -173,7 +182,7 @@ export default function CourseDetailPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <MemberHeader query="" onQueryChange={(value) => navigate(`/membros?q=${encodeURIComponent(value)}`)} />
+      <MemberHeader query={query} onQueryChange={setQuery} searchPlaceholder="Buscar aula ou arquivo…" />
 
       <section className="relative">
         <div className="relative h-[220px] md:h-[280px] overflow-hidden">
@@ -229,7 +238,10 @@ export default function CourseDetailPage() {
             {lessons.length === 0 && (
               <p className="text-muted-foreground text-sm">Este curso ainda está sendo sincronizado. Volte em instantes.</p>
             )}
-            {lessons.length > 0 && videoGroups.length === 0 && (
+            {lessons.length > 0 && videoGroups.length === 0 && query.trim() && (
+              <p className="text-muted-foreground text-sm">Nenhuma aula encontrada para "{query}".</p>
+            )}
+            {lessons.length > 0 && videoGroups.length === 0 && !query.trim() && (
               <p className="text-muted-foreground text-sm">Nenhuma aula em vídeo neste curso.</p>
             )}
             <LessonGroupList groups={videoGroups} progressMap={progressMap} onSelect={setActiveLesson} />
@@ -239,7 +251,10 @@ export default function CourseDetailPage() {
             {lessons.length === 0 && (
               <p className="text-muted-foreground text-sm">Este curso ainda está sendo sincronizado. Volte em instantes.</p>
             )}
-            {lessons.length > 0 && fileGroups.length === 0 && (
+            {lessons.length > 0 && fileGroups.length === 0 && query.trim() && (
+              <p className="text-muted-foreground text-sm">Nenhum arquivo encontrado para "{query}".</p>
+            )}
+            {lessons.length > 0 && fileGroups.length === 0 && !query.trim() && (
               <p className="text-muted-foreground text-sm">Nenhum arquivo complementar neste curso.</p>
             )}
             <LessonGroupList groups={fileGroups} progressMap={progressMap} onSelect={setActiveLesson} />

@@ -7,9 +7,10 @@ import { MemberPWAHead } from './MemberPWAHead';
 interface MemberHeaderProps {
   query: string;
   onQueryChange: (value: string) => void;
+  searchPlaceholder?: string;
 }
 
-export function MemberHeader({ query, onQueryChange }: MemberHeaderProps) {
+export function MemberHeader({ query, onQueryChange, searchPlaceholder = 'Buscar curso…' }: MemberHeaderProps) {
   return (
     <>
       <MemberPWAHead />
@@ -35,7 +36,7 @@ export function MemberHeader({ query, onQueryChange }: MemberHeaderProps) {
             <input
               value={query}
               onChange={e => onQueryChange(e.target.value)}
-              placeholder="Buscar curso…"
+              placeholder={searchPlaceholder}
               className="w-full h-9 pl-9 pr-3 rounded-full bg-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors"
             />
           </div>
