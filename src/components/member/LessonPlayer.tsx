@@ -114,6 +114,8 @@ export function LessonPlayer({
           />
         ) : lesson.type === 'pdf' ? (
           <PdfViewer url={src} title={lesson.title} />
+        ) : lesson.type === 'image' ? (
+          <img src={src} alt={lesson.title} className="max-w-full max-h-full rounded-lg object-contain" />
         ) : (
           <div className="text-center">
             <p className="text-white/70 text-sm mb-4">Pré-visualização não disponível para este tipo de arquivo.</p>
