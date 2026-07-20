@@ -10,7 +10,8 @@ import { CourseCover } from '@/components/member/CourseCover';
 import { LessonPlayer } from '@/components/member/LessonPlayer';
 import { CommunityTab } from '@/components/member/CommunityTab';
 import { CATEGORY_ICON } from '@/lib/courseCategories';
-import { formatDuration, formatFileSize, matchesSearch, stripYearFromTitle } from '@/lib/utils';
+import { formatDuration, formatFileSize, matchesSearch, stripYearFromTitle, withTimeout } from '@/lib/utils';
+import { showDiagnosticBanner } from '@/lib/diagnosticBanner';
 import type { Database } from '@/integrations/supabase/types';
 
 type Course = Database['public']['Tables']['courses']['Row'];
@@ -71,19 +72,32 @@ export default function CourseDetailPage() {
     setLoadError(false);
     (async () => {
       try {
-        const { data: courseRow, error: courseErr } = await supabase.from('courses').select('*').eq('slug', slug).eq('active', true).maybeSingle();
+        // withTimeout guarantees this settles even if a step inside
+        // supabase-js hangs before ever reaching our fetch-level timeout
+        // (e.g. resolving the current access token, which happens before
+        // the wrapped fetch is invoked at all) — see MemberDashboardPage
+        // for the same fix and the report that led to it.
+        const { data: courseRow, error: courseErr } = await withTimeout(
+          supabase.from('courses').select('*').eq('slug', slug).eq('active', true).maybeSingle(),
+          12000,
+          'dados do curso',
+        );
         if (courseErr) throw courseErr;
         if (!alive) return;
         setCourse(courseRow || null);
         if (!courseRow) return;
 
-        const [{ data: moduleRows, error: modErr }, { data: lessonRows, error: lesErr }, progressResult] = await Promise.all([
-          supabase.from('course_modules').select('*').eq('course_id', courseRow.id).order('sort_order'),
-          supabase.from('lessons').select('*').eq('course_id', courseRow.id).order('sort_order'),
-          user
-            ? supabase.from('lesson_progress').select('*').eq('course_id', courseRow.id).eq('user_id', user.id)
-            : Promise.resolve({ data: [] as Progress[] }),
-        ]);
+        const [{ data: moduleRows, error: modErr }, { data: lessonRows, error: lesErr }, progressResult] = await withTimeout(
+          Promise.all([
+            supabase.from('course_modules').select('*').eq('course_id', courseRow.id).order('sort_order'),
+            supabase.from('lessons').select('*').eq('course_id', courseRow.id).order('sort_order'),
+            user
+              ? supabase.from('lesson_progress').select('*').eq('course_id', courseRow.id).eq('user_id', user.id)
+              : Promise.resolve({ data: [] as Progress[] }),
+          ]),
+          12000,
+          'aulas do curso',
+        );
         if (modErr) throw modErr;
         if (lesErr) throw lesErr;
         if (!alive) return;
@@ -93,8 +107,9 @@ export default function CourseDetailPage() {
         for (const p of ((progressResult as any).data || []) as Progress[]) map[p.lesson_id] = p;
         setProgressMap(map);
         setLoadError(false);
-      } catch (err) {
+      } catch (err: any) {
         console.error('Failed to load course', err);
+        showDiagnosticBanner(`Falha ao carregar curso: ${err?.message || err}`);
         if (!alive) return;
         setLoadError(true);
       }

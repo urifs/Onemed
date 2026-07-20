@@ -8,7 +8,7 @@ import { CourseCard } from '@/components/member/CourseCard';
 import { CourseCover } from '@/components/member/CourseCover';
 import { CategorySidebar } from '@/components/member/CategorySidebar';
 import { CATEGORY_ORDER } from '@/lib/courseCategories';
-import { formatDuration, matchesSearch, stripYearFromTitle } from '@/lib/utils';
+import { formatDuration, matchesSearch, stripYearFromTitle, withTimeout } from '@/lib/utils';
 import { showDiagnosticBanner } from '@/lib/diagnosticBanner';
 import type { Database } from '@/integrations/supabase/types';
 
@@ -49,47 +49,49 @@ export default function MemberDashboardPage() {
     setQuery('');
   };
 
+  const userId = user?.id;
+
   useEffect(() => {
     let alive = true;
-    // Temporary instrumentation: pinpoint whether a stuck loading screen is
-    // this fetch never settling at all (neither resolving nor rejecting —
-    // fetchWithTimeout should force a rejection within 10s, but a stuck
-    // report on an iPad showed no error banner at all, so confirm here).
-    const stuckWatchdog = setTimeout(() => {
-      if (alive) showDiagnosticBanner('Cursos ainda carregando após 8s — a requisição não resolveu nem falhou.');
-    }, 8000);
-    showDiagnosticBanner('Iniciando busca de cursos...');
     (async () => {
       try {
-        const [{ data: coursesData, error: coursesErr }, progressResult] = await Promise.all([
-          supabase.from('courses').select('*').eq('active', true).order('sort_order').order('title'),
-          user
-            ? supabase
-                .from('lesson_progress')
-                .select('*, lessons(*), courses(*)')
-                .eq('user_id', user.id)
-                .order('last_watched_at', { ascending: false })
-                .limit(12)
-            : Promise.resolve({ data: [] as ProgressRow[] }),
-        ]);
+        // supabase-js resolves the current access token *before* handing off
+        // to our fetch wrapper, so a hang in that step slips past client.ts's
+        // own per-request timeout entirely. withTimeout guarantees this
+        // resolves or rejects no matter which internal step never settles —
+        // a real fix for a report of this screen hanging forever on one
+        // specific device, with no fetch/auth error ever surfacing.
+        const [{ data: coursesData, error: coursesErr }, progressResult] = await withTimeout(
+          Promise.all([
+            supabase.from('courses').select('*').eq('active', true).order('sort_order').order('title'),
+            userId
+              ? supabase
+                  .from('lesson_progress')
+                  .select('*, lessons(*), courses(*)')
+                  .eq('user_id', userId)
+                  .order('last_watched_at', { ascending: false })
+                  .limit(12)
+              : Promise.resolve({ data: [] as ProgressRow[] }),
+          ]),
+          12000,
+          'busca de cursos',
+        );
         if (coursesErr) throw coursesErr;
         if (!alive) return;
         setCourses(coursesData || []);
         setContinueList(((progressResult as any).data || []) as ProgressRow[]);
         setLoadError(false);
-        showDiagnosticBanner(`Cursos carregados: ${(coursesData || []).length}`);
       } catch (err: any) {
         console.error('Failed to load member dashboard', err);
         showDiagnosticBanner(`Falha ao carregar cursos: ${err?.message || err}`);
         if (!alive) return;
         setLoadError(true);
       } finally {
-        clearTimeout(stuckWatchdog);
         if (alive) setLoading(false);
       }
     })();
-    return () => { alive = false; clearTimeout(stuckWatchdog); };
-  }, [user, retryTick]);
+    return () => { alive = false; };
+  }, [userId, retryTick]);
 
   const handleRetry = () => {
     setLoading(true);

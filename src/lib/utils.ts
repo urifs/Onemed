@@ -5,6 +5,22 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+// supabase-js resolves the current access token (a call into GoTrueClient)
+// *before* it ever invokes the fetch we pass into `global.fetch` — so our
+// per-request fetch timeout in client.ts never even gets a chance to run if
+// that token-resolution step itself is what hangs. This wraps a promise from
+// the outside instead, so the caller always gets a rejection within `ms`
+// regardless of which internal step inside the library never settles.
+export function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`Tempo esgotado: ${label}`)), ms);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (err) => { clearTimeout(timer); reject(err); },
+    );
+  });
+}
+
 const SAO_PAULO_TIMEZONE = 'America/Sao_Paulo';
 
 export function formatDateSP(dateStr: string | number | null, options: Intl.DateTimeFormatOptions = {}): string {
