@@ -7,6 +7,8 @@ interface AuthContextType {
   session: Session | null;
   loading: boolean;
   isAdmin: boolean;
+  kickedOut: boolean;
+  dismissKickedOut: () => void;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -19,7 +21,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [kickedOut, setKickedOut] = useState(false);
   const initialized = useRef(false);
+  const hadSession = useRef(false);
+  const manualSignOut = useRef(false);
 
   const checkAdmin = async (userId: string): Promise<boolean> => {
     try {
@@ -38,6 +43,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
+      hadSession.current = !!session?.user;
       if (session?.user) {
         const admin = await checkAdmin(session.user.id);
         setIsAdmin(admin);
@@ -49,9 +55,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     // Listen for subsequent auth changes (login, logout, token refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
+      async (event, session) => {
         // Skip the initial INITIAL_SESSION event — already handled by getSession
         if (!initialized.current) return;
+
+        // A logged-in session that suddenly goes null without the user
+        // clicking "Sair" only happens when the refresh token stops working —
+        // in this app that's the 2-device limit kicking an older session out
+        // when a 3rd device logs in. Surface that instead of silently
+        // bouncing them to /login with no explanation.
+        if (event === 'SIGNED_OUT' && hadSession.current && !manualSignOut.current) {
+          setKickedOut(true);
+        }
+        manualSignOut.current = false;
+        hadSession.current = !!session?.user;
 
         setSession(session);
         setUser(session?.user ?? null);
@@ -85,11 +102,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const logout = async () => {
+    manualSignOut.current = true;
     await supabase.auth.signOut();
   };
 
+  const dismissKickedOut = () => setKickedOut(false);
+
   return (
-    <AuthContext.Provider value={{ user, session, loading, isAdmin, login, register, logout }}>
+    <AuthContext.Provider value={{ user, session, loading, isAdmin, kickedOut, dismissKickedOut, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );

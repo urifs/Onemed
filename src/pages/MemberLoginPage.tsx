@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
@@ -7,11 +7,18 @@ import { extractFunctionErrorMessage } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Stethoscope, Mail, ArrowRight, Sparkles } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Stethoscope, Mail, ArrowRight, Sparkles, Loader2, ShieldCheck } from 'lucide-react';
+
+const CAPTCHA_DELAY_MS = 3000;
 
 export default function MemberLoginPage() {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
+  const [captchaChecked, setCaptchaChecked] = useState(false);
+  const [captchaVerifying, setCaptchaVerifying] = useState(false);
+  const [captchaReady, setCaptchaReady] = useState(false);
+  const captchaTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
 
@@ -19,9 +26,28 @@ export default function MemberLoginPage() {
     if (!authLoading && user) navigate('/membros', { replace: true });
   }, [authLoading, user, navigate]);
 
+  useEffect(() => () => { if (captchaTimer.current) clearTimeout(captchaTimer.current); }, []);
+
+  const handleCaptchaChange = (checked: boolean) => {
+    setCaptchaChecked(checked);
+    if (captchaTimer.current) clearTimeout(captchaTimer.current);
+    if (!checked) {
+      setCaptchaVerifying(false);
+      setCaptchaReady(false);
+      return;
+    }
+    setCaptchaVerifying(true);
+    setCaptchaReady(false);
+    captchaTimer.current = setTimeout(() => {
+      setCaptchaVerifying(false);
+      setCaptchaReady(true);
+    }, CAPTCHA_DELAY_MS);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email) { toast.error('Informe seu email'); return; }
+    if (!captchaReady) { toast.error('Confirme que você não é um robô'); return; }
     setLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke('member-auth-request', { body: { email } });
@@ -84,9 +110,23 @@ export default function MemberLoginPage() {
               </div>
             </div>
 
+            <div className="flex items-center gap-3 rounded-lg border border-border bg-secondary/50 px-3.5 py-3">
+              <Checkbox
+                id="captcha"
+                checked={captchaChecked}
+                onCheckedChange={(v) => handleCaptchaChange(v === true)}
+                disabled={captchaVerifying}
+              />
+              <Label htmlFor="captcha" className="flex-1 text-sm text-foreground cursor-pointer select-none">
+                Não sou um robô
+              </Label>
+              {captchaVerifying && <Loader2 className="w-4 h-4 text-muted-foreground animate-spin" />}
+              {captchaReady && <ShieldCheck className="w-4 h-4 text-accent-success" />}
+            </div>
+
             <Button
               type="submit"
-              disabled={loading}
+              disabled={loading || !captchaReady}
               className="w-full h-12 bg-primary hover:bg-primary-hover text-primary-foreground font-semibold gap-2"
             >
               {loading ? (

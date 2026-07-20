@@ -33,6 +33,7 @@ import SMSPage from "./pages/SMSPage";
 import WhatsAppPage from "./pages/WhatsAppPage";
 import NotFound from "./pages/NotFound";
 import WhatsAppButton from "./components/WhatsAppButton";
+import { KickedOutModal } from "./components/member/KickedOutModal";
 
 const queryClient = new QueryClient();
 
@@ -112,6 +113,7 @@ const App = () => (
             <Route path="*" element={<NotFound />} />
           </Routes>
           <WhatsAppButton />
+          <KickedOutModal />
         </BrowserRouter>
       </TooltipProvider>
     </AuthProvider>
