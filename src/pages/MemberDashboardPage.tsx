@@ -8,7 +8,7 @@ import { CourseCard } from '@/components/member/CourseCard';
 import { CourseCover } from '@/components/member/CourseCover';
 import { CategorySidebar } from '@/components/member/CategorySidebar';
 import { CATEGORY_ORDER } from '@/lib/courseCategories';
-import { formatDuration, normalizeSearch, stripYearFromTitle } from '@/lib/utils';
+import { formatDuration, matchesSearch, stripYearFromTitle } from '@/lib/utils';
 import type { Database } from '@/integrations/supabase/types';
 
 type Course = Database['public']['Tables']['courses']['Row'];
@@ -85,9 +85,8 @@ export default function MemberDashboardPage() {
   };
 
   const filtered = useMemo(() => {
-    const q = normalizeSearch(query);
-    if (!q) return courses;
-    return courses.filter(c => normalizeSearch(c.title).includes(q) || normalizeSearch(c.category).includes(q));
+    if (!query.trim()) return courses;
+    return courses.filter(c => matchesSearch(c.title, query) || matchesSearch(c.category, query));
   }, [courses, query]);
 
   const searching = query.trim().length > 0;

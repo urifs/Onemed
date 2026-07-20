@@ -128,6 +128,24 @@ export function normalizeSearch(text: string): string {
     .replace(/[^a-z0-9]+/g, '');
 }
 
+// Word-by-word search: every word typed just needs to show up *somewhere* in
+// the target, in any order, regardless of accent/case/spacing. Real course
+// titles are inconsistent about this ("ESTRATEGIA MED" vs "ESTRATÉGIAMED"
+// vs "Estratégia Med"), so a rigid single contiguous-substring match — which
+// requires the words to appear back-to-back in the exact order typed — was
+// failing for searches that would otherwise obviously be the same course.
+export function matchesSearch(target: string, query: string): boolean {
+  const normalizedTarget = normalizeSearch(target);
+  const words = query
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+  if (words.length === 0) return true;
+  return words.every(w => normalizedTarget.includes(w));
+}
+
 export function formatWhatsApp(value: string, countryCode: string): string {
   const nums = value.replace(/\D/g, '');
   if (countryCode === '+55') {

@@ -10,7 +10,7 @@ import { CourseCover } from '@/components/member/CourseCover';
 import { LessonPlayer } from '@/components/member/LessonPlayer';
 import { CommunityTab } from '@/components/member/CommunityTab';
 import { CATEGORY_ICON } from '@/lib/courseCategories';
-import { formatDuration, formatFileSize, normalizeSearch, stripYearFromTitle } from '@/lib/utils';
+import { formatDuration, formatFileSize, matchesSearch, stripYearFromTitle } from '@/lib/utils';
 import type { Database } from '@/integrations/supabase/types';
 
 type Course = Database['public']['Tables']['courses']['Row'];
@@ -40,9 +40,8 @@ function groupLessonsByModule(items: Lesson[], modules: CourseModule[]): { title
 }
 
 function filterLessons(items: Lesson[], query: string): Lesson[] {
-  const q = normalizeSearch(query);
-  if (!q) return items;
-  return items.filter(l => normalizeSearch(l.title || '').includes(q));
+  if (!query.trim()) return items;
+  return items.filter(l => matchesSearch(l.title || '', query));
 }
 
 export default function CourseDetailPage() {
