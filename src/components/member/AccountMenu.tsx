@@ -8,7 +8,8 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { User, LogOut, MessageCircle, RefreshCw, Loader2, Save } from 'lucide-react';
+import { User, LogOut, MessageCircle, RefreshCw, Loader2, Save, Smartphone } from 'lucide-react';
+import { AddToHomeScreenModal } from './AddToHomeScreenModal';
 
 const SUPPORT_PHONE = '5563999191551';
 const PLAN_LABELS: Record<string, string> = {
@@ -210,6 +211,11 @@ export function AccountMenu() {
             </div>
 
             <div className="p-2">
+              <AddToHomeScreenModal trigger={
+                <button className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm text-foreground hover:bg-secondary transition-colors">
+                  <Smartphone className="w-4 h-4 text-primary" /> Instalar App
+                </button>
+              } />
               <a
                 href={`https://wa.me/${SUPPORT_PHONE}?text=${encodeURIComponent('Olá! Preciso de suporte com minha conta no OneMed.')}`}
                 target="_blank"
