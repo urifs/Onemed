@@ -73,7 +73,13 @@ export function todayStartISO(): string {
   return new Date(`${spDateStr}T00:00:00-03:00`).toISOString();
 }
 
-// Busca todos os registros de uma tabela contornando o limite de 1000 linhas do Supabase
+// Busca todos os registros de uma tabela contornando o limite de 1000 linhas do Supabase.
+// Each page is wrapped in withTimeout — supabase-js resolves the current
+// access token *before* ever invoking the fetch we wrap with a timeout in
+// client.ts, so a hang in that step slips past that protection entirely and
+// leaves admin pages that use this (MembersPage, BuyersPage, etc.) stuck
+// showing nothing forever, with no error. See MemberDashboardPage/
+// CourseDetailPage for the same root cause and fix on the member side.
 export async function fetchAllRows<T = any>(
   buildQuery: (from: number, to: number) => Promise<{ data: T[] | null; error: any }>
 ): Promise<T[]> {
@@ -81,7 +87,7 @@ export async function fetchAllRows<T = any>(
   let all: T[] = [];
   let from = 0;
   while (true) {
-    const { data, error } = await buildQuery(from, from + PAGE - 1);
+    const { data, error } = await withTimeout(buildQuery(from, from + PAGE - 1), 15000, 'busca de dados');
     if (error) throw error;
     all = all.concat(data || []);
     if (!data || data.length < PAGE) break;

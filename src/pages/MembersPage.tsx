@@ -8,12 +8,24 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { formatDateTimeSP, fetchAllRows } from '@/lib/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import {
   UserPlus, Search, XCircle, Loader2, GraduationCap, ExternalLink,
-  Users, BookOpen, FolderOpen, RefreshCw, Upload, CheckCircle2, UserCheck, AlertTriangle,
+  Users, BookOpen, FolderOpen, RefreshCw, Upload, CheckCircle2, UserCheck, AlertTriangle, Circle,
 } from 'lucide-react';
+
+const ONLINE_WINDOW_MINUTES = 10;
+const ONLINE_POLL_MS = 20000;
+
+function timeAgo(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const mins = Math.max(0, Math.floor(diffMs / 60000));
+  if (mins < 1) return 'agora mesmo';
+  if (mins === 1) return 'há 1 min';
+  return `há ${mins} min`;
+}
 import { Link } from 'react-router-dom';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -53,6 +65,27 @@ export default function MembersPage() {
   const [newEmail, setNewEmail] = useState('');
   const [newPlan, setNewPlan] = useState('lifetime');
   const [adding, setAdding] = useState(false);
+
+  const [onlineMembers, setOnlineMembers] = useState<{ email: string; last_active: string }[]>([]);
+  const [onlineLoading, setOnlineLoading] = useState(true);
+
+  const fetchOnline = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.rpc('get_online_members', { _minutes: ONLINE_WINDOW_MINUTES });
+      if (error) throw error;
+      setOnlineMembers((data || []) as { email: string; last_active: string }[]);
+    } catch (err) {
+      console.error('Erro ao buscar membros online', err);
+    } finally {
+      setOnlineLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchOnline();
+    const interval = setInterval(fetchOnline, ONLINE_POLL_MS);
+    return () => clearInterval(interval);
+  }, [fetchOnline]);
 
   const [isBulkOpen, setIsBulkOpen] = useState(false);
   const [bulkText, setBulkText] = useState('');
@@ -332,7 +365,43 @@ export default function MembersPage() {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <Popover>
+            <PopoverTrigger asChild>
+              <Card className="bg-background-paper border-border cursor-pointer hover:border-primary/40 transition-colors text-left">
+                <CardContent className="p-5">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm text-muted-foreground">Online agora</p>
+                    <Circle className="w-3 h-3 text-accent-success fill-accent-success animate-pulse" />
+                  </div>
+                  <p className="font-secondary text-2xl font-bold text-foreground">
+                    {onlineLoading ? '—' : onlineMembers.length}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">últimos {ONLINE_WINDOW_MINUTES} min · toque pra ver</p>
+                </CardContent>
+              </Card>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-80 bg-background-paper border-border p-0 overflow-hidden">
+              <div className="p-3 border-b border-border flex items-center justify-between">
+                <p className="text-sm font-semibold text-foreground">Membros online</p>
+                <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={fetchOnline}>
+                  <RefreshCw className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+              <div className="max-h-80 overflow-y-auto divide-y divide-border">
+                {onlineMembers.length === 0 ? (
+                  <p className="text-sm text-muted-foreground p-4 text-center">Ninguém online no momento</p>
+                ) : (
+                  onlineMembers.map(m => (
+                    <div key={m.email} className="flex items-center justify-between px-3 py-2.5 text-sm">
+                      <span className="text-foreground truncate">{m.email}</span>
+                      <span className="text-xs text-muted-foreground shrink-0 ml-2">{timeAgo(m.last_active)}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </PopoverContent>
+          </Popover>
           <Card className="bg-background-paper border-border">
             <CardContent className="p-5">
               <div className="flex items-center justify-between mb-2">
