@@ -1,26 +1,31 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // OneMed · member-lesson-token
-// Verifica que o usuário tem acesso ativo à aula pedida e devolve uma URL de
-// download DIRETO do Google Drive (drive.usercontent.google.com), pra o
-// navegador buscar os bytes direto do Google em vez de passar pela nossa
-// Edge Function member-stream-file.
+// Verifica que o usuário tem acesso ativo à aula pedida e devolve uma URL
+// assinada (HMAC, curta duração) apontando pro proxy de streaming na Vercel
+// (api/stream-lesson) — o navegador nunca fala com o Google Drive
+// diretamente.
 //
-// Reescrito em 2026-07-21 — o proxy de bytes via member-stream-file gerava
-// ~100% do egress cobrado pela Supabase (>1TB num único dia). Pra servir o
-// arquivo direto do Drive sem exigir login Google no navegador do aluno, o
-// arquivo precisa de permissão "qualquer um com o link" (type: 'anyone') —
-// concedida aqui por tempo limitado (GRANT_TTL_SECONDS) e revogada depois
-// por um cron (ver drive-revoke-access), registrada em direct_link_grants.
-// Enquanto a concessão estiver ativa, qualquer pessoa que capturar esse link
-// específico consegue acessar o arquivo sem passar pelo nosso controle de
-// acesso — é o trade-off aceito em troca de custo de egress ~zero.
+// Reescrito em 2026-07-21 (duas vezes):
+// 1ª vez: trocou o proxy de bytes via member-stream-file (que gerava ~100%
+//   do egress cobrado pela Supabase, >1TB num único dia) por um link direto
+//   do Google Drive (drive.usercontent.google.com), liberado por permissão
+//   temporária "qualquer um com o link".
+// 2ª vez (esta): o link direto do Drive nunca funcionou de verdade no
+//   navegador do aluno — o Google manda `Cross-Origin-Resource-Policy:
+//   same-site` em toda resposta desse endpoint, e o navegador bloqueia
+//   qualquer carregamento cross-site independente de CORS estar correto
+//   (curl sempre funcionava porque CORP só existe no navegador). Não tem
+//   como contornar isso do nosso lado — quem define o cabeçalho é o Google.
+//   Voltamos a um proxy, mas na Vercel em vez da Supabase (api/stream-lesson),
+//   pra manter o egress fora da fatura da Supabase. Como o proxy busca os
+//   bytes usando o token OAuth do admin (via drive-access-token), o arquivo
+//   nunca precisa ficar público no Drive — mais fechado que a versão anterior.
 // ─────────────────────────────────────────────────────────────────────────────
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const ALLOWED_ORIGINS = ['https://onemedcursos.com.br', 'http://localhost:5173', 'http://localhost:3000']
-const GOOGLE_CLIENT_ID = '110017470335-2l6er8r451vj5hf3ob05rvolc2p4v9ku.apps.googleusercontent.com'
-const GRANT_TTL_SECONDS = 60 * 60 // 1h — cobre uma aula inteira com folga, sem deixar o link válido por muito tempo
+const STREAM_TTL_SECONDS = 60 * 60 * 2 // 2h — cobre uma aula longa com folga
 
 function getCorsHeaders(req: Request) {
   const origin = req.headers.get('origin') || ''
@@ -37,45 +42,12 @@ function jsonResponse(req: Request, body: unknown, status = 200) {
   })
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms))
-}
-
-// A permissão "anyone" recém-criada não fica ativa instantaneamente no lado
-// do Google — testado manualmente: a primeira tentativa logo após conceder
-// retorna 403, e só funciona alguns segundos depois. Sem essa espera, o
-// navegador recebia a URL e tentava abrir o vídeo/PDF antes da permissão
-// propagar, resultando em "formato não suportado" (vídeo) ou "não foi
-// possível abrir o arquivo" (PDF) — o corpo da resposta era a página de erro
-// do Google, não o arquivo. Checa o content-type real (não só o HTTP status)
-// porque um 200 com text/html é a página de aviso de vírus do Drive pra
-// arquivos grandes (ver comentário em buildDirectUrl), não o arquivo.
-async function waitUntilAccessible(url: string): Promise<boolean> {
-  for (let attempt = 0; attempt < 6; attempt++) {
-    try {
-      const res = await fetch(url, { method: 'HEAD' })
-      const contentType = res.headers.get('content-type') || ''
-      if (res.ok && !contentType.startsWith('text/html')) return true
-    } catch { /* tenta de novo */ }
-    await sleep(attempt < 2 ? 500 : 1000)
-  }
-  return false
-}
-
-async function refreshAccessToken(refreshToken: string, clientSecret: string): Promise<string> {
-  const res = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      refresh_token: refreshToken, client_id: GOOGLE_CLIENT_ID, client_secret: clientSecret, grant_type: 'refresh_token',
-    }),
-  })
-  const data = await res.json()
-  if (!res.ok || !data.access_token) {
-    console.error('Google token refresh failed', res.status, JSON.stringify(data))
-    throw new Error('Failed to refresh Google token')
-  }
-  return data.access_token as string
+async function hmacHex(secret: string, message: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    'raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
+  )
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(message))
+  return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
 serve(async (req) => {
@@ -84,7 +56,6 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    const GOOGLE_CLIENT_SECRET = Deno.env.get('GOOGLE_CLIENT_SECRET')!
     const supabase = createClient(supabaseUrl, serviceKey)
 
     const authHeader = req.headers.get('authorization') || ''
@@ -111,68 +82,14 @@ serve(async (req) => {
     ])
     if (!activeAccess && !buyer && !isAdmin) return jsonResponse(req, { error: 'Sem acesso ativo' }, 403)
 
+    const streamSecret = Deno.env.get('LESSON_STREAM_SECRET')!
+    const siteUrl = Deno.env.get('SITE_URL') || 'https://onemedcursos.com.br'
     const fileId = lesson.drive_file_id
+    const expiresAt = Math.floor(Date.now() / 1000) + STREAM_TTL_SECONDS
+    const sig = await hmacHex(streamSecret, `${fileId}.${expiresAt}`)
+    const url = `${siteUrl}/api/stream-lesson?id=${encodeURIComponent(fileId)}&exp=${expiresAt}&sig=${sig}`
 
-    // Já tem concessão ativa pra esse arquivo? Reaproveita em vez de chamar
-    // a API do Drive de novo — vários alunos podem abrir a mesma aula.
-    const { data: existingGrant } = await supabase
-      .from('direct_link_grants').select('expires_at').eq('drive_file_id', fileId).maybeSingle()
-
-    const now = Date.now()
-    const grantStillValid = existingGrant && new Date(existingGrant.expires_at).getTime() > now
-    const newExpiresAt = new Date(now + GRANT_TTL_SECONDS * 1000).toISOString()
-    // confirm=t pula a página "Google Drive não conseguiu escanear esse
-    // arquivo por vírus" que aparece pra arquivos grandes (a maioria dos
-    // vídeos de aula passa dos ~100MB do limite de scan) — sem isso, em vez
-    // do vídeo/PDF o navegador recebia essa página HTML de confirmação.
-    // SEM &export=download — esse parâmetro força Content-Disposition:
-    // attachment, e o Firefox (via Opaque Response Blocking) recusa usar uma
-    // resposta cross-origin "attachment" inline num <video>/<img>, abortando
-    // com NS_BINDING_ABORTED mesmo com CORS certo. Sem export=download o
-    // Google devolve Content-Disposition: inline e o navegador reproduz
-    // normalmente.
-    const url = `https://drive.usercontent.google.com/download?id=${fileId}&confirm=t`
-
-    if (!grantStillValid) {
-      const { data: config, error: cfgErr } = await supabase.from('drive_config').select('*').single()
-      if (cfgErr || !config?.connected) return jsonResponse(req, { error: 'Drive não conectado' }, 502)
-
-      let accessToken = config.access_token
-      const expiry = config.token_expiry ? new Date(config.token_expiry) : null
-      if (!expiry || expiry < new Date()) {
-        if (!config.refresh_token) return jsonResponse(req, { error: 'Token do Drive expirado' }, 502)
-        accessToken = await refreshAccessToken(config.refresh_token, GOOGLE_CLIENT_SECRET)
-        await supabase.from('drive_config').update({
-          access_token: accessToken, token_expiry: new Date(Date.now() + 3600 * 1000).toISOString(),
-        }).eq('id', config.id)
-      }
-
-      const permRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role: 'reader', type: 'anyone' }),
-      })
-      if (!permRes.ok) {
-        const text = await permRes.text().catch(() => '')
-        console.error('Drive permission grant failed', permRes.status, text)
-        return jsonResponse(req, { error: 'Não foi possível liberar o arquivo' }, 502)
-      }
-
-      await supabase.from('direct_link_grants').upsert(
-        { drive_file_id: fileId, granted_at: new Date().toISOString(), expires_at: newExpiresAt },
-        { onConflict: 'drive_file_id' },
-      )
-
-      const accessible = await waitUntilAccessible(url)
-      if (!accessible) {
-        return jsonResponse(req, { error: 'O arquivo ainda está sendo liberado, tente novamente em instantes.' }, 503)
-      }
-    } else if (existingGrant) {
-      // Estende a validade enquanto o aluno continuar acessando essa aula.
-      await supabase.from('direct_link_grants').update({ expires_at: newExpiresAt }).eq('drive_file_id', fileId)
-    }
-
-    return jsonResponse(req, { url, expiresAt: Math.floor(new Date(newExpiresAt).getTime() / 1000) })
+    return jsonResponse(req, { url, expiresAt })
   } catch (err: any) {
     console.error(err)
     return jsonResponse(req, { error: err.message }, 500)

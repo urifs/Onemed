@@ -186,48 +186,8 @@ serve(async (req) => {
       targets = (data || []) as Access[]
     }
 
-    // ── Limpa concessões de link direto do Drive expiradas (member-lesson-token) ──
-    // Independe dos "targets" de trial acima — roda em toda execução do cron.
-    let directLinksRevoked = 0
-    if (!singleMode) {
-      const { data: expiredGrants } = await supabase
-        .from('direct_link_grants')
-        .select('drive_file_id')
-        .lte('expires_at', new Date().toISOString())
-      if (expiredGrants && expiredGrants.length > 0) {
-        const { data: config } = await supabase.from('drive_config').select('*').maybeSingle()
-        if (config?.connected) {
-          let grantsToken = config.access_token
-          const grantsExpiry = config.token_expiry ? new Date(config.token_expiry) : null
-          if ((!grantsExpiry || grantsExpiry < new Date()) && config.refresh_token) {
-            try {
-              const GOOGLE_CLIENT_SECRET = Deno.env.get('GOOGLE_CLIENT_SECRET')!
-              grantsToken = await refreshAccessToken(config.refresh_token, GOOGLE_CLIENT_SECRET)
-              await supabase.from('drive_config').update({
-                access_token: grantsToken, token_expiry: new Date(Date.now() + 3600 * 1000).toISOString(),
-              }).eq('id', config.id)
-            } catch (e: any) {
-              console.error('Refresh token (direct_link_grants) failed:', e.message)
-            }
-          }
-          for (const g of expiredGrants) {
-            const res = await fetch(
-              `https://www.googleapis.com/drive/v3/files/${g.drive_file_id}/permissions/anyoneWithLink`,
-              { method: 'DELETE', headers: { Authorization: `Bearer ${grantsToken}` } },
-            )
-            // 403 aqui é esperado se a permissão for herdada da pasta (fora do
-            // nosso controle nesse caso) — segue e limpa a linha de qualquer forma.
-            if (res.ok || res.status === 404 || res.status === 403) {
-              await supabase.from('direct_link_grants').delete().eq('drive_file_id', g.drive_file_id)
-              directLinksRevoked++
-            }
-          }
-        }
-      }
-    }
-
     if (targets.length === 0) {
-      return new Response(JSON.stringify({ revoked: 0, markedExpired: 0, directLinksRevoked }), {
+      return new Response(JSON.stringify({ revoked: 0, markedExpired: 0 }), {
         headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
       })
     }
@@ -301,7 +261,7 @@ serve(async (req) => {
 
     const payload = singleMode
       ? { success: true, accessId: body.accessId, revoked, markedExpired, errors }
-      : { revoked, markedExpired, errors, directLinksRevoked }
+      : { revoked, markedExpired, errors }
 
     return new Response(JSON.stringify(payload), {
       headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
