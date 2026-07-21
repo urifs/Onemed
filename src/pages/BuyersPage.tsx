@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { formatDateTimeSP, todayStartISO, fetchAllRows } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { DollarSign, Users, Clock, TrendingUp, Mail, Calendar, Phone, Trash2, UserPlus, Loader2, RefreshCw, CheckCircle, XCircle, X, Download } from 'lucide-react';
+import { DollarSign, Users, Clock, TrendingUp, Mail, Calendar, Phone, Trash2, UserPlus, Loader2, RefreshCw, CheckCircle, XCircle, X, Download, AlertTriangle } from 'lucide-react';
 import { WhatsAppLink } from '@/components/WhatsAppLink';
 
 export default function BuyersPage() {
@@ -16,6 +16,7 @@ export default function BuyersPage() {
   const [buyers, setBuyers] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [newEmail, setNewEmail] = useState('');
   const [newPlan, setNewPlan] = useState('annual');
@@ -25,6 +26,7 @@ export default function BuyersPage() {
 
   const fetchData = useCallback(async () => {
     setLoading(true);
+    setLoadError(false);
     try {
       const buyersData = await fetchAllRows((f, t) =>
         supabase.from('buyers').select('*').eq('status', 'approved').order('created_at', { ascending: false }).range(f, t)
@@ -40,7 +42,10 @@ export default function BuyersPage() {
         lifetime: today.filter(b => b.plan === 'lifetime').length,
         annual: today.filter(b => b.plan === 'annual').length,
       });
-    } catch { toast.error('Erro ao carregar compradores'); }
+    } catch {
+      toast.error('Erro ao carregar compradores');
+      setLoadError(true);
+    }
     finally { setLoading(false); }
   }, []);
 
@@ -184,7 +189,16 @@ export default function BuyersPage() {
                   ))}
                 </tbody>
               </table>
-              {filtered.length === 0 && !loading && (
+              {loadError && !loading && (
+                <div className="flex flex-col items-center gap-3 py-12 text-center px-4">
+                  <AlertTriangle className="w-6 h-6 text-accent-warning" />
+                  <p className="text-foreground text-sm font-medium">Não foi possível carregar os compradores</p>
+                  <Button onClick={fetchData} size="sm" variant="outline" className="border-border text-muted-foreground hover:text-foreground gap-2">
+                    <RefreshCw className="w-3.5 h-3.5" /> Tentar novamente
+                  </Button>
+                </div>
+              )}
+              {!loadError && filtered.length === 0 && !loading && (
                 <p className="text-muted-foreground text-center py-12">Nenhum comprador encontrado</p>
               )}
             </div>

@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { formatDateSP } from '@/lib/utils';
-import { Tag, Plus, Pencil, Trash2, X } from 'lucide-react';
+import { Tag, Plus, Pencil, Trash2, X, AlertTriangle, RefreshCw } from 'lucide-react';
 
 const PLAN_LABELS: Record<string, string> = {
   all:      'Ambos',
@@ -20,15 +20,25 @@ const PLAN_LABELS: Record<string, string> = {
 export default function CouponsPage() {
   const [coupons, setCoupons] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [form, setForm] = useState({ code: '', discount_percent: '', description: '', active: true, max_uses: '', allowed_plans: 'all' });
   const [submitting, setSubmitting] = useState(false);
 
   const fetchCoupons = useCallback(async () => {
-    const { data } = await supabase.from('coupons').select('*').order('created_at', { ascending: false });
-    setCoupons(data || []);
-    setLoading(false);
+    setLoading(true);
+    setLoadError(false);
+    try {
+      const { data, error } = await supabase.from('coupons').select('*').order('created_at', { ascending: false });
+      if (error) throw error;
+      setCoupons(data || []);
+    } catch {
+      toast.error('Erro ao carregar cupons');
+      setLoadError(true);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { fetchCoupons(); }, [fetchCoupons]);
@@ -136,7 +146,16 @@ export default function CouponsPage() {
                   ))}
                 </tbody>
               </table>
-              {coupons.length === 0 && !loading && <p className="text-muted-foreground text-center py-12">Nenhum cupom criado</p>}
+              {loadError && !loading && (
+                <div className="flex flex-col items-center gap-3 py-12 text-center px-4">
+                  <AlertTriangle className="w-6 h-6 text-accent-warning" />
+                  <p className="text-foreground text-sm font-medium">Não foi possível carregar os cupons</p>
+                  <Button onClick={fetchCoupons} size="sm" variant="outline" className="border-border text-muted-foreground hover:text-foreground gap-2">
+                    <RefreshCw className="w-3.5 h-3.5" /> Tentar novamente
+                  </Button>
+                </div>
+              )}
+              {!loadError && coupons.length === 0 && !loading && <p className="text-muted-foreground text-center py-12">Nenhum cupom criado</p>}
             </div>
           </CardContent>
         </Card>

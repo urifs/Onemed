@@ -60,6 +60,7 @@ export default function MembersPage() {
   const [filtered, setFiltered] = useState<MemberRow[]>([]);
   const [courseStats, setCourseStats] = useState<{ active: number; categories: number } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [search, setSearch] = useState('');
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [newEmail, setNewEmail] = useState('');
@@ -96,6 +97,7 @@ export default function MembersPage() {
 
   const fetchData = useCallback(async () => {
     setLoading(true);
+    setLoadError(false);
     try {
       const [manualAccesses, buyers, courses] = await Promise.all([
         fetchAllRows((f, t) =>
@@ -128,6 +130,7 @@ export default function MembersPage() {
       });
     } catch {
       toast.error('Erro ao carregar membros');
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -481,7 +484,16 @@ export default function MembersPage() {
                   ))}
                 </tbody>
               </table>
-              {filtered.length === 0 && !loading && (
+              {loadError && !loading && (
+                <div className="flex flex-col items-center gap-3 py-12 text-center px-4">
+                  <AlertTriangle className="w-6 h-6 text-accent-warning" />
+                  <p className="text-foreground text-sm font-medium">Não foi possível carregar os membros</p>
+                  <Button onClick={fetchData} size="sm" variant="outline" className="border-border text-muted-foreground hover:text-foreground gap-2">
+                    <RefreshCw className="w-3.5 h-3.5" /> Tentar novamente
+                  </Button>
+                </div>
+              )}
+              {!loadError && filtered.length === 0 && !loading && (
                 <p className="text-muted-foreground text-center py-12">Nenhum membro encontrado</p>
               )}
             </div>

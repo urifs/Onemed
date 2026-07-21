@@ -19,15 +19,24 @@ export default function DriveSettings() {
   const navigate = useNavigate();
   const [driveStatus, setDriveStatus] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [connecting, setConnecting] = useState(false);
 
   const REDIRECT_URI = `${window.location.origin}/admin/drive`;
 
   const fetchStatus = async () => {
     setLoading(true);
-    const { data } = await supabase.from('drive_config').select('*').single();
-    setDriveStatus(data);
-    setLoading(false);
+    setLoadError(false);
+    try {
+      const { data, error } = await supabase.from('drive_config').select('*').single();
+      if (error) throw error;
+      setDriveStatus(data);
+    } catch {
+      toast.error('Erro ao carregar status do Drive');
+      setLoadError(true);
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Handle OAuth callback code
@@ -105,6 +114,13 @@ export default function DriveSettings() {
             {loading ? (
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Loader2 className="w-4 h-4 animate-spin" /> Carregando...
+              </div>
+            ) : loadError ? (
+              <div className="flex flex-col items-start gap-3">
+                <p className="text-destructive text-sm">Não foi possível carregar o status do Drive.</p>
+                <Button onClick={fetchStatus} size="sm" variant="outline" className="border-border text-muted-foreground hover:text-foreground gap-2">
+                  <RefreshCw className="w-3.5 h-3.5" /> Tentar novamente
+                </Button>
               </div>
             ) : driveStatus?.connected ? (
               <div className="space-y-4">
