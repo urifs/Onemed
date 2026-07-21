@@ -121,7 +121,12 @@ export default function CourseDetailPage() {
       }
     })();
     return () => { alive = false; };
-  }, [slug, user, retryTick]);
+    // user (object) is intentionally not a dep — Supabase issues a new user
+    // object on every token refresh (e.g. on tab refocus), which would
+    // otherwise re-run this effect and reset activeLesson/close whatever
+    // lesson is open. Only an actual login/logout (id change) should reload.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slug, user?.id, retryTick]);
 
   useEffect(() => {
     if (autoOpenId && lessons.length > 0 && !activeLesson) {
