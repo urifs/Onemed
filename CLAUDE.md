@@ -39,7 +39,7 @@
 | Serviço | Token / Valor |
 |---------|--------------|
 | **Supabase Management API** | `sbp_978755d6124e8183400830a25f8b5f8df3fff407` |
-| **Vercel API Token** | `vcp_6m85MdQjg3YEmboL3Bg4x0fHzqTfXiuhQQubBmzGE3tjjqhdDt0JF7SY` |
+| **Vercel API Token** | `vcp_5Gmm1xAtAAZYv2ytWIWU0841jvdvKVi3N0eFoDEnk2U8WGPP5l29VU0v` |
 
 ### IDs e Referências dos Projetos
 
