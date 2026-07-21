@@ -26,17 +26,46 @@ export function LessonPlayer({
   const [error, setError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement | HTMLAudioElement>(null);
   const lastReported = useRef(0);
+  const mediaRetries = useRef(0);
+  const [imgRetryCount, setImgRetryCount] = useState(0);
 
   useEffect(() => {
     let alive = true;
     setSrc(null);
     setError(null);
     lastReported.current = 0;
+    mediaRetries.current = 0;
+    setImgRetryCount(0);
     getUrl(lesson.id)
       .then(url => { if (alive) setSrc(url); })
       .catch(err => { if (alive) setError(err.message); });
     return () => { alive = false; };
   }, [lesson.id, getUrl]);
+
+  // A permissão do arquivo no Drive é concedida por trás, mas propaga pelos
+  // servidores do Google em velocidades diferentes dependendo de onde a
+  // requisição sai — a checagem que a Edge Function faz antes de devolver a
+  // URL não garante que já propagou pro ponto de rede específico de onde o
+  // navegador do aluno está acessando. Sem retry aqui, isso vira um erro de
+  // CORS/403 visível bem na cara do aluno em vez de só demorar 1-2s a mais.
+  const RETRY_DELAYS_MS = [2000, 3000, 5000, 8000, 13000];
+  const handleMediaError = () => {
+    if (mediaRetries.current >= RETRY_DELAYS_MS.length) {
+      setError('Não foi possível carregar este arquivo. Tente novamente em instantes.');
+      return;
+    }
+    const delay = RETRY_DELAYS_MS[mediaRetries.current];
+    mediaRetries.current += 1;
+    setTimeout(() => { videoRef.current?.load(); }, delay);
+  };
+
+  const handleImageError = () => {
+    if (imgRetryCount >= RETRY_DELAYS_MS.length) {
+      setError('Não foi possível carregar este arquivo. Tente novamente em instantes.');
+      return;
+    }
+    setTimeout(() => setImgRetryCount(c => c + 1), RETRY_DELAYS_MS[imgRetryCount]);
+  };
 
   useEffect(() => {
     if (!src || (lesson.type !== 'video' && lesson.type !== 'audio') || !initialWatchedSeconds) return;
@@ -113,15 +142,17 @@ export function LessonPlayer({
             className="max-w-full max-h-full rounded-lg bg-black"
             onTimeUpdate={handleTimeUpdate}
             onEnded={handleEnded}
+            onError={handleMediaError}
             onContextMenu={e => e.preventDefault()}
           />
         ) : lesson.type === 'pdf' ? (
           <PdfViewer url={src} title={lesson.title} />
         ) : lesson.type === 'image' ? (
           <img
-            src={src}
+            src={imgRetryCount > 0 ? `${src}&_r=${imgRetryCount}` : src}
             alt={lesson.title}
             className="max-w-full max-h-full rounded-lg object-contain"
+            onError={handleImageError}
             onContextMenu={e => e.preventDefault()}
             draggable={false}
           />
@@ -135,6 +166,7 @@ export function LessonPlayer({
             className="w-full max-w-md"
             onTimeUpdate={handleTimeUpdate}
             onEnded={handleEnded}
+            onError={handleMediaError}
             onContextMenu={e => e.preventDefault()}
           />
         ) : (

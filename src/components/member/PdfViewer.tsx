@@ -14,6 +14,14 @@ export function PdfViewer({ url }: { url: string; title?: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Mesmo motivo do retry em LessonPlayer.tsx: a permissão "qualquer um com
+  // o link" recém-concedida no Drive não propaga instantaneamente pra todos
+  // os pontos de rede do Google, então a primeira tentativa de buscar o PDF
+  // a partir do navegador do aluno pode falhar mesmo com a Edge Function já
+  // tendo confirmado acesso do lado dela. Tenta de novo com backoff antes de
+  // desistir.
+  const RETRY_DELAYS_MS = [2000, 3000, 5000, 8000, 13000];
+
   useEffect(() => {
     let cancelled = false;
     const container = containerRef.current;
@@ -22,9 +30,30 @@ export function PdfViewer({ url }: { url: string; title?: string }) {
     setLoading(true);
     setError(null);
 
+    function sleep(ms: number) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
     (async () => {
+      let pdf;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          pdf = await pdfjsLib.getDocument({ url }).promise;
+          break;
+        } catch (err) {
+          if (cancelled) return;
+          if (attempt >= RETRY_DELAYS_MS.length) {
+            console.error('Failed to load PDF after retries', err);
+            setError('Não foi possível abrir este arquivo. Tente novamente em instantes.');
+            setLoading(false);
+            return;
+          }
+          await sleep(RETRY_DELAYS_MS[attempt]);
+          if (cancelled) return;
+        }
+      }
+
       try {
-        const pdf = await pdfjsLib.getDocument({ url }).promise;
         const containerWidth = container.clientWidth || 800;
         // Canvas backing-store resolution defaults to 1 pixel per CSS pixel —
         // on a phone with devicePixelRatio 2-3x, a page fit to the container
