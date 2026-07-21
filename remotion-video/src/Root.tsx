@@ -6,6 +6,29 @@ import { OneMedHUD, HUD_DURATION } from './OneMedHUD';
 import { OneMedMedical, MEDICAL_DURATION } from './OneMedMedical';
 import { OneMedShowcase, SHOWCASE_DURATION } from './OneMedShowcase';
 import { OneMedTiktok, TIKTOK_DURATION } from './OneMedTiktok';
+import { C01_NovaEra, C01_DURATION } from './creatives/C01_NovaEra';
+import { C02_Plantao, C02_DURATION } from './creatives/C02_Plantao';
+import { C03_Streaming, C03_DURATION } from './creatives/C03_Streaming';
+import { C04_Telas, C04_DURATION } from './creatives/C04_Telas';
+import { C05_Chaos, C05_DURATION } from './creatives/C05_Chaos';
+import { C06_Detalhes, C06_DURATION } from './creatives/C06_Detalhes';
+import { C07_Player, C07_DURATION } from './creatives/C07_Player';
+import { C08_Numeros, C08_DURATION } from './creatives/C08_Numeros';
+import { C09_Login, C09_DURATION } from './creatives/C09_Login';
+import { C10_Atualizado, C10_DURATION } from './creatives/C10_Atualizado';
+
+const CREATIVES: Array<[string, React.FC, number]> = [
+  ['C01_NovaEra', C01_NovaEra, C01_DURATION],
+  ['C02_Plantao', C02_Plantao, C02_DURATION],
+  ['C03_Streaming', C03_Streaming, C03_DURATION],
+  ['C04_Telas', C04_Telas, C04_DURATION],
+  ['C05_Chaos', C05_Chaos, C05_DURATION],
+  ['C06_Detalhes', C06_Detalhes, C06_DURATION],
+  ['C07_Player', C07_Player, C07_DURATION],
+  ['C08_Numeros', C08_Numeros, C08_DURATION],
+  ['C09_Login', C09_Login, C09_DURATION],
+  ['C10_Atualizado', C10_Atualizado, C10_DURATION],
+];
 
 export const RemotionRoot: React.FC = () => {
   return (
@@ -66,6 +89,17 @@ export const RemotionRoot: React.FC = () => {
         width={1080}
         height={1920}
       />
+      {CREATIVES.map(([id, component, duration]) => (
+        <Composition
+          key={id}
+          id={id}
+          component={component}
+          durationInFrames={duration}
+          fps={30}
+          width={1080}
+          height={1920}
+        />
+      ))}
     </>
   );
 };
