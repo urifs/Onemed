@@ -97,7 +97,7 @@ function getBaseTemplate(content: string, title: string): string {
 </html>`
 }
 
-function getTrialAccessEmail(email: string, folderName?: string, folderId?: string): string {
+function getTrialAccessEmail(email: string): string {
   const content = `
     <h1 style="color: white; font-size: 28px; margin: 0 0 20px; text-align: center;">
       Bem-vindo ao <span style="color: #EF4444;">OneMed</span>!
@@ -131,17 +131,15 @@ function getTrialAccessEmail(email: string, folderName?: string, folderId?: stri
       <tr><td style="padding: 10px 0;"><span style="color: #22C55E; font-size: 16px;">•</span><span style="color: #CBD5E1; font-size: 15px; margin-left: 10px;">Atualizações constantes de conteúdo</span></td></tr>
     </table>
 
-    ${folderId ? `
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
       <tr>
         <td align="center" style="padding: 30px 0 10px;">
-          <a href="https://drive.google.com/drive/folders/${folderId}" style="display: inline-block; background: linear-gradient(135deg, #DC2626 0%, #991B1B 100%); color: white; text-decoration: none; padding: 16px 40px; border-radius: 8px; font-size: 16px; font-weight: bold;">
-            Acessar Conteúdo no Drive
+          <a href="${SITE_URL}/login" style="display: inline-block; background: linear-gradient(135deg, #DC2626 0%, #991B1B 100%); color: white; text-decoration: none; padding: 16px 40px; border-radius: 8px; font-size: 16px; font-weight: bold;">
+            Acessar a Plataforma
           </a>
         </td>
       </tr>
     </table>
-    ` : ''}
 
     <p style="color: #94A3B8; font-size: 16px; line-height: 1.6; margin: 30px 0 20px;">
       Gostou do conteúdo? Garanta seu acesso completo com nossos planos:
@@ -158,7 +156,7 @@ function getTrialAccessEmail(email: string, folderName?: string, folderId?: stri
     </table>
 
     <p style="color: #64748B; font-size: 13px; text-align: center; margin: 20px 0 0;">
-      Acesse o Google Drive com o email: <strong style="color: white;">${email}</strong>
+      Entre com o email: <strong style="color: white;">${email}</strong>
     </p>
   `
   return getBaseTemplate(content, `Bem-vindo ao ${SITE_NAME}!`)
@@ -323,7 +321,7 @@ serve(async (req) => {
 
     if (type === 'trial_access') {
       subject = `Bem-vindo ao ${SITE_NAME}! Seu acesso de teste foi ativado`
-      html = getTrialAccessEmail(to, folderName, folderId)
+      html = getTrialAccessEmail(to)
     } else if (type === 'access_granted') {
       subject = `Acesso ao ${SITE_NAME} liberado`
       html = getAccessGrantedEmail(to, folderName, folderId)

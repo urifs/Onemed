@@ -6,7 +6,10 @@ import { toast } from 'sonner';
 import AdminLayout from '@/components/AdminLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { FolderOpen, CheckCircle, AlertCircle, RefreshCw, Folder, Loader2 } from 'lucide-react';
+import { FolderOpen, CheckCircle, AlertCircle, RefreshCw, Folder, Loader2, GraduationCap, Mail, Copy, Download } from 'lucide-react';
+import { extractFunctionErrorMessage } from '@/lib/utils';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 
 const GOOGLE_CLIENT_ID = '110017470335-2l6er8r451vj5hf3ob05rvolc2p4v9ku.apps.googleusercontent.com';
 
@@ -148,6 +151,12 @@ export default function DriveSettings() {
           <FolderConfig driveStatus={driveStatus} onRefresh={fetchStatus} />
         )}
 
+        {/* Course Library Sync */}
+        {driveStatus?.connected && <SyncCoursesCard />}
+
+        {/* Extract emails with access to a folder */}
+        {driveStatus?.connected && <FolderEmailsCard />}
+
         {/* Info */}
         <Card className="bg-background-paper border-border">
           <CardContent className="p-6">
@@ -164,6 +173,184 @@ export default function DriveSettings() {
         </Card>
       </div>
     </AdminLayout>
+  );
+}
+
+interface SyncProgress {
+  coursesCreated: number;
+  coursesResynced: number;
+  lessonsImported: number;
+  batches: number;
+}
+
+function SyncCoursesCard() {
+  const [running, setRunning] = useState(false);
+  const [progress, setProgress] = useState<SyncProgress | null>(null);
+
+  const runSync = async () => {
+    setRunning(true);
+    setProgress(null);
+    let cursor: string | undefined = undefined;
+    const totals: SyncProgress = { coursesCreated: 0, coursesResynced: 0, lessonsImported: 0, batches: 0 };
+    try {
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const { data, error } = await supabase.functions.invoke('member-sync-library', {
+          body: { cursor, batchSize: 4, forceResync: true },
+        });
+        if (error || data?.error) {
+          const msg = data?.error || await extractFunctionErrorMessage(error, 'Erro ao sincronizar cursos');
+          throw new Error(msg);
+        }
+        totals.batches += 1;
+        totals.coursesCreated += data.coursesCreated || 0;
+        totals.coursesResynced += data.coursesResynced || 0;
+        totals.lessonsImported += data.lessonsImported || 0;
+        setProgress({ ...totals });
+        cursor = data.cursor || undefined;
+        if (data.done) break;
+      }
+      toast.success(`Sincronização concluída: ${totals.coursesCreated} cursos novos, ${totals.coursesResynced} atualizados, ${totals.lessonsImported} aulas importadas.`);
+    } catch (e: any) {
+      toast.error(e.message || 'Erro ao sincronizar cursos');
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <Card className="bg-background-paper border-border">
+      <CardHeader>
+        <CardTitle className="text-base font-medium text-foreground flex items-center gap-2">
+          <GraduationCap className="w-5 h-5 text-primary" />
+          Biblioteca de Cursos
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          Espelha a pasta "Cursos + Livros" do Drive para a área de membros (/membros). Pode rodar quantas vezes
+          quiser — cursos e aulas já importados não são duplicados, e conteúdo novo que você adicionar no Drive
+          é detectado e importado.
+        </p>
+        {progress && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            {running && <Loader2 className="w-4 h-4 animate-spin text-primary shrink-0" />}
+            <span>
+              {progress.coursesCreated} curso{progress.coursesCreated !== 1 ? 's' : ''} novo{progress.coursesCreated !== 1 ? 's' : ''} ·{' '}
+              {progress.coursesResynced} atualizado{progress.coursesResynced !== 1 ? 's' : ''} ·{' '}
+              {progress.lessonsImported} aulas · lote {progress.batches}
+            </span>
+          </div>
+        )}
+        <Button onClick={runSync} disabled={running} className="bg-primary hover:bg-primary-hover text-primary-foreground gap-2">
+          {running ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+          {running ? 'Sincronizando…' : 'Sincronizar Cursos'}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+function FolderEmailsCard() {
+  const [link, setLink] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [folderName, setFolderName] = useState<string | null>(null);
+  const [emails, setEmails] = useState<string[]>([]);
+
+  const extract = async () => {
+    if (!link.trim()) { toast.error('Cole o link (ou ID) da pasta'); return; }
+    setLoading(true);
+    setFolderName(null);
+    setEmails([]);
+    try {
+      const { data, error } = await supabase.functions.invoke('drive-folder-permissions', { body: { link: link.trim() } });
+      if (error || data?.error) {
+        const msg = data?.error || await extractFunctionErrorMessage(error, 'Erro ao extrair emails');
+        throw new Error(msg);
+      }
+      setFolderName(data.folderName);
+      setEmails(data.emails || []);
+      if ((data.emails || []).length === 0) toast.warning('Nenhum email com acesso encontrado nessa pasta');
+      else toast.success(`${data.emails.length} email(s) encontrado(s)`);
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao extrair emails');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const copyAll = async () => {
+    await navigator.clipboard.writeText(emails.join('\n'));
+    toast.success('Emails copiados para a área de transferência');
+  };
+
+  const downloadTxt = () => {
+    const blob = new Blob([emails.join('\n')], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `emails-${(folderName || 'pasta').replace(/[^\w-]+/g, '_')}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <Card className="bg-background-paper border-border">
+      <CardHeader>
+        <CardTitle className="text-base font-medium text-foreground flex items-center gap-2">
+          <Mail className="w-5 h-5 text-primary" />
+          Extrair Emails de uma Pasta
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          Cole o link (ou ID) de qualquer pasta do Drive conectado e liste todos os emails que têm acesso a ela —
+          útil pra recuperar quem foi compartilhado manualmente antes da plataforma existir.
+        </p>
+        <div className="flex gap-2 flex-wrap">
+          <Input
+            value={link}
+            onChange={e => setLink(e.target.value)}
+            placeholder="https://drive.google.com/drive/folders/..."
+            className="flex-1 min-w-64 bg-secondary border-border text-foreground"
+          />
+          <Button onClick={extract} disabled={loading} className="bg-primary hover:bg-primary-hover text-primary-foreground gap-2">
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+            {loading ? 'Extraindo...' : 'Extrair Emails'}
+          </Button>
+        </div>
+
+        {folderName && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <p className="text-sm text-foreground">
+                <span className="font-medium">{folderName}</span>
+                <span className="text-muted-foreground"> · {emails.length} email{emails.length !== 1 ? 's' : ''}</span>
+              </p>
+              {emails.length > 0 && (
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={copyAll} className="border-border text-foreground hover:bg-secondary gap-1.5">
+                    <Copy className="w-3.5 h-3.5" /> Copiar
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={downloadTxt} className="border-border text-foreground hover:bg-secondary gap-1.5">
+                    <Download className="w-3.5 h-3.5" /> Baixar .txt
+                  </Button>
+                </div>
+              )}
+            </div>
+            {emails.length > 0 && (
+              <Textarea
+                readOnly
+                value={emails.join('\n')}
+                rows={10}
+                className="bg-secondary border-border text-foreground font-mono text-xs"
+                onFocus={e => e.currentTarget.select()}
+              />
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

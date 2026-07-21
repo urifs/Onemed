@@ -38,7 +38,7 @@
 
 | Serviço | Token / Valor |
 |---------|--------------|
-| **Supabase Management API** | `sbp_46a93dbb0118dfcdcef474f9287d4044284b30ec` |
+| **Supabase Management API** | `sbp_978755d6124e8183400830a25f8b5f8df3fff407` |
 | **Vercel API Token** | `vcp_6m85MdQjg3YEmboL3Bg4x0fHzqTfXiuhQQubBmzGE3tjjqhdDt0JF7SY` |
 
 ### IDs e Referências dos Projetos
@@ -129,7 +129,8 @@ upsell2:   R$   9,90  — complemento 2
 | `/admin/login` | `LoginPage.tsx` | Público | Login admin |
 | `/admin/register` | `RegisterPage.tsx` | Público | Cadastro admin |
 | `/admin` | `Dashboard.tsx` | Protegido | Métricas diárias |
-| `/admin/access` | `AccessManagement.tsx` | Protegido | Gerenciar todos os acessos |
+| `/admin/access` | `AccessManagement.tsx` | Protegido | Gerenciar acessos (fluxo antigo de trial/Drive) |
+| `/admin/membros` | `MembersPage.tsx` | Protegido | Gerenciar acesso à área de membros (cursos) |
 | `/admin/buyers` | `BuyersPage.tsx` | Protegido | Gerenciar compradores |
 | `/admin/trials` | `TrialUsersPage.tsx` | Protegido | Ver usuários trial (exclui convertidos) |
 | `/admin/coupons` | `CouponsPage.tsx` | Protegido | CRUD de cupons |
@@ -142,7 +143,7 @@ upsell2:   R$   9,90  — complemento 2
 
 | Função | Acionado por | Descrição |
 |--------|-------------|-----------|
-| `create-trial-access` | Frontend (landing) | Cria trial de 30min + compartilha Drive + envia email |
+| `create-trial-access` | Frontend (landing) | Cria trial de 30min de acesso à área de membros + login instantâneo (sem Drive) + envia email |
 | `mp-create-payment` | Frontend (checkout) | Valida plano, calcula preço, gera preferência MP |
 | `mp-webhook` | Mercado Pago (HTTP) | Processa pagamento aprovado → libera acesso permanente |
 | `drive-share-folder` | Interna (service-to-service) | Compartilha pasta Drive com email via Google API |
@@ -159,7 +160,11 @@ upsell2:   R$   9,90  — complemento 2
 
 ### Fluxo 1 — Trial Gratuito
 
-**Objetivo:** Dar ao usuário 30 minutos de acesso ao conteúdo no Google Drive.
+**Objetivo:** Dar ao usuário 30 minutos de acesso direto à área de membros (`/membros`).
+
+> Reescrito em 2026-07-19 — **não compartilha mais pasta do Google Drive.** O trial
+> antigo (que dava acesso a uma pasta do Drive) foi substituído por acesso real à
+> plataforma de cursos nova, igual a um comprador, só que por tempo limitado.
 
 ```
 Usuário acessa / (landing)
@@ -169,13 +174,15 @@ Usuário acessa / (landing)
       ├── valida formato de email (regex)
       ├── verifica rate limit (5 tentativas / 15min por IP)
       ├── verifica se já é comprador aprovado → 409
-      ├── verifica se já tem trial ativo → retorna tempo restante
+      ├── verifica se já tem trial ativo → devolve sessão (login instantâneo) + tempo restante
       ├── verifica se já usou trial (expirado) → 409
       ├── cria registro em accesses (access_type='trial', expires_at=now+30min)
-      ├── chama drive-share-folder (fire-and-forget)
-      └── chama send-access-email tipo 'trial_access' (fire-and-forget)
-  → frontend exibe countdown de 30 minutos em tempo real
-  → ao expirar, mostra tela de "acesso encerrado"
+      ├── gera sessão instantânea (mesmo truque de magiclink/signup do member-auth-request)
+      │     e chama enforce_session_limit (máx. 2 dispositivos simultâneos por conta)
+      └── chama send-access-email tipo 'trial_access' (fire-and-forget) — aponta pra /login
+  → frontend faz supabase.auth.setSession() com os tokens recebidos e redireciona pra /membros
+  → TrialCountdownBar (widget flutuante) mostra o tempo restante + botão "Adquirir Acesso"
+  → ao expirar, redireciona pra /checkout
 ```
 
 **Tabelas afetadas:** `accesses` (insert), `rate_limits` (update), `visits` (insert)
@@ -531,6 +538,69 @@ Compra aprovada MP → mp-webhook → status === 'approved'
 | Variável | Status | Descrição |
 |----------|--------|-----------|
 | `META_CAPI_ACCESS_TOKEN` | ✅ Configurado | Long-lived token 60d, vence **2026-07-14** |
+
+---
+
+### 2026-07-18 (sessão remota) — acesso de admin à área de membros
+
+**Problema relatado:** "menu hamburguer com as categorias não aparece no mobile" em `/membros`.
+
+**Investigação:** o componente `CategorySidebar` e o build de CSS/Tailwind foram auditados e
+reproduzidos localmente (build idêntico ao bundle de produção, byte a byte) — ambos corretos,
+o `md:hidden`/`md:block` geram media queries normalmente. O sintoma real era outro: o dono da
+conta (admin, sem nunca ter feito trial ou comprado um plano) não conseguia sequer entrar em
+`/membros`, porque `member-auth-request` (o gate do login por magic link) só liberava o link
+para emails com linha ativa em `accesses` ou `buyers` — `is_member()` já tinha bypass de admin
+(migration `20260718160000_is_member_admin_bypass.sql`), mas esse bypass nunca era alcançado
+porque o login era bloqueado antes.
+
+**Correção:**
+
+| Arquivo | Mudança |
+|---------|---------|
+| `supabase/migrations/20260718200000_member_auth_admin_bypass.sql` | Nova função `is_admin_email(_email)` — checa se o email pertence a um usuário com role `admin` |
+| `supabase/functions/member-auth-request/index.ts` | Gate do magic link agora libera também quando `is_admin_email` é true, sem exigir trial/compra |
+| `src/pages/MembersPage.tsx` (novo, rota `/admin/membros`) | Página dedicada de gerenciamento da área de membros: lista de membros (grants manuais + compradores), diálogo "Conceder Acesso" (Vitalício/Anual, sem acoplar com Drive), stats de cursos/categorias, botão "Abrir Área de Membros" |
+| `src/components/AdminLayout.tsx` | Novo item de navegação "Área de Membros" → aponta para `/admin/membros` (dentro do painel, não mais um link externo cru) |
+
+`AccessManagement.tsx` (`/admin/access`) é do fluxo antigo de trial via Google Drive
+(duração em minutos, compartilhamento automático de pasta) — não serve para conceder acesso
+à plataforma de cursos nova. `MembersPage` insere direto em `accesses` com `access_type`
+`lifetime`/`annual` e `status='active'`, sem chamar `drive-share-folder`.
+
+---
+
+### 2026-07-19/20 (sessão remota) — trial sem Drive, limite de dispositivos, correções na área de membros
+
+**Trial gratuito reescrito** (ver Fluxo 1 acima): `create-trial-access` parou de compartilhar
+pasta do Google Drive e passou a dar acesso direto à área de membros por 30 min, com login
+instantâneo (mesmo redeem de magiclink/signup do `member-auth-request`). `TrialCountdownBar.tsx`
+(novo) é o widget flutuante com o tempo restante + botão "Adquirir Acesso" (`→ /checkout`),
+montado no `MemberHeader`. `TrialSuccessSection.tsx` (tela antiga de instruções do Drive) foi
+removida. Email de boas-vindas do trial (`send-access-email`) aponta pra `/login` em vez do Drive.
+
+**Bug encontrado e corrigido:** `member-account-info` excluía explicitamente
+`access_type='trial'` da busca (resquício de quando só existia pra compradores) — todo usuário em
+trial recebia `plan: null`, então o contador flutuante nunca aparecia e o menu de conta
+(`AccountMenu.tsx`) mostrava Plano/Acesso em branco. Corrigido pra incluir trial quando não há
+plano pago/vitalício ativo; `AccountMenu` agora mostra "Teste Grátis (30 min)" com contagem
+regressiva em mm:ss ao vivo e troca "Renovar Assinatura" por "Adquirir Acesso Completo" pra quem
+está em trial.
+
+**Limite de 2 dispositivos simultâneos por conta:** nova função `enforce_session_limit(user_id,
+max_sessions=2)` (migration `20260719210000_enforce_session_device_limit.sql`) apaga as sessões
+mais antigas de `auth.sessions` além do limite — como `auth.refresh_tokens` referencia a sessão,
+isso invalida o refresh token do dispositivo mais antigo. Chamada logo após todo login na área de
+membros (`member-auth-request` e `create-trial-access`). `AuthContext` agora distingue um
+`SIGNED_OUT` manual de um forçado (refresh token morto) e dispara `KickedOutModal.tsx` (novo,
+montado no root do `App.tsx`) explicando que a conta já está em outros 2 dispositivos e que um
+novo login derrubou esta sessão, com botão de WhatsApp pro suporte caso não tenha sido o próprio
+usuário.
+
+**Outros ajustes:** captcha simples ("Não sou um robô", 3s de trava) em `/login`; botão "Entrar"
+no header da landing (`LandingHeader.tsx`) linkando pra `/login`; resultado da importação em
+massa de emails em `/admin/membros` (que já ignorava emails que já tinham acesso, sem duplicar)
+ganhou destaque visual com ícones/cores por categoria (concedidos/já tinham acesso/inválidos).
 
 ---
 

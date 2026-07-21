@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
@@ -9,8 +10,12 @@ import { AuthProvider, useAuth } from "@/context/AuthContext";
 import Index from "./pages/Index";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
+import MemberLoginPage from "./pages/MemberLoginPage";
+import MemberDashboardPage from "./pages/MemberDashboardPage";
+import CourseDetailPage from "./pages/CourseDetailPage";
 import Dashboard from "./pages/Dashboard";
 import AccessManagement from "./pages/AccessManagement";
+import MembersPage from "./pages/MembersPage";
 import DriveSettings from "./pages/DriveSettings";
 import CheckoutPage from "./pages/CheckoutPage";
 import PaymentSuccessPage from "./pages/PaymentSuccessPage";
@@ -28,8 +33,17 @@ import SMSPage from "./pages/SMSPage";
 import WhatsAppPage from "./pages/WhatsAppPage";
 import NotFound from "./pages/NotFound";
 import WhatsAppButton from "./components/WhatsAppButton";
+import { KickedOutModal } from "./components/member/KickedOutModal";
 
 const queryClient = new QueryClient();
+
+const FbclidCapture = () => {
+  useEffect(() => {
+    const fbclid = new URLSearchParams(window.location.search).get('fbclid')
+    if (fbclid) localStorage.setItem('om_fbclid', fbclid)
+  }, [])
+  return null
+}
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading, isAdmin } = useAuth();
@@ -42,6 +56,17 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
+const MemberProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+  const { user, loading } = useAuth();
+  if (loading) return (
+    <div className="flex min-h-screen items-center justify-center bg-background">
+      <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+  if (!user) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+};
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
@@ -49,15 +74,22 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
+          <FbclidCapture />
           <Routes>
             {/* Public routes */}
             <Route path="/" element={<Index />} />
             <Route path="/admin/login" element={<LoginPage />} />
             <Route path="/admin/register" element={<RegisterPage />} />
 
+            {/* Member platform */}
+            <Route path="/login" element={<MemberLoginPage />} />
+            <Route path="/membros" element={<MemberProtectedRoute><MemberDashboardPage /></MemberProtectedRoute>} />
+            <Route path="/membros/curso/:slug" element={<MemberProtectedRoute><CourseDetailPage /></MemberProtectedRoute>} />
+
             {/* Protected admin routes */}
             <Route path="/admin" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/admin/access" element={<ProtectedRoute><AccessManagement /></ProtectedRoute>} />
+            <Route path="/admin/membros" element={<ProtectedRoute><MembersPage /></ProtectedRoute>} />
             <Route path="/admin/drive" element={<ProtectedRoute><DriveSettings /></ProtectedRoute>} />
             <Route path="/admin/buyers" element={<ProtectedRoute><BuyersPage /></ProtectedRoute>} />
             <Route path="/admin/trials" element={<ProtectedRoute><TrialUsersPage /></ProtectedRoute>} />
@@ -81,6 +113,7 @@ const App = () => (
             <Route path="*" element={<NotFound />} />
           </Routes>
           <WhatsAppButton />
+          <KickedOutModal />
         </BrowserRouter>
       </TooltipProvider>
     </AuthProvider>

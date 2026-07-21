@@ -1,5 +1,13 @@
 {
   "permissions": {
-    "defaultMode": "bypassPermissions"
+    "defaultMode": "bypassPermissions",
+    "allow": [
+      "mcp__9959d34e-0088-4a24-a353-2bbd5c3a9c6f__ads_create_campaign",
+      "mcp__9959d34e-0088-4a24-a353-2bbd5c3a9c6f__ads_create_ad_set",
+      "mcp__9959d34e-0088-4a24-a353-2bbd5c3a9c6f__ads_create_ad",
+      "mcp__9959d34e-0088-4a24-a353-2bbd5c3a9c6f__ads_activate_entity",
+      "mcp__9959d34e-0088-4a24-a353-2bbd5c3a9c6f__ads_update_entity",
+      "mcp__9959d34e-0088-4a24-a353-2bbd5c3a9c6f__ads_get_ad_entities"
+    ]
   }
 }

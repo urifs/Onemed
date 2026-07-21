@@ -8,11 +8,91 @@ const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
 
+const FETCH_TIMEOUT_MS = 10000;
+// A few admin-triggered batch jobs legitimately run longer than a normal
+// query (member-sync-library crawls large courses; run-email-campaign has
+// its own 6-minute per-batch allowance) — exempt them from the blanket timeout.
+const TIMEOUT_EXEMPT = /\/functions\/v1\/(member-sync-library|run-email-campaign)/;
+
+// Without this, a request that never settles (dropped connection, a stuck
+// proxy, a backgrounded tab resuming mid-request) leaves its promise pending
+// forever — any page awaiting it gets stuck on its loading state until a hard
+// reload. This guarantees every Supabase call either resolves or rejects.
+function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+  if (TIMEOUT_EXEMPT.test(url)) return fetch(input, init);
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  if (init.signal) {
+    if (init.signal.aborted) controller.abort();
+    else init.signal.addEventListener('abort', () => controller.abort(), { once: true });
+  }
+  return fetch(input, { ...init, signal: controller.signal }).finally(() => clearTimeout(timeoutId));
+}
+
+// Some iPads (institutional/MDM-managed ones especially) ship Safari with
+// Private Browsing or "Block All Cookies" turned on, which makes plain
+// `localStorage` throw synchronously on access instead of just failing
+// quietly. Since GoTrueClient reads storage as part of initializing the
+// session, an uncaught throw there happens inside a bare (non-try/catch'd)
+// effect callback and never reaches the 5s loading failsafe in
+// AuthContext — leaving the app stuck on its initial spinner forever, on
+// every reload, because the same throw happens identically every time.
+// This wrapper guarantees storage access never throws: it prefers real
+// localStorage, but falls back to an in-memory store (session is lost on
+// reload in that case, but the app actually loads instead of freezing).
+function createSafeStorage() {
+  const memory = new Map<string, string>();
+  let localStorageOk = true;
+  try {
+    const testKey = '__onemed_storage_test__';
+    localStorage.setItem(testKey, '1');
+    localStorage.removeItem(testKey);
+  } catch {
+    localStorageOk = false;
+  }
+
+  return {
+    getItem(key: string) {
+      try {
+        return localStorageOk ? localStorage.getItem(key) : (memory.get(key) ?? null);
+      } catch {
+        return memory.get(key) ?? null;
+      }
+    },
+    setItem(key: string, value: string) {
+      try {
+        if (localStorageOk) { localStorage.setItem(key, value); return; }
+      } catch { /* fall through to memory */ }
+      memory.set(key, value);
+    },
+    removeItem(key: string) {
+      try {
+        if (localStorageOk) { localStorage.removeItem(key); return; }
+      } catch { /* fall through to memory */ }
+      memory.delete(key);
+    },
+  };
+}
+
+// No custom `lock` here — this version of @supabase/auth-js dedupes
+// concurrent refreshes itself and explicitly documents its own lock
+// primitives as a legacy path kept only for backwards-compatible imports
+// ("TODO(v3): remove legacy lock path", all over GoTrueClient). Supplying
+// any custom lock function (this project previously had two: a no-op, then
+// a hand-rolled FIFO queue) forces the client onto that legacy path instead
+// of the modern lockless default — and neither hand-rolled version honored
+// `acquireTimeout`, the internal budget GoTrueClient relies on to fail fast
+// instead of blocking. That's what left users stuck on a loading spinner
+// after login. Trust the library's own default.
 export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: {
-    storage: localStorage,
+    storage: createSafeStorage(),
     persistSession: true,
     autoRefreshToken: true,
-    lock: (_name: string, _acquireTimeout: number, fn: () => Promise<unknown>) => fn(),
-  }
+  },
+  global: {
+    fetch: fetchWithTimeout,
+  },
 });

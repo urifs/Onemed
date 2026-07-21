@@ -17,6 +17,7 @@ import {
   Mail,
   Smartphone,
   MessageCircle,
+  GraduationCap,
 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -26,6 +27,7 @@ import { AdminPWAHead } from '@/components/AdminPWAHead';
 const navItems = [
   { path: '/admin', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/admin/access', label: 'Acessos', icon: UserCheck },
+  { path: '/admin/membros', label: 'Área de Membros', icon: GraduationCap },
   { path: '/admin/buyers', label: 'Compradores', icon: DollarSign },
   { path: '/admin/trials', label: 'Usuários Trial', icon: Users },
   { path: '/admin/coupons', label: 'Cupons', icon: Tag },

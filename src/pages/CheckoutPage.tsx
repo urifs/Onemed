@@ -187,6 +187,8 @@ export default function CheckoutPage() {
       const getCookie = (name: string) =>
         document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`))?.[1] ?? null;
 
+      const fbclid = localStorage.getItem('om_fbclid') || null;
+
       const { error: buyerErr } = await supabase.from('buyers').insert({
         email: customerEmail.toLowerCase().trim(),
         name: customerName.trim() || null,
@@ -199,6 +201,7 @@ export default function CheckoutPage() {
         upsell2_purchased: upsell2Selected,
         fbp: getCookie('_fbp'),
         fbc: getCookie('_fbc'),
+        fbclid,
       });
       if (buyerErr) throw buyerErr;
 
