@@ -4,7 +4,6 @@ import { Play, Info, FileText, File, Music, Image as ImageIcon, Loader2 } from '
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
 import { MemberHeader } from '@/components/member/MemberHeader';
-import { MemberSearchBar } from '@/components/member/MemberSearchBar';
 import { CourseCard } from '@/components/member/CourseCard';
 import { CourseCover } from '@/components/member/CourseCover';
 import { CategorySidebar } from '@/components/member/CategorySidebar';
@@ -238,8 +237,7 @@ export default function MemberDashboardPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <MemberHeader />
-      <MemberSearchBar query={query} onQueryChange={handleQueryChange} />
+      <MemberHeader query={query} onQueryChange={handleQueryChange} />
 
       {!searching && !activeCategory && featured && (
         <section className="max-w-[1400px] mx-auto px-4 md:px-8 pt-6">

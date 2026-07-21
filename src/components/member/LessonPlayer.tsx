@@ -55,23 +55,6 @@ export function LessonPlayer({
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  // Alguns Android/Chrome entram em Picture-in-Picture automático ao trocar
-  // de app com o vídeo tocando, mesmo com disablePictureInPicture — força a
-  // saída assim que acontece, senão o vídeo fica preso numa janelinha
-  // flutuante fora do layout do player.
-  useEffect(() => {
-    if (lesson.type !== 'video') return;
-    const v = videoRef.current;
-    if (!v) return;
-    const onEnterPip = () => {
-      if (document.pictureInPictureElement) {
-        document.exitPictureInPicture().catch(() => {});
-      }
-    };
-    v.addEventListener('enterpictureinpicture', onEnterPip);
-    return () => v.removeEventListener('enterpictureinpicture', onEnterPip);
-  }, [src, lesson.type]);
-
   const handleTimeUpdate = () => {
     const v = videoRef.current;
     if (!v) return;
@@ -88,7 +71,7 @@ export function LessonPlayer({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-sm flex flex-col">
+    <div className="fixed inset-0 z-50 bg-black/92 backdrop-blur-sm flex flex-col">
       <div className="flex items-center gap-3 px-4 md:px-6 py-3.5 border-b border-white/10 shrink-0">
         <button onClick={onClose} className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/15 flex items-center justify-center text-white transition-colors">
           <X className="w-4 h-4" />
@@ -114,7 +97,7 @@ export function LessonPlayer({
         </div>
       </div>
 
-      <div className="flex-1 flex items-center justify-center p-3 md:p-6 min-h-0 overflow-hidden">
+      <div className="flex-1 flex items-center justify-center p-3 md:p-6 min-h-0">
         {error ? (
           <p className="text-white/70 text-sm max-w-sm text-center">{error}</p>
         ) : !src ? (
@@ -127,10 +110,7 @@ export function LessonPlayer({
             controlsList="nodownload noremoteplayback"
             disablePictureInPicture
             autoPlay
-            playsInline
-            // @ts-expect-error legacy attribute, mesma finalidade do playsInline pro webkit antigo
-            webkit-playsinline="true"
-            className="w-full h-full max-w-full max-h-full rounded-lg bg-black object-contain"
+            className="max-w-full max-h-full rounded-lg bg-black"
             onTimeUpdate={handleTimeUpdate}
             onEnded={handleEnded}
             onContextMenu={e => e.preventDefault()}

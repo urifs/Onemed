@@ -6,7 +6,6 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
 import { MemberHeader } from '@/components/member/MemberHeader';
-import { MemberSearchBar } from '@/components/member/MemberSearchBar';
 import { CourseCover } from '@/components/member/CourseCover';
 import { LessonPlayer } from '@/components/member/LessonPlayer';
 import { CommunityTab } from '@/components/member/CommunityTab';
@@ -202,8 +201,7 @@ export default function CourseDetailPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <MemberHeader />
-      <MemberSearchBar query={query} onQueryChange={setQuery} placeholder="Buscar aula ou arquivo…" />
+      <MemberHeader query={query} onQueryChange={setQuery} searchPlaceholder="Buscar aula ou arquivo…" />
 
       <section className="relative">
         <div className="relative h-[220px] md:h-[280px] overflow-hidden">

@@ -1,11 +1,16 @@
 import { Link } from 'react-router-dom';
-import { Stethoscope } from 'lucide-react';
+import { Search, Stethoscope } from 'lucide-react';
 import { AccountMenu } from './AccountMenu';
-import { NotificationsBell } from './NotificationsBell';
 import { TrialCountdownBar } from './TrialCountdownBar';
 import { MemberPWAHead } from './MemberPWAHead';
 
-export function MemberHeader() {
+interface MemberHeaderProps {
+  query: string;
+  onQueryChange: (value: string) => void;
+  searchPlaceholder?: string;
+}
+
+export function MemberHeader({ query, onQueryChange, searchPlaceholder = 'Buscar curso…' }: MemberHeaderProps) {
   return (
     <>
       <MemberPWAHead />
@@ -26,7 +31,16 @@ export function MemberHeader() {
 
           <div className="flex-1" />
 
-          <NotificationsBell />
+          <div className="relative w-full max-w-[150px] sm:max-w-xs">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <input
+              value={query}
+              onChange={e => onQueryChange(e.target.value)}
+              placeholder={searchPlaceholder}
+              className="w-full h-9 pl-9 pr-3 rounded-full bg-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors"
+            />
+          </div>
+
           <AccountMenu />
         </div>
       </header>
