@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Play, Info } from 'lucide-react';
+import { Play, Info, FileText, File, Music, Image as ImageIcon, Loader2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
 import { MemberHeader } from '@/components/member/MemberHeader';
 import { CourseCard } from '@/components/member/CourseCard';
 import { CourseCover } from '@/components/member/CourseCover';
 import { CategorySidebar } from '@/components/member/CategorySidebar';
+import { Checkbox } from '@/components/ui/checkbox';
 import { CATEGORY_ORDER } from '@/lib/courseCategories';
 import { formatDuration, matchesSearch, stripYearFromTitle, withTimeout } from '@/lib/utils';
 import type { Database } from '@/integrations/supabase/types';
@@ -16,6 +17,15 @@ type Lesson = Database['public']['Tables']['lessons']['Row'];
 type ProgressRow = Database['public']['Tables']['lesson_progress']['Row'] & {
   lessons: Lesson | null;
   courses: Course | null;
+};
+
+interface ContentResult {
+  lesson_id: string; lesson_title: string; lesson_type: string;
+  course_id: string; course_title: string; course_slug: string; course_category: string;
+}
+
+const CONTENT_TYPE_ICON: Record<string, typeof Play> = {
+  video: Play, pdf: FileText, doc: File, audio: Music, image: ImageIcon, other: File,
 };
 
 export default function MemberDashboardPage() {
@@ -29,6 +39,22 @@ export default function MemberDashboardPage() {
   const [retryTick, setRetryTick] = useState(0);
   const [query, setQuery] = useState(() => searchParams.get('q') || '');
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
+
+  const [searchCourses, setSearchCourses] = useState(true);
+  const [searchContents, setSearchContents] = useState(false);
+  const [contentResults, setContentResults] = useState<ContentResult[]>([]);
+  const [contentLoading, setContentLoading] = useState(false);
+
+  // Nunca deixa as duas caixas desmarcadas ao mesmo tempo — sempre precisa
+  // sobrar pelo menos um escopo de busca ativo.
+  const toggleSearchCourses = (checked: boolean) => {
+    if (!checked && !searchContents) return;
+    setSearchCourses(checked);
+  };
+  const toggleSearchContents = (checked: boolean) => {
+    if (!checked && !searchCourses) return;
+    setSearchContents(checked);
+  };
 
   // Chegando de dentro de um curso (busca redireciona pra cá com ?q=...) —
   // limpa o parâmetro da URL depois de capturar o valor inicial, senão ele
@@ -95,6 +121,25 @@ export default function MemberDashboardPage() {
     setLoading(true);
     setRetryTick(t => t + 1);
   };
+
+  // 81 mil linhas em lessons é demais pra trazer pro cliente e filtrar em
+  // JS — a busca de conteúdo roda no banco (search_lessons), com debounce
+  // pra não disparar uma consulta a cada tecla.
+  useEffect(() => {
+    if (!searchContents || !query.trim()) { setContentResults([]); return; }
+    let alive = true;
+    setContentLoading(true);
+    const timer = setTimeout(() => {
+      supabase.rpc('search_lessons', { _query: query.trim(), _limit: 60 })
+        .then(({ data, error }) => {
+          if (!alive) return;
+          if (error) { console.error('Erro na busca de conteúdo', error); setContentResults([]); return; }
+          setContentResults((data || []) as ContentResult[]);
+        })
+        .finally(() => { if (alive) setContentLoading(false); });
+    }, 350);
+    return () => { alive = false; clearTimeout(timer); };
+  }, [query, searchContents]);
 
   const filtered = useMemo(() => {
     if (!query.trim()) return courses;
@@ -268,16 +313,67 @@ export default function MemberDashboardPage() {
 
           <div className="flex-1 min-w-0 space-y-9">
             {searching ? (
-              <section>
-                <h2 className="font-secondary text-lg font-bold text-foreground mb-1">
-                  Resultados para "{query}"
-                </h2>
-                <p className="text-sm text-muted-foreground mb-5">
-                  {filtered.length} curso{filtered.length !== 1 ? 's' : ''} encontrado{filtered.length !== 1 ? 's' : ''}
-                </p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-8 items-start">
-                  {filtered.map(c => <CourseCard key={c.id} course={c} />)}
+              <section className="space-y-8">
+                <div>
+                  <h2 className="font-secondary text-lg font-bold text-foreground mb-3">
+                    Resultados para "{query}"
+                  </h2>
+                  <div className="flex items-center gap-5">
+                    <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer select-none">
+                      <Checkbox checked={searchCourses} onCheckedChange={v => toggleSearchCourses(v === true)} />
+                      Cursos
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer select-none">
+                      <Checkbox checked={searchContents} onCheckedChange={v => toggleSearchContents(v === true)} />
+                      Conteúdos internos (aulas/arquivos)
+                    </label>
+                  </div>
                 </div>
+
+                {searchCourses && (
+                  <div>
+                    <p className="text-sm text-muted-foreground mb-5">
+                      {filtered.length} curso{filtered.length !== 1 ? 's' : ''} encontrado{filtered.length !== 1 ? 's' : ''}
+                    </p>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-8 items-start">
+                      {filtered.map(c => <CourseCard key={c.id} course={c} />)}
+                    </div>
+                  </div>
+                )}
+
+                {searchContents && (
+                  <div>
+                    <p className="text-sm text-muted-foreground mb-5 flex items-center gap-2">
+                      {contentLoading ? (
+                        <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Buscando conteúdos...</>
+                      ) : (
+                        `${contentResults.length} conteúdo${contentResults.length !== 1 ? 's' : ''} encontrado${contentResults.length !== 1 ? 's' : ''}`
+                      )}
+                    </p>
+                    {!contentLoading && contentResults.length > 0 && (
+                      <div className="rounded-xl border border-border overflow-hidden divide-y divide-border">
+                        {contentResults.map(r => {
+                          const Icon = CONTENT_TYPE_ICON[r.lesson_type] || File;
+                          return (
+                            <button
+                              key={r.lesson_id}
+                              onClick={() => navigate(`/membros/curso/${r.course_slug}?lesson=${r.lesson_id}`)}
+                              className="w-full flex items-center gap-3.5 px-4 py-3.5 bg-card hover:bg-secondary text-left transition-colors group"
+                            >
+                              <div className="w-9 h-9 rounded-full bg-secondary group-hover:bg-primary/15 flex items-center justify-center shrink-0 transition-colors">
+                                <Icon className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" fill={r.lesson_type === 'video' ? 'currentColor' : 'none'} />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-foreground truncate">{r.lesson_title}</p>
+                                <p className="text-xs text-muted-foreground truncate">{stripYearFromTitle(r.course_title)}</p>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
               </section>
             ) : activeCategory ? (
               <section>
