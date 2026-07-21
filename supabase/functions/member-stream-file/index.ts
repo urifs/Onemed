@@ -31,6 +31,67 @@ async function hmacHex(secret: string, message: string): Promise<string> {
   return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
+// member-lesson-token só limita quantos tokens NOVOS uma conta pede — uma vez
+// com um token válido (dura 4h), nada limitava quantas vezes ele podia ser
+// reusado pra rebaixar o mesmo arquivo. Isso explicava boa parte do egress
+// que sobrava mesmo com o rate limit de tokens bem baixo: poucas contas
+// pedindo poucos tokens, mas cada um usado pra puxar o arquivo várias vezes.
+// Trava aqui por volume de bytes servidos por conta na última hora.
+async function checkStreamQuota(
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+): Promise<{ allowed: boolean; retryAfterSeconds?: number }> {
+  const maxMb = 8000 // ~8GB/hora por conta — folgado pra maratonar aulas, apertado pro scraping
+  const windowMs = 60 * 60 * 1000
+  const now = new Date()
+
+  const { data: existing } = await supabase
+    .from('rate_limits')
+    .select('attempts, window_start')
+    .eq('identifier', userId)
+    .eq('action', 'stream_mb')
+    .maybeSingle()
+
+  if (!existing || (now.getTime() - new Date(existing.window_start).getTime()) > windowMs) {
+    return { allowed: true }
+  }
+
+  if (existing.attempts >= maxMb) {
+    const retryAfterSeconds = Math.ceil((new Date(existing.window_start).getTime() + windowMs - now.getTime()) / 1000)
+    return { allowed: false, retryAfterSeconds }
+  }
+
+  return { allowed: true }
+}
+
+async function recordStreamedMb(
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+  bytes: number,
+): Promise<void> {
+  const mb = Math.ceil(bytes / (1024 * 1024))
+  if (mb <= 0) return
+  const now = new Date()
+
+  const { data: existing } = await supabase
+    .from('rate_limits')
+    .select('attempts, window_start')
+    .eq('identifier', userId)
+    .eq('action', 'stream_mb')
+    .maybeSingle()
+
+  if (!existing || (now.getTime() - new Date(existing.window_start).getTime()) > 60 * 60 * 1000) {
+    await supabase.from('rate_limits').upsert(
+      { identifier: userId, action: 'stream_mb', attempts: mb, window_start: now.toISOString() },
+      { onConflict: 'identifier,action' },
+    )
+    return
+  }
+
+  await supabase.from('rate_limits').update({ attempts: existing.attempts + mb })
+    .eq('identifier', userId).eq('action', 'stream_mb')
+}
+
 async function refreshAccessToken(refreshToken: string, clientSecret: string): Promise<string> {
   const res = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
@@ -89,6 +150,15 @@ serve(async (req) => {
     ])
     if (!activeAccess && !buyer && !isAdmin) return new Response('Access revoked', { status: 403, headers: corsHeaders() })
 
+    if (!isAdmin) {
+      const quota = await checkStreamQuota(supabase, claims.uid)
+      if (!quota.allowed) {
+        return new Response('Muito conteúdo baixado recentemente. Aguarde alguns minutos.', {
+          status: 429, headers: { ...corsHeaders(), 'Retry-After': String(quota.retryAfterSeconds ?? 60) },
+        })
+      }
+    }
+
     const { data: config, error: cfgErr } = await supabase.from('drive_config').select('*').single()
     if (cfgErr || !config?.connected) return new Response('Drive not connected', { status: 502, headers: corsHeaders() })
 
@@ -125,6 +195,9 @@ serve(async (req) => {
     if (contentRange) outHeaders.set('Content-Range', contentRange)
     const contentLength = driveRes.headers.get('content-length')
     if (contentLength) outHeaders.set('Content-Length', contentLength)
+    if (!isAdmin && contentLength) {
+      recordStreamedMb(supabase, claims.uid, Number(contentLength)).catch(() => {})
+    }
     // HTTP header values must stay ASCII — course titles are Portuguese and
     // routinely carry accents ("Questões", "Inéditas"), which silently
     // dropped this whole header (no error, just missing from the response).
