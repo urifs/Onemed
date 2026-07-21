@@ -18,16 +18,16 @@ import { C09_Login, C09_DURATION } from './creatives/C09_Login';
 import { C10_Atualizado, C10_DURATION } from './creatives/C10_Atualizado';
 
 const CREATIVES: Array<[string, React.FC, number]> = [
-  ['C01_NovaEra', C01_NovaEra, C01_DURATION],
-  ['C02_Plantao', C02_Plantao, C02_DURATION],
-  ['C03_Streaming', C03_Streaming, C03_DURATION],
-  ['C04_Telas', C04_Telas, C04_DURATION],
-  ['C05_Chaos', C05_Chaos, C05_DURATION],
-  ['C06_Detalhes', C06_Detalhes, C06_DURATION],
-  ['C07_Player', C07_Player, C07_DURATION],
-  ['C08_Numeros', C08_Numeros, C08_DURATION],
-  ['C09_Login', C09_Login, C09_DURATION],
-  ['C10_Atualizado', C10_Atualizado, C10_DURATION],
+  ['C01-NovaEra', C01_NovaEra, C01_DURATION],
+  ['C02-Plantao', C02_Plantao, C02_DURATION],
+  ['C03-Streaming', C03_Streaming, C03_DURATION],
+  ['C04-Telas', C04_Telas, C04_DURATION],
+  ['C05-Chaos', C05_Chaos, C05_DURATION],
+  ['C06-Detalhes', C06_Detalhes, C06_DURATION],
+  ['C07-Player', C07_Player, C07_DURATION],
+  ['C08-Numeros', C08_Numeros, C08_DURATION],
+  ['C09-Login', C09_Login, C09_DURATION],
+  ['C10-Atualizado', C10_Atualizado, C10_DURATION],
 ];
 
 export const RemotionRoot: React.FC = () => {
