@@ -129,6 +129,10 @@ export default function CheckoutPage() {
       if (data) {
         setCouponApplied(data);
         setDiscountPercent(data.discount_percent);
+        const allowedPlans = data.allowed_plans || 'all';
+        if (allowedPlans !== 'all' && allowedPlans !== selectedPlan) {
+          setSelectedPlan(allowedPlans);
+        }
         toast.success(`Cupom aplicado! ${data.discount_percent}% de desconto`);
       } else {
         setCouponApplied(null);
@@ -255,14 +259,27 @@ export default function CheckoutPage() {
       </div>
 
       <div className="grid md:grid-cols-2 gap-6">
-        {Object.entries(PLANS).map(([key, plan]) => (
+        {Object.entries(PLANS).map(([key, plan]) => {
+          const lockedByCoupon = Boolean(
+            couponApplied?.allowed_plans && couponApplied.allowed_plans !== 'all' && couponApplied.allowed_plans !== key
+          );
+          return (
           <div
             key={key}
-            onClick={() => setSelectedPlan(key)}
-            className={`relative p-6 rounded-2xl cursor-pointer transition-all duration-300 border-2 ${
+            onClick={() => !lockedByCoupon && setSelectedPlan(key)}
+            className={`relative p-6 rounded-2xl border-2 transition-all duration-300 ${
+              lockedByCoupon ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'
+            } ${
               selectedPlan === key ? 'bg-primary/10 border-primary' : 'bg-secondary/30 border-border hover:border-border'
             } ${plan.highlight ? 'ring-2 ring-primary/20' : ''}`}
           >
+            {lockedByCoupon && (
+              <div className="absolute -top-3 right-4">
+                <span className="bg-secondary border border-border text-muted-foreground text-xs font-semibold px-3 py-1 rounded-full">
+                  Indisponível com esse cupom
+                </span>
+              </div>
+            )}
             {plan.highlight && (
               <div className="absolute -top-3 left-1/2 -translate-x-1/2">
                 <span className="bg-primary text-primary-foreground text-xs font-bold px-3 py-1 rounded-full">MAIS POPULAR</span>
@@ -293,7 +310,8 @@ export default function CheckoutPage() {
               {selectedPlan === key && <Check className="w-4 h-4 text-primary-foreground" />}
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Coupon */}
