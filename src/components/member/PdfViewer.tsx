@@ -41,11 +41,17 @@ export function PdfViewer({ url }: { url: string; title?: string }) {
           const viewport = page.getViewport({ scale });
 
           const canvas = document.createElement('canvas');
-          canvas.className = 'shadow-lg mb-3 rounded';
+          // max-w-full trava o canvas na largura do container mesmo que o
+          // cálculo de containerWidth acima saia errado por qualquer motivo
+          // (ex.: medido antes do layout estabilizar) — sem isso, um valor
+          // de largura maior que a tela vaza pra fora do viewport no mobile.
+          canvas.className = 'shadow-lg mb-3 rounded max-w-full h-auto';
           canvas.width = Math.floor(viewport.width * outputScale);
           canvas.height = Math.floor(viewport.height * outputScale);
+          // Só a largura é fixada — a altura fica em "auto" (via classe
+          // h-auto) e segue a proporção real do canvas, senão o clamp do
+          // max-w-full acima distorceria a página ao encolher só a largura.
           canvas.style.width = `${viewport.width}px`;
-          canvas.style.height = `${viewport.height}px`;
           const ctx = canvas.getContext('2d');
           if (!ctx || cancelled) return;
           container.appendChild(canvas);

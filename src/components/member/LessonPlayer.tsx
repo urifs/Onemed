@@ -97,7 +97,7 @@ export function LessonPlayer({
         </div>
       </div>
 
-      <div className="flex-1 flex items-center justify-center p-3 md:p-6 min-h-0">
+      <div className="flex-1 flex items-center justify-center p-3 md:p-6 min-h-0 overflow-hidden">
         {error ? (
           <p className="text-white/70 text-sm max-w-sm text-center">{error}</p>
         ) : !src ? (
@@ -110,7 +110,10 @@ export function LessonPlayer({
             controlsList="nodownload noremoteplayback"
             disablePictureInPicture
             autoPlay
-            className="max-w-full max-h-full rounded-lg bg-black"
+            playsInline
+            // @ts-expect-error legacy attribute, mesma finalidade do playsInline pro webkit antigo
+            webkit-playsinline="true"
+            className="max-w-full max-h-full rounded-lg bg-black object-contain"
             onTimeUpdate={handleTimeUpdate}
             onEnded={handleEnded}
             onContextMenu={e => e.preventDefault()}
