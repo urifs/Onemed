@@ -3,6 +3,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 
 const COURSES_UPDATING = [
   'Medcel 2026',
+  'Medcurso 2026',
   'Estratégia MED 2026',
   'Casal MED Resumos 2026',
   'Medcof USA 2026',
