@@ -26,7 +26,7 @@ import {
   Infinity,
   ChevronDown,
 } from 'lucide-react';
-import { formatWhatsApp } from '@/lib/utils';
+import { formatWhatsApp, extractFunctionErrorMessage } from '@/lib/utils';
 
 const COUNTRIES = [
   { code: '+55', country: 'Brasil', flag: '🇧🇷' },
@@ -184,6 +184,14 @@ export default function CheckoutPage() {
 
   const handleMercadoPagoCheckout = async () => {
     if (!validateCustomerData()) return;
+    // Segunda checagem, além da trava na tela de seleção de plano — evita
+    // seguir com uma combinação que o servidor vai rejeitar de qualquer forma.
+    const allowedPlans = couponApplied?.allowed_plans;
+    if (allowedPlans && allowedPlans !== 'all' && allowedPlans !== selectedPlan) {
+      const planName = allowedPlans === 'annual' ? 'Plano Anual' : 'Plano Vitalício';
+      toast.error(`O cupom ${couponApplied.code} é válido apenas para o ${planName}`);
+      return;
+    }
     setLoading(true);
     try {
       const ref = `onemed_${Date.now()}_${Math.random().toString(36).slice(2)}`;
@@ -223,7 +231,9 @@ export default function CheckoutPage() {
         },
       });
 
-      if (fnErr || result?.error) throw new Error(result?.error || fnErr?.message);
+      if (fnErr || result?.error) {
+        throw new Error(result?.error || await extractFunctionErrorMessage(fnErr, 'Erro ao processar pagamento'));
+      }
 
       localStorage.setItem('pending_purchase', JSON.stringify({
         external_reference: ref,
