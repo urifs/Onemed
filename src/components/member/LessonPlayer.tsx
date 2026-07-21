@@ -71,7 +71,7 @@ export function LessonPlayer({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/92 backdrop-blur-sm flex flex-col">
+    <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-sm flex flex-col">
       <div className="flex items-center gap-3 px-4 md:px-6 py-3.5 border-b border-white/10 shrink-0">
         <button onClick={onClose} className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/15 flex items-center justify-center text-white transition-colors">
           <X className="w-4 h-4" />
