@@ -5,7 +5,8 @@ import { toast } from 'sonner';
 import AdminLayout from '@/components/AdminLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Database, AlertTriangle, RefreshCw, DownloadCloud, Loader2 } from 'lucide-react';
+import { Database, AlertTriangle, RefreshCw, DownloadCloud, Loader2, Activity } from 'lucide-react';
+import { EgressChart } from '@/components/EgressChart';
 
 export default function DatabasePage() {
   const { session } = useAuth();
@@ -104,6 +105,18 @@ export default function DatabasePage() {
               {backingUp ? <Loader2 className="w-4 h-4 animate-spin" /> : <DownloadCloud className="w-4 h-4" />}
               {backingUp ? 'Gerando backup...' : 'Baixar Backup Completo'}
             </Button>
+          </CardContent>
+        </Card>
+
+        {/* Egress diário */}
+        <Card className="bg-background-paper border-border">
+          <CardHeader>
+            <CardTitle className="text-base font-medium text-foreground flex items-center gap-2">
+              <Activity className="w-4 h-4 text-primary" /> Egress Diário
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <EgressChart />
           </CardContent>
         </Card>
 

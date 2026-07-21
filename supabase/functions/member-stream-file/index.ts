@@ -198,6 +198,9 @@ serve(async (req) => {
     if (!isAdmin && contentLength) {
       recordStreamedMb(supabase, claims.uid, Number(contentLength)).catch(() => {})
     }
+    if (contentLength) {
+      supabase.rpc('record_egress', { _source: 'member-stream-file', _bytes: Number(contentLength) }).then(() => {}).catch(() => {})
+    }
     // HTTP header values must stay ASCII — course titles are Portuguese and
     // routinely carry accents ("Questões", "Inéditas"), which silently
     // dropped this whole header (no error, just missing from the response).

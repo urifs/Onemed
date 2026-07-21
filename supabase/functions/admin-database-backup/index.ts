@@ -79,9 +79,14 @@ serve(async (req) => {
   const encoder = new TextEncoder()
   const tables = schemaRows as { table_name: string; columns: { column_name: string; data_type: string; is_nullable: string; column_default: string | null }[] }[]
 
+  let totalBytes = 0
   const stream = new ReadableStream({
     async start(controller) {
-      const write = (obj: unknown) => controller.enqueue(encoder.encode(JSON.stringify(obj) + '\n'))
+      const write = (obj: unknown) => {
+        const chunk = encoder.encode(JSON.stringify(obj) + '\n')
+        totalBytes += chunk.byteLength
+        controller.enqueue(chunk)
+      }
 
       write({ type: 'meta', exported_at: new Date().toISOString(), tables: tables.map(t => t.table_name) })
 
@@ -110,6 +115,7 @@ serve(async (req) => {
       }
 
       controller.close()
+      await supabase.rpc('record_egress', { _source: 'admin-database-backup', _bytes: totalBytes }).catch(() => {})
     },
   })
 
