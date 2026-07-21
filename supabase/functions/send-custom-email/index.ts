@@ -188,7 +188,7 @@ function getFreeTrialEmailHtml(email: string, cfg: FreeTrialData): string {
       <tr>
         <td style="padding: 24px; text-align: center;">
           <p style="color: #22C55E; font-size: 14px; font-weight: bold; margin: 0 0 8px; text-transform: uppercase;">Acesso Gratuito</p>
-          <p style="color: white; font-size: 24px; font-weight: bold; margin: 0 0 8px;">30 minutos</p>
+          <p style="color: white; font-size: 24px; font-weight: bold; margin: 0 0 8px;">10 minutos</p>
           <p style="color: #94A3B8; font-size: 14px; margin: 0;">para explorar todo o conteúdo sem compromisso</p>
         </td>
       </tr>
@@ -221,7 +221,7 @@ function getFreeTrialEmailHtml(email: string, cfg: FreeTrialData): string {
     </table>
 
     <p style="color: #64748B; font-size: 12px; text-align: center; margin: 10px 0 0;">
-      Clique no botão acima para acessar o teste gratuito de 30 minutos
+      Clique no botão acima para acessar o teste gratuito de 10 minutos
     </p>
     <p style="color: #475569; font-size: 12px; text-align: center; margin: 16px 0 0;">
       Este email foi enviado para <strong style="color: #94A3B8;">${email}</strong>.
@@ -283,7 +283,7 @@ serve(async (req) => {
     }
 
     // Um JWT válido só prova que é um usuário logado — inclusive um trial de
-    // 30min descartável. Sem essa checagem, qualquer membro podia usar esta
+    // 10min descartável. Sem essa checagem, qualquer membro podia usar esta
     // função como relay pra mandar email arbitrário usando o domínio/Resend
     // da OneMed.
     const { data: isAdmin } = await supabase.rpc('has_role', { _user_id: user.id, _role: 'admin' })

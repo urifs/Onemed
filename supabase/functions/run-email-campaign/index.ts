@@ -155,7 +155,7 @@ function buildFreeTrialHtml(email: string, cfg: FreeTrialData): string {
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background: linear-gradient(135deg, rgba(34,197,94,0.15) 0%, rgba(21,128,61,0.15) 100%); border-radius: 12px; border: 1px solid rgba(34,197,94,0.3); margin: 20px 0;">
       <tr><td style="padding: 24px; text-align: center;">
         <p style="color: #22C55E; font-size: 14px; font-weight: bold; margin: 0 0 8px; text-transform: uppercase;">Acesso Gratuito</p>
-        <p style="color: white; font-size: 24px; font-weight: bold; margin: 0 0 8px;">30 minutos</p>
+        <p style="color: white; font-size: 24px; font-weight: bold; margin: 0 0 8px;">10 minutos</p>
         <p style="color: #94A3B8; font-size: 14px; margin: 0;">para explorar todo o conteúdo sem compromisso</p>
       </td></tr>
     </table>
@@ -175,7 +175,7 @@ function buildFreeTrialHtml(email: string, cfg: FreeTrialData): string {
         </a>
       </td></tr>
     </table>
-    <p style="color: #64748B; font-size: 12px; text-align: center; margin: 10px 0 0;">Clique no botão acima para acessar o teste gratuito de 30 minutos</p>
+    <p style="color: #64748B; font-size: 12px; text-align: center; margin: 10px 0 0;">Clique no botão acima para acessar o teste gratuito de 10 minutos</p>
     <p style="color: #475569; font-size: 12px; text-align: center; margin: 16px 0 0;">Este email foi enviado para <strong style="color: #94A3B8;">${email}</strong>.</p>`
   return getBaseTemplate(content, `${cfg.subjectText} - ${SITE_NAME}`)
 }
@@ -222,7 +222,7 @@ serve(async (req) => {
       authed = true
     } else if (jwt) {
       // Um JWT válido só prova que é um usuário logado — inclusive um trial
-      // de 30min descartável. Sem checar a role, qualquer membro conseguia
+      // de 10min descartável. Sem checar a role, qualquer membro conseguia
       // disparar um envio de campanha de email em massa.
       const { data: { user } } = await supabase.auth.getUser(jwt)
       if (user) {

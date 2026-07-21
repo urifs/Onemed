@@ -114,7 +114,7 @@ const PRESETS: Record<Exclude<TemplateType, 'custom'>, FollowupFields> = {
 const FREE_TRIAL_PRESET: FreeTrialFields = {
   subject: 'Experimente o OneMed gratuitamente! - OneMed',
   subjectText: 'Experimente Gratis!',
-  message: 'Conheca o maior acervo de conteudos medicos da America Latina. Teste gratis por 30 minutos e veja tudo o que preparamos para voce!',
+  message: 'Conheca o maior acervo de conteudos medicos da America Latina. Teste gratis por 10 minutos e veja tudo o que preparamos para voce!',
   urgency: 'Acesse agora e descubra +530 cursos e +9.000 livros medicos. Sem compromisso!',
 };
 
@@ -702,7 +702,7 @@ export default function EmailCampaignPage() {
                   {templateType === 'free_trial' && (
                     <div className="border border-green-500/30 rounded-lg py-3 px-4 bg-green-500/10">
                       <p className="text-green-400 text-xs font-bold uppercase mb-1">Acesso Gratuito</p>
-                      <p className="text-white text-sm">30 minutos para explorar todo o conteudo</p>
+                      <p className="text-white text-sm">10 minutos para explorar todo o conteudo</p>
                     </div>
                   )}
                   <p className="text-slate-500 text-xs">Assunto: <span className="text-slate-400">{currentSubject || '—'}</span></p>

@@ -111,7 +111,7 @@ function getTrialAccessEmail(email: string): string {
       <tr>
         <td style="padding: 24px;">
           <p style="color: #EF4444; font-size: 18px; font-weight: bold; margin: 0 0 12px;">
-            Você tem 30 minutos de acesso gratuito!
+            Você tem 10 minutos de acesso gratuito!
           </p>
           <p style="color: #94A3B8; font-size: 14px; margin: 0;">
             Aproveite para explorar nosso acervo com mais de <strong style="color: white;">530 cursos</strong> e <strong style="color: white;">9.000 livros médicos</strong>.

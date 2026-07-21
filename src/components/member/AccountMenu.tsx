@@ -13,7 +13,7 @@ import { AddToHomeScreenModal } from './AddToHomeScreenModal';
 
 const SUPPORT_PHONE = '5563999191551';
 const PLAN_LABELS: Record<string, string> = {
-  lifetime: 'Vitalício', annual: 'Anual', paid: 'Pago', trial: 'Teste Grátis (30 min)', admin: 'Administrador',
+  lifetime: 'Vitalício', annual: 'Anual', paid: 'Pago', trial: 'Teste Grátis (10 min)', admin: 'Administrador',
 };
 
 interface AccountInfo {

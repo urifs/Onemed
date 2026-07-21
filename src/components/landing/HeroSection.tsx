@@ -75,14 +75,14 @@ export const HeroSection = ({
 
           <p className="text-lg text-muted-foreground leading-relaxed mb-8 max-w-lg">
             +530 cursos completos e +9.000 livros médicos. Acesse agora gratuitamente
-            por 30 minutos e descubra por que mais de 10.000 médicos escolheram a OneMed.
+            por 10 minutos e descubra por que mais de 10.000 médicos escolheram a OneMed.
           </p>
 
           <div className="flex flex-wrap gap-4 mb-10">
             {[
               { icon: FolderOpen, text: '530+ Cursos' },
               { icon: Shield, text: '9.000+ Livros' },
-              { icon: Clock, text: '30 min grátis' },
+              { icon: Clock, text: '10 min grátis' },
             ].map((item, i) => (
               <div key={i} className="flex items-center gap-2 text-sm text-muted-foreground">
                 <CheckCircle className="w-4 h-4 text-accent-success flex-shrink-0" />

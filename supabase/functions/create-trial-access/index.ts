@@ -3,7 +3,7 @@
 // Fluxo enxuto:
 //   1. Validar email + WhatsApp
 //   2. Bloquear quem já é comprador aprovado ou já fez trial
-//   3. Inserir access com expires_at = now + 30min (dá acesso à área de
+//   3. Inserir access com expires_at = now + 10min (dá acesso à área de
 //      membros/membros — não compartilha mais pasta do Google Drive)
 //   4. Gerar sessão instantânea (mesmo truque do member-auth-request) pra
 //      já devolver o usuário logado direto em /membros, sem precisar de link
@@ -15,7 +15,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const ALLOWED_ORIGINS = ['https://onemedcursos.com.br', 'http://localhost:5173', 'http://localhost:3000']
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
-const TRIAL_DURATION_MINUTES = 30
+const TRIAL_DURATION_MINUTES = 10
 
 function getCorsHeaders(req: Request) {
   const origin = req.headers.get('origin') || ''
@@ -70,6 +70,61 @@ async function checkRateLimit(
     .eq('action', 'create_trial')
 
   return { allowed: true }
+}
+
+// Limite de 2 trials REAIS por IP a cada 24h — diferente do checkRateLimit
+// acima (que barra rajadas de tentativas), este conta só trials de fato
+// criados, mesmo com emails diferentes a cada vez, pra travar quem tenta
+// burlar o limite por email trocando de endereço.
+async function checkIpTrialLimit(
+  supabase: ReturnType<typeof createClient>,
+  identifier: string,
+): Promise<{ allowed: boolean; retryAfterSeconds?: number }> {
+  const maxTrials = 2
+  const windowMs = 24 * 60 * 60 * 1000
+  const now = new Date()
+
+  const { data: existing } = await supabase
+    .from('rate_limits')
+    .select('attempts, window_start')
+    .eq('identifier', identifier)
+    .eq('action', 'trial_per_ip')
+    .maybeSingle()
+
+  if (!existing || (now.getTime() - new Date(existing.window_start).getTime()) > windowMs) {
+    return { allowed: true }
+  }
+
+  if (existing.attempts >= maxTrials) {
+    const retryAfterSeconds = Math.ceil((new Date(existing.window_start).getTime() + windowMs - now.getTime()) / 1000)
+    return { allowed: false, retryAfterSeconds }
+  }
+
+  return { allowed: true }
+}
+
+async function recordIpTrial(
+  supabase: ReturnType<typeof createClient>,
+  identifier: string,
+): Promise<void> {
+  const now = new Date()
+  const { data: existing } = await supabase
+    .from('rate_limits')
+    .select('attempts, window_start')
+    .eq('identifier', identifier)
+    .eq('action', 'trial_per_ip')
+    .maybeSingle()
+
+  if (!existing || (now.getTime() - new Date(existing.window_start).getTime()) > 24 * 60 * 60 * 1000) {
+    await supabase.from('rate_limits').upsert(
+      { identifier, action: 'trial_per_ip', attempts: 1, window_start: now.toISOString() },
+      { onConflict: 'identifier,action' },
+    )
+    return
+  }
+
+  await supabase.from('rate_limits').update({ attempts: existing.attempts + 1 })
+    .eq('identifier', identifier).eq('action', 'trial_per_ip')
 }
 
 // Redeems a fresh magic link server-side instead of emailing it, so the
@@ -173,6 +228,19 @@ serve(async (req) => {
       }, 409)
     }
 
+    // ── Limite de 2 trials por IP a cada 24h, mesmo com emails diferentes ──
+    try {
+      const ipLimit = await checkIpTrialLimit(supabase, clientIp)
+      if (!ipLimit.allowed) {
+        return jsonResponse(req, {
+          error: 'Este endereço já atingiu o limite de 2 testes gratuitos por dia. Tente novamente amanhã ou adquira um plano.',
+          retryAfterSeconds: ipLimit.retryAfterSeconds,
+        }, 409, { 'Retry-After': String(ipLimit.retryAfterSeconds ?? 60) })
+      }
+    } catch (ipErr: any) {
+      console.warn('Limite de trial por IP indisponível:', ipErr.message)
+    }
+
     // ── Criar registro de acesso ──
     const accessId = crypto.randomUUID()
     const expiresAt = new Date(Date.now() + TRIAL_DURATION_MINUTES * 60 * 1000).toISOString()
@@ -187,6 +255,16 @@ serve(async (req) => {
     })
 
     if (insertError) throw insertError
+
+    // Precisa ser aguardado (não fire-and-forget): a function pode encerrar
+    // o isolate assim que a resposta é enviada, e sem await a escrita do
+    // contador às vezes nunca chegava a acontecer — o limite por IP nunca
+    // incrementava de verdade.
+    try {
+      await recordIpTrial(supabase, clientIp)
+    } catch (recErr: any) {
+      console.warn('Falha ao registrar trial por IP:', recErr.message)
+    }
 
     const session = await issueSession(supabase, supabaseUrl, normalizedEmail)
     if (!session) {
