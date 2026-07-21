@@ -41,7 +41,12 @@ async function checkTokenRateLimit(
   supabase: ReturnType<typeof createClient>,
   userId: string,
 ): Promise<{ allowed: boolean; retryAfterSeconds?: number }> {
-  const maxAttempts = 20
+  // Reduzido de 20 pra 6/10min em 2026-07-21 — mesmo com o limite de 20,
+  // uma conta sozinha batendo o teto o dia todo ainda dava pra explicar
+  // ~140GB/dia de egress (20 arquivos/10min × ~50MB médio × 144 janelas
+  // de 10min/dia). 6/10min ainda é folgado pra navegação humana normal
+  // (ninguém abre uma aula nova a cada <100s por 10 minutos seguidos).
+  const maxAttempts = 6
   const windowMs = 10 * 60 * 1000
   const now = new Date()
 
