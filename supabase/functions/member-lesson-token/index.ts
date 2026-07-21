@@ -1,25 +1,26 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // OneMed · member-lesson-token
 // Verifica que o usuário tem acesso ativo à aula pedida e devolve uma URL
-// assinada (HMAC, curta duração) apontando pro proxy de streaming na Vercel
-// (api/stream-lesson) — o navegador nunca fala com o Google Drive
-// diretamente.
+// assinada (HMAC, curta duração) apontando pro Worker de streaming na
+// Cloudflare (cloudflare/stream-lesson/worker.js) — o navegador nunca fala
+// com o Google Drive diretamente.
 //
-// Reescrito em 2026-07-21 (duas vezes):
+// Reescrito em 2026-07-21 (três vezes):
 // 1ª vez: trocou o proxy de bytes via member-stream-file (que gerava ~100%
 //   do egress cobrado pela Supabase, >1TB num único dia) por um link direto
 //   do Google Drive (drive.usercontent.google.com), liberado por permissão
 //   temporária "qualquer um com o link".
-// 2ª vez (esta): o link direto do Drive nunca funcionou de verdade no
-//   navegador do aluno — o Google manda `Cross-Origin-Resource-Policy:
-//   same-site` em toda resposta desse endpoint, e o navegador bloqueia
-//   qualquer carregamento cross-site independente de CORS estar correto
-//   (curl sempre funcionava porque CORP só existe no navegador). Não tem
-//   como contornar isso do nosso lado — quem define o cabeçalho é o Google.
-//   Voltamos a um proxy, mas na Vercel em vez da Supabase (api/stream-lesson),
-//   pra manter o egress fora da fatura da Supabase. Como o proxy busca os
-//   bytes usando o token OAuth do admin (via drive-access-token), o arquivo
-//   nunca precisa ficar público no Drive — mais fechado que a versão anterior.
+// 2ª vez: o link direto do Drive nunca funcionou de verdade no navegador do
+//   aluno — o Google manda `Cross-Origin-Resource-Policy: same-site` em toda
+//   resposta desse endpoint, e o navegador bloqueia qualquer carregamento
+//   cross-site independente de CORS estar correto (curl sempre funcionava
+//   porque CORP só existe no navegador). Não tem como contornar isso do
+//   nosso lado — quem define o cabeçalho é o Google. Voltamos a um proxy
+//   same-origin na Vercel (api/stream-lesson).
+// 3ª vez (esta): o projeto está no plano Hobby da Vercel, sem banda de sobra
+//   pro volume de vídeo do site (~1TB/dia visto no pico). Movido pra um
+//   Cloudflare Worker, que não cobra por tráfego de saída — mesma lógica de
+//   proxy, só muda o destino da URL assinada.
 // ─────────────────────────────────────────────────────────────────────────────
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -83,11 +84,13 @@ serve(async (req) => {
     if (!activeAccess && !buyer && !isAdmin) return jsonResponse(req, { error: 'Sem acesso ativo' }, 403)
 
     const streamSecret = Deno.env.get('LESSON_STREAM_SECRET')!
-    const siteUrl = Deno.env.get('SITE_URL') || 'https://onemedcursos.com.br'
+    // Cloudflare Workers não cobra por tráfego de saída (diferente de
+    // Supabase/Vercel) — o proxy roda lá em vez de na Vercel.
+    const streamBaseUrl = Deno.env.get('STREAM_PROXY_URL') || 'https://onemed-stream-lesson.onemed-stream.workers.dev'
     const fileId = lesson.drive_file_id
     const expiresAt = Math.floor(Date.now() / 1000) + STREAM_TTL_SECONDS
     const sig = await hmacHex(streamSecret, `${fileId}.${expiresAt}`)
-    const url = `${siteUrl}/api/stream-lesson?id=${encodeURIComponent(fileId)}&exp=${expiresAt}&sig=${sig}`
+    const url = `${streamBaseUrl}/?id=${encodeURIComponent(fileId)}&exp=${expiresAt}&sig=${sig}`
 
     return jsonResponse(req, { url, expiresAt })
   } catch (err: any) {
