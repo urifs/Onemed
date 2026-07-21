@@ -125,7 +125,13 @@ serve(async (req) => {
     // arquivo por vírus" que aparece pra arquivos grandes (a maioria dos
     // vídeos de aula passa dos ~100MB do limite de scan) — sem isso, em vez
     // do vídeo/PDF o navegador recebia essa página HTML de confirmação.
-    const url = `https://drive.usercontent.google.com/download?id=${fileId}&export=download&confirm=t`
+    // SEM &export=download — esse parâmetro força Content-Disposition:
+    // attachment, e o Firefox (via Opaque Response Blocking) recusa usar uma
+    // resposta cross-origin "attachment" inline num <video>/<img>, abortando
+    // com NS_BINDING_ABORTED mesmo com CORS certo. Sem export=download o
+    // Google devolve Content-Disposition: inline e o navegador reproduz
+    // normalmente.
+    const url = `https://drive.usercontent.google.com/download?id=${fileId}&confirm=t`
 
     if (!grantStillValid) {
       const { data: config, error: cfgErr } = await supabase.from('drive_config').select('*').single()
