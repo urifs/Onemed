@@ -146,6 +146,16 @@ export default function CheckoutPage() {
     }
   };
 
+  const handleContinueFromPlan = () => {
+    const allowedPlans = couponApplied?.allowed_plans;
+    if (allowedPlans && allowedPlans !== 'all' && allowedPlans !== selectedPlan) {
+      const planName = allowedPlans === 'annual' ? 'Plano Anual' : 'Plano Vitalício';
+      toast.error(`O cupom ${couponApplied.code} é válido apenas para o ${planName}`);
+      return;
+    }
+    setStep(2);
+  };
+
   const handleRemoveCoupon = () => {
     setCouponCode('');
     setCouponApplied(null);
@@ -377,7 +387,7 @@ export default function CheckoutPage() {
         )}
       </div>
 
-      <Button onClick={() => setStep(2)} className="w-full h-14 bg-primary hover:bg-primary-hover text-primary-foreground font-semibold text-lg">
+      <Button onClick={handleContinueFromPlan} className="w-full h-14 bg-primary hover:bg-primary-hover text-primary-foreground font-semibold text-lg">
         Continuar <ArrowRight className="w-5 h-5 ml-2" />
       </Button>
     </div>
