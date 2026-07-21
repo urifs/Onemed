@@ -55,6 +55,23 @@ export function LessonPlayer({
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
+  // Alguns Android/Chrome entram em Picture-in-Picture automático ao trocar
+  // de app com o vídeo tocando, mesmo com disablePictureInPicture — força a
+  // saída assim que acontece, senão o vídeo fica preso numa janelinha
+  // flutuante fora do layout do player.
+  useEffect(() => {
+    if (lesson.type !== 'video') return;
+    const v = videoRef.current;
+    if (!v) return;
+    const onEnterPip = () => {
+      if (document.pictureInPictureElement) {
+        document.exitPictureInPicture().catch(() => {});
+      }
+    };
+    v.addEventListener('enterpictureinpicture', onEnterPip);
+    return () => v.removeEventListener('enterpictureinpicture', onEnterPip);
+  }, [src, lesson.type]);
+
   const handleTimeUpdate = () => {
     const v = videoRef.current;
     if (!v) return;
