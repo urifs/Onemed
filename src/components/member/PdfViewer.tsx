@@ -9,7 +9,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = workerSrc;
 // <iframe>/<embed> — they just offer a "download and open elsewhere" chip,
 // which is what students were hitting. Rendering with pdf.js onto canvases
 // gives a real in-page viewer that works the same on every browser.
-export function PdfViewer({ url, title }: { url: string; title: string }) {
+export function PdfViewer({ url }: { url: string; title?: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -70,7 +70,10 @@ export function PdfViewer({ url, title }: { url: string; title: string }) {
   }, [url]);
 
   return (
-    <div className="w-full h-full overflow-auto bg-[#525659] rounded-lg">
+    <div
+      className="w-full h-full overflow-auto bg-[#525659] rounded-lg"
+      onContextMenu={e => e.preventDefault()}
+    >
       {loading && (
         <div className="flex items-center justify-center h-full">
           <Loader2 className="w-8 h-8 text-white/70 animate-spin" />
@@ -79,13 +82,6 @@ export function PdfViewer({ url, title }: { url: string; title: string }) {
       {error && (
         <div className="flex flex-col items-center justify-center h-full gap-3 text-center px-4">
           <p className="text-white/80 text-sm">{error}</p>
-          <a
-            href={url}
-            download={title}
-            className="text-sm text-primary hover:text-primary-hover font-medium"
-          >
-            Baixar arquivo
-          </a>
         </div>
       )}
       <div ref={containerRef} className="flex flex-col items-center p-3" />

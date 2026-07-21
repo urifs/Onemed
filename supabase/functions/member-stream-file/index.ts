@@ -75,6 +75,20 @@ serve(async (req) => {
       .select('drive_file_id, mime_type, type, title').eq('id', claims.lid).maybeSingle()
     if (lessonErr || !lesson) return new Response('Lesson not found', { status: 404, headers: corsHeaders() })
 
+    // The token stays valid for 4h so a long study session doesn't get cut
+    // off mid-lecture, but that also means a revoked/expired account could
+    // otherwise keep streaming for up to 4h after losing access. Re-check
+    // entitlement live on every request instead of trusting the token alone.
+    const { data: userRow, error: userErr } = await supabase.auth.admin.getUserById(claims.uid)
+    if (userErr || !userRow?.user?.email) return new Response('Invalid session', { status: 401, headers: corsHeaders() })
+    const email = userRow.user.email.toLowerCase()
+    const [{ data: activeAccess }, { data: buyer }, { data: isAdmin }] = await Promise.all([
+      supabase.from('accesses').select('id').eq('email', email).eq('status', 'active').limit(1).maybeSingle(),
+      supabase.from('buyers').select('id').eq('email', email).eq('access_granted', true).limit(1).maybeSingle(),
+      supabase.rpc('has_role', { _user_id: claims.uid, _role: 'admin' }),
+    ])
+    if (!activeAccess && !buyer && !isAdmin) return new Response('Access revoked', { status: 403, headers: corsHeaders() })
+
     const { data: config, error: cfgErr } = await supabase.from('drive_config').select('*').single()
     if (cfgErr || !config?.connected) return new Response('Drive not connected', { status: 502, headers: corsHeaders() })
 

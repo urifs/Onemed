@@ -31,6 +31,45 @@ function b64urlEncode(str: string): string {
   return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
+// Caps how many *different* lessons one account can open in a window — a
+// real student opens one lesson at a time; a script scraping the library
+// requests hundreds/thousands of distinct lessonIds in minutes. This is the
+// actual choke point: it doesn't touch the Range-request volume a single
+// video naturally generates while seeking/buffering (that's rate-limited
+// nowhere, on purpose — it would break normal playback).
+async function checkTokenRateLimit(
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+): Promise<{ allowed: boolean; retryAfterSeconds?: number }> {
+  const maxAttempts = 20
+  const windowMs = 10 * 60 * 1000
+  const now = new Date()
+
+  const { data: existing } = await supabase
+    .from('rate_limits')
+    .select('attempts, window_start')
+    .eq('identifier', userId)
+    .eq('action', 'lesson_token')
+    .maybeSingle()
+
+  if (!existing || (now.getTime() - new Date(existing.window_start).getTime()) > windowMs) {
+    await supabase.from('rate_limits').upsert(
+      { identifier: userId, action: 'lesson_token', attempts: 1, window_start: now.toISOString() },
+      { onConflict: 'identifier,action' },
+    )
+    return { allowed: true }
+  }
+
+  if (existing.attempts >= maxAttempts) {
+    const retryAfterSeconds = Math.ceil((new Date(existing.window_start).getTime() + windowMs - now.getTime()) / 1000)
+    return { allowed: false, retryAfterSeconds }
+  }
+
+  await supabase.from('rate_limits').update({ attempts: existing.attempts + 1 })
+    .eq('identifier', userId).eq('action', 'lesson_token')
+  return { allowed: true }
+}
+
 async function hmacHex(secret: string, message: string): Promise<string> {
   const enc = new TextEncoder()
   const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
@@ -69,6 +108,16 @@ serve(async (req) => {
       supabase.rpc('has_role', { _user_id: user.id, _role: 'admin' }),
     ])
     if (!activeAccess && !buyer && !isAdmin) return jsonResponse(req, { error: 'Sem acesso ativo' }, 403)
+
+    if (!isAdmin) {
+      const rl = await checkTokenRateLimit(supabase, user.id)
+      if (!rl.allowed) {
+        return jsonResponse(req, {
+          error: 'Muitas aulas abertas em pouco tempo. Aguarde alguns minutos.',
+          retryAfterSeconds: rl.retryAfterSeconds,
+        }, 429)
+      }
+    }
 
     const exp = Math.floor(Date.now() / 1000) + TOKEN_TTL_SECONDS
     const payload = b64urlEncode(JSON.stringify({ lid: lesson.id, uid: user.id, exp }))

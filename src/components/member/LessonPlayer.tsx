@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { X, ChevronLeft, ChevronRight, Loader2, Download } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Loader2, ExternalLink } from 'lucide-react';
 import { useLessonStreamUrl } from '@/hooks/useLessonStream';
 import { PdfViewer } from './PdfViewer';
 import type { Database } from '@/integrations/supabase/types';
@@ -24,7 +24,7 @@ export function LessonPlayer({
   const getUrl = useLessonStreamUrl();
   const [src, setSrc] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const videoRef = useRef<HTMLVideoElement | HTMLAudioElement>(null);
   const lastReported = useRef(0);
 
   useEffect(() => {
@@ -39,7 +39,7 @@ export function LessonPlayer({
   }, [lesson.id, getUrl]);
 
   useEffect(() => {
-    if (!src || lesson.type !== 'video' || !initialWatchedSeconds) return;
+    if (!src || (lesson.type !== 'video' && lesson.type !== 'audio') || !initialWatchedSeconds) return;
     const v = videoRef.current;
     if (!v) return;
     const onLoaded = () => {
@@ -107,15 +107,36 @@ export function LessonPlayer({
             ref={videoRef}
             src={src}
             controls
+            controlsList="nodownload noremoteplayback"
+            disablePictureInPicture
             autoPlay
             className="max-w-full max-h-full rounded-lg bg-black"
             onTimeUpdate={handleTimeUpdate}
             onEnded={handleEnded}
+            onContextMenu={e => e.preventDefault()}
           />
         ) : lesson.type === 'pdf' ? (
           <PdfViewer url={src} title={lesson.title} />
         ) : lesson.type === 'image' ? (
-          <img src={src} alt={lesson.title} className="max-w-full max-h-full rounded-lg object-contain" />
+          <img
+            src={src}
+            alt={lesson.title}
+            className="max-w-full max-h-full rounded-lg object-contain"
+            onContextMenu={e => e.preventDefault()}
+            draggable={false}
+          />
+        ) : lesson.type === 'audio' ? (
+          <audio
+            ref={videoRef as React.RefObject<HTMLAudioElement>}
+            src={src}
+            controls
+            controlsList="nodownload"
+            autoPlay
+            className="w-full max-w-md"
+            onTimeUpdate={handleTimeUpdate}
+            onEnded={handleEnded}
+            onContextMenu={e => e.preventDefault()}
+          />
         ) : (
           <div className="text-center">
             <p className="text-white/70 text-sm mb-4">Pré-visualização não disponível para este tipo de arquivo.</p>
@@ -123,7 +144,7 @@ export function LessonPlayer({
               href={src} target="_blank" rel="noopener noreferrer"
               className="inline-flex items-center gap-2 bg-primary hover:bg-primary-hover text-white font-semibold px-5 py-2.5 rounded-lg text-sm transition-colors"
             >
-              <Download className="w-4 h-4" /> Abrir arquivo
+              <ExternalLink className="w-4 h-4" /> Abrir em nova aba
             </a>
           </div>
         )}
