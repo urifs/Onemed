@@ -47,9 +47,9 @@ interface PanelSpec {
 
 const PANELS: PanelSpec[] = [
   {
-    // barra de busca do desktop digitando "ecg" (canto superior direito)
+    // barra de busca do desktop digitando "ecg" + grid reagindo abaixo
     src: 'rec/d_search.mp4', startFrom: 95, from: 'right',
-    zoom: 2.0, origin: '70% 7%', objectPosition: '92% 0%',
+    zoom: 1.3, origin: '78% 3%', objectPosition: '92% 0%',
     tag: '01', label: 'busca instantânea',
     inSec: B_P1, outSec: B_P2,
   },
@@ -61,9 +61,9 @@ const PANELS: PanelSpec[] = [
     inSec: B_P2, outSec: B_P3,
   },
   {
-    // card "Continuar assistindo" com a barra vermelha de progresso
-    src: 'rec/m_dashboard.mp4', startFrom: 220, from: 'right',
-    zoom: 2.25, origin: '36% 44%', objectPosition: '50% 30%',
+    // lista de aulas com a barra vermelha de progresso (ECG Parte 1)
+    src: 'rec/m_course.mp4', startFrom: 75, from: 'right',
+    zoom: 1.55, origin: '35% 30%', objectPosition: '50% 18%',
     tag: '03', label: 'progresso salvo',
     inSec: B_P3, outSec: B_P4,
   },
