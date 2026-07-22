@@ -12,31 +12,27 @@ interface Comment {
   body: string;
   created_at: string;
   user_id: string;
-  profiles: { name: string | null; email: string | null } | null;
+  author_name: string | null;
+  author_email: string | null;
+  is_admin: boolean;
 }
 
 export function CommunityTab({ courseId }: { courseId: string }) {
   const { user } = useAuth();
   const { promptOpen, setPromptOpen, ensureName, submitName } = useRequireName();
   const [comments, setComments] = useState<Comment[]>([]);
-  const [adminIds, setAdminIds] = useState<Set<string>>(new Set());
   const [body, setBody] = useState('');
   const [loading, setLoading] = useState(true);
   const [posting, setPosting] = useState(false);
 
   const load = async () => {
     try {
-      const [{ data, error }, roles] = await Promise.all([
-        supabase
-          .from('course_comments')
-          .select('id, body, created_at, user_id, profiles(name, email)')
-          .eq('course_id', courseId)
-          .order('created_at', { ascending: false }),
-        supabase.rpc('list_admin_user_ids'),
-      ]);
+      // RPC (SECURITY DEFINER) em vez de select direto com embed de profiles:
+      // e-mail só volta se quem chama for admin, e não depende mais da RLS
+      // ampla de profiles que permitia qualquer membro ler o e-mail de outro.
+      const { data, error } = await supabase.rpc('course_comments_feed', { _course_id: courseId });
       if (error) throw error;
       setComments(((data as any) || []) as Comment[]);
-      setAdminIds(new Set((roles.data || []).map((r: any) => r.user_id)));
     } catch (err) {
       console.error('Failed to load comments', err);
     } finally {
@@ -59,7 +55,7 @@ export function CommunityTab({ courseId }: { courseId: string }) {
   const handlePost = () => ensureName(doPost);
 
   const initials = (name?: string | null, email?: string | null) => (name || email || '?').trim().charAt(0).toUpperCase();
-  const displayName = (c: Comment) => c.profiles?.name || c.profiles?.email?.split('@')[0] || 'Aluno';
+  const displayName = (c: Comment) => c.author_name || c.author_email?.split('@')[0] || 'Aluno';
 
   return (
     <div className="max-w-2xl">
@@ -102,13 +98,13 @@ export function CommunityTab({ courseId }: { courseId: string }) {
         <div className="space-y-5">
           {comments.map(c => (
             <div key={c.id} className="flex gap-3">
-              <div className={`w-9 h-9 rounded-full border flex items-center justify-center font-semibold text-sm shrink-0 ${adminIds.has(c.user_id) ? 'bg-primary/15 border-primary/40 text-primary' : 'bg-secondary border-border text-foreground'}`}>
-                {initials(c.profiles?.name, c.profiles?.email)}
+              <div className={`w-9 h-9 rounded-full border flex items-center justify-center font-semibold text-sm shrink-0 ${c.is_admin ? 'bg-primary/15 border-primary/40 text-primary' : 'bg-secondary border-border text-foreground'}`}>
+                {initials(c.author_name, c.author_email)}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-baseline gap-2 flex-wrap">
                   <span className="text-sm font-semibold text-foreground">{displayName(c)}</span>
-                  {adminIds.has(c.user_id) && (
+                  {c.is_admin && (
                     <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary bg-primary/10 border border-primary/25 rounded-full px-2 py-0.5">
                       <BadgeCheck className="w-3 h-3" /> Equipe OneMed
                     </span>
