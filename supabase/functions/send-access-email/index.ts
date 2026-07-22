@@ -162,56 +162,6 @@ function getTrialAccessEmail(email: string): string {
   return getBaseTemplate(content, `Bem-vindo ao ${SITE_NAME}!`)
 }
 
-function getAccessGrantedEmail(email: string, folderName?: string, folderId?: string): string {
-  const content = `
-    <h1 style="color: white; font-size: 28px; margin: 0 0 20px; text-align: center;">
-      Acesso Liberado ao <span style="color: #EF4444;">OneMed</span>!
-    </h1>
-
-    <p style="color: #94A3B8; font-size: 16px; line-height: 1.6; margin: 0 0 20px;">
-      Olá! Seu acesso ao conteúdo OneMed foi liberado com sucesso.
-    </p>
-
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background: linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, rgba(21, 128, 61, 0.1) 100%); border-radius: 12px; border: 1px solid rgba(34, 197, 94, 0.3); margin: 20px 0;">
-      <tr>
-        <td style="padding: 24px;">
-          <p style="color: #22C55E; font-size: 18px; font-weight: bold; margin: 0 0 12px;">
-            Acesso ativo e disponível agora!
-          </p>
-          ${folderName ? `<p style="color: #94A3B8; font-size: 14px; margin: 0;">Pasta compartilhada: <strong style="color: white;">${folderName}</strong></p>` : ''}
-        </td>
-      </tr>
-    </table>
-
-    <h2 style="color: white; font-size: 20px; margin: 30px 0 15px;">
-      Como acessar seu conteúdo:
-    </h2>
-
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
-      <tr><td style="padding: 10px 0; color: #94A3B8; font-size: 15px;"><span style="color: #EF4444; font-weight: bold;">1.</span>&nbsp; Abra o <strong style="color: white;">Google Drive</strong> com o email cadastrado</td></tr>
-      <tr><td style="padding: 10px 0; color: #94A3B8; font-size: 15px;"><span style="color: #EF4444; font-weight: bold;">2.</span>&nbsp; Vá em <strong style="color: white;">"Compartilhados comigo"</strong></td></tr>
-      <tr><td style="padding: 10px 0; color: #94A3B8; font-size: 15px;"><span style="color: #EF4444; font-weight: bold;">3.</span>&nbsp; Procure pela pasta <strong style="color: #EF4444;">OneMed</strong></td></tr>
-    </table>
-
-    ${folderId ? `
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
-      <tr>
-        <td align="center" style="padding: 30px 0 10px;">
-          <a href="https://drive.google.com/drive/folders/${folderId}" style="display: inline-block; background: linear-gradient(135deg, #DC2626 0%, #991B1B 100%); color: white; text-decoration: none; padding: 16px 40px; border-radius: 8px; font-size: 16px; font-weight: bold;">
-            Abrir no Google Drive
-          </a>
-        </td>
-      </tr>
-    </table>
-    ` : ''}
-
-    <p style="color: #64748B; font-size: 13px; text-align: center; margin: 20px 0 0;">
-      Email de acesso: <strong style="color: white;">${email}</strong>
-    </p>
-  `
-  return getBaseTemplate(content, `Acesso ao ${SITE_NAME} liberado`)
-}
-
 function getPaymentApprovedEmail(firstName: string, plan: string, amount?: number, buyerEmail?: string): string {
   const planLabels: Record<string, string> = { lifetime: 'Vitalício', annual: 'Anual' }
   const planDuration: Record<string, string> = { lifetime: 'para sempre', annual: 'por 1 ano' }
@@ -260,10 +210,10 @@ function getPaymentApprovedEmail(firstName: string, plan: string, amount?: numbe
     </h2>
 
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
-      <tr><td style="padding: 10px 0; color: #94A3B8; font-size: 15px;"><span style="color: #22C55E; font-weight: bold;">1.</span>&nbsp; Clique no botão abaixo para acessar o Google Drive</td></tr>
+      <tr><td style="padding: 10px 0; color: #94A3B8; font-size: 15px;"><span style="color: #22C55E; font-weight: bold;">1.</span>&nbsp; Clique no botão abaixo para acessar a plataforma</td></tr>
       <tr><td style="padding: 10px 0; color: #94A3B8; font-size: 15px;"><span style="color: #22C55E; font-weight: bold;">2.</span>&nbsp; Faça login com o e-mail: <strong style="color: white;">${buyerEmail || 'seu email cadastrado'}</strong></td></tr>
-      <tr><td style="padding: 10px 0; color: #94A3B8; font-size: 15px;"><span style="color: #22C55E; font-weight: bold;">3.</span>&nbsp; Acesse <strong style="color: white;">"Compartilhados comigo"</strong> no menu lateral</td></tr>
-      <tr><td style="padding: 10px 0; color: #94A3B8; font-size: 15px;"><span style="color: #22C55E; font-weight: bold;">4.</span>&nbsp; Encontre a pasta <strong style="color: #EF4444;">OneMed</strong> e aproveite todo o conteúdo!</td></tr>
+      <tr><td style="padding: 10px 0; color: #94A3B8; font-size: 15px;"><span style="color: #22C55E; font-weight: bold;">3.</span>&nbsp; Sem senha — você recebe um link de acesso direto no e-mail</td></tr>
+      <tr><td style="padding: 10px 0; color: #94A3B8; font-size: 15px;"><span style="color: #22C55E; font-weight: bold;">4.</span>&nbsp; Assista às aulas e leia os materiais direto pelo site!</td></tr>
     </table>
 
     <h2 style="color: white; font-size: 20px; margin: 30px 0 15px;">
@@ -281,8 +231,8 @@ function getPaymentApprovedEmail(firstName: string, plan: string, amount?: numbe
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
       <tr>
         <td align="center" style="padding: 30px 0 20px;">
-          <a href="https://drive.google.com" style="display: inline-block; background: linear-gradient(135deg, #DC2626 0%, #991B1B 100%); color: white; text-decoration: none; padding: 18px 50px; border-radius: 8px; font-size: 18px; font-weight: bold;">
-            Acessar Google Drive
+          <a href="${SITE_URL}/login${buyerEmail ? `?email=${encodeURIComponent(buyerEmail)}` : ''}" style="display: inline-block; background: linear-gradient(135deg, #DC2626 0%, #991B1B 100%); color: white; text-decoration: none; padding: 18px 50px; border-radius: 8px; font-size: 18px; font-weight: bold;">
+            Acessar a Plataforma
           </a>
         </td>
       </tr>
@@ -292,7 +242,7 @@ function getPaymentApprovedEmail(firstName: string, plan: string, amount?: numbe
       <tr>
         <td style="padding: 16px;">
           <p style="color: #F87171; font-size: 13px; margin: 0; text-align: center;">
-            <strong>Importante:</strong> Certifique-se de acessar o Google Drive com o email <strong style="color: white;">${buyerEmail || 'cadastrado na compra'}</strong>
+            <strong>Importante:</strong> Faça login com o email <strong style="color: white;">${buyerEmail || 'cadastrado na compra'}</strong>
           </p>
         </td>
       </tr>
@@ -311,7 +261,7 @@ serve(async (req) => {
   try {
     const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')!
     const body = await req.json()
-    const { name, type, plan, folderName, folderId, amount } = body
+    const { name, type, plan, amount } = body
     const to = body.to || body.email  // accept both 'to' and 'email' fields
 
     const firstName = name?.split(' ')[0] || 'Olá'
@@ -322,9 +272,6 @@ serve(async (req) => {
     if (type === 'trial_access') {
       subject = `Bem-vindo ao ${SITE_NAME}! Seu acesso de teste foi ativado`
       html = getTrialAccessEmail(to)
-    } else if (type === 'access_granted') {
-      subject = `Acesso ao ${SITE_NAME} liberado`
-      html = getAccessGrantedEmail(to, folderName, folderId)
     } else if (type === 'payment_approved') {
       subject = `Pagamento aprovado — Bem-vindo ao ${SITE_NAME}`
       html = getPaymentApprovedEmail(firstName, plan, amount, to)

@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { supabase } from '@/integrations/supabase/client';
-import { CheckCircle, Mail, ArrowRight, FolderOpen, Loader2, AlertCircle, Stethoscope } from 'lucide-react';
+import { CheckCircle, Mail, ArrowRight, LogIn, Loader2, AlertCircle, Stethoscope } from 'lucide-react';
 
 export default function ClaimAccessPage() {
   const [searchParams] = useSearchParams();
@@ -99,10 +99,10 @@ export default function ClaimAccessPage() {
               <h2 className="font-secondary text-2xl font-bold text-foreground mb-2">Acesso Confirmado!</h2>
               <p className="text-muted-foreground mb-2">Acesso liberado para:</p>
               <p className="text-primary font-medium mb-6">{email}</p>
-              <a href="https://drive.google.com/drive/shared-with-me" target="_blank" rel="noopener noreferrer"
+              <Link to={`/login?email=${encodeURIComponent(email)}`}
                 className="inline-flex items-center gap-2 bg-primary hover:bg-primary-hover text-primary-foreground font-semibold px-6 py-3 rounded-lg transition-colors">
-                <FolderOpen className="w-5 h-5" /> Abrir Google Drive <ArrowRight className="w-4 h-4" />
-              </a>
+                <LogIn className="w-5 h-5" /> Fazer login <ArrowRight className="w-4 h-4" />
+              </Link>
             </div>
           ) : (
             <>
@@ -112,7 +112,7 @@ export default function ClaimAccessPage() {
               </p>
               <form onSubmit={handleClaim} className="space-y-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Email do Google Drive</label>
+                  <label className="text-sm font-medium text-foreground">Seu e-mail</label>
                   <div className="relative">
                     <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="seu@email.com" className="pl-10 h-12 bg-secondary border-border text-foreground" required />
