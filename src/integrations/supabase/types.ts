@@ -454,28 +454,34 @@ export type Database = {
       course_comments: {
         Row: {
           body: string
-          course_id: string
+          course_id: string | null
           created_at: string
           id: string
+          lesson_id: string | null
           parent_id: string | null
+          title: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
           body: string
-          course_id: string
+          course_id?: string | null
           created_at?: string
           id?: string
+          lesson_id?: string | null
           parent_id?: string | null
+          title?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
           body?: string
-          course_id?: string
+          course_id?: string | null
           created_at?: string
           id?: string
+          lesson_id?: string | null
           parent_id?: string | null
+          title?: string | null
           updated_at?: string
           user_id?: string
         }
@@ -485,6 +491,13 @@ export type Database = {
             columns: ["course_id"]
             isOneToOne: false
             referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "course_comments_lesson_id_fkey"
+            columns: ["lesson_id"]
+            isOneToOne: false
+            referencedRelation: "lessons"
             referencedColumns: ["id"]
           },
           {

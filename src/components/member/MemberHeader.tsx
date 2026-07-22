@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Stethoscope } from 'lucide-react';
+import { Stethoscope, MessageCircle } from 'lucide-react';
 import { AccountMenu } from './AccountMenu';
 import { NotificationsBell } from './NotificationsBell';
 import { TrialCountdownBar } from './TrialCountdownBar';
@@ -26,6 +26,13 @@ export function MemberHeader() {
 
           <div className="flex-1" />
 
+          <Link
+            to="/membros/comunidade"
+            className="w-9 h-9 shrink-0 rounded-full bg-secondary border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors"
+            title="Comunidade"
+          >
+            <MessageCircle className="w-4 h-4" />
+          </Link>
           <NotificationsBell />
           <AccountMenu />
         </div>

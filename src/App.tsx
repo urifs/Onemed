@@ -13,6 +13,7 @@ import RegisterPage from "./pages/RegisterPage";
 import MemberLoginPage from "./pages/MemberLoginPage";
 import MemberDashboardPage from "./pages/MemberDashboardPage";
 import CourseDetailPage from "./pages/CourseDetailPage";
+import CommunityPage from "./pages/CommunityPage";
 import Dashboard from "./pages/Dashboard";
 import AccessManagement from "./pages/AccessManagement";
 import MembersPage from "./pages/MembersPage";
@@ -25,6 +26,7 @@ import ClaimAccessPage from "./pages/ClaimAccessPage";
 import BuyersPage from "./pages/BuyersPage";
 import TrialUsersPage from "./pages/TrialUsersPage";
 import CouponsPage from "./pages/CouponsPage";
+import AdminCommunityPage from "./pages/AdminCommunityPage";
 import TermsPage from "./pages/TermsPage";
 import PrivacyPage from "./pages/PrivacyPage";
 import DatabasePage from "./pages/DatabasePage";
@@ -85,6 +87,7 @@ const App = () => (
             <Route path="/login" element={<MemberLoginPage />} />
             <Route path="/membros" element={<MemberProtectedRoute><MemberDashboardPage /></MemberProtectedRoute>} />
             <Route path="/membros/curso/:slug" element={<MemberProtectedRoute><CourseDetailPage /></MemberProtectedRoute>} />
+            <Route path="/membros/comunidade" element={<MemberProtectedRoute><CommunityPage /></MemberProtectedRoute>} />
 
             {/* Protected admin routes */}
             <Route path="/admin" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
@@ -94,6 +97,7 @@ const App = () => (
             <Route path="/admin/buyers" element={<ProtectedRoute><BuyersPage /></ProtectedRoute>} />
             <Route path="/admin/trials" element={<ProtectedRoute><TrialUsersPage /></ProtectedRoute>} />
             <Route path="/admin/coupons" element={<ProtectedRoute><CouponsPage /></ProtectedRoute>} />
+            <Route path="/admin/comunidade" element={<ProtectedRoute><AdminCommunityPage /></ProtectedRoute>} />
             <Route path="/admin/database" element={<ProtectedRoute><DatabasePage /></ProtectedRoute>} />
             <Route path="/admin/email-campaign" element={<ProtectedRoute><EmailCampaignPage /></ProtectedRoute>} />
             <Route path="/admin/sms" element={<ProtectedRoute><SMSPage /></ProtectedRoute>} />

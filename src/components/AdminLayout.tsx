@@ -17,6 +17,7 @@ import {
   Mail,
   Smartphone,
   MessageCircle,
+  MessagesSquare,
   GraduationCap,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -31,6 +32,7 @@ const navItems = [
   { path: '/admin/buyers', label: 'Compradores', icon: DollarSign },
   { path: '/admin/trials', label: 'Usuários Trial', icon: Users },
   { path: '/admin/coupons', label: 'Cupons', icon: Tag },
+  { path: '/admin/comunidade', label: 'Comunidade', icon: MessagesSquare },
   { path: '/admin/drive', label: 'Google Drive', icon: FolderOpen },
   { path: '/admin/email-campaign', label: 'Campanha Email', icon: Mail },
   { path: '/admin/sms', label: 'SMS', icon: Smartphone },
