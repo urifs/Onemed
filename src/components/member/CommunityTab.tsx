@@ -73,6 +73,8 @@ export function CommunityTab({ courseId }: { courseId: string }) {
             onChange={e => setBody(e.target.value)}
             placeholder="Compartilhe uma dúvida, dica ou comentário sobre este curso…"
             rows={2}
+            spellCheck
+            lang="pt-BR"
             className="w-full resize-none rounded-xl bg-secondary border border-border px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors"
           />
           <div className="flex justify-end mt-2">

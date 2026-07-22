@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Send, MessageCircle, AlertTriangle, RefreshCw, ChevronDown, BookOpen, Play, BadgeCheck, Tag } from 'lucide-react';
+import { Send, MessageCircle, AlertTriangle, RefreshCw, ChevronDown, BookOpen, Play, BadgeCheck, Tag, ListFilter, ArrowUpDown } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
 import { useRequireName } from '@/hooks/useRequireName';
@@ -148,6 +148,8 @@ function RepliesSection({ postId }: { postId: string }) {
                     onChange={e => setBody(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && handleReply()}
                     placeholder="Escreva uma resposta…"
+                    spellCheck
+                    lang="pt-BR"
                     className="flex-1 rounded-lg bg-secondary border border-border px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors"
                   />
                   <button
@@ -216,6 +218,16 @@ function FeedItemCard({ item }: { item: FeedItem }) {
   );
 }
 
+const FILTER_OPTIONS = [
+  { value: 'all', label: 'Todos os tópicos' },
+  { value: 'interacted', label: 'Que participei' },
+  { value: 'mine', label: 'Meus tópicos' },
+];
+const SORT_OPTIONS = [
+  { value: 'recent', label: 'Mais recentes' },
+  { value: 'relevant', label: 'Mais relevantes' },
+];
+
 export default function CommunityPage() {
   const { user } = useAuth();
   const { promptOpen, setPromptOpen, ensureName, submitName } = useRequireName();
@@ -230,11 +242,17 @@ export default function CommunityPage() {
   const [newCourseId, setNewCourseId] = useState<string>('none');
   const [posting, setPosting] = useState(false);
   const [courses, setCourses] = useState<CourseOption[]>([]);
+  const [filter, setFilter] = useState('all');
+  const [sort, setSort] = useState('recent');
 
-  const load = async (offset = 0) => {
+  const load = async (offset = 0, overrides?: { filter?: string; sort?: string }) => {
     try {
       const { data, error } = await withTimeout(
-        supabase.rpc('community_feed', { _limit: PAGE_SIZE, _offset: offset }),
+        supabase.rpc('community_feed', {
+          _limit: PAGE_SIZE, _offset: offset,
+          _filter: overrides?.filter ?? filter,
+          _sort: overrides?.sort ?? sort,
+        }),
         12000, 'feed da comunidade',
       );
       if (error) throw error;
@@ -260,6 +278,17 @@ export default function CommunityPage() {
 
   const handleRetry = () => { setLoading(true); load(0); };
   const handleLoadMore = () => { setLoadingMore(true); load(items.length); };
+
+  const handleFilterChange = (value: string) => {
+    setFilter(value);
+    setLoading(true);
+    load(0, { filter: value });
+  };
+  const handleSortChange = (value: string) => {
+    setSort(value);
+    setLoading(true);
+    load(0, { sort: value });
+  };
 
   const categoriesPresent = useMemo(
     () => CATEGORY_ORDER.filter(cat => courses.some(c => c.category === cat)),
@@ -308,6 +337,8 @@ export default function CommunityPage() {
             value={newTitle}
             onChange={e => setNewTitle(e.target.value)}
             placeholder="Título (opcional)"
+            spellCheck
+            lang="pt-BR"
             className="w-full rounded-lg bg-secondary border border-border px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors mb-2.5"
           />
           <textarea
@@ -315,6 +346,8 @@ export default function CommunityPage() {
             onChange={e => setNewBody(e.target.value)}
             placeholder="Compartilhe uma dúvida, dica ou comentário…"
             rows={2}
+            spellCheck
+            lang="pt-BR"
             className="w-full resize-none rounded-lg bg-secondary border border-border px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors"
           />
           <div className="flex flex-col sm:flex-row gap-2.5 mt-2.5">
@@ -352,6 +385,31 @@ export default function CommunityPage() {
           </div>
         </div>
 
+        <div className="flex flex-col sm:flex-row gap-2.5">
+          <Select value={filter} onValueChange={handleFilterChange}>
+            <SelectTrigger className="flex-1 bg-secondary border-border text-foreground">
+              <ListFilter className="w-3.5 h-3.5 mr-1.5 text-muted-foreground shrink-0" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="bg-background-paper border-border">
+              {FILTER_OPTIONS.map(o => (
+                <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={sort} onValueChange={handleSortChange}>
+            <SelectTrigger className="flex-1 bg-secondary border-border text-foreground">
+              <ArrowUpDown className="w-3.5 h-3.5 mr-1.5 text-muted-foreground shrink-0" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="bg-background-paper border-border">
+              {SORT_OPTIONS.map(o => (
+                <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
         {loadError && !loading ? (
           <div className="flex flex-col items-center gap-3 py-10 text-center">
             <AlertTriangle className="w-6 h-6 text-accent-warning" />
@@ -367,7 +425,11 @@ export default function CommunityPage() {
         ) : items.length === 0 ? (
           <div className="text-center py-16 text-muted-foreground">
             <MessageCircle className="w-8 h-8 mx-auto mb-3 opacity-40" />
-            <p className="text-sm">Nenhum tópico ainda. Seja o primeiro a comentar!</p>
+            <p className="text-sm">
+              {filter === 'mine' ? 'Você ainda não abriu nenhum tópico.'
+                : filter === 'interacted' ? 'Você ainda não comentou nem respondeu em nenhum tópico.'
+                : 'Nenhum tópico ainda. Seja o primeiro a comentar!'}
+            </p>
           </div>
         ) : (
           <div className="space-y-4">
