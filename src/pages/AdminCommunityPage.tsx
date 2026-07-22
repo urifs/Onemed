@@ -16,6 +16,7 @@ interface CommentRow {
   id: string;
   body: string;
   title: string | null;
+  category: string | null;
   created_at: string;
   user_id: string;
   parent_id: string | null;
@@ -44,7 +45,7 @@ export default function AdminCommunityPage() {
         fetchAllRows<CommentRow>((f, t) =>
           supabase
             .from('course_comments')
-            .select('id, body, title, created_at, user_id, parent_id, course_id, lesson_id, profiles(name, email), courses(title), lessons(title)')
+            .select('id, body, title, category, created_at, user_id, parent_id, course_id, lesson_id, profiles(name, email), courses(title), lessons(title)')
             .order('created_at', { ascending: false })
             .range(f, t) as any,
         ),
@@ -101,7 +102,7 @@ export default function AdminCommunityPage() {
     return 'Tópico';
   };
 
-  const contextLabel = (c: CommentRow) => c.lessons?.title || c.courses?.title || (c.title ? c.title : '—');
+  const contextLabel = (c: CommentRow) => c.lessons?.title || c.courses?.title || c.category || '—';
 
   return (
     <AdminLayout>
@@ -154,14 +155,17 @@ export default function AdminCommunityPage() {
                   {filtered.map(c => (
                     <tr key={c.id} className="border-b border-border/40 hover:bg-secondary/30 transition-colors">
                       <td className="px-4 py-3 text-sm text-foreground whitespace-nowrap">
-                        <span className="inline-flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5">
                           {c.profiles?.name || c.profiles?.email?.split('@')[0] || 'Aluno'}
                           {adminIds.has(c.user_id) && (
                             <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-primary bg-primary/10 border border-primary/25 rounded-full px-1.5 py-0.5">
                               <BadgeCheck className="w-2.5 h-2.5" /> Admin
                             </span>
                           )}
-                        </span>
+                        </div>
+                        {c.profiles?.email && (
+                          <p className="text-xs text-muted-foreground font-normal">{c.profiles.email}</p>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-secondary text-foreground">

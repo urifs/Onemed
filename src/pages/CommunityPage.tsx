@@ -1,13 +1,20 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Send, MessageCircle, AlertTriangle, RefreshCw, ChevronDown, BookOpen, Play, BadgeCheck } from 'lucide-react';
+import { Send, MessageCircle, AlertTriangle, RefreshCw, ChevronDown, BookOpen, Play, BadgeCheck, Tag } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
+import { useRequireName } from '@/hooks/useRequireName';
 import { MemberHeader } from '@/components/member/MemberHeader';
+import { NameRequiredModal } from '@/components/member/NameRequiredModal';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { withTimeout, stripYearFromTitle } from '@/lib/utils';
+import { CATEGORY_ORDER } from '@/lib/courseCategories';
+import type { Database } from '@/integrations/supabase/types';
+
+type CourseOption = Pick<Database['public']['Tables']['courses']['Row'], 'id' | 'title' | 'category'>;
 
 interface FeedItem {
   id: string;
@@ -20,6 +27,7 @@ interface FeedItem {
   course_slug: string | null;
   lesson_id: string | null;
   lesson_title: string | null;
+  category: string | null;
   title: string | null;
   body: string;
   created_at: string;
@@ -56,6 +64,7 @@ function AdminBadge() {
 
 function RepliesSection({ postId }: { postId: string }) {
   const { user } = useAuth();
+  const { promptOpen, setPromptOpen, ensureName, submitName } = useRequireName();
   const [open, setOpen] = useState(false);
   const [replies, setReplies] = useState<Reply[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -81,7 +90,7 @@ function RepliesSection({ postId }: { postId: string }) {
     if (!replies) loadReplies();
   };
 
-  const handleReply = async () => {
+  const doReply = async () => {
     if (!body.trim() || !user) return;
     setPosting(true);
     const { error } = await supabase.from('course_comments').insert({
@@ -90,6 +99,8 @@ function RepliesSection({ postId }: { postId: string }) {
     setPosting(false);
     if (!error) { setBody(''); loadReplies(); }
   };
+
+  const handleReply = () => ensureName(doReply);
 
   return (
     <div className="mt-2">
@@ -152,6 +163,8 @@ function RepliesSection({ postId }: { postId: string }) {
           )}
         </div>
       )}
+
+      <NameRequiredModal open={promptOpen} onOpenChange={setPromptOpen} onSubmit={submitName} />
     </div>
   );
 }
@@ -172,14 +185,23 @@ function FeedItemCard({ item }: { item: FeedItem }) {
             </span>
           </div>
 
-          {(item.course_title || item.lesson_title) && (
-            <Link
-              to={item.course_slug ? `/membros/curso/${item.course_slug}${item.lesson_id ? `?lesson=${item.lesson_id}` : ''}` : '#'}
-              className="inline-flex items-center gap-1.5 mt-1.5 text-xs text-primary bg-primary/10 border border-primary/20 rounded-full px-2.5 py-1 hover:bg-primary/15 transition-colors"
-            >
-              {item.lesson_title ? <Play className="w-3 h-3" /> : <BookOpen className="w-3 h-3" />}
-              {item.lesson_title || stripYearFromTitle(item.course_title || '')}
-            </Link>
+          {(item.course_title || item.lesson_title || item.category) && (
+            <div className="flex flex-wrap gap-1.5 mt-1.5">
+              {item.category && (
+                <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground bg-secondary border border-border rounded-full px-2.5 py-1">
+                  <Tag className="w-3 h-3" /> {item.category}
+                </span>
+              )}
+              {(item.course_title || item.lesson_title) && (
+                <Link
+                  to={item.course_slug ? `/membros/curso/${item.course_slug}${item.lesson_id ? `?lesson=${item.lesson_id}` : ''}` : '#'}
+                  className="inline-flex items-center gap-1.5 text-xs text-primary bg-primary/10 border border-primary/20 rounded-full px-2.5 py-1 hover:bg-primary/15 transition-colors"
+                >
+                  {item.lesson_title ? <Play className="w-3 h-3" /> : <BookOpen className="w-3 h-3" />}
+                  {item.lesson_title || stripYearFromTitle(item.course_title || '')}
+                </Link>
+              )}
+            </div>
           )}
 
           {item.title && (
@@ -196,6 +218,7 @@ function FeedItemCard({ item }: { item: FeedItem }) {
 
 export default function CommunityPage() {
   const { user } = useAuth();
+  const { promptOpen, setPromptOpen, ensureName, submitName } = useRequireName();
   const [items, setItems] = useState<FeedItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -203,7 +226,10 @@ export default function CommunityPage() {
   const [hasMore, setHasMore] = useState(true);
   const [newTitle, setNewTitle] = useState('');
   const [newBody, setNewBody] = useState('');
+  const [newCategory, setNewCategory] = useState<string>('none');
+  const [newCourseId, setNewCourseId] = useState<string>('none');
   const [posting, setPosting] = useState(false);
+  const [courses, setCourses] = useState<CourseOption[]>([]);
 
   const load = async (offset = 0) => {
     try {
@@ -225,20 +251,43 @@ export default function CommunityPage() {
     }
   };
 
-  useEffect(() => { load(0); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+  useEffect(() => {
+    load(0);
+    supabase.from('courses').select('id, title, category').eq('active', true).order('title')
+      .then(({ data }) => setCourses((data || []) as CourseOption[]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleRetry = () => { setLoading(true); load(0); };
   const handleLoadMore = () => { setLoadingMore(true); load(items.length); };
 
-  const handleNewTopic = async () => {
+  const categoriesPresent = useMemo(
+    () => CATEGORY_ORDER.filter(cat => courses.some(c => c.category === cat)),
+    [courses],
+  );
+  const coursesInCategory = useMemo(
+    () => (newCategory === 'none' ? [] : courses.filter(c => c.category === newCategory)),
+    [courses, newCategory],
+  );
+
+  const doNewTopic = async () => {
     if (!newBody.trim() || !user) return;
     setPosting(true);
     const { error } = await supabase.from('course_comments').insert({
-      user_id: user.id, title: newTitle.trim() || null, body: newBody.trim(),
+      user_id: user.id,
+      title: newTitle.trim() || null,
+      body: newBody.trim(),
+      category: newCategory === 'none' ? null : newCategory,
+      course_id: newCourseId === 'none' ? null : newCourseId,
     });
     setPosting(false);
-    if (!error) { setNewTitle(''); setNewBody(''); load(0); }
+    if (!error) {
+      setNewTitle(''); setNewBody(''); setNewCategory('none'); setNewCourseId('none');
+      load(0);
+    }
   };
+
+  const handleNewTopic = () => ensureName(doNewTopic);
 
   return (
     <div className="min-h-screen bg-background">
@@ -268,6 +317,30 @@ export default function CommunityPage() {
             rows={2}
             className="w-full resize-none rounded-lg bg-secondary border border-border px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors"
           />
+          <div className="flex flex-col sm:flex-row gap-2.5 mt-2.5">
+            <Select value={newCategory} onValueChange={v => { setNewCategory(v); setNewCourseId('none'); }}>
+              <SelectTrigger className="flex-1 bg-secondary border-border text-foreground">
+                <SelectValue placeholder="Categoria (opcional)" />
+              </SelectTrigger>
+              <SelectContent className="bg-background-paper border-border">
+                <SelectItem value="none">Sem categoria</SelectItem>
+                {categoriesPresent.map(cat => (
+                  <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={newCourseId} onValueChange={setNewCourseId} disabled={newCategory === 'none'}>
+              <SelectTrigger className="flex-1 bg-secondary border-border text-foreground">
+                <SelectValue placeholder="Curso (opcional)" />
+              </SelectTrigger>
+              <SelectContent className="bg-background-paper border-border">
+                <SelectItem value="none">Sem curso específico</SelectItem>
+                {coursesInCategory.map(c => (
+                  <SelectItem key={c.id} value={c.id}>{stripYearFromTitle(c.title)}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div className="flex justify-end mt-2.5">
             <button
               onClick={handleNewTopic}
@@ -309,6 +382,8 @@ export default function CommunityPage() {
           </div>
         )}
       </div>
+
+      <NameRequiredModal open={promptOpen} onOpenChange={setPromptOpen} onSubmit={submitName} />
     </div>
   );
 }

@@ -4,6 +4,8 @@ import { ptBR } from 'date-fns/locale';
 import { Send, MessageCircle, BadgeCheck } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
+import { useRequireName } from '@/hooks/useRequireName';
+import { NameRequiredModal } from './NameRequiredModal';
 
 interface Comment {
   id: string;
@@ -15,6 +17,7 @@ interface Comment {
 
 export function CommunityTab({ courseId }: { courseId: string }) {
   const { user } = useAuth();
+  const { promptOpen, setPromptOpen, ensureName, submitName } = useRequireName();
   const [comments, setComments] = useState<Comment[]>([]);
   const [adminIds, setAdminIds] = useState<Set<string>>(new Set());
   const [body, setBody] = useState('');
@@ -43,7 +46,7 @@ export function CommunityTab({ courseId }: { courseId: string }) {
 
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [courseId]);
 
-  const handlePost = async () => {
+  const doPost = async () => {
     if (!body.trim() || !user) return;
     setPosting(true);
     const { error } = await supabase.from('course_comments').insert({
@@ -52,6 +55,8 @@ export function CommunityTab({ courseId }: { courseId: string }) {
     setPosting(false);
     if (!error) { setBody(''); load(); }
   };
+
+  const handlePost = () => ensureName(doPost);
 
   const initials = (name?: string | null, email?: string | null) => (name || email || '?').trim().charAt(0).toUpperCase();
   const displayName = (c: Comment) => c.profiles?.name || c.profiles?.email?.split('@')[0] || 'Aluno';
@@ -116,6 +121,7 @@ export function CommunityTab({ courseId }: { courseId: string }) {
           ))}
         </div>
       )}
+      <NameRequiredModal open={promptOpen} onOpenChange={setPromptOpen} onSubmit={submitName} />
     </div>
   );
 }

@@ -454,6 +454,7 @@ export type Database = {
       course_comments: {
         Row: {
           body: string
+          category: string | null
           course_id: string | null
           created_at: string
           id: string
@@ -465,6 +466,7 @@ export type Database = {
         }
         Insert: {
           body: string
+          category?: string | null
           course_id?: string | null
           created_at?: string
           id?: string
@@ -476,6 +478,7 @@ export type Database = {
         }
         Update: {
           body?: string
+          category?: string | null
           course_id?: string | null
           created_at?: string
           id?: string
