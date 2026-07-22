@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { X, ChevronLeft, ChevronRight, Loader2, ExternalLink } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Loader2, ExternalLink, Download, Printer } from 'lucide-react';
 import { useLessonStreamUrl } from '@/hooks/useLessonStream';
 import { PdfViewer } from './PdfViewer';
 import { OfficeViewer } from './OfficeViewer';
@@ -7,6 +7,37 @@ import { TxtViewer } from './TxtViewer';
 import type { Database } from '@/integrations/supabase/types';
 
 type Lesson = Database['public']['Tables']['lessons']['Row'];
+
+// Vídeo/áudio ficam só em streaming (controlsList="nodownload") — mas
+// documentos (pdf/imagem/planilha/doc/txt) são conteúdo pra consulta e
+// impressão, então ganham download/impressão de verdade.
+const DOWNLOADABLE_TYPES = ['pdf', 'image', 'doc', 'sheet', 'txt'];
+
+const EXTENSION_BY_MIME: Record<string, string> = {
+  'application/pdf': 'pdf',
+  'application/msword': 'doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.ms-excel': 'xls',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'text/plain': 'txt',
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+  'image/svg+xml': 'svg',
+};
+
+const EXTENSION_BY_TYPE: Record<string, string> = {
+  pdf: 'pdf', doc: 'docx', sheet: 'xlsx', txt: 'txt', image: 'jpg',
+};
+
+function fileExtensionFor(lesson: Lesson): string {
+  return (lesson.mime_type && EXTENSION_BY_MIME[lesson.mime_type]) || EXTENSION_BY_TYPE[lesson.type] || 'bin';
+}
+
+function sanitizeFilename(title: string): string {
+  return title.replace(/[\\/:*?"<>|]/g, '').trim() || 'arquivo';
+}
 
 interface LessonPlayerProps {
   lesson: Lesson;
@@ -30,6 +61,7 @@ export function LessonPlayer({
   const lastReported = useRef(0);
   const mediaRetries = useRef(0);
   const [imgRetryCount, setImgRetryCount] = useState(0);
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -101,6 +133,57 @@ export function LessonPlayer({
     onProgress(lesson.id, Math.floor(v?.duration || lastReported.current), true);
   };
 
+  const canDownload = DOWNLOADABLE_TYPES.includes(lesson.type);
+
+  const handleDownload = async () => {
+    if (!src || downloading) return;
+    setDownloading(true);
+    try {
+      const res = await fetch(src);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = `${sanitizeFilename(lesson.title)}.${fileExtensionFor(lesson)}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(blobUrl);
+    } catch (err) {
+      console.error('Failed to download file', err);
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const handlePrint = async () => {
+    if (!src) return;
+    // doc/sheet (docx/xlsx) não têm renderizador nativo do navegador — o
+    // visualizador do Office Online tem o próprio botão de imprimir na UI.
+    if (lesson.type === 'doc' || lesson.type === 'sheet') {
+      window.open(`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(src)}`, '_blank');
+      return;
+    }
+    // Abre a aba já (gesto do clique) pra não cair no bloqueador de popup
+    // enquanto o fetch do blob ainda está em andamento.
+    const win = window.open('', '_blank');
+    try {
+      const res = await fetch(src);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      if (!win) return;
+      win.location.href = blobUrl;
+      const tryPrint = () => { try { win.print(); } catch { /* ignore */ } };
+      win.addEventListener('load', tryPrint);
+      // Fallback: o visualizador nativo de PDF do navegador às vezes não
+      // dispara 'load' no window pai.
+      setTimeout(tryPrint, 1200);
+    } catch (err) {
+      console.error('Failed to open file for printing', err);
+      win?.close();
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-sm flex flex-col">
       <div className="flex items-center gap-3 px-4 md:px-6 py-3.5 border-b border-white/10 shrink-0">
@@ -112,6 +195,25 @@ export function LessonPlayer({
           <p className="text-sm font-semibold text-white truncate">{lesson.title}</p>
         </div>
         <div className="flex-1" />
+        {canDownload && src && (
+          <div className="flex items-center gap-2 mr-1">
+            <button
+              onClick={handlePrint}
+              title="Imprimir"
+              className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/15 flex items-center justify-center text-white transition-colors"
+            >
+              <Printer className="w-4 h-4" />
+            </button>
+            <button
+              onClick={handleDownload}
+              disabled={downloading}
+              title="Baixar"
+              className="w-9 h-9 rounded-full bg-white/10 disabled:opacity-40 hover:bg-white/15 flex items-center justify-center text-white transition-colors"
+            >
+              {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+            </button>
+          </div>
+        )}
         <div className="hidden sm:flex items-center gap-2">
           <button
             disabled={!hasPrev} onClick={onPrev}
