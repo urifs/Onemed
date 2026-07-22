@@ -86,6 +86,8 @@ function lessonType(mimeType: string): string {
   if (mimeType?.startsWith('video/')) return 'video'
   if (mimeType === 'application/pdf') return 'pdf'
   if (mimeType?.includes('word') || mimeType === 'application/vnd.google-apps.document') return 'doc'
+  if (mimeType?.includes('spreadsheet') || mimeType === 'application/vnd.ms-excel') return 'sheet'
+  if (mimeType === 'text/plain') return 'txt'
   if (mimeType?.startsWith('audio/')) return 'audio'
   if (mimeType?.startsWith('image/')) return 'image'
   return 'other'

@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { X, ChevronLeft, ChevronRight, Loader2, ExternalLink } from 'lucide-react';
 import { useLessonStreamUrl } from '@/hooks/useLessonStream';
 import { PdfViewer } from './PdfViewer';
+import { OfficeViewer } from './OfficeViewer';
+import { TxtViewer } from './TxtViewer';
 import type { Database } from '@/integrations/supabase/types';
 
 type Lesson = Database['public']['Tables']['lessons']['Row'];
@@ -147,6 +149,10 @@ export function LessonPlayer({
           />
         ) : lesson.type === 'pdf' ? (
           <PdfViewer url={src} title={lesson.title} />
+        ) : lesson.type === 'doc' || lesson.type === 'sheet' ? (
+          <OfficeViewer url={src} title={lesson.title} />
+        ) : lesson.type === 'txt' ? (
+          <TxtViewer url={src} title={lesson.title} />
         ) : lesson.type === 'image' ? (
           <img
             src={imgRetryCount > 0 ? `${src}&_r=${imgRetryCount}` : src}

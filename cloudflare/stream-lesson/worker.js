@@ -48,6 +48,18 @@ function timingSafeEqual(a, b) {
   return result === 0;
 }
 
+// Google Docs/Sheets/Slides nativos não têm bytes "crus" pra baixar —
+// alt=media falha pra esses (são só metadados no Drive, o conteúdo real vive
+// nos servidores do Google Docs). Precisam do endpoint /export, que converte
+// pra um formato concreto na hora. Exporta pro formato Office equivalente em
+// vez de PDF pra poder reaproveitar o mesmo visualizador (Office Online) que
+// já é usado pros arquivos .docx/.xlsx enviados de verdade.
+const GOOGLE_NATIVE_PREFIX = 'application/vnd.google-apps.';
+const EXPORT_MIME_MAP = {
+  'application/vnd.google-apps.document': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.google-apps.spreadsheet': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+};
+
 export default {
   async fetch(request, env) {
     const cors = corsHeaders(request);
@@ -57,6 +69,7 @@ export default {
     const fileId = url.searchParams.get('id');
     const exp = url.searchParams.get('exp');
     const sig = url.searchParams.get('sig');
+    const mimeType = url.searchParams.get('mime') || '';
     if (!fileId || !exp || !sig) return new Response('Requisição inválida', { status: 400, headers: cors });
 
     const expiresAt = parseInt(exp, 10);
@@ -64,7 +77,7 @@ export default {
       return new Response('Link expirado', { status: 403, headers: cors });
     }
 
-    const expected = await hmacHex(env.LESSON_STREAM_SECRET, `${fileId}.${exp}`);
+    const expected = await hmacHex(env.LESSON_STREAM_SECRET, `${fileId}.${exp}.${mimeType}`);
     if (!timingSafeEqual(expected, sig)) return new Response('Assinatura inválida', { status: 403, headers: cors });
 
     const tokenRes = await fetch(`${env.SUPABASE_URL}/functions/v1/drive-access-token`, {
@@ -73,13 +86,23 @@ export default {
     if (!tokenRes.ok) return new Response('Drive indisponível', { status: 502, headers: cors });
     const { accessToken } = await tokenRes.json();
 
-    const range = request.headers.get('range');
-    const driveRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        ...(range ? { Range: range } : {}),
-      },
-    });
+    let driveRes;
+    if (mimeType.startsWith(GOOGLE_NATIVE_PREFIX)) {
+      const exportMime = EXPORT_MIME_MAP[mimeType];
+      if (!exportMime) return new Response('Tipo de arquivo do Google não suportado', { status: 415, headers: cors });
+      driveRes = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=${encodeURIComponent(exportMime)}`,
+        { headers: { Authorization: `Bearer ${accessToken}` } },
+      );
+    } else {
+      const range = request.headers.get('range');
+      driveRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          ...(range ? { Range: range } : {}),
+        },
+      });
+    }
 
     if (!driveRes.ok && driveRes.status !== 206) {
       return new Response('Não foi possível carregar o arquivo', { status: 502, headers: cors });

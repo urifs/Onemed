@@ -71,7 +71,7 @@ serve(async (req) => {
     if (!lessonId) return jsonResponse(req, { error: 'lessonId obrigatório' }, 400)
 
     const { data: lesson, error: lessonErr } = await supabase.from('lessons')
-      .select('id, course_id, drive_file_id').eq('id', lessonId).maybeSingle()
+      .select('id, course_id, drive_file_id, mime_type').eq('id', lessonId).maybeSingle()
     if (lessonErr || !lesson) return jsonResponse(req, { error: 'Aula não encontrada' }, 404)
     if (!lesson.drive_file_id) return jsonResponse(req, { error: 'Arquivo não configurado' }, 404)
 
@@ -88,9 +88,15 @@ serve(async (req) => {
     // Supabase/Vercel) — o proxy roda lá em vez de na Vercel.
     const streamBaseUrl = Deno.env.get('STREAM_PROXY_URL') || 'https://onemed-stream-lesson.onemed-stream.workers.dev'
     const fileId = lesson.drive_file_id
+    // mime_type original do Drive vai assinado junto — Google Docs/Sheets
+    // nativos (application/vnd.google-apps.*) não têm bytes "crus" pra baixar
+    // (alt=media falha), precisam ser exportados num formato concreto; o
+    // Worker usa esse campo pra decidir isso sem precisar de outra chamada à
+    // API do Drive só pra descobrir o mimeType.
+    const mimeType = lesson.mime_type || ''
     const expiresAt = Math.floor(Date.now() / 1000) + STREAM_TTL_SECONDS
-    const sig = await hmacHex(streamSecret, `${fileId}.${expiresAt}`)
-    const url = `${streamBaseUrl}/?id=${encodeURIComponent(fileId)}&exp=${expiresAt}&sig=${sig}`
+    const sig = await hmacHex(streamSecret, `${fileId}.${expiresAt}.${mimeType}`)
+    const url = `${streamBaseUrl}/?id=${encodeURIComponent(fileId)}&exp=${expiresAt}&sig=${sig}&mime=${encodeURIComponent(mimeType)}`
 
     return jsonResponse(req, { url, expiresAt })
   } catch (err: any) {

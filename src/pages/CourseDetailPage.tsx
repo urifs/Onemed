@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams, Link } from 'react-router-dom';
 import {
   ArrowLeft, Play, FileText, File, Music, Image as ImageIcon, CheckCircle2, Clock,
+  FileSpreadsheet, FileType,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
@@ -20,7 +21,7 @@ type Lesson = Database['public']['Tables']['lessons']['Row'];
 type Progress = Database['public']['Tables']['lesson_progress']['Row'];
 
 const TYPE_ICON: Record<string, typeof Play> = {
-  video: Play, pdf: FileText, doc: File, audio: Music, image: ImageIcon, other: File,
+  video: Play, pdf: FileText, doc: File, sheet: FileSpreadsheet, txt: FileType, audio: Music, image: ImageIcon, other: File,
 };
 
 function groupLessonsByModule(items: Lesson[], modules: CourseModule[]): { title: string; lessons: Lesson[] }[] {

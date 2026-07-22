@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Play, Info, FileText, File, Music, Image as ImageIcon, Loader2 } from 'lucide-react';
+import { Play, Info, FileText, File, Music, Image as ImageIcon, Loader2, FileSpreadsheet, FileType } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
 import { MemberHeader } from '@/components/member/MemberHeader';
@@ -26,7 +26,7 @@ interface ContentResult {
 }
 
 const CONTENT_TYPE_ICON: Record<string, typeof Play> = {
-  video: Play, pdf: FileText, doc: File, audio: Music, image: ImageIcon, other: File,
+  video: Play, pdf: FileText, doc: File, sheet: FileSpreadsheet, txt: FileType, audio: Music, image: ImageIcon, other: File,
 };
 
 export default function MemberDashboardPage() {
