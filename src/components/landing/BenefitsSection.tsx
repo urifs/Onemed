@@ -1,17 +1,17 @@
 import {
-  BookOpen, GraduationCap, Download, Users, Lock, Globe,
+  BookOpen, GraduationCap, MonitorPlay, Users, Lock, Globe,
   Smartphone, Server, RefreshCw, MessageCircle, Headphones
 } from 'lucide-react';
 
 const benefits = [
   { icon: BookOpen, title: '+530 Cursos', description: 'Cursos completos das maiores plataformas médicas do Brasil' },
   { icon: GraduationCap, title: '+9.000 Livros', description: 'Biblioteca completa com os principais títulos da medicina' },
-  { icon: Download, title: 'Download Liberado', description: 'Baixe o conteúdo para estudar offline quando quiser' },
+  { icon: MonitorPlay, title: 'Acesso Direto na Plataforma', description: 'Assista e leia direto pelo site, sem apps externos' },
   { icon: Users, title: '+10.000 Membros', description: 'Comunidade ativa de médicos e estudantes' },
   { icon: Lock, title: 'Acesso Seguro', description: 'Conteúdo protegido e acesso individual por email' },
   { icon: Globe, title: 'Acesso Global', description: 'Estude de qualquer lugar do mundo, 24/7' },
   { icon: Smartphone, title: 'Apps Inclusos', description: 'Whitebook e WeMeds inclusos no plano vitalício' },
-  { icon: Server, title: 'Armazenamento Cloud', description: 'Todo conteúdo no Google Drive, sem ocupar seu espaço' },
+  { icon: Server, title: 'Armazenamento Cloud', description: 'Todo conteúdo na nossa plataforma, sem ocupar seu espaço' },
   { icon: RefreshCw, title: 'Atualizações', description: 'Conteúdo atualizado constantemente' },
   { icon: MessageCircle, title: 'Suporte WhatsApp', description: 'Atendimento rápido e personalizado' },
   { icon: Headphones, title: 'Suporte 24/7', description: 'Equipe sempre disponível para ajudar' },

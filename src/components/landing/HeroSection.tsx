@@ -64,7 +64,7 @@ export const HeroSection = ({
         <div className="animate-fade-in">
           <div className="inline-flex items-center gap-2 bg-primary/10 border border-primary/20 text-primary text-sm font-mono px-4 py-1.5 rounded-full mb-8">
             <span className="w-2 h-2 bg-primary rounded-full animate-pulse" />
-            ACESSO GRATUITO DE 30 MIN
+            ACESSO GRATUITO DE 10 MIN
           </div>
 
           <h1 className="font-secondary text-5xl md:text-6xl xl:text-7xl font-bold tracking-tight text-foreground mb-6 leading-[1.1]">
@@ -151,7 +151,7 @@ export const HeroSection = ({
                 <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
               ) : (
                 <>
-                  Acessar Grátis por 30 Minutos
+                  Acessar Grátis por 10 Minutos
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}
@@ -177,7 +177,7 @@ export const HeroSection = ({
               { label: 'Cursos Médicos', value: '530+', desc: 'Estratégia Med, MedGrupo, Medway e mais' },
               { label: 'Livros', value: '9.000+', desc: 'Todas as especialidades, traduzidos' },
               { label: 'Membros Ativos', value: '10.000+', desc: 'Comunidade de médicos e estudantes' },
-              { label: 'Armazenamento', value: 'Cloud', desc: 'Google Drive, sem ocupar seu espaço' },
+              { label: 'Armazenamento', value: 'Cloud', desc: 'Plataforma própria, sem ocupar seu espaço' },
             ].map((stat, i) => (
               <div key={i} className="flex items-center justify-between py-3 border-b border-border/50 last:border-0">
                 <div>

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { AlertTriangle, RefreshCw, Table2, BarChart3 } from 'lucide-react';
 
 interface EgressRow { day: string; source: string; bytes: number; requests: number; }
+interface CloudflareDay { day: string; requests: number; errors: number; }
 
 const SOURCE_LABEL: Record<string, string> = {
   'member-stream-file': 'Streaming de aulas/arquivos',
@@ -29,6 +30,9 @@ export function EgressChart() {
   const [loadError, setLoadError] = useState(false);
   const [showTable, setShowTable] = useState(false);
   const [hoverDay, setHoverDay] = useState<string | null>(null);
+  const [cfDays, setCfDays] = useState<CloudflareDay[]>([]);
+  const [cfLoading, setCfLoading] = useState(true);
+  const [cfError, setCfError] = useState(false);
 
   const fetchData = async () => {
     setLoading(true);
@@ -48,7 +52,21 @@ export function EgressChart() {
     }
   };
 
-  useEffect(() => { fetchData(); }, []);
+  const fetchCloudflare = async () => {
+    setCfLoading(true);
+    setCfError(false);
+    try {
+      const { data, error } = await supabase.functions.invoke('admin-cloudflare-usage');
+      if (error || data?.error) throw new Error(data?.error || error?.message);
+      setCfDays((data?.days || []) as CloudflareDay[]);
+    } catch {
+      setCfError(true);
+    } finally {
+      setCfLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchData(); fetchCloudflare(); }, []);
 
   const days = Array.from({ length: DAYS_SHOWN }, (_, i) => todayISO(DAYS_SHOWN - 1 - i));
   const sourcesPresent = SOURCE_ORDER.filter(s => rows.some(r => r.source === s));
@@ -67,6 +85,9 @@ export function EgressChart() {
   const totalBySource: Record<string, number> = {};
   for (const r of rows) totalBySource[r.source] = (totalBySource[r.source] || 0) + r.bytes;
 
+  const cfByDay = new Map<string, number>(cfDays.map(d => [d.day, d.requests]));
+  const cfMax = Math.max(1, ...days.map(d => cfByDay.get(d) || 0));
+
   if (loadError && !loading) {
     return (
       <div className="flex flex-col items-center gap-3 py-8 text-center">
@@ -81,8 +102,8 @@ export function EgressChart() {
 
   return (
     <div className="space-y-5">
-      {/* 3 categorias, espelhando o dashboard da Supabase */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      {/* 3 categorias, espelhando o dashboard da Supabase, + Cloudflare Workers */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="rounded-lg border border-border bg-secondary/40 p-4">
           <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Auth Egress</p>
           <p className="text-sm text-muted-foreground">Não disponível via API — consulte o dashboard da Supabase (historicamente irrelevante: ~2MB/dia)</p>
@@ -94,7 +115,18 @@ export function EgressChart() {
         <div className="rounded-lg border border-primary/30 bg-primary/5 p-4">
           <p className="text-xs text-primary uppercase tracking-wide mb-1 font-semibold">Functions Egress ({DAYS_SHOWN}d)</p>
           <p className="font-secondary text-2xl font-bold text-foreground">{loading ? '—' : formatFileSize(periodTotal) || '0 B'}</p>
-          <p className="text-xs text-muted-foreground mt-1">Rastreado diretamente pelo app — é a categoria que de fato consome a cota</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Streaming de aulas/arquivos saiu daqui em 21/07 (foi pra Cloudflare, ao lado) — o que sobra é só o backup do banco.
+          </p>
+        </div>
+        <div className="rounded-lg border border-accent-success/30 bg-accent-success/5 p-4">
+          <p className="text-xs text-accent-success uppercase tracking-wide mb-1 font-semibold">Cloudflare Workers ({DAYS_SHOWN}d)</p>
+          <p className="font-secondary text-2xl font-bold text-foreground">
+            {cfLoading ? '—' : cfError ? '—' : cfDays.reduce((s, d) => s + d.requests, 0).toLocaleString('pt-BR')}
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            {cfError ? 'Não foi possível consultar a Cloudflare.' : 'Requisições de streaming (vídeo/PDF/doc) — banda nunca é cobrada aqui, não tem custo por volume.'}
+          </p>
         </div>
       </div>
 
@@ -187,6 +219,34 @@ export function EgressChart() {
           {days.map(day => (
             <span key={day} className="flex-1 text-center truncate">{day.slice(8, 10)}/{day.slice(5, 7)}</span>
           ))}
+        </div>
+      )}
+
+      {!cfError && (
+        <div className="pt-2 border-t border-border space-y-2">
+          <p className="text-xs text-accent-success uppercase tracking-wide font-semibold">Requisições/dia — Cloudflare Workers (streaming)</p>
+          {cfLoading ? (
+            <div className="h-16 flex items-center justify-center text-muted-foreground text-sm">Carregando...</div>
+          ) : (
+            <>
+              <div className="flex items-end gap-1.5 h-16">
+                {days.map(day => {
+                  const reqs = cfByDay.get(day) || 0;
+                  const heightPct = cfMax > 0 ? Math.max(reqs > 0 ? 4 : 0, (reqs / cfMax) * 100) : 0;
+                  return (
+                    <div key={day} className="flex-1 h-full flex flex-col justify-end group relative" title={`${day}: ${reqs.toLocaleString('pt-BR')} requisições`}>
+                      <div className="w-full bg-accent-success/60 group-hover:bg-accent-success rounded-t-sm transition-colors" style={{ height: `${heightPct}%`, minHeight: reqs > 0 ? '2px' : '0' }} />
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex gap-1.5 text-[10px] text-muted-foreground">
+                {days.map(day => (
+                  <span key={day} className="flex-1 text-center truncate">{day.slice(8, 10)}/{day.slice(5, 7)}</span>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

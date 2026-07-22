@@ -5,7 +5,7 @@ import { HelpCircle, ChevronDown, ChevronUp } from 'lucide-react';
 const faqs = [
   {
     question: 'Como funciona o acesso?',
-    answer: 'O acesso é feito diretamente via Google Drive (app mobile) ou site (computador). Você recebe o acesso no seu e-mail cadastrado, sem necessidade de login e senha adicionais.'
+    answer: 'O acesso é feito direto pela nossa plataforma própria, pelo site ou celular — sem precisar instalar nenhum app externo. Você recebe seu login por e-mail e já pode assistir às aulas, ler os livros e apostilas direto na tela.'
   },
   {
     question: 'Quanto tempo dura o acesso completo?',
@@ -16,8 +16,8 @@ const faqs = [
     answer: 'Sim! Todos os cursos são do ano de 2025, com atualizações mensais e garantia de atualizações 2026 e 2027. Os livros também são constantemente atualizados e já estão traduzidos.'
   },
   {
-    question: 'Posso baixar o conteúdo?',
-    answer: 'Sim! O download de conteúdos está liberado para que você acesse a qualquer hora e em qualquer lugar, mesmo offline.'
+    question: 'Posso acessar o conteúdo quando quiser?',
+    answer: 'Sim! O acesso é direto pela plataforma, 24/7, de qualquer lugar — é só entrar no site ou no app do navegador com seu login e assistir/ler na hora, sem precisar baixar nada antes.'
   },
   {
     question: 'Como funciona o suporte?',
