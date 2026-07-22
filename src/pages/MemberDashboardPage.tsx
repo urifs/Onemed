@@ -157,7 +157,9 @@ export default function MemberDashboardPage() {
     }
     const order = [...CATEGORY_ORDER];
     for (const key of byCat.keys()) if (!order.includes(key)) order.push(key);
-    return order.filter(cat => byCat.has(cat)).map(cat => ({ category: cat, items: byCat.get(cat)! }));
+    return order.filter(cat => byCat.has(cat))
+      .sort((a, b) => a.localeCompare(b, 'pt-BR'))
+      .map(cat => ({ category: cat, items: byCat.get(cat)! }));
   }, [filtered]);
 
   const categoryList = useMemo(() => {

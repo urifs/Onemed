@@ -291,7 +291,7 @@ export default function CommunityPage() {
   };
 
   const categoriesPresent = useMemo(
-    () => CATEGORY_ORDER.filter(cat => courses.some(c => c.category === cat)),
+    () => CATEGORY_ORDER.filter(cat => courses.some(c => c.category === cat)).sort((a, b) => a.localeCompare(b, 'pt-BR')),
     [courses],
   );
   const coursesInCategory = useMemo(

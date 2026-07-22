@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { ChevronDown, ChevronUp, LayoutGrid } from 'lucide-react';
+import { ChevronDown, ChevronUp, LayoutGrid, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { CATEGORY_ORDER, CATEGORY_ICON } from '@/lib/courseCategories';
-import { stripYearFromTitle } from '@/lib/utils';
+import { stripYearFromTitle, matchesSearch } from '@/lib/utils';
 
 interface CatalogCourse {
   id: string;
@@ -16,6 +16,7 @@ export const CoursesSection = () => {
   const [courses, setCourses] = useState<CatalogCourse[]>([]);
   const [openCategory, setOpenCategory] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const [query, setQuery] = useState('');
 
   // Mesma fonte que a área de membros usa (courses.category) — RPC pública
   // porque courses só é legível por membro/admin via RLS, e a landing page
@@ -37,9 +38,18 @@ export const CoursesSection = () => {
     return map;
   }, [courses]);
 
-  const categories = CATEGORY_ORDER.filter(cat => byCategory.has(cat));
+  const categories = CATEGORY_ORDER.filter(cat => byCategory.has(cat)).sort((a, b) => a.localeCompare(b, 'pt-BR'));
   const displayed = showAll ? categories : categories.slice(0, 6);
   const totalCourses = courses.length;
+
+  // Mesmo critério de busca da área de membros (matchesSearch): ignora
+  // acento/caixa, cada palavra digitada só precisa aparecer em qualquer
+  // lugar do título ou categoria, em qualquer ordem.
+  const searching = query.trim().length > 0;
+  const searchResults = useMemo(
+    () => (searching ? courses.filter(c => matchesSearch(c.title, query) || matchesSearch(c.category || '', query)) : []),
+    [courses, query, searching],
+  );
 
   return (
     <section className="py-24 bg-background">
@@ -54,6 +64,39 @@ export const CoursesSection = () => {
           </p>
         </div>
 
+        <div className="relative max-w-md mx-auto mb-10">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <input
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="Buscar curso…"
+            className="w-full h-11 pl-9 pr-3 rounded-full bg-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors"
+          />
+        </div>
+
+        {searching ? (
+          <div className="max-w-4xl mx-auto">
+            <p className="text-sm text-muted-foreground mb-4">
+              {searchResults.length} curso{searchResults.length !== 1 ? 's' : ''} encontrado{searchResults.length !== 1 ? 's' : ''} para "{query}"
+            </p>
+            {searchResults.length === 0 ? (
+              <p className="text-center text-muted-foreground py-10">Nenhum curso encontrado com esse termo.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {searchResults.map(course => (
+                  <span
+                    key={course.id}
+                    className="text-xs bg-secondary text-foreground border border-border px-3 py-1.5 rounded-full"
+                  >
+                    {stripYearFromTitle(course.title)}
+                    {course.category && <span className="text-muted-foreground"> · {course.category}</span>}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+        <>
         <div className="space-y-3 max-w-4xl mx-auto">
           {displayed.map(category => {
             const Icon = CATEGORY_ICON[category] || LayoutGrid;
@@ -110,6 +153,8 @@ export const CoursesSection = () => {
               <ChevronDown className="w-4 h-4" />
             </Button>
           </div>
+        )}
+        </>
         )}
       </div>
     </section>
