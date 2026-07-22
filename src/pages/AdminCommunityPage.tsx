@@ -10,7 +10,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { formatDateTimeSP, fetchAllRows } from '@/lib/utils';
-import { AlertTriangle, RefreshCw, Search, Trash2, MessageCircle, MessagesSquare } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Search, Trash2, MessageCircle, MessagesSquare, BadgeCheck } from 'lucide-react';
 
 interface CommentRow {
   id: string;
@@ -29,6 +29,7 @@ interface CommentRow {
 export default function AdminCommunityPage() {
   const [comments, setComments] = useState<CommentRow[]>([]);
   const [filtered, setFiltered] = useState<CommentRow[]>([]);
+  const [adminIds, setAdminIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [search, setSearch] = useState('');
@@ -39,14 +40,18 @@ export default function AdminCommunityPage() {
     setLoading(true);
     setLoadError(false);
     try {
-      const data = await fetchAllRows<CommentRow>((f, t) =>
-        supabase
-          .from('course_comments')
-          .select('id, body, title, created_at, user_id, parent_id, course_id, lesson_id, profiles(name, email), courses(title), lessons(title)')
-          .order('created_at', { ascending: false })
-          .range(f, t) as any,
-      );
+      const [data, roles] = await Promise.all([
+        fetchAllRows<CommentRow>((f, t) =>
+          supabase
+            .from('course_comments')
+            .select('id, body, title, created_at, user_id, parent_id, course_id, lesson_id, profiles(name, email), courses(title), lessons(title)')
+            .order('created_at', { ascending: false })
+            .range(f, t) as any,
+        ),
+        supabase.from('user_roles').select('user_id').eq('role', 'admin'),
+      ]);
       setComments(data);
+      setAdminIds(new Set((roles.data || []).map((r: any) => r.user_id)));
     } catch {
       toast.error('Erro ao carregar comentários');
       setLoadError(true);
@@ -149,7 +154,14 @@ export default function AdminCommunityPage() {
                   {filtered.map(c => (
                     <tr key={c.id} className="border-b border-border/40 hover:bg-secondary/30 transition-colors">
                       <td className="px-4 py-3 text-sm text-foreground whitespace-nowrap">
-                        {c.profiles?.name || c.profiles?.email?.split('@')[0] || 'Aluno'}
+                        <span className="inline-flex items-center gap-1.5">
+                          {c.profiles?.name || c.profiles?.email?.split('@')[0] || 'Aluno'}
+                          {adminIds.has(c.user_id) && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-primary bg-primary/10 border border-primary/25 rounded-full px-1.5 py-0.5">
+                              <BadgeCheck className="w-2.5 h-2.5" /> Admin
+                            </span>
+                          )}
+                        </span>
                       </td>
                       <td className="px-4 py-3">
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-secondary text-foreground">

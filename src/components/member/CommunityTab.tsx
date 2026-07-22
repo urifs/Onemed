@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Send, MessageCircle } from 'lucide-react';
+import { Send, MessageCircle, BadgeCheck } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
 
@@ -16,19 +16,24 @@ interface Comment {
 export function CommunityTab({ courseId }: { courseId: string }) {
   const { user } = useAuth();
   const [comments, setComments] = useState<Comment[]>([]);
+  const [adminIds, setAdminIds] = useState<Set<string>>(new Set());
   const [body, setBody] = useState('');
   const [loading, setLoading] = useState(true);
   const [posting, setPosting] = useState(false);
 
   const load = async () => {
     try {
-      const { data, error } = await supabase
-        .from('course_comments')
-        .select('id, body, created_at, user_id, profiles(name, email)')
-        .eq('course_id', courseId)
-        .order('created_at', { ascending: false });
+      const [{ data, error }, roles] = await Promise.all([
+        supabase
+          .from('course_comments')
+          .select('id, body, created_at, user_id, profiles(name, email)')
+          .eq('course_id', courseId)
+          .order('created_at', { ascending: false }),
+        supabase.rpc('list_admin_user_ids'),
+      ]);
       if (error) throw error;
       setComments(((data as any) || []) as Comment[]);
+      setAdminIds(new Set((roles.data || []).map((r: any) => r.user_id)));
     } catch (err) {
       console.error('Failed to load comments', err);
     } finally {
@@ -90,12 +95,17 @@ export function CommunityTab({ courseId }: { courseId: string }) {
         <div className="space-y-5">
           {comments.map(c => (
             <div key={c.id} className="flex gap-3">
-              <div className="w-9 h-9 rounded-full bg-secondary border border-border flex items-center justify-center text-foreground font-semibold text-sm shrink-0">
+              <div className={`w-9 h-9 rounded-full border flex items-center justify-center font-semibold text-sm shrink-0 ${adminIds.has(c.user_id) ? 'bg-primary/15 border-primary/40 text-primary' : 'bg-secondary border-border text-foreground'}`}>
                 {initials(c.profiles?.name, c.profiles?.email)}
               </div>
               <div className="flex-1 min-w-0">
-                <div className="flex items-baseline gap-2">
+                <div className="flex items-baseline gap-2 flex-wrap">
                   <span className="text-sm font-semibold text-foreground">{displayName(c)}</span>
+                  {adminIds.has(c.user_id) && (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary bg-primary/10 border border-primary/25 rounded-full px-2 py-0.5">
+                      <BadgeCheck className="w-3 h-3" /> Equipe OneMed
+                    </span>
+                  )}
                   <span className="text-xs text-muted-foreground">
                     {formatDistanceToNow(new Date(c.created_at), { addSuffix: true, locale: ptBR })}
                   </span>

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Send, MessageCircle, AlertTriangle, RefreshCw, ChevronDown, BookOpen, Play } from 'lucide-react';
+import { Send, MessageCircle, AlertTriangle, RefreshCw, ChevronDown, BookOpen, Play, BadgeCheck } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
 import { MemberHeader } from '@/components/member/MemberHeader';
@@ -14,6 +14,7 @@ interface FeedItem {
   user_id: string;
   author_name: string | null;
   author_email: string | null;
+  is_admin: boolean;
   course_id: string | null;
   course_title: string | null;
   course_slug: string | null;
@@ -30,7 +31,9 @@ interface Reply {
   body: string;
   created_at: string;
   user_id: string;
-  profiles: { name: string | null; email: string | null } | null;
+  author_name: string | null;
+  author_email: string | null;
+  is_admin: boolean;
 }
 
 const PAGE_SIZE = 20;
@@ -41,6 +44,14 @@ function initials(name?: string | null, email?: string | null): string {
 
 function displayName(name?: string | null, email?: string | null): string {
   return name || email?.split('@')[0] || 'Aluno';
+}
+
+function AdminBadge() {
+  return (
+    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary bg-primary/10 border border-primary/25 rounded-full px-2 py-0.5">
+      <BadgeCheck className="w-3 h-3" /> Equipe OneMed
+    </span>
+  );
 }
 
 function RepliesSection({ postId }: { postId: string }) {
@@ -54,13 +65,9 @@ function RepliesSection({ postId }: { postId: string }) {
   const loadReplies = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('course_comments')
-        .select('id, body, created_at, user_id, profiles(name, email)')
-        .eq('parent_id', postId)
-        .order('created_at', { ascending: true });
+      const { data, error } = await supabase.rpc('community_replies', { _parent_id: postId });
       if (error) throw error;
-      setReplies(((data as any) || []) as Reply[]);
+      setReplies((data || []) as Reply[]);
     } catch (err) {
       console.error('Failed to load replies', err);
       setReplies([]);
@@ -104,12 +111,13 @@ function RepliesSection({ postId }: { postId: string }) {
             <>
               {(replies || []).map(r => (
                 <div key={r.id} className="flex gap-2.5">
-                  <div className="w-7 h-7 rounded-full bg-secondary border border-border flex items-center justify-center text-foreground font-semibold text-xs shrink-0">
-                    {initials(r.profiles?.name, r.profiles?.email)}
+                  <div className={`w-7 h-7 rounded-full border flex items-center justify-center font-semibold text-xs shrink-0 ${r.is_admin ? 'bg-primary/15 border-primary/40 text-primary' : 'bg-secondary border-border text-foreground'}`}>
+                    {initials(r.author_name, r.author_email)}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-xs font-semibold text-foreground">{displayName(r.profiles?.name, r.profiles?.email)}</span>
+                    <div className="flex items-baseline gap-2 flex-wrap">
+                      <span className="text-xs font-semibold text-foreground">{displayName(r.author_name, r.author_email)}</span>
+                      {r.is_admin && <AdminBadge />}
                       <span className="text-[11px] text-muted-foreground">
                         {formatDistanceToNow(new Date(r.created_at), { addSuffix: true, locale: ptBR })}
                       </span>
@@ -152,12 +160,13 @@ function FeedItemCard({ item }: { item: FeedItem }) {
   return (
     <div className="glass rounded-xl p-5">
       <div className="flex gap-3">
-        <div className="w-9 h-9 rounded-full bg-secondary border border-border flex items-center justify-center text-foreground font-semibold text-sm shrink-0">
+        <div className={`w-9 h-9 rounded-full border flex items-center justify-center font-semibold text-sm shrink-0 ${item.is_admin ? 'bg-primary/15 border-primary/40 text-primary' : 'bg-secondary border-border text-foreground'}`}>
           {initials(item.author_name, item.author_email)}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline gap-2 flex-wrap">
             <span className="text-sm font-semibold text-foreground">{displayName(item.author_name, item.author_email)}</span>
+            {item.is_admin && <AdminBadge />}
             <span className="text-xs text-muted-foreground">
               {formatDistanceToNow(new Date(item.created_at), { addSuffix: true, locale: ptBR })}
             </span>
