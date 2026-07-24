@@ -7,9 +7,10 @@ import AdminLayout from '@/components/AdminLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { FolderOpen, CheckCircle, AlertCircle, RefreshCw, Folder, Loader2, GraduationCap, Mail, Copy, Download } from 'lucide-react';
-import { extractFunctionErrorMessage } from '@/lib/utils';
+import { extractFunctionErrorMessage, withTimeout } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Progress } from '@/components/ui/progress';
 
 const GOOGLE_CLIENT_ID = '110017470335-2l6er8r451vj5hf3ob05rvolc2p4v9ku.apps.googleusercontent.com';
 
@@ -199,21 +200,46 @@ interface SyncProgress {
   batches: number;
 }
 
+interface SyncDetail {
+  course: string;
+  action: 'created' | 'updated' | 'skipped' | 'error';
+  message?: string;
+  files?: string[];
+}
+
 function SyncCoursesCard() {
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<SyncProgress | null>(null);
+  const [logs, setLogs] = useState<SyncDetail[]>([]);
+  const [barValue, setBarValue] = useState(0);
+
+  useEffect(() => {
+    if (!running) {
+      if (barValue > 0 && barValue < 100) {
+        setBarValue(100);
+        setTimeout(() => setBarValue(0), 1000);
+      }
+      return;
+    }
+    setBarValue(5);
+    const interval = setInterval(() => {
+      setBarValue(v => (v >= 90 ? v : v + (90 - v) * 0.1));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [running]);
 
   const runSync = async () => {
     setRunning(true);
     setProgress(null);
+    setLogs([]);
     let cursor: string | undefined = undefined;
     const totals: SyncProgress = { coursesCreated: 0, coursesResynced: 0, lessonsImported: 0, batches: 0 };
     try {
       // eslint-disable-next-line no-constant-condition
       while (true) {
-        const { data, error } = await supabase.functions.invoke('member-sync-library', {
-          body: { cursor, batchSize: 4, forceResync: true },
-        });
+        const { data, error } = await withTimeout(supabase.functions.invoke('member-sync-library', {
+          body: { cursor, batchSize: 1, forceResync: true },
+        }), 300000, 'Tempo limite de sincronização excedido (5 minutos)');
         if (error || data?.error) {
           const msg = data?.error || await extractFunctionErrorMessage(error, 'Erro ao sincronizar cursos');
           throw new Error(msg);
@@ -223,12 +249,16 @@ function SyncCoursesCard() {
         totals.coursesResynced += data.coursesResynced || 0;
         totals.lessonsImported += data.lessonsImported || 0;
         setProgress({ ...totals });
+        if (data.details && Array.isArray(data.details)) {
+          setLogs(prev => [...prev, ...data.details]);
+        }
         cursor = data.cursor || undefined;
         if (data.done) break;
       }
       toast.success(`Sincronização concluída: ${totals.coursesCreated} cursos novos, ${totals.coursesResynced} atualizados, ${totals.lessonsImported} aulas importadas.`);
     } catch (e: any) {
       toast.error(e.message || 'Erro ao sincronizar cursos');
+      setLogs(prev => [...prev, { course: 'Sistema', action: 'error', message: e.message || 'Erro inesperado durante a sincronização.' }]);
     } finally {
       setRunning(false);
     }
@@ -249,15 +279,60 @@ function SyncCoursesCard() {
           é detectado e importado.
         </p>
         {progress && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            {running && <Loader2 className="w-4 h-4 animate-spin text-primary shrink-0" />}
-            <span>
-              {progress.coursesCreated} curso{progress.coursesCreated !== 1 ? 's' : ''} novo{progress.coursesCreated !== 1 ? 's' : ''} ·{' '}
-              {progress.coursesResynced} atualizado{progress.coursesResynced !== 1 ? 's' : ''} ·{' '}
-              {progress.lessonsImported} aulas · lote {progress.batches}
-            </span>
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              {running && <Loader2 className="w-4 h-4 animate-spin text-primary shrink-0" />}
+              <span>
+                {progress.coursesCreated} curso{progress.coursesCreated !== 1 ? 's' : ''} novo{progress.coursesCreated !== 1 ? 's' : ''} ·{' '}
+                {progress.coursesResynced} atualizado{progress.coursesResynced !== 1 ? 's' : ''} ·{' '}
+                {progress.lessonsImported} aulas · lote {progress.batches}
+              </span>
+            </div>
+            {(running || barValue > 0) && (
+              <Progress value={barValue} className="h-2" />
+            )}
           </div>
         )}
+
+        {logs.length > 0 && (
+          <div className="mt-4 bg-[#0a0a0a] border border-border rounded-md p-4 max-h-96 overflow-y-auto space-y-3 font-mono text-xs shadow-inner">
+            {logs.map((log, idx) => (
+              <div key={idx} className="border-b border-border/20 pb-3 last:border-0 last:pb-0">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <span className={
+                      log.action === 'created' ? 'text-green-500 font-bold' :
+                      log.action === 'updated' ? 'text-blue-500 font-bold' :
+                      log.action === 'error' ? 'text-red-500 font-bold' :
+                      'text-yellow-500 font-bold'
+                    }>
+                      [{log.action.toUpperCase()}]
+                    </span>
+                    <span className="text-foreground ml-2 font-medium">{log.course}</span>
+                  </div>
+                </div>
+                {log.message && <div className="text-muted-foreground mt-1 ml-1">{log.message}</div>}
+                {log.files && log.files.length > 0 && (
+                  <details className="mt-2 ml-1">
+                    <summary className="text-muted-foreground cursor-pointer hover:text-foreground inline-flex items-center select-none">
+                      <Folder className="w-3.5 h-3.5 mr-1.5 inline" />
+                      Ver {log.files.length} arquivos
+                    </summary>
+                    <div className="mt-2 pl-4 border-l border-border/50 max-h-32 overflow-y-auto space-y-1">
+                      {log.files.slice(0, 100).map((f, i) => (
+                        <div key={i} className="text-muted-foreground truncate" title={f}>- {f}</div>
+                      ))}
+                      {log.files.length > 100 && (
+                        <div className="text-muted-foreground italic mt-1">+ {log.files.length - 100} outros arquivos ocultados...</div>
+                      )}
+                    </div>
+                  </details>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
         <Button onClick={runSync} disabled={running} className="bg-primary hover:bg-primary-hover text-primary-foreground gap-2">
           {running ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
           {running ? 'Sincronizando…' : 'Sincronizar Cursos'}

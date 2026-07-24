@@ -14,9 +14,9 @@ function getCorsHeaders(req: Request) {
 }
 
 const GOOGLE_CLIENT_ID = '110017470335-2l6er8r451vj5hf3ob05rvolc2p4v9ku.apps.googleusercontent.com'
-const ROOT_FOLDER_ID = '1w3J0LxztajJuD8r9BzR1os97vTyQfnT-'
+
 const MAX_MODULE_DEPTH = 2 // course > module > (deeper folders flatten into nearest module)
-const MAX_LESSONS_PER_COURSE = 1200 // safety cap so a "5000 livros" style dump doesn't blow up the UI
+const MAX_LESSONS_PER_COURSE = 15000 // safety cap so a "5000 livros" style dump doesn't blow up the UI
 
 // ─── constant-time compare for x-cron-secret ───────────────────────────────
 async function secureCompare(a: string, b: string): Promise<boolean> {
@@ -82,14 +82,15 @@ function slugify(text: string): string {
     .slice(0, 80) || 'curso'
 }
 
-function lessonType(mimeType: string): string {
-  if (mimeType?.startsWith('video/')) return 'video'
-  if (mimeType === 'application/pdf') return 'pdf'
-  if (mimeType?.includes('word') || mimeType === 'application/vnd.google-apps.document') return 'doc'
-  if (mimeType?.includes('spreadsheet') || mimeType === 'application/vnd.ms-excel') return 'sheet'
-  if (mimeType === 'text/plain') return 'txt'
-  if (mimeType?.startsWith('audio/')) return 'audio'
-  if (mimeType?.startsWith('image/')) return 'image'
+function lessonType(mimeType: string, name: string = ''): string {
+  const n = name.toLowerCase()
+  if (mimeType?.startsWith('video/') || n.endsWith('.mp4') || n.endsWith('.mkv') || n.endsWith('.avi') || n.endsWith('.mov') || n.endsWith('.ts') || n.endsWith('.wmv')) return 'video'
+  if (mimeType === 'application/pdf' || n.endsWith('.pdf')) return 'pdf'
+  if (mimeType?.includes('word') || mimeType === 'application/vnd.google-apps.document' || n.endsWith('.doc') || n.endsWith('.docx')) return 'doc'
+  if (mimeType?.includes('spreadsheet') || mimeType === 'application/vnd.ms-excel' || n.endsWith('.xls') || n.endsWith('.xlsx')) return 'sheet'
+  if (mimeType === 'text/plain' || n.endsWith('.txt')) return 'txt'
+  if (mimeType?.startsWith('audio/') || n.endsWith('.mp3') || n.endsWith('.wav') || n.endsWith('.ogg')) return 'audio'
+  if (mimeType?.startsWith('image/') || n.endsWith('.jpg') || n.endsWith('.jpeg') || n.endsWith('.png') || n.endsWith('.gif') || n.endsWith('.webp')) return 'image'
   return 'other'
 }
 
@@ -148,6 +149,7 @@ serve(async (req) => {
 
     // Two ways in: the x-cron-secret used by the automated backfill, or a
     // logged-in admin session (the "Sincronizar Cursos" button in /admin/drive).
+    const BATCH_SIZE = 250
     const SYNC_SECRET = Deno.env.get('MEMBER_SYNC_SECRET')
     const provided = req.headers.get('x-cron-secret') || ''
     const cronOk = !!SYNC_SECRET && (await secureCompare(provided, SYNC_SECRET))
@@ -171,6 +173,10 @@ serve(async (req) => {
     }
 
     const GOOGLE_CLIENT_SECRET = Deno.env.get('GOOGLE_CLIENT_SECRET')!
+
+    const START_TIME = Date.now()
+    const TIME_LIMIT = 15000 // 15s limit to leave plenty of time for DB inserts before 60s gateway timeout
+    let timeLimitReached = false
 
     const body = await req.json().catch(() => ({}))
     const cursor: string | undefined = body.cursor || undefined
@@ -203,10 +209,12 @@ serve(async (req) => {
 
     // Known slugs (across all previous batches) so we skip duplicate folders
     // that mirror the same course from a different backup Google account.
-    const { data: existingCourses } = await supabase.from('courses').select('id, slug, drive_folder_id')
+    const { data: existingCourses } = await supabase.from('courses').select('id, slug, drive_folder_id, lesson_count')
     const knownSlugs = new Set((existingCourses || []).map(c => c.slug))
     const knownFolderIds = new Set((existingCourses || []).map(c => c.drive_folder_id))
     const courseIdByFolderId = new Map((existingCourses || []).map(c => [c.drive_folder_id, c.id]))
+
+    const ROOT_FOLDER_ID = config.folder_id || '1w3J0LxztajJuD8r9BzR1os97vTyQfnT-'
 
     // Top-level page of course folders. Includes shortcut-type entries too —
     // several courses (e.g. "MEDCURSO 2026", "MEDCOF 2026") live in the root
@@ -240,20 +248,40 @@ serve(async (req) => {
     let coursesSkippedDuplicate = 0
     let lessonsImported = 0
     let modulesImported = 0
+    const details: { course: string; action: 'created' | 'updated' | 'skipped' | 'error'; message?: string; files?: string[] }[] = []
 
     for (const folder of courseFolders) {
+      if (timeLimitReached) break // Stop processing folders if we're out of time
+
       let courseRow: { id: string } | null = null
+      let isUpdate = false
 
       if (knownFolderIds.has(folder.id)) {
-        if (!forceResync) continue // already synced this exact folder before
-        const existingId = courseIdByFolderId.get(folder.id)
-        if (!existingId) continue
-        courseRow = { id: existingId }
+        if (!forceResync) {
+          details.push({ course: folder.name, action: 'skipped', message: 'Curso já importado (re-sincronização não forçada).' })
+          continue // already synced this exact folder before
+        }
+        const existingCourse = (existingCourses || []).find(c => c.drive_folder_id === folder.id)
+        if (!existingCourse) {
+          details.push({ course: folder.name, action: 'error', message: 'Falha ao encontrar curso existente no banco.' })
+          continue
+        }
+
+        // Skip re-crawling massive courses to prevent Edge Function 60s timeout
+        if ((existingCourse.lesson_count || 0) > 1000) {
+          console.log(`Skipping massive course ${folder.name} to prevent Edge Function timeout. Use local script to resync.`)
+          details.push({ course: folder.name, action: 'skipped', message: 'Curso muito grande (>1000 aulas), ignorado para evitar timeout na nuvem.' })
+          continue
+        }
+
+        courseRow = { id: existingCourse.id }
+        isUpdate = true
         coursesResynced++
       } else {
         const baseSlug = slugify(folder.name)
         const slug = baseSlug
         if (knownSlugs.has(slug)) {
+          details.push({ course: folder.name, action: 'skipped', message: 'Curso duplicado (já sincronizado por outra pasta do Drive).' })
           coursesSkippedDuplicate++
           continue // same course already mirrored from another Drive account — keep the canonical one
         }
@@ -270,9 +298,11 @@ serve(async (req) => {
 
         if (courseErr || !newCourseRow) {
           console.error('course insert failed', folder.name, courseErr)
+          details.push({ course: folder.name, action: 'error', message: `Erro ao inserir curso: ${courseErr?.message}` })
           continue
         }
         courseRow = newCourseRow
+        isUpdate = false
         coursesCreated++
       }
 
@@ -288,8 +318,16 @@ serve(async (req) => {
       const collected: { f: any; resolved: { id: string; mimeType: string }; moduleId: string | null }[] = []
 
       async function crawl(folderId: string, moduleId: string | null, depth: number) {
+        if (timeLimitReached) return
+        
         let pageToken: string | undefined = undefined
         do {
+          if (Date.now() - START_TIME > TIME_LIMIT) {
+            console.warn(`Time limit reached during crawl of ${folder.name}. Aborting early.`)
+            timeLimitReached = true
+            return
+          }
+
           const page = await driveList(accessToken, folderId, pageToken)
           const files: any[] = page.files || []
           for (const f of files) {
@@ -330,8 +368,8 @@ serve(async (req) => {
       // Video media always comes first, every other file type after — stable
       // within each bucket so files otherwise keep Drive's original order.
       const ordered = [
-        ...collected.filter(c => lessonType(c.resolved.mimeType) === 'video'),
-        ...collected.filter(c => lessonType(c.resolved.mimeType) !== 'video'),
+        ...collected.filter(c => lessonType(c.resolved.mimeType, c.f.name) === 'video'),
+        ...collected.filter(c => lessonType(c.resolved.mimeType, c.f.name) !== 'video'),
       ]
 
       let materialCount = 0
@@ -349,7 +387,9 @@ serve(async (req) => {
       }
 
       for (const { f, resolved, moduleId } of ordered) {
-        const type = lessonType(resolved.mimeType)
+        let type = lessonType(resolved.mimeType, f.name)
+        if (f.videoMediaMetadata) type = 'video'
+        
         // Shortcut targets don't carry videoMediaMetadata/size on the
         // shortcut item itself — only real files do.
         const duration = f.mimeType !== SHORTCUT_MIME && f.videoMediaMetadata?.durationMillis
@@ -379,6 +419,13 @@ serve(async (req) => {
         material_count: materialCount,
         total_duration_seconds: totalDuration,
       }).eq('id', course.id)
+
+      details.push({
+        course: folder.name,
+        action: isUpdate ? 'updated' : 'created',
+        message: `${lessonCount} aulas/arquivos importados.`,
+        files: ordered.map(c => c.f.name)
+      })
     }
 
     const nextCursor = topData.nextPageToken || null
@@ -392,6 +439,7 @@ serve(async (req) => {
       coursesSkippedDuplicate,
       modulesImported,
       lessonsImported,
+      details,
     }), { headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } })
   } catch (err: any) {
     console.error(err)
