@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams, Link } from 'react-router-dom';
 import {
   ArrowLeft, Play, FileText, File, Music, Image as ImageIcon, CheckCircle2, Clock,
-  FileSpreadsheet, FileType, Star, ChevronRight,
+  FileSpreadsheet, FileType, Star, ListOrdered, Menu, X,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
@@ -72,7 +72,7 @@ export default function CourseDetailPage() {
   const [modules, setModules] = useState<CourseModule[]>([]);
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [progressMap, setProgressMap] = useState<Record<string, Progress>>({});
-  const [tab, setTab] = useState<'sumario' | 'aulas' | 'arquivos' | 'comunidade'>('aulas');
+  const [tab, setTab] = useState<'aulas' | 'arquivos' | 'comunidade'>('aulas');
   const [activeLesson, setActiveLesson] = useState<Lesson | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [retryTick, setRetryTick] = useState(0);
@@ -338,96 +338,63 @@ export default function CourseDetailPage() {
         </div>
       </section>
 
-      <main className="max-w-[1000px] mx-auto px-4 md:px-8 pb-16">
-        <div className="flex items-center gap-1 border-b border-border mb-6">
-          <button
-            onClick={() => setTab('sumario')}
-            className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${tab === 'sumario' ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
-          >
-            Sumário
-          </button>
-          <button
-            onClick={() => setTab('aulas')}
-            className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${tab === 'aulas' ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
-          >
-            Aulas
-          </button>
-          <button
-            onClick={() => setTab('arquivos')}
-            className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${tab === 'arquivos' ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
-          >
-            Arquivos
-          </button>
-          <button
-            onClick={() => setTab('comunidade')}
-            className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${tab === 'comunidade' ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
-          >
-            Comunidade
-          </button>
-        </div>
+      <main className="max-w-[1280px] mx-auto px-4 md:px-8 pb-16">
+        <div className="md:flex md:items-start md:gap-8">
+          <CourseSummarySidebar blocks={summaryBlocks} onSelect={handleSummarySelect} />
 
-        {tab === 'sumario' ? (
-          <>
-            {lessons.length === 0 && (
-              <p className="text-muted-foreground text-sm">Este curso ainda está sendo sincronizado. Volte em instantes.</p>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1 border-b border-border mb-6">
+              <button
+                onClick={() => setTab('aulas')}
+                className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${tab === 'aulas' ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+              >
+                Aulas
+              </button>
+              <button
+                onClick={() => setTab('arquivos')}
+                className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${tab === 'arquivos' ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+              >
+                Arquivos
+              </button>
+              <button
+                onClick={() => setTab('comunidade')}
+                className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${tab === 'comunidade' ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+              >
+                Comunidade
+              </button>
+            </div>
+
+            {tab === 'aulas' ? (
+              <>
+                {lessons.length === 0 && (
+                  <p className="text-muted-foreground text-sm">Este curso ainda está sendo sincronizado. Volte em instantes.</p>
+                )}
+                {lessons.length > 0 && videoGroups.length === 0 && query.trim() && (
+                  <p className="text-muted-foreground text-sm">Nenhuma aula encontrada para "{query}".</p>
+                )}
+                {lessons.length > 0 && videoGroups.length === 0 && !query.trim() && (
+                  <p className="text-muted-foreground text-sm">Nenhuma aula em vídeo neste curso.</p>
+                )}
+                <LessonGroupList groups={videoGroups} progressMap={progressMap} onSelect={setActiveLesson} />
+              </>
+            ) : tab === 'arquivos' ? (
+              <>
+                {lessons.length === 0 && (
+                  <p className="text-muted-foreground text-sm">Este curso ainda está sendo sincronizado. Volte em instantes.</p>
+                )}
+                {lessons.length > 0 && fileGroups.length === 0 && query.trim() && (
+                  <p className="text-muted-foreground text-sm">Nenhum arquivo encontrado para "{query}".</p>
+                )}
+                {lessons.length > 0 && fileGroups.length === 0 && !query.trim() && (
+                  <p className="text-muted-foreground text-sm">Nenhum arquivo complementar neste curso.</p>
+                )}
+                <LessonGroupList groups={fileGroups} progressMap={progressMap} onSelect={setActiveLesson} />
+              </>
+            ) : (
+              <CommunityTab courseId={course.id} />
             )}
-            {lessons.length > 0 && summaryBlocks.length === 0 && (
-              <p className="text-muted-foreground text-sm">Nenhum bloco de conteúdo encontrado neste curso.</p>
-            )}
-            {summaryBlocks.length > 0 && (
-              <div className="rounded-xl border border-border overflow-hidden divide-y divide-border">
-                {summaryBlocks.map((block, i) => (
-                  <button
-                    key={block.id}
-                    onClick={() => handleSummarySelect(block)}
-                    className="w-full flex items-center gap-3.5 px-4 py-3.5 bg-card hover:bg-secondary text-left transition-colors group"
-                  >
-                    <div className="w-7 h-7 rounded-full bg-secondary group-hover:bg-primary/15 flex items-center justify-center shrink-0 text-xs font-bold text-muted-foreground group-hover:text-primary transition-colors">
-                      {i + 1}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-foreground truncate">{block.title}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {block.videoCount > 0 && `${block.videoCount} aula${block.videoCount !== 1 ? 's' : ''}`}
-                        {block.videoCount > 0 && block.fileCount > 0 && ' · '}
-                        {block.fileCount > 0 && `${block.fileCount} arquivo${block.fileCount !== 1 ? 's' : ''}`}
-                      </p>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
-                  </button>
-                ))}
-              </div>
-            )}
-          </>
-        ) : tab === 'aulas' ? (
-          <>
-            {lessons.length === 0 && (
-              <p className="text-muted-foreground text-sm">Este curso ainda está sendo sincronizado. Volte em instantes.</p>
-            )}
-            {lessons.length > 0 && videoGroups.length === 0 && query.trim() && (
-              <p className="text-muted-foreground text-sm">Nenhuma aula encontrada para "{query}".</p>
-            )}
-            {lessons.length > 0 && videoGroups.length === 0 && !query.trim() && (
-              <p className="text-muted-foreground text-sm">Nenhuma aula em vídeo neste curso.</p>
-            )}
-            <LessonGroupList groups={videoGroups} progressMap={progressMap} onSelect={setActiveLesson} />
-          </>
-        ) : tab === 'arquivos' ? (
-          <>
-            {lessons.length === 0 && (
-              <p className="text-muted-foreground text-sm">Este curso ainda está sendo sincronizado. Volte em instantes.</p>
-            )}
-            {lessons.length > 0 && fileGroups.length === 0 && query.trim() && (
-              <p className="text-muted-foreground text-sm">Nenhum arquivo encontrado para "{query}".</p>
-            )}
-            {lessons.length > 0 && fileGroups.length === 0 && !query.trim() && (
-              <p className="text-muted-foreground text-sm">Nenhum arquivo complementar neste curso.</p>
-            )}
-            <LessonGroupList groups={fileGroups} progressMap={progressMap} onSelect={setActiveLesson} />
-          </>
-        ) : (
-          <CommunityTab courseId={course.id} />
-        )}
+          </div>
+        </div>
       </main>
 
       {activeLesson && (
@@ -444,6 +411,91 @@ export default function CourseDetailPage() {
         />
       )}
     </div>
+  );
+}
+
+interface SummaryBlock { id: string; title: string; videoCount: number; fileCount: number }
+
+// Mesma receita do CategorySidebar: coluna fixa (sticky) no desktop, gaveta
+// por hambúrguer no mobile — o sumário precisa ficar visível junto do
+// conteúdo (não substituindo ele numa aba), pra servir de índice de
+// verdade enquanto o aluno navega pelo curso.
+function CourseSummarySidebar({ blocks, onSelect }: { blocks: SummaryBlock[]; onSelect: (block: SummaryBlock) => void }) {
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  if (blocks.length === 0) return null;
+
+  const handleSelect = (block: SummaryBlock) => {
+    onSelect(block);
+    setMobileOpen(false);
+  };
+
+  const list = (
+    <div className="space-y-0.5">
+      {blocks.map((block, i) => (
+        <button
+          key={block.id}
+          onClick={() => handleSelect(block)}
+          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+        >
+          <span className="w-5 h-5 rounded-full bg-secondary flex items-center justify-center shrink-0 text-[10px] font-bold tabular-nums">
+            {i + 1}
+          </span>
+          <span className="flex-1 min-w-0">
+            <span className="block text-[13.5px] truncate">{block.title}</span>
+            <span className="block text-[11px] opacity-70 mt-0.5">
+              {block.videoCount > 0 && `${block.videoCount} aula${block.videoCount !== 1 ? 's' : ''}`}
+              {block.videoCount > 0 && block.fileCount > 0 && ' · '}
+              {block.fileCount > 0 && `${block.fileCount} arquivo${block.fileCount !== 1 ? 's' : ''}`}
+            </span>
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+
+  return (
+    <>
+      {/* Desktop: coluna fixa à esquerda, acompanha o scroll da página. */}
+      <aside className="hidden md:block w-[240px] shrink-0">
+        <div className="sticky top-[84px] max-h-[calc(100vh-104px)] overflow-y-auto pr-1">
+          <p className="px-3 pb-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+            Sumário
+          </p>
+          {list}
+        </div>
+      </aside>
+
+      {/* Mobile: botão abre uma gaveta com a lista completa. */}
+      <div className="md:hidden mb-5">
+        <button
+          onClick={() => setMobileOpen(true)}
+          className="inline-flex items-center gap-2 max-w-full px-3.5 py-2 rounded-lg bg-secondary border border-border text-sm font-medium text-foreground"
+        >
+          <ListOrdered className="w-4 h-4 shrink-0" />
+          <span className="truncate">Sumário</span>
+        </button>
+      </div>
+
+      {mobileOpen && (
+        <div className="md:hidden fixed inset-0 z-50 flex">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setMobileOpen(false)} />
+          <div className="relative w-[80vw] max-w-xs h-full bg-background border-r border-border overflow-y-auto p-5 animate-fade-in">
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Sumário</p>
+              <button
+                onClick={() => setMobileOpen(false)}
+                aria-label="Fechar"
+                className="w-8 h-8 rounded-full bg-secondary border border-border flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            {list}
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
