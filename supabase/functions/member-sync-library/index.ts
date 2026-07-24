@@ -15,10 +15,9 @@ function getCorsHeaders(req: Request) {
 
 const GOOGLE_CLIENT_ID = '110017470335-2l6er8r451vj5hf3ob05rvolc2p4v9ku.apps.googleusercontent.com'
 
-const MAX_MODULE_DEPTH = 2 // course > module > (deeper folders flatten into nearest module)
-const MAX_LESSONS_PER_COURSE = 100000 // safety cap so a "5000 livros" style dump doesn't blow up the UI
+const MAX_MODULE_DEPTH = 2
+const MAX_LESSONS_PER_COURSE = 100000 
 
-// ─── constant-time compare for x-cron-secret ───────────────────────────────
 async function secureCompare(a: string, b: string): Promise<boolean> {
   const encoder = new TextEncoder()
   const key = await crypto.subtle.importKey('raw', encoder.encode('timing-safe-compare'), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
@@ -75,7 +74,7 @@ async function driveList(accessToken: string, folderId: string, pageToken?: stri
 
 function slugify(text: string): string {
   return text
-    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
@@ -97,151 +96,127 @@ function lessonType(mimeType: string, name: string = ''): string {
 const SHORTCUT_MIME = 'application/vnd.google-apps.shortcut'
 const FOLDER_MIME = 'application/vnd.google-apps.folder'
 
-// Drive shortcuts (e.g. a course folder mirrored via "Add shortcut to Drive")
-// never carry mimeType='...folder' themselves — the real folder/file lives at
-// shortcutDetails.targetId. Resolve here so shortcuts sync exactly like real
-// folders/files instead of silently vanishing from every listing.
 function resolveShortcut(f: any): { id: string; mimeType: string } | null {
-  if (f.mimeType !== SHORTCUT_MIME) return { id: f.id, mimeType: f.mimeType }
-  const targetId = f.shortcutDetails?.targetId
-  const targetMimeType = f.shortcutDetails?.targetMimeType
-  if (!targetId || !targetMimeType) return null // broken/inaccessible shortcut
-  return { id: targetId, mimeType: targetMimeType }
+  if (f.mimeType === SHORTCUT_MIME) {
+    if (!f.shortcutDetails?.targetId || !f.shortcutDetails?.targetMimeType) return null
+    return { id: f.shortcutDetails.targetId, mimeType: f.shortcutDetails.targetMimeType }
+  }
+  return { id: f.id, mimeType: f.mimeType }
 }
 
-// Order matters: earlier entries win when a title matches more than one
-// category (e.g. "RadioPosts - Tomografia na Emergência" must hit Radiologia
-// before the generic Emergência bucket). Specific/narrow categories are
-// checked before broad catch-alls like "Extensivo & Intensivo".
-const CATS: [string, string[]][] = [
-  ['Pediatria', ['pediatr', 'sbp -', 'emergência pediátrica', 'emergencia pediatrica', 'atendimento pediátrico', 'atendimento pediatrico', 'aep -']],
-  ['Cardiologia & ECG', ['cardio', 'ecg', 'eletrocardiogra', 'medeletro', 'medneif', 'med neif', 'incor', 'dislipidem', 'ausculta', 'littman', 'infarto', 'metas', 'facilitando eletro']],
-  ['Radiologia & Imagem', ['radiolog', 'radiop', 'você radiolog', 'voce radiolog', 'usg', 'ultrassonog', 'tomografia', 'imagem', 'medimagem']],
-  ['Prescrições & Plantão', ['prescriç', 'prescric', 'medicações no ps', 'medicacoes', 'anamnese', 'plantão', 'plantao', 'antibiotico', 'antibiótico', 'atb']],
-  ['Revalida', ['revalida', 'hardwork', 'hardtopics', 'alphamed', 'redbook', 'revalideii', 'foco no crm', 'exclusive']],
-  ['Intercâmbio & Carreira Internacional', ['usmle', 'reino unido', 'estágio', 'estagio', ' eua', 'exterior', 'inglês', 'ingles', 'idiomas', 'mundo afora', 'cv premium', 'cv medical', 'rd medicine', 'english pronunciation']],
-  ['Emergência, PS & Trauma', ['emergênc', 'emergenc', 'herlon', 'meustaff', 'raciocínio', 'raciocinio', 'ps zerado', 'pszerado', 'ps medway', 'ps med', 'sala de parada', 'sutura', 'intubaç', 'ventilaç', 'trauma', 'escola de emerg', 'treinamento em emerg', 'sangramento', 'pronto atendimento', 'bora salvar', ' cdt', 'medway - pronto', 'uti ', 'terapia intensiva', 'acls', 'intubaclass', 'ventilamed', 'emerg.simm']],
-  ['Cirurgia & GO', ['cirurg', 'ginecolog', 'obstetr', 'go papers', 'r4 go', 'r+ go']],
-  ['Semiologia & Clínica', ['semiolog', 'exame clínico', 'exame clinico', 'clínica médica', 'clinica medica', 'celmo', 'aps101', 'clinica medico']],
-  ['Farmacologia & Bioquímica', ['farmacolog', 'bioquím', 'bioquim']],
-  ['Especialidades', ['dermato', 'endocrino', 'anestesi', 'anestreview', 'psiquiatr', 'psicopat', 'neuro', 'pneumolog', 'nefro', 'gasometria', 'esporte', 'laboratorial', 'diabetes', 'ortopedia', 'ortoacademy', 'infectoflix', 'infecto', 'clube de revistas', 'diretrizes', 'paulo muzy']],
-  ['Anatomia & Ciclo Básico', ['anatom', 'ciclo básico', 'ciclo basico', 'internato', 'muscleflix']],
-  ['Resumos, Cards & Livros', ['resumo', 'mapas mentais', 'medcards', 'flashcard', 'memorex', 'memorimed', 'livros', 'medlivros', 'apostila', 'planner', 'planilha', 'fichas', 'medrout']],
-  ['Banco de Questões & Simulados', ['banco de quest', 'banco quest', 'quest', 'simulad', 'provas', 'compilad', 'osce', 'medfoco', 'caderno']],
-  ['Extensivo & Intensivo · Residência', ['medcof', 'medcurso', 'medway', 'extensivo', 'semiextensivo', 'sanarflix', 'sanar', 'afya', 'eu médico residente', 'eu medico residente', 'intensiv', 'medcel', 'aristo', 'jj mentoria', 'estratégia med', 'casal med', 'cpmed', 'med grupo', 'descomplicando a medicina']],
-  ['Carreira, Gestão & Marketing', ['marketing', 'instagram', 'empreendedor', 'ia para', 'direito médico', 'ética', 'etica', 'perícia', 'pericia', 'legista', 'escolha de espec', 'caminho das espec', 'praxys', 'progeb', 'saúde da família', 'saude da familia', 'medicina intuitiva', 'como se preparar', 'produtividade', 'características', 'atitudes', 'hospitais públicos', 'blindar', 'erros que impedem', 'sexto ano', 'programa ppa', 'renda na faculdade']],
-]
-function categoryOf(name: string): string {
-  // Strip known false-positive substrings before matching (e.g. "Distúrbios
-  // Hidroeletrolíticos" contains "eletro" but has nothing to do with ECG).
-  const s = name.toLowerCase().replace(/hidroeletrol[íi]tic\w*/g, '')
-  for (const [label, keys] of CATS) if (keys.some(k => s.includes(k))) return label
-  return 'Outros cursos'
+function categoryOf(name: string) {
+  const n = name.toLowerCase()
+  if (n.includes('apostila') || n.includes('livro')) return 'LIVRO'
+  if (n.includes('quest') || n.includes('simulado')) return 'QUESTAO'
+  if (n.includes('resumo') || n.includes('mapa mental')) return 'RESUMO'
+  return 'CURSO'
 }
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response(null, { headers: getCorsHeaders(req) })
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: getCorsHeaders(req) })
+  }
 
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    const supabase = createClient(supabaseUrl, supabaseKey)
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    )
 
-    // Two ways in: the x-cron-secret used by the automated backfill, or a
-    // logged-in admin session (the "Sincronizar Cursos" button in /admin/drive).
-    const BATCH_SIZE = 250
-    const SYNC_SECRET = Deno.env.get('MEMBER_SYNC_SECRET')
-    const provided = req.headers.get('x-cron-secret') || ''
-    const cronOk = !!SYNC_SECRET && (await secureCompare(provided, SYNC_SECRET))
+    const providedSecret = req.headers.get('x-cron-secret') || ''
+    const expectedSecret = Deno.env.get('MEMBER_SYNC_SECRET') || 'NOT_SET'
+    const adminOk = expectedSecret !== 'NOT_SET' && (await secureCompare(providedSecret, expectedSecret))
+    
+    const tokenHeader = req.headers.get('Authorization')
+    const hasValidToken = tokenHeader && tokenHeader.startsWith('Bearer ')
 
-    let adminOk = false
-    if (!cronOk) {
-      const jwt = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
-      if (jwt) {
-        const { data: userData } = await supabase.auth.getUser(jwt)
-        if (userData?.user) {
-          const { data: isAdmin } = await supabase.rpc('has_role', { _user_id: userData.user.id, _role: 'admin' })
-          adminOk = !!isAdmin
-        }
-      }
-    }
-
-    if (!cronOk && !adminOk) {
+    if (!adminOk && !hasValidToken) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
       })
+    }
+    
+    let supabase = supabaseClient
+    if (!adminOk && hasValidToken) {
+      supabase = createClient(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+        { global: { headers: { Authorization: tokenHeader } } }
+      )
+      const { data: { user }, error: authErr } = await supabase.auth.getUser()
+      if (authErr || !user) throw new Error('Unauthorized')
+      const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+      if (profile?.role !== 'admin' && profile?.role !== 'owner') {
+        throw new Error('Forbidden: Admins only')
+      }
     }
 
     const GOOGLE_CLIENT_SECRET = Deno.env.get('GOOGLE_CLIENT_SECRET')!
 
     const START_TIME = Date.now()
-    const TIME_LIMIT = 50000 // 50s limit to try to fetch as much as possible before 60s gateway timeout
+    const TIME_LIMIT = 45000 
     let timeLimitReached = false
 
     const body = await req.json().catch(() => ({}))
-    const cursor: string | undefined = body.cursor || undefined
+    const rawCursor = body.cursor || undefined
     const batchSize: number = Math.min(Math.max(Number(body.batchSize) || 6, 1), 20)
-    // Admin-triggered syncs re-crawl courses we've already imported too, so
-    // lessons/materials added to Drive after the first import get picked up.
     const forceResync: boolean = !!body.forceResync && adminOk
 
+    let topPageToken: string | undefined = undefined
+    let courseFolderIndex = 0
+    let crawlState: any = null
+
+    if (rawCursor) {
+      if (typeof rawCursor === 'string' && rawCursor.startsWith('{')) {
+        try {
+          const p = JSON.parse(rawCursor)
+          topPageToken = p.topPageToken
+          courseFolderIndex = p.courseFolderIndex || 0
+          crawlState = p.crawlState || null
+        } catch(e) {}
+      } else if (typeof rawCursor === 'string') {
+        topPageToken = rawCursor
+      } else if (typeof rawCursor === 'object') {
+        topPageToken = rawCursor.topPageToken
+        courseFolderIndex = rawCursor.courseFolderIndex || 0
+        crawlState = rawCursor.crawlState || null
+      }
+    }
+
     const { data: config, error: cfgErr } = await supabase.from('drive_config').select('*').single()
-    if (cfgErr || !config?.connected) {
-      return new Response(JSON.stringify({ error: 'Google Drive não conectado' }), {
+    if (cfgErr || !config?.refresh_token || !config?.root_folder_id) {
+      return new Response(JSON.stringify({ error: 'Configuração do Google Drive não encontrada no banco.' }), {
         status: 400, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
       })
     }
 
-    let accessToken = config.access_token
-    const expiry = config.token_expiry ? new Date(config.token_expiry) : null
-    if (!expiry || expiry < new Date()) {
-      if (!config.refresh_token) {
-        return new Response(JSON.stringify({ error: 'Token expirado. Reconecte o Google Drive.' }), {
-          status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
-        })
-      }
-      accessToken = await refreshAccessToken(config.refresh_token, GOOGLE_CLIENT_SECRET)
-      await supabase.from('drive_config').update({
-        access_token: accessToken,
-        token_expiry: new Date(Date.now() + 3600 * 1000).toISOString(),
-      }).eq('id', config.id)
-    }
+    const accessToken = await refreshAccessToken(config.refresh_token, GOOGLE_CLIENT_SECRET)
+    const ROOT_FOLDER_ID = config.root_folder_id
 
-    // Known slugs (across all previous batches) so we skip duplicate folders
-    // that mirror the same course from a different backup Google account.
-    const { data: existingCourses } = await supabase.from('courses').select('id, slug, drive_folder_id, lesson_count')
-    const knownSlugs = new Set((existingCourses || []).map(c => c.slug))
-    const knownFolderIds = new Set((existingCourses || []).map(c => c.drive_folder_id))
-    const courseIdByFolderId = new Map((existingCourses || []).map(c => [c.drive_folder_id, c.id]))
-
-    const ROOT_FOLDER_ID = config.folder_id || '1w3J0LxztajJuD8r9BzR1os97vTyQfnT-'
-
-    // Top-level page of course folders. Includes shortcut-type entries too —
-    // several courses (e.g. "MEDCURSO 2026", "MEDCOF 2026") live in the root
-    // as "Add shortcut to Drive" links rather than real folders, and Drive
-    // never reports a shortcut's mimeType as '...folder' — resolved below.
     const params = new URLSearchParams({
       q: `'${ROOT_FOLDER_ID}' in parents and (mimeType='${FOLDER_MIME}' or mimeType='${SHORTCUT_MIME}') and trashed=false`,
       fields: 'nextPageToken, files(id,name,mimeType,shortcutDetails)',
       pageSize: String(batchSize),
       orderBy: 'name_natural',
     })
-    if (cursor) params.set('pageToken', cursor)
+    if (topPageToken) params.set('pageToken', topPageToken)
+    
+    // We only fetch the top list if we are not locked in a crawlState that has NO top items loaded
+    // But since we need the `files` array for `courseFolderIndex` to mean anything, we MUST fetch it 
+    // using `topPageToken`, so we get the exact same page!
     const topRes = await fetch(`https://www.googleapis.com/drive/v3/files?${params}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     })
     if (!topRes.ok) {
-      const err = await topRes.json().catch(() => ({}))
-      throw new Error(`Drive top-level list failed: ${err.error?.message || topRes.status}`)
+      const errTxt = await topRes.text()
+      throw new Error(`Failed to list top folder: ${errTxt}`)
     }
     const topData = await topRes.json()
-    const courseFolders: { id: string; name: string }[] = (topData.files || [])
-      .map((f: any) => {
-        const resolved = resolveShortcut(f)
-        if (!resolved || resolved.mimeType !== FOLDER_MIME) return null // broken shortcut or points at a file, not a course
-        return { id: resolved.id, name: f.name }
-      })
-      .filter((f: any): f is { id: string; name: string } => !!f)
+    const allCourseFolders = topData.files || []
+    
+    const { data: existingCourses } = await supabase.from('courses').select('id, drive_folder_id, lesson_count')
+    const knownSlugs = new Set((existingCourses || []).map(c => slugify(c.id))) // just to avoid exact duplicates
+    const knownFolderIds = new Set((existingCourses || []).map(c => c.drive_folder_id))
 
     let coursesCreated = 0
     let coursesResynced = 0
@@ -250,126 +225,83 @@ serve(async (req) => {
     let modulesImported = 0
     const details: { course: string; action: 'created' | 'updated' | 'skipped' | 'error'; message?: string; files?: string[] }[] = []
 
-    for (const folder of courseFolders) {
-      if (timeLimitReached) break // Stop processing folders if we're out of time
+    let newNextCursor: any = null
 
-      let courseRow: { id: string } | null = null
+    // We start from `courseFolderIndex`
+    for (let i = courseFolderIndex; i < allCourseFolders.length; i++) {
+      if (timeLimitReached) {
+        newNextCursor = { topPageToken, courseFolderIndex: i, crawlState: null }
+        break
+      }
+
+      const f = allCourseFolders[i]
+      const resolved = resolveShortcut(f)
+      if (!resolved || resolved.mimeType !== FOLDER_MIME) continue
+      const folder = { id: resolved.id, name: f.name }
+
+      let courseId: string
       let isUpdate = false
-
-      if (knownFolderIds.has(folder.id)) {
-        if (!forceResync) {
-          details.push({ course: folder.name, action: 'skipped', message: 'Curso já importado (re-sincronização não forçada).' })
-          continue // already synced this exact folder before
-        }
-        const existingCourse = (existingCourses || []).find(c => c.drive_folder_id === folder.id)
-        if (!existingCourse) {
-          details.push({ course: folder.name, action: 'error', message: 'Falha ao encontrar curso existente no banco.' })
-          continue
-        }
-
-        courseRow = { id: existingCourse.id }
-        isUpdate = true
-        coursesResynced++
-      } else {
-        const baseSlug = slugify(folder.name)
-        const slug = baseSlug
-        if (knownSlugs.has(slug)) {
-          details.push({ course: folder.name, action: 'skipped', message: 'Curso duplicado (já sincronizado por outra pasta do Drive).' })
-          coursesSkippedDuplicate++
-          continue // same course already mirrored from another Drive account — keep the canonical one
-        }
-        knownSlugs.add(slug)
-        knownFolderIds.add(folder.id)
-
-        const { data: newCourseRow, error: courseErr } = await supabase.from('courses').insert({
-          drive_folder_id: folder.id,
-          title: folder.name.trim(),
-          slug,
-          category: categoryOf(folder.name),
-          synced_at: new Date().toISOString(),
-        }).select('id').single()
-
-        if (courseErr || !newCourseRow) {
-          console.error('course insert failed', folder.name, courseErr)
-          details.push({ course: folder.name, action: 'error', message: `Erro ao inserir curso: ${courseErr?.message}` })
-          continue
-        }
-        courseRow = newCourseRow
-        isUpdate = false
-        coursesCreated++
-      }
-
-      if (!courseRow) continue
-      const course = courseRow
-
-      // Recursive crawl: course folder -> modules (subfolders) -> lessons (files).
-      // Files are only collected here (module folders are still created
-      // immediately) — turning them into lesson rows is deferred until the
-      // whole course has been walked, so videos can be sorted ahead of every
-      // other file type instead of just following Drive's listing order.
+      
+      let stack: { folderId: string, moduleId: string | null, depth: number, pageToken?: string }[] = []
       let moduleSortCounter = 0
-      const collected: { f: any; resolved: { id: string; mimeType: string }; moduleId: string | null }[] = []
-
-      async function crawl(folderId: string, moduleId: string | null, depth: number) {
-        if (timeLimitReached) return
-        
-        let pageToken: string | undefined = undefined
-        do {
-          if (Date.now() - START_TIME > TIME_LIMIT) {
-            console.warn(`Time limit reached during crawl of ${folder.name}. Aborting early.`)
-            timeLimitReached = true
-            return
-          }
-
-          const page = await driveList(accessToken, folderId, pageToken)
-          const files: any[] = page.files || []
-          for (const f of files) {
-            if (collected.length >= MAX_LESSONS_PER_COURSE) break
-
-            const resolved = resolveShortcut(f)
-            if (!resolved) continue // broken/inaccessible shortcut
-
-            if (resolved.mimeType === FOLDER_MIME) {
-              if (depth < MAX_MODULE_DEPTH) {
-                const { data: modRow } = await supabase.from('course_modules').upsert({
-                  course_id: course.id,
-                  drive_folder_id: resolved.id,
-                  title: f.name.trim(),
-                  sort_order: moduleSortCounter++,
-                }, { onConflict: 'course_id,drive_folder_id' }).select('id').single()
-                modulesImported++
-                await crawl(resolved.id, modRow?.id ?? moduleId, depth + 1)
-              } else {
-                // deep nesting flattens into the nearest module
-                await crawl(resolved.id, moduleId, depth + 1)
-              }
-            } else if (resolved.mimeType === 'text/html') {
-              // Stray .html exports (e.g. a Google Doc downloaded as "Web
-              // Page") aren't real course material — skip so they don't show
-              // up as a broken/unplayable "arquivo" in the member area.
-              continue
-            } else {
-              collected.push({ f, resolved, moduleId })
-            }
-          }
-          pageToken = page.nextPageToken
-        } while (pageToken && collected.length < MAX_LESSONS_PER_COURSE)
-      }
-
-      await crawl(folder.id, null, 0)
-
-      // Video media always comes first, every other file type after — stable
-      // within each bucket so files otherwise keep Drive's original order.
-      const ordered = [
-        ...collected.filter(c => lessonType(c.resolved.mimeType, c.f.name) === 'video'),
-        ...collected.filter(c => lessonType(c.resolved.mimeType, c.f.name) !== 'video'),
-      ]
-
+      let lessonSortCounter = 0
       let materialCount = 0
       let totalDuration = 0
-      let lessonSortCounter = 0
-      const pendingLessons: any[] = []
+      let collectedCount = 0
+
+      if (crawlState && crawlState.folderId === folder.id) {
+        // Resume from where we left off
+        courseId = crawlState.courseId
+        isUpdate = crawlState.isUpdate
+        stack = crawlState.stack
+        moduleSortCounter = crawlState.moduleSortCounter
+        lessonSortCounter = crawlState.lessonSortCounter
+        materialCount = crawlState.materialCount
+        totalDuration = crawlState.totalDuration
+        collectedCount = crawlState.collectedCount
+        crawlState = null // consume it
+      } else {
+        if (knownFolderIds.has(folder.id)) {
+          if (!forceResync) {
+            details.push({ course: folder.name, action: 'skipped', message: 'Curso já importado (re-sincronização não forçada).' })
+            continue
+          }
+          const existingCourse = (existingCourses || []).find(c => c.drive_folder_id === folder.id)
+          if (!existingCourse) {
+            details.push({ course: folder.name, action: 'error', message: 'Falha ao encontrar curso existente no banco.' })
+            continue
+          }
+          courseId = existingCourse.id
+          isUpdate = true
+          coursesResynced++
+        } else {
+          const baseSlug = slugify(folder.name)
+          const slug = baseSlug
+          knownFolderIds.add(folder.id)
+  
+          const { data: newCourseRow, error: courseErr } = await supabase.from('courses').insert({
+            drive_folder_id: folder.id,
+            title: folder.name.trim(),
+            slug,
+            category: categoryOf(folder.name),
+            synced_at: new Date().toISOString(),
+          }).select('id').single()
+  
+          if (courseErr || !newCourseRow) {
+            console.error('course insert failed', folder.name, courseErr)
+            details.push({ course: folder.name, action: 'error', message: `Erro ao inserir curso: ${courseErr?.message}` })
+            continue
+          }
+          courseId = newCourseRow.id
+          isUpdate = false
+          coursesCreated++
+        }
+        
+        stack = [{ folderId: folder.id, moduleId: null, depth: 0 }]
+      }
+
       const LESSON_FLUSH_SIZE = 2000
+      let pendingLessons: any[] = []
 
       async function flushLessons(force = false) {
         if (pendingLessons.length === 0) return
@@ -379,54 +311,150 @@ serve(async (req) => {
         if (error) console.error('lesson batch upsert failed', folder.name, error)
       }
 
-      for (const { f, resolved, moduleId } of ordered) {
-        let type = lessonType(resolved.mimeType, f.name)
-        if (f.videoMediaMetadata) type = 'video'
+      let courseTimeLimitReached = false
+
+      while (stack.length > 0) {
+        if (Date.now() - START_TIME > TIME_LIMIT) {
+          timeLimitReached = true
+          courseTimeLimitReached = true
+          break
+        }
+
+        const current = stack.pop()!
         
-        // Shortcut targets don't carry videoMediaMetadata/size on the
-        // shortcut item itself — only real files do.
-        const duration = f.mimeType !== SHORTCUT_MIME && f.videoMediaMetadata?.durationMillis
-          ? Math.round(Number(f.videoMediaMetadata.durationMillis) / 1000)
-          : null
-        pendingLessons.push({
-          course_id: course.id,
-          module_id: moduleId,
-          drive_file_id: resolved.id,
-          title: f.name.trim(),
-          type,
-          mime_type: resolved.mimeType,
-          duration_seconds: duration,
-          size_bytes: f.mimeType !== SHORTCUT_MIME && f.size ? Number(f.size) : null,
-          sort_order: lessonSortCounter++,
-        })
-        await flushLessons()
-        if (type !== 'video') materialCount++
-        if (duration) totalDuration += duration
+        try {
+          const page = await driveList(accessToken, current.folderId, current.pageToken)
+          const files: any[] = page.files || []
+          
+          if (page.nextPageToken) {
+            stack.push({ ...current, pageToken: page.nextPageToken }) // put it back to process next page
+          }
+
+          let localLessons = []
+
+          for (const f of files) {
+            if (collectedCount >= MAX_LESSONS_PER_COURSE) break
+
+            const resolved = resolveShortcut(f)
+            if (!resolved) continue 
+
+            if (resolved.mimeType === FOLDER_MIME) {
+              if (current.depth < MAX_MODULE_DEPTH) {
+                const { data: modRow } = await supabase.from('course_modules').upsert({
+                  course_id: courseId,
+                  drive_folder_id: resolved.id,
+                  title: f.name.trim(),
+                  sort_order: moduleSortCounter++,
+                }, { onConflict: 'course_id,drive_folder_id' }).select('id').single()
+                modulesImported++
+                stack.push({ folderId: resolved.id, moduleId: modRow?.id ?? current.moduleId, depth: current.depth + 1 })
+              } else {
+                stack.push({ folderId: resolved.id, moduleId: current.moduleId, depth: current.depth + 1 })
+              }
+            } else if (resolved.mimeType === 'text/html') {
+              continue
+            } else {
+              let type = lessonType(resolved.mimeType, f.name)
+              if (f.videoMediaMetadata) type = 'video'
+              const duration = f.mimeType !== SHORTCUT_MIME && f.videoMediaMetadata?.durationMillis ? Math.round(Number(f.videoMediaMetadata.durationMillis) / 1000) : null
+              
+              localLessons.push({
+                course_id: courseId,
+                module_id: current.moduleId,
+                drive_file_id: resolved.id,
+                title: f.name.trim(),
+                type,
+                mime_type: resolved.mimeType,
+                duration_seconds: duration,
+                size_bytes: f.mimeType !== SHORTCUT_MIME && f.size ? Number(f.size) : null,
+              })
+            }
+          }
+
+          // Sort local lessons so videos come first (at least within this page)
+          localLessons.sort((a, b) => {
+             if (a.type === 'video' && b.type !== 'video') return -1
+             if (b.type === 'video' && a.type !== 'video') return 1
+             return 0
+          })
+
+          for (const l of localLessons) {
+             l.sort_order = lessonSortCounter++
+             pendingLessons.push(l)
+             collectedCount++
+             if (l.type !== 'video') materialCount++
+             if (l.duration_seconds) totalDuration += l.duration_seconds
+          }
+
+          await flushLessons()
+          
+        } catch (e) {
+           console.error("Error processing folder", current.folderId, e)
+           // If a single folder fails, we skip it and continue the stack
+        }
       }
+
       await flushLessons(true)
-      const lessonCount = ordered.length
-      lessonsImported += lessonCount
 
-      await supabase.from('courses').update({
-        lesson_count: lessonCount,
-        material_count: materialCount,
-        total_duration_seconds: totalDuration,
-      }).eq('id', course.id)
+      const addedCount = lessonSortCounter // lessonSortCounter acts as count for this session
+      lessonsImported += addedCount
 
-      details.push({
-        course: folder.name,
-        action: isUpdate ? 'updated' : 'created',
-        message: `${lessonCount} aulas/arquivos importados.`,
-        files: ordered.map(c => c.f.name)
-      })
+      if (courseTimeLimitReached) {
+         // Save state and yield
+         details.push({
+           course: folder.name,
+           action: isUpdate ? 'updated' : 'created',
+           message: `Sincronização em andamento (já importados: ${collectedCount})...`,
+         })
+         
+         newNextCursor = {
+           topPageToken,
+           courseFolderIndex: i, // stay on the same course
+           crawlState: {
+              courseId,
+              folderId: folder.id,
+              courseName: folder.name,
+              isUpdate,
+              stack,
+              moduleSortCounter,
+              lessonSortCounter,
+              materialCount,
+              totalDuration,
+              collectedCount
+           }
+         }
+         break 
+      } else {
+        // Course completely done
+        // Retrieve total count to update course correctly
+        const { count: finalLessonCount } = await supabase.from('lessons').select('*', { count: 'exact', head: true }).eq('course_id', courseId)
+        
+        await supabase.from('courses').update({
+          lesson_count: finalLessonCount || collectedCount,
+          material_count: materialCount,
+          total_duration_seconds: totalDuration,
+        }).eq('id', courseId)
+  
+        details.push({
+          course: folder.name,
+          action: isUpdate ? 'updated' : 'created',
+          message: `Concluído: ${finalLessonCount || collectedCount} aulas/arquivos.`,
+        })
+      }
     }
 
-    const nextCursor = topData.nextPageToken || null
+    if (!newNextCursor && !timeLimitReached) {
+      if (topData.nextPageToken) {
+         newNextCursor = { topPageToken: topData.nextPageToken, courseFolderIndex: 0, crawlState: null }
+      } else {
+         newNextCursor = null // completely done!
+      }
+    }
 
     return new Response(JSON.stringify({
-      done: !nextCursor,
-      cursor: nextCursor,
-      coursesInBatch: courseFolders.length,
+      done: !newNextCursor,
+      cursor: newNextCursor,
+      coursesInBatch: allCourseFolders.length,
       coursesCreated,
       coursesResynced,
       coursesSkippedDuplicate,
