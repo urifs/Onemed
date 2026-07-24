@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams, Link } from 'react-router-dom';
 import {
   ArrowLeft, Play, FileText, File, Music, Image as ImageIcon, CheckCircle2, Clock,
-  FileSpreadsheet, FileType, Star,
+  FileSpreadsheet, FileType, Star, ChevronRight,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
@@ -24,19 +24,26 @@ const TYPE_ICON: Record<string, typeof Play> = {
   video: Play, pdf: FileText, doc: File, sheet: FileSpreadsheet, txt: FileType, audio: Music, image: ImageIcon, other: File,
 };
 
-function groupLessonsByModule(items: Lesson[], modules: CourseModule[]): { title: string; lessons: Lesson[] }[] {
+// O id de cada bloco (module-root ou module-<id>) é a mesma chave usada
+// pelo sumário pra rolar até a seção certa — precisa bater exatamente entre
+// os dois lados (grupo renderizado e item clicável do sumário).
+function moduleBlockId(moduleId: string | null): string {
+  return moduleId ? `module-${moduleId}` : 'module-root';
+}
+
+function groupLessonsByModule(items: Lesson[], modules: CourseModule[]): { id: string; title: string; lessons: Lesson[] }[] {
   const byModule = new Map<string | null, Lesson[]>();
   for (const l of items) {
     const key = l.module_id;
     if (!byModule.has(key)) byModule.set(key, []);
     byModule.get(key)!.push(l);
   }
-  const result: { title: string; lessons: Lesson[] }[] = [];
+  const result: { id: string; title: string; lessons: Lesson[] }[] = [];
   const root = byModule.get(null);
-  if (root?.length) result.push({ title: 'Conteúdo geral', lessons: root });
+  if (root?.length) result.push({ id: moduleBlockId(null), title: 'Conteúdo geral', lessons: root });
   for (const mod of modules) {
     const modItems = byModule.get(mod.id);
-    if (modItems?.length) result.push({ title: mod.title, lessons: modItems });
+    if (modItems?.length) result.push({ id: moduleBlockId(mod.id), title: mod.title, lessons: modItems });
   }
   return result;
 }
@@ -65,11 +72,12 @@ export default function CourseDetailPage() {
   const [modules, setModules] = useState<CourseModule[]>([]);
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [progressMap, setProgressMap] = useState<Record<string, Progress>>({});
-  const [tab, setTab] = useState<'aulas' | 'arquivos' | 'comunidade'>('aulas');
+  const [tab, setTab] = useState<'sumario' | 'aulas' | 'arquivos' | 'comunidade'>('aulas');
   const [activeLesson, setActiveLesson] = useState<Lesson | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [retryTick, setRetryTick] = useState(0);
   const [query, setQuery] = useState('');
+  const [pendingScrollId, setPendingScrollId] = useState<string | null>(null);
   const autoOpenId = searchParams.get('lesson');
 
   useEffect(() => {
@@ -175,6 +183,47 @@ export default function CourseDetailPage() {
   const orderedVideoLessons = useMemo(() => videoGroups.flatMap(g => g.lessons), [videoGroups]);
   const orderedFileLessons = useMemo(() => fileGroups.flatMap(g => g.lessons), [fileGroups]);
   const activeOrderedLessons = activeLesson?.type === 'video' ? orderedVideoLessons : orderedFileLessons;
+
+  // Sumário: sempre reflete a estrutura completa do curso (nunca filtrado
+  // por busca/tipo), pra servir de índice confiável — cada bloco é um
+  // módulo (ou o "Conteúdo geral" pra aulas soltas sem módulo).
+  const summaryBlocks = useMemo(() => {
+    const byModule = new Map<string | null, { video: number; file: number }>();
+    for (const l of lessons) {
+      const entry = byModule.get(l.module_id) || { video: 0, file: 0 };
+      if (l.type === 'video') entry.video++; else entry.file++;
+      byModule.set(l.module_id, entry);
+    }
+    const blocks: { id: string; title: string; videoCount: number; fileCount: number }[] = [];
+    const root = byModule.get(null);
+    if (root) blocks.push({ id: moduleBlockId(null), title: 'Conteúdo geral', videoCount: root.video, fileCount: root.file });
+    for (const mod of modules) {
+      const entry = byModule.get(mod.id);
+      if (entry) blocks.push({ id: moduleBlockId(mod.id), title: mod.title, videoCount: entry.video, fileCount: entry.file });
+    }
+    return blocks;
+  }, [lessons, modules]);
+
+  // Depois de trocar de aba (pra onde o bloco realmente mora), espera o
+  // conteúdo daquela aba renderizar e só então rola até ele — reagir a
+  // videoGroups/fileGroups garante que o elemento já existe no DOM.
+  useEffect(() => {
+    if (!pendingScrollId) return;
+    const el = document.getElementById(pendingScrollId);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setPendingScrollId(null);
+    }
+  }, [pendingScrollId, tab, videoGroups, fileGroups]);
+
+  const handleSummarySelect = (block: { id: string; videoCount: number; fileCount: number }) => {
+    // Limpa busca/filtro — senão o bloco pode ficar de fora da lista
+    // filtrada e a rolagem não encontra nada pra ir.
+    setQuery('');
+    setContentTypeFilter('all');
+    setTab(block.videoCount > 0 ? 'aulas' : 'arquivos');
+    setPendingScrollId(block.id);
+  };
 
   const handleProgress = async (lessonId: string, watchedSeconds: number, completed: boolean) => {
     if (!user || !course) return;
@@ -292,6 +341,12 @@ export default function CourseDetailPage() {
       <main className="max-w-[1000px] mx-auto px-4 md:px-8 pb-16">
         <div className="flex items-center gap-1 border-b border-border mb-6">
           <button
+            onClick={() => setTab('sumario')}
+            className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${tab === 'sumario' ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+          >
+            Sumário
+          </button>
+          <button
             onClick={() => setTab('aulas')}
             className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${tab === 'aulas' ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
           >
@@ -311,7 +366,40 @@ export default function CourseDetailPage() {
           </button>
         </div>
 
-        {tab === 'aulas' ? (
+        {tab === 'sumario' ? (
+          <>
+            {lessons.length === 0 && (
+              <p className="text-muted-foreground text-sm">Este curso ainda está sendo sincronizado. Volte em instantes.</p>
+            )}
+            {lessons.length > 0 && summaryBlocks.length === 0 && (
+              <p className="text-muted-foreground text-sm">Nenhum bloco de conteúdo encontrado neste curso.</p>
+            )}
+            {summaryBlocks.length > 0 && (
+              <div className="rounded-xl border border-border overflow-hidden divide-y divide-border">
+                {summaryBlocks.map((block, i) => (
+                  <button
+                    key={block.id}
+                    onClick={() => handleSummarySelect(block)}
+                    className="w-full flex items-center gap-3.5 px-4 py-3.5 bg-card hover:bg-secondary text-left transition-colors group"
+                  >
+                    <div className="w-7 h-7 rounded-full bg-secondary group-hover:bg-primary/15 flex items-center justify-center shrink-0 text-xs font-bold text-muted-foreground group-hover:text-primary transition-colors">
+                      {i + 1}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">{block.title}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {block.videoCount > 0 && `${block.videoCount} aula${block.videoCount !== 1 ? 's' : ''}`}
+                        {block.videoCount > 0 && block.fileCount > 0 && ' · '}
+                        {block.fileCount > 0 && `${block.fileCount} arquivo${block.fileCount !== 1 ? 's' : ''}`}
+                      </p>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        ) : tab === 'aulas' ? (
           <>
             {lessons.length === 0 && (
               <p className="text-muted-foreground text-sm">Este curso ainda está sendo sincronizado. Volte em instantes.</p>
@@ -362,14 +450,18 @@ export default function CourseDetailPage() {
 function LessonGroupList({
   groups, progressMap, onSelect,
 }: {
-  groups: { title: string; lessons: Lesson[] }[];
+  groups: { id: string; title: string; lessons: Lesson[] }[];
   progressMap: Record<string, Progress>;
   onSelect: (lesson: Lesson) => void;
 }) {
   return (
     <div className="space-y-8">
       {groups.map(group => (
-        <div key={group.title}>
+        // O id aqui precisa bater com moduleBlockId() — é o alvo do
+        // scrollIntoView disparado ao clicar num item do Sumário. O
+        // scroll-mt garante que o título não fique escondido atrás do
+        // header fixo do site ao rolar até aqui.
+        <div key={group.id} id={group.id} className="scroll-mt-20">
           <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-2.5">{group.title}</h3>
           <div className="rounded-xl border border-border overflow-hidden divide-y divide-border">
             {group.lessons.map(lesson => {
