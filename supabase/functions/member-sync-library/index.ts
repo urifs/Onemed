@@ -223,8 +223,8 @@ serve(async (req) => {
     const topData = await topRes.json()
     const allCourseFolders = topData.files || []
     
-    const { data: existingCourses } = await supabase.from('courses').select('id, drive_folder_id, lesson_count')
-    const knownSlugs = new Set((existingCourses || []).map(c => slugify(c.id))) // just to avoid exact duplicates
+    const { data: existingCourses } = await supabase.from('courses').select('id, slug, drive_folder_id, lesson_count')
+    const knownSlugs = new Set((existingCourses || []).map(c => c.slug)) // just to avoid exact duplicates
     const knownFolderIds = new Set((existingCourses || []).map(c => c.drive_folder_id))
 
     let coursesCreated = 0
@@ -286,6 +286,12 @@ serve(async (req) => {
         } else {
           const baseSlug = slugify(folder.name)
           const slug = baseSlug
+          if (knownSlugs.has(slug)) {
+            details.push({ course: folder.name, action: 'skipped', message: 'Curso duplicado (já sincronizado por outra pasta do Drive).' })
+            coursesSkippedDuplicate++
+            continue
+          }
+          knownSlugs.add(slug)
           knownFolderIds.add(folder.id)
   
           const { data: newCourseRow, error: courseErr } = await supabase.from('courses').insert({
