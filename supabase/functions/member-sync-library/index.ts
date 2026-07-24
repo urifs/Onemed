@@ -16,7 +16,7 @@ function getCorsHeaders(req: Request) {
 const GOOGLE_CLIENT_ID = '110017470335-2l6er8r451vj5hf3ob05rvolc2p4v9ku.apps.googleusercontent.com'
 
 const MAX_MODULE_DEPTH = 2 // course > module > (deeper folders flatten into nearest module)
-const MAX_LESSONS_PER_COURSE = 15000 // safety cap so a "5000 livros" style dump doesn't blow up the UI
+const MAX_LESSONS_PER_COURSE = 100000 // safety cap so a "5000 livros" style dump doesn't blow up the UI
 
 // ─── constant-time compare for x-cron-secret ───────────────────────────────
 async function secureCompare(a: string, b: string): Promise<boolean> {
@@ -53,7 +53,7 @@ async function driveList(accessToken: string, folderId: string, pageToken?: stri
   const params = new URLSearchParams({
     q: `'${folderId}' in parents and trashed=false`,
     fields: 'nextPageToken, files(id,name,mimeType,size,videoMediaMetadata(durationMillis),shortcutDetails)',
-    pageSize: '200',
+    pageSize: '1000',
     orderBy: 'folder,name_natural',
   })
   if (pageToken) params.set('pageToken', pageToken)
@@ -175,7 +175,7 @@ serve(async (req) => {
     const GOOGLE_CLIENT_SECRET = Deno.env.get('GOOGLE_CLIENT_SECRET')!
 
     const START_TIME = Date.now()
-    const TIME_LIMIT = 15000 // 15s limit to leave plenty of time for DB inserts before 60s gateway timeout
+    const TIME_LIMIT = 50000 // 50s limit to try to fetch as much as possible before 60s gateway timeout
     let timeLimitReached = false
 
     const body = await req.json().catch(() => ({}))
@@ -264,13 +264,6 @@ serve(async (req) => {
         const existingCourse = (existingCourses || []).find(c => c.drive_folder_id === folder.id)
         if (!existingCourse) {
           details.push({ course: folder.name, action: 'error', message: 'Falha ao encontrar curso existente no banco.' })
-          continue
-        }
-
-        // Skip re-crawling massive courses to prevent Edge Function 60s timeout
-        if ((existingCourse.lesson_count || 0) > 1000) {
-          console.log(`Skipping massive course ${folder.name} to prevent Edge Function timeout. Use local script to resync.`)
-          details.push({ course: folder.name, action: 'skipped', message: 'Curso muito grande (>1000 aulas), ignorado para evitar timeout na nuvem.' })
           continue
         }
 
@@ -376,7 +369,7 @@ serve(async (req) => {
       let totalDuration = 0
       let lessonSortCounter = 0
       const pendingLessons: any[] = []
-      const LESSON_FLUSH_SIZE = 250
+      const LESSON_FLUSH_SIZE = 2000
 
       async function flushLessons(force = false) {
         if (pendingLessons.length === 0) return
