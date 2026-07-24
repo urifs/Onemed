@@ -150,7 +150,7 @@ serve(async (req) => {
     const GOOGLE_CLIENT_SECRET = Deno.env.get('GOOGLE_CLIENT_SECRET')!
 
     const START_TIME = Date.now()
-    const TIME_LIMIT = 45000 
+    const TIME_LIMIT = 15000 // 15 seconds to safely avoid platform timeouts
     let timeLimitReached = false
 
     const body = await req.json().catch(() => ({}))
@@ -315,7 +315,7 @@ serve(async (req) => {
         stack = [{ folderId: folder.id, moduleId: null, depth: 0 }]
       }
 
-      const LESSON_FLUSH_SIZE = 2000
+      const LESSON_FLUSH_SIZE = 100 // Reduced from 2000 to prevent OOM
       let pendingLessons: any[] = []
       let batchFileNames: string[] = []
 
@@ -364,7 +364,7 @@ serve(async (req) => {
                 }, { onConflict: 'course_id,drive_folder_id' }).select('id').single()
                 modulesImported++
                 stack.push({ folderId: resolved.id, moduleId: modRow?.id ?? current.moduleId, depth: current.depth + 1 })
-              } else {
+              } else if (current.depth < 10) { // Limit depth to avoid infinite shortcut loops
                 stack.push({ folderId: resolved.id, moduleId: current.moduleId, depth: current.depth + 1 })
               }
             } else if (resolved.mimeType === 'text/html') {
