@@ -20,10 +20,10 @@ ON public.sync_jobs
 FOR ALL
 TO authenticated
 USING (
-  is_admin(auth.uid()) OR has_role(auth.uid(), 'admin')
+  public.has_role(auth.uid(), 'admin')
 )
 WITH CHECK (
-  is_admin(auth.uid()) OR has_role(auth.uid(), 'admin')
+  public.has_role(auth.uid(), 'admin')
 );
 
 -- Enable Realtime for this table
