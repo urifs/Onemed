@@ -411,6 +411,23 @@ function SyncCoursesCard() {
   const requestCancel = async () => {
     if (!activeJob) return;
     cancelRef.current = true; // For local abort if we are the ones running it
+
+    // Se o loop não está rodando NESTA aba (ex: quem estava sincronizando
+    // fechou/recarregou a aba, ou você está vendo de outro dispositivo),
+    // só sinalizar cancel_requested não resolve nada — não existe mais
+    // ninguém rodando o loop pra perceber o pedido e finalizar o job, e
+    // ele fica preso em "Cancelando..." pra sempre. Nesse caso, cancela
+    // direto.
+    if (!isRunningLoopRef.current) {
+      await supabase.from('sync_jobs').update({
+        status: 'cancelled',
+        cancel_requested: true,
+        updated_at: new Date().toISOString(),
+      }).eq('id', activeJob.id);
+      toast.info('Sincronização cancelada.');
+      return;
+    }
+
     await supabase.from('sync_jobs').update({ cancel_requested: true }).eq('id', activeJob.id);
     toast.info('Solicitando cancelamento...');
   };
