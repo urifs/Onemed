@@ -11,6 +11,7 @@ import { extractFunctionErrorMessage, withTimeout } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Progress } from '@/components/ui/progress';
+import { Checkbox } from '@/components/ui/checkbox';
 
 const GOOGLE_CLIENT_ID = '110017470335-2l6er8r451vj5hf3ob05rvolc2p4v9ku.apps.googleusercontent.com';
 
@@ -207,11 +208,21 @@ interface SyncDetail {
   files?: string[];
 }
 
+// Pausa entre chamadas do loop — sem isso ele martela a Edge Function (e o
+// Postgres por trás) de volta a volta sem nenhum respiro, o que no plano
+// free do Supabase é o suficiente pra derrubar o PostgREST/Auth junto com
+// tráfego normal de aluno (ex: lesson_progress) rodando ao mesmo tempo.
+const LOOP_DELAY_MS = 2000;
+function sleep(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 function SyncCoursesCard() {
   const [activeJob, setActiveJob] = useState<any>(null);
   const [logs, setLogs] = useState<SyncDetail[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [barValue, setBarValue] = useState(0);
+  const [forceResync, setForceResync] = useState(false);
 
   // We use refs to keep track of the loop state without triggering re-renders in the loop itself
   const cancelRef = useRef(false);
@@ -280,11 +291,11 @@ function SyncCoursesCard() {
   }, [activeJob?.status]);
 
   // 3. The Sync Loop
-  const startSyncLoop = async (jobId: string, initialCursor?: string, initialProgress?: SyncProgress, initialLogs?: SyncDetail[]) => {
+  const startSyncLoop = async (jobId: string, doForceResync: boolean, initialCursor?: string, initialProgress?: SyncProgress, initialLogs?: SyncDetail[]) => {
     if (isRunningLoopRef.current) return;
     isRunningLoopRef.current = true;
     cancelRef.current = false;
-    
+
     let cursor = initialCursor;
     let currentProgress: SyncProgress = initialProgress || { coursesCreated: 0, coursesResynced: 0, lessonsImported: 0, batches: 0 };
     let currentLogs: SyncDetail[] = initialLogs || [];
@@ -300,14 +311,14 @@ function SyncCoursesCard() {
 
         // Invoke edge function
         const { data, error } = await withTimeout(supabase.functions.invoke('member-sync-library', {
-          body: { cursor, batchSize: 1, forceResync: true },
+          body: { cursor, batchSize: 1, forceResync: doForceResync },
         }), 300000, 'Tempo limite de sincronização excedido (5 minutos)');
-        
+
         if (error || data?.error) {
           const msg = data?.error || await extractFunctionErrorMessage(error, 'Erro ao sincronizar cursos');
           currentLogs = [...currentLogs, { course: 'Sistema', action: 'error', message: msg }];
-          await supabase.from('sync_jobs').update({ 
-            status: 'failed', 
+          await supabase.from('sync_jobs').update({
+            status: 'failed',
             logs: currentLogs,
             updated_at: new Date().toISOString()
           }).eq('id', jobId);
@@ -326,9 +337,9 @@ function SyncCoursesCard() {
         }
 
         if (data.done) {
-          await supabase.from('sync_jobs').update({ 
-            status: 'completed', 
-            progress: { ...currentProgress, cursor }, 
+          await supabase.from('sync_jobs').update({
+            status: 'completed',
+            progress: { ...currentProgress, cursor },
             logs: currentLogs,
             updated_at: new Date().toISOString(),
             completed_at: new Date().toISOString()
@@ -337,11 +348,13 @@ function SyncCoursesCard() {
           break;
         } else {
           // Update DB with intermediate progress
-          await supabase.from('sync_jobs').update({ 
-            progress: { ...currentProgress, cursor }, 
+          await supabase.from('sync_jobs').update({
+            progress: { ...currentProgress, cursor },
             logs: currentLogs,
             updated_at: new Date().toISOString()
           }).eq('id', jobId);
+          // Respira antes da próxima chamada — ver comentário em LOOP_DELAY_MS.
+          await sleep(LOOP_DELAY_MS);
         }
       }
     } catch (e: any) {
@@ -352,6 +365,20 @@ function SyncCoursesCard() {
   };
 
   const runSyncNew = async () => {
+    // Duas sincronizações rodando ao mesmo tempo (ex: duas abas abertas)
+    // dobram a carga no banco à toa — bloqueia se já existir uma ativa.
+    const { data: existingRunning } = await supabase
+      .from('sync_jobs')
+      .select('id, updated_at')
+      .eq('status', 'running')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (existingRunning && (Date.now() - new Date(existingRunning.updated_at).getTime()) < 90000) {
+      toast.error('Já existe uma sincronização em andamento (em outra aba ou dispositivo). Aguarde ela terminar ou cancele antes de iniciar uma nova.');
+      return;
+    }
+
     // Create new job
     const { data, error } = await supabase.from('sync_jobs').insert({
       status: 'running',
@@ -367,7 +394,7 @@ function SyncCoursesCard() {
     setActiveJob(data);
     activeJobIdRef.current = data.id;
     setLogs([]);
-    startSyncLoop(data.id);
+    startSyncLoop(data.id, forceResync);
   };
 
   const resumeSync = async () => {
@@ -378,7 +405,7 @@ function SyncCoursesCard() {
     
     // Mark as running again
     await supabase.from('sync_jobs').update({ status: 'running', cancel_requested: false, updated_at: new Date().toISOString() }).eq('id', activeJob.id);
-    startSyncLoop(activeJob.id, initialCursor, initialProgress, initialLogs);
+    startSyncLoop(activeJob.id, forceResync, initialCursor, initialProgress, initialLogs);
   };
 
   const requestCancel = async () => {
@@ -404,11 +431,21 @@ function SyncCoursesCard() {
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-sm text-muted-foreground">
-          Espelha a pasta "Cursos + Livros" do Drive para a área de membros (/membros). Pode rodar quantas vezes
-          quiser — cursos e aulas já importados não são duplicados, e conteúdo novo que você adicionar no Drive
-          é detectado e importado. O progresso é salvo para que você possa acompanhar de qualquer dispositivo.
+          Espelha a pasta "Cursos + Livros" do Drive para a área de membros (/membros). Por padrão, só importa
+          pastas/cursos que ainda não existem no banco — muito mais rápido e leve. Cursos e aulas já importados
+          não são duplicados. O progresso é salvo para que você possa acompanhar de qualquer dispositivo.
         </p>
-        
+
+        {!isRunning && (
+          <label className="flex items-start gap-2.5 text-sm text-muted-foreground cursor-pointer select-none">
+            <Checkbox checked={forceResync} onCheckedChange={(v) => setForceResync(!!v)} className="mt-0.5" />
+            <span>
+              Reimportar tudo (verifica cursos já importados em busca de arquivos novos/atualizados) — deixa a
+              sincronização bem mais pesada e demorada, use só quando adicionar conteúdo dentro de um curso que já existe.
+            </span>
+          </label>
+        )}
+
         {activeJob && (
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
