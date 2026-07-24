@@ -217,6 +217,15 @@ function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// Uma reimportação completa gera centenas de entradas de log (uma por lote
+// processado) — sem limite, isso vira um payload de centenas de KB que chega
+// inteiro a cada atualização em tempo real, e a lista renderizada (com os
+// "Ver N arquivos" expansíveis) fica cada vez mais pesada de re-renderizar.
+// Na prática isso deixou a aba lenta o bastante pra parecer travada num
+// curso específico, mesmo com a sincronização de verdade continuando por
+// trás sem problema. Mantém só as entradas mais recentes.
+const MAX_DISPLAYED_LOGS = 60;
+
 function SyncCoursesCard() {
   const [activeJob, setActiveJob] = useState<any>(null);
   const [logs, setLogs] = useState<SyncDetail[]>([]);
@@ -243,7 +252,7 @@ function SyncCoursesCard() {
         console.error('Error fetching sync_jobs:', error);
       } else if (data) {
         setActiveJob(data);
-        if (data.logs) setLogs(data.logs);
+        if (data.logs) setLogs(data.logs.slice(-MAX_DISPLAYED_LOGS));
         activeJobIdRef.current = data.id;
         cancelRef.current = data.cancel_requested;
       }
@@ -260,7 +269,7 @@ function SyncCoursesCard() {
             const updatedJob = payload.new as any;
             if (!activeJobIdRef.current || updatedJob.id === activeJobIdRef.current || updatedJob.created_at > (activeJob?.created_at || '')) {
               setActiveJob(updatedJob);
-              if (updatedJob.logs) setLogs(updatedJob.logs);
+              if (updatedJob.logs) setLogs(updatedJob.logs.slice(-MAX_DISPLAYED_LOGS));
               activeJobIdRef.current = updatedJob.id;
               cancelRef.current = updatedJob.cancel_requested;
             }
@@ -316,7 +325,7 @@ function SyncCoursesCard() {
 
         if (error || data?.error) {
           const msg = data?.error || await extractFunctionErrorMessage(error, 'Erro ao sincronizar cursos');
-          currentLogs = [...currentLogs, { course: 'Sistema', action: 'error', message: msg }];
+          currentLogs = [...currentLogs, { course: 'Sistema', action: 'error', message: msg }].slice(-MAX_DISPLAYED_LOGS);
           await supabase.from('sync_jobs').update({
             status: 'failed',
             logs: currentLogs,
@@ -333,7 +342,11 @@ function SyncCoursesCard() {
         cursor = data.cursor || undefined;
 
         if (data.details && Array.isArray(data.details)) {
-          currentLogs = [...currentLogs, ...data.details];
+          // Só mantém as entradas mais recentes — ver comentário em
+          // MAX_DISPLAYED_LOGS. O histórico completo de uma reimportação
+          // completa não cabe (nem precisa) trafegar inteiro a cada
+          // atualização em tempo real.
+          currentLogs = [...currentLogs, ...data.details].slice(-MAX_DISPLAYED_LOGS);
         }
 
         if (data.done) {
@@ -402,7 +415,7 @@ function SyncCoursesCard() {
     if (!activeJob) return;
     const initialCursor = activeJob.progress?.cursor;
     const initialProgress = activeJob.progress;
-    const initialLogs = activeJob.logs || [];
+    const initialLogs = (activeJob.logs || []).slice(-MAX_DISPLAYED_LOGS);
     // O job "lembra" com que modo foi iniciado — não usar o estado local do
     // checkbox aqui, que volta pro padrão (desmarcado) a cada carregamento
     // de página e faria "Retomar" silenciosamente parar de forçar reimportação.
