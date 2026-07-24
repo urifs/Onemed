@@ -384,6 +384,7 @@ function SyncCoursesCard() {
       status: 'running',
       progress: { coursesCreated: 0, coursesResynced: 0, lessonsImported: 0, batches: 0, cursor: null },
       logs: [],
+      force_resync: forceResync,
     }).select().single();
 
     if (error || !data) {
@@ -402,10 +403,14 @@ function SyncCoursesCard() {
     const initialCursor = activeJob.progress?.cursor;
     const initialProgress = activeJob.progress;
     const initialLogs = activeJob.logs || [];
-    
+    // O job "lembra" com que modo foi iniciado — não usar o estado local do
+    // checkbox aqui, que volta pro padrão (desmarcado) a cada carregamento
+    // de página e faria "Retomar" silenciosamente parar de forçar reimportação.
+    const jobForceResync = !!activeJob.force_resync;
+
     // Mark as running again
     await supabase.from('sync_jobs').update({ status: 'running', cancel_requested: false, updated_at: new Date().toISOString() }).eq('id', activeJob.id);
-    startSyncLoop(activeJob.id, forceResync, initialCursor, initialProgress, initialLogs);
+    startSyncLoop(activeJob.id, jobForceResync, initialCursor, initialProgress, initialLogs);
   };
 
   const requestCancel = async () => {
@@ -479,6 +484,11 @@ function SyncCoursesCard() {
                  'Sincronizando...'} 
                 {' '}
                 {progress ? `(${progress.coursesCreated || 0} novos · ${progress.coursesResynced || 0} atualizados · ${progress.lessonsImported || 0} aulas)` : ''}
+                {activeJob.force_resync && (isRunning || isInterrupted) && (
+                  <span className="ml-2 text-[11px] font-semibold text-primary bg-primary/10 border border-primary/25 rounded-full px-2 py-0.5">
+                    Reimportação completa
+                  </span>
+                )}
               </span>
             </div>
             {(isRunning || barValue > 0) && !isInterrupted && (
