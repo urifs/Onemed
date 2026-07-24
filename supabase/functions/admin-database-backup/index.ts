@@ -77,7 +77,14 @@ serve(async (req) => {
   }
 
   const encoder = new TextEncoder()
-  const tables = schemaRows as { table_name: string; columns: { column_name: string; data_type: string; is_nullable: string; column_default: string | null }[] }[]
+  const tables = schemaRows as { table_name: string; columns: { column_name: string; data_type: string; is_nullable: string; column_default: string | null }[]; estimated_rows: number }[]
+
+  // Tabelas pequenas primeiro, grandes por último — se a função estourar o
+  // tempo de execução (aconteceu na prática: 123 mil linhas em `lessons` +
+  // 32 mil em `visits` já é o bastante), o que se perde é o fim das tabelas
+  // grandes, não tabelas pequenas e críticas (buyers, coupons, user_roles)
+  // que ficariam por último em ordem alfabética.
+  const tablesBySize = [...tables].sort((a, b) => (a.estimated_rows || 0) - (b.estimated_rows || 0))
 
   let totalBytes = 0
   const stream = new ReadableStream({
@@ -90,6 +97,9 @@ serve(async (req) => {
 
       write({ type: 'meta', exported_at: new Date().toISOString(), tables: tables.map(t => t.table_name) })
 
+      // Passo 1: escreve a estrutura (DDL) de TODAS as tabelas antes de
+      // exportar qualquer linha — garante que a estrutura nunca se perde
+      // mesmo que a exportação de dados seja interrompida no meio.
       for (const t of tables) {
         const ddlCols = (t.columns || []).map(c => {
           const notNull = c.is_nullable === 'NO' ? ' NOT NULL' : ''
@@ -98,7 +108,11 @@ serve(async (req) => {
         }).join(',\n')
         const ddl = `CREATE TABLE IF NOT EXISTS public."${t.table_name}" (\n${ddlCols}\n);`
         write({ type: 'schema', table: t.table_name, columns: t.columns, ddl })
+      }
 
+      // Passo 2: exporta os dados, das menores pras maiores.
+      const completedTables: string[] = []
+      for (const t of tablesBySize) {
         let from = 0
         while (true) {
           const { data, error } = await supabase.from(t.table_name).select('*').range(from, from + PAGE_SIZE - 1)
@@ -112,7 +126,14 @@ serve(async (req) => {
           if (!data || data.length < PAGE_SIZE) break
           from += PAGE_SIZE
         }
+        completedTables.push(t.table_name)
       }
+
+      // Marcador final — só existe se a exportação chegou até o fim. Sem
+      // ele, um backup interrompido por timeout da function ainda parece
+      // "completo" (HTTP 200, arquivo termina limpo na última linha
+      // escrita), sem nenhum aviso de que faltaram tabelas.
+      write({ type: 'done', tables_exported: completedTables, complete: completedTables.length === tables.length })
 
       controller.close()
       await supabase.rpc('record_egress', { _source: 'admin-database-backup', _bytes: totalBytes }).catch(() => {})

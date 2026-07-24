@@ -71,7 +71,25 @@ export default function DatabasePage() {
       a.download = `onemed-backup-${new Date().toISOString().slice(0, 10)}.ndjson`;
       a.click();
       URL.revokeObjectURL(url);
-      toast.success('Backup baixado com sucesso!');
+
+      // A function pode ser interrompida por timeout no meio da exportação
+      // (tabelas grandes demais) e ainda assim devolver HTTP 200 — o único
+      // jeito de saber se realmente terminou é conferir se a última linha
+      // é o marcador "done" com complete:true.
+      const text = await blob.text();
+      const lines = text.trim().split('\n');
+      const lastLine = lines[lines.length - 1];
+      let complete = false;
+      try {
+        const parsed = JSON.parse(lastLine);
+        complete = parsed?.type === 'done' && parsed?.complete === true;
+      } catch { /* linha final não é JSON válido — trata como incompleto */ }
+
+      if (complete) {
+        toast.success('Backup baixado com sucesso — todas as tabelas exportadas.');
+      } else {
+        toast.warning('Backup baixado, mas foi interrompido antes de terminar (provavelmente por demorar demais). Tente novamente — as tabelas menores e mais críticas são exportadas primeiro.', { duration: 10000 });
+      }
     } catch (err: any) {
       toast.error('Erro ao gerar backup: ' + (err?.message || 'desconhecido'));
     } finally {
