@@ -318,16 +318,26 @@ function SyncCoursesCard() {
           break;
         }
 
-        // Invoke edge function
-        const { data, error } = await withTimeout(supabase.functions.invoke('member-sync-library', {
-          body: { cursor, batchSize: 1, forceResync: doForceResync },
-        }), 300000, 'Tempo limite de sincronização excedido (5 minutos)');
+        // Invoke edge function — com retry automático pra blips passageiros
+        // de rede (ex: "Failed to send a request to the Edge Function"),
+        // que não deveriam exigir intervenção manual pra continuar.
+        let data: any, error: any;
+        const RETRY_DELAYS_MS = [2000, 5000, 10000];
+        for (let attempt = 0; ; attempt++) {
+          ({ data, error } = await withTimeout(supabase.functions.invoke('member-sync-library', {
+            body: { cursor, batchSize: 1, forceResync: doForceResync },
+          }), 300000, 'Tempo limite de sincronização excedido (5 minutos)'));
+          if (!error && !data?.error) break;
+          if (attempt >= RETRY_DELAYS_MS.length || cancelRef.current) break;
+          await sleep(RETRY_DELAYS_MS[attempt]);
+        }
 
         if (error || data?.error) {
           const msg = data?.error || await extractFunctionErrorMessage(error, 'Erro ao sincronizar cursos');
           currentLogs = [...currentLogs, { course: 'Sistema', action: 'error', message: msg }].slice(-MAX_DISPLAYED_LOGS);
           await supabase.from('sync_jobs').update({
             status: 'failed',
+            progress: { ...currentProgress, cursor },
             logs: currentLogs,
             updated_at: new Date().toISOString()
           }).eq('id', jobId);
@@ -392,6 +402,13 @@ function SyncCoursesCard() {
       return;
     }
 
+    // Existe progresso retomável (job travado/com erro que ainda pode ser
+    // continuado) — começar do zero descartaria esse progresso, então
+    // confirma antes.
+    if (canResume && !window.confirm('Já existe uma sincronização interrompida com progresso salvo. Iniciar uma nova vai IGNORAR esse progresso (ele fica perdido, não retomável depois). Prefira "Retomar Sincronização". Iniciar mesmo assim uma nova?')) {
+      return;
+    }
+
     // Create new job
     const { data, error } = await supabase.from('sync_jobs').insert({
       status: 'running',
@@ -452,9 +469,16 @@ function SyncCoursesCard() {
 
   const isRunning = activeJob?.status === 'running';
   const progress = activeJob?.progress;
-  
+
   // Check if job is likely interrupted (no updates for 90 seconds)
   const isInterrupted = isRunning && activeJob?.updated_at && (new Date().getTime() - new Date(activeJob.updated_at).getTime() > 90000);
+
+  // "Retomar" sempre deve existir enquanto houver progresso salvo pra
+  // continuar de onde parou — não importa se parou por travar (running
+  // parado há muito tempo) ou por erro explícito (failed, ex: blip de rede
+  // que esgotou as tentativas automáticas). Sem isso, qualquer falha força
+  // recomeçar do zero uma reimportação que pode levar horas.
+  const canResume = !!activeJob && (activeJob.status === 'failed' || isInterrupted) && !!activeJob.progress?.cursor;
 
   return (
     <Card className="bg-background-paper border-border">
@@ -567,7 +591,7 @@ function SyncCoursesCard() {
             {activeJob ? 'Iniciar Nova Sincronização' : 'Sincronizar Cursos'}
           </Button>
           
-          {isInterrupted && (
+          {canResume && (
             <Button onClick={resumeSync} variant="outline" className="gap-2">
               <Play className="w-4 h-4" />
               Retomar Sincronização
