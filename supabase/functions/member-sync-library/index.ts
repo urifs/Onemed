@@ -180,14 +180,27 @@ serve(async (req) => {
     }
 
     const { data: config, error: cfgErr } = await supabase.from('drive_config').select('*').single()
-    if (cfgErr || !config?.refresh_token || !config?.root_folder_id) {
+    if (cfgErr || !config?.connected) {
       return new Response(JSON.stringify({ error: 'Configuração do Google Drive não encontrada no banco.' }), {
         status: 400, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
       })
     }
 
-    const accessToken = await refreshAccessToken(config.refresh_token, GOOGLE_CLIENT_SECRET)
-    const ROOT_FOLDER_ID = config.root_folder_id
+    let accessToken = config.access_token
+    const expiry = config.token_expiry ? new Date(config.token_expiry) : null
+    if (!expiry || expiry < new Date()) {
+      if (!config.refresh_token) {
+        return new Response(JSON.stringify({ error: 'Token expirado. Reconecte o Google Drive.' }), {
+          status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
+        })
+      }
+      accessToken = await refreshAccessToken(config.refresh_token, GOOGLE_CLIENT_SECRET)
+      await supabase.from('drive_config').update({
+        access_token: accessToken,
+        token_expiry: new Date(Date.now() + 3600 * 1000).toISOString(),
+      }).eq('id', config.id)
+    }
+    const ROOT_FOLDER_ID = config.folder_id || '1w3J0LxztajJuD8r9BzR1os97vTyQfnT-'
 
     const params = new URLSearchParams({
       q: `'${ROOT_FOLDER_ID}' in parents and (mimeType='${FOLDER_MIME}' or mimeType='${SHORTCUT_MIME}') and trashed=false`,
