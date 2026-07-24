@@ -4,7 +4,7 @@ import { Play, Info, FileText, File, Music, Image as ImageIcon, Loader2, FileSpr
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
 import { MemberHeader } from '@/components/member/MemberHeader';
-import { MemberSearchBar } from '@/components/member/MemberSearchBar';
+import { ContentTypeFilter, MemberSearchBar } from '@/components/member/MemberSearchBar';
 import { CourseCard } from '@/components/member/CourseCard';
 import { CourseCover } from '@/components/member/CourseCover';
 import { CategorySidebar } from '@/components/member/CategorySidebar';
@@ -35,6 +35,7 @@ export default function MemberDashboardPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [courses, setCourses] = useState<Course[]>([]);
   const [continueList, setContinueList] = useState<ProgressRow[]>([]);
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [retryTick, setRetryTick] = useState(0);
@@ -45,6 +46,7 @@ export default function MemberDashboardPage() {
   const [searchContents, setSearchContents] = useState(false);
   const [contentResults, setContentResults] = useState<ContentResult[]>([]);
   const [contentLoading, setContentLoading] = useState(false);
+  const [contentTypeFilter, setContentTypeFilter] = useState<ContentTypeFilter>('all');
 
   // Nunca deixa as duas caixas desmarcadas ao mesmo tempo — sempre precisa
   // sobrar pelo menos um escopo de busca ativo.
@@ -81,13 +83,7 @@ export default function MemberDashboardPage() {
     let alive = true;
     (async () => {
       try {
-        // supabase-js resolves the current access token *before* handing off
-        // to our fetch wrapper, so a hang in that step slips past client.ts's
-        // own per-request timeout entirely. withTimeout guarantees this
-        // resolves or rejects no matter which internal step never settles —
-        // a real fix for a report of this screen hanging forever on one
-        // specific device, with no fetch/auth error ever surfacing.
-        const [{ data: coursesData, error: coursesErr }, progressResult] = await withTimeout(
+        const [{ data: coursesData, error: coursesErr }, progressResult, { data: favData }] = await withTimeout(
           Promise.all([
             supabase.from('courses').select('*').eq('active', true).order('sort_order').order('title'),
             userId
@@ -98,6 +94,9 @@ export default function MemberDashboardPage() {
                   .order('last_watched_at', { ascending: false })
                   .limit(12)
               : Promise.resolve({ data: [] as ProgressRow[] }),
+            userId 
+              ? supabase.from('user_favorites').select('course_id').eq('user_id', userId)
+              : Promise.resolve({ data: [] })
           ]),
           12000,
           'busca de cursos',
@@ -106,6 +105,11 @@ export default function MemberDashboardPage() {
         if (!alive) return;
         setCourses(coursesData || []);
         setContinueList(((progressResult as any).data || []) as ProgressRow[]);
+        
+        if (favData) {
+          setFavorites(new Set(favData.map(f => f.course_id)));
+        }
+        
         setLoadError(false);
       } catch (err) {
         console.error('Failed to load member dashboard', err);
@@ -122,6 +126,24 @@ export default function MemberDashboardPage() {
     setLoading(true);
     setRetryTick(t => t + 1);
   };
+  
+  const handleToggleFavorite = async (courseId: string, currentStatus: boolean) => {
+    if (!userId) return;
+    
+    // Optimistic update
+    setFavorites(prev => {
+      const next = new Set(prev);
+      if (currentStatus) next.delete(courseId);
+      else next.add(courseId);
+      return next;
+    });
+
+    if (currentStatus) {
+      await supabase.from('user_favorites').delete().match({ user_id: userId, course_id: courseId });
+    } else {
+      await supabase.from('user_favorites').insert({ user_id: userId, course_id: courseId });
+    }
+  };
 
   // 81 mil linhas em lessons é demais pra trazer pro cliente e filtrar em
   // JS — a busca de conteúdo roda no banco (search_lessons), com debounce
@@ -135,12 +157,20 @@ export default function MemberDashboardPage() {
         .then(({ data, error }) => {
           if (!alive) return;
           if (error) { console.error('Erro na busca de conteúdo', error); setContentResults([]); return; }
-          setContentResults((data || []) as ContentResult[]);
+          
+          let results = (data || []) as ContentResult[];
+          if (contentTypeFilter === 'videos') {
+            results = results.filter(r => r.lesson_type === 'video');
+          } else if (contentTypeFilter === 'files') {
+            results = results.filter(r => r.lesson_type !== 'video');
+          }
+          
+          setContentResults(results);
         })
         .finally(() => { if (alive) setContentLoading(false); });
     }, 350);
     return () => { alive = false; clearTimeout(timer); };
-  }, [query, searchContents]);
+  }, [query, searchContents, contentTypeFilter]);
 
   const filtered = useMemo(() => {
     if (!query.trim()) return courses;
@@ -167,13 +197,24 @@ export default function MemberDashboardPage() {
     for (const c of courses) counts.set(c.category, (counts.get(c.category) || 0) + 1);
     const order = [...CATEGORY_ORDER];
     for (const key of counts.keys()) if (!order.includes(key)) order.push(key);
-    return order.filter(cat => counts.has(cat)).map(cat => ({ name: cat, count: counts.get(cat)! }));
-  }, [courses]);
+    
+    const cats = order.filter(cat => counts.has(cat)).map(cat => ({ name: cat, count: counts.get(cat)! }));
+    
+    // Add favorites to the top if any
+    if (favorites.size > 0) {
+      cats.unshift({ name: '⭐ Favoritos', count: favorites.size });
+    }
+    
+    return cats;
+  }, [courses, favorites.size]);
 
   const categoryCourses = useMemo(() => {
     if (!activeCategory) return [];
+    if (activeCategory === '⭐ Favoritos') {
+      return courses.filter(c => favorites.has(c.id));
+    }
     return courses.filter(c => c.category === activeCategory);
-  }, [courses, activeCategory]);
+  }, [courses, activeCategory, favorites]);
 
   // Hero rotation: the in-progress course (if any) leads, followed by the
   // biggest flagship courses — ranked by lesson_count as a proxy for "maior
@@ -241,7 +282,12 @@ export default function MemberDashboardPage() {
   return (
     <div className="min-h-screen bg-background">
       <MemberHeader />
-      <MemberSearchBar query={query} onQueryChange={handleQueryChange} />
+      <MemberSearchBar 
+        query={query} 
+        onQueryChange={handleQueryChange} 
+        contentTypeFilter={contentTypeFilter}
+        onContentTypeFilterChange={setContentTypeFilter}
+      />
 
       {!searching && !activeCategory && featured && (
         <section className="max-w-[1400px] mx-auto px-4 md:px-8 pt-6">
@@ -340,7 +386,7 @@ export default function MemberDashboardPage() {
                       {filtered.length} curso{filtered.length !== 1 ? 's' : ''} encontrado{filtered.length !== 1 ? 's' : ''}
                     </p>
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-8 items-start">
-                      {filtered.map(c => <CourseCard key={c.id} course={c} />)}
+                      {filtered.map(c => <CourseCard key={c.id} course={c} isFavorite={favorites.has(c.id)} onToggleFavorite={handleToggleFavorite} />)}
                     </div>
                   </div>
                 )}
@@ -386,7 +432,7 @@ export default function MemberDashboardPage() {
                   {categoryCourses.length} curso{categoryCourses.length !== 1 ? 's' : ''}
                 </p>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-8 items-start">
-                  {categoryCourses.map(c => <CourseCard key={c.id} course={c} />)}
+                  {categoryCourses.map(c => <CourseCard key={c.id} course={c} isFavorite={favorites.has(c.id)} onToggleFavorite={handleToggleFavorite} />)}
                 </div>
               </section>
             ) : (
@@ -397,11 +443,16 @@ export default function MemberDashboardPage() {
                     items={continueList.filter(p => p.courses).map(p => ({
                       course: p.courses as Course,
                       progressPercent: p.lessons?.duration_seconds ? (p.watched_seconds / p.lessons.duration_seconds) * 100 : undefined,
+                      isFavorite: p.courses ? favorites.has(p.courses.id) : false,
                     }))}
+                    onToggleFavorite={handleToggleFavorite}
                   />
                 )}
                 {rows.map(row => (
-                  <Row key={row.category} title={row.category} items={row.items.map(course => ({ course }))} />
+                  <Row key={row.category} title={row.category} items={row.items.map(course => ({ 
+                    course,
+                    isFavorite: favorites.has(course.id)
+                  }))} onToggleFavorite={handleToggleFavorite} />
                 ))}
               </>
             )}
@@ -412,7 +463,7 @@ export default function MemberDashboardPage() {
   );
 }
 
-function Row({ title, items }: { title: string; items: { course: Course; progressPercent?: number }[] }) {
+function Row({ title, items, onToggleFavorite }: { title: string; items: { course: Course; progressPercent?: number; isFavorite?: boolean }[]; onToggleFavorite?: (id: string, current: boolean) => void }) {
   if (items.length === 0) return null;
   return (
     <section>
@@ -421,9 +472,9 @@ function Row({ title, items }: { title: string; items: { course: Course; progres
         <span className="text-xs text-muted-foreground tabular-nums">{items.length}</span>
       </div>
       <div className="flex items-start gap-3.5 overflow-x-auto pb-3 -mx-1 px-1 scrollbar-thin">
-        {items.map(({ course, progressPercent }) => (
+        {items.map(({ course, progressPercent, isFavorite }) => (
           <div key={course.id} className="w-[168px] sm:w-[192px] shrink-0">
-            <CourseCard course={course} progressPercent={progressPercent} />
+            <CourseCard course={course} progressPercent={progressPercent} isFavorite={isFavorite} onToggleFavorite={onToggleFavorite} />
           </div>
         ))}
       </div>

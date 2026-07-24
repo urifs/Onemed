@@ -543,6 +543,71 @@ export type Database = {
         }
         Relationships: []
       }
+      sync_jobs: {
+        Row: {
+          cancel_requested: boolean | null
+          completed_at: string | null
+          created_at: string
+          id: string
+          logs: Json | null
+          progress: Json | null
+          started_by: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          cancel_requested?: boolean | null
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          logs?: Json | null
+          progress?: Json | null
+          started_by?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          cancel_requested?: boolean | null
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          logs?: Json | null
+          progress?: Json | null
+          started_by?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      user_favorites: {
+        Row: {
+          course_id: string
+          created_at: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          course_id: string
+          created_at?: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          course_id?: string
+          created_at?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_favorites_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
     }
     Views: {
       [_ in never]: never

@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import AdminLayout from '@/components/AdminLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { FolderOpen, CheckCircle, AlertCircle, RefreshCw, Folder, Loader2, GraduationCap, Mail, Copy, Download, Search, XCircle } from 'lucide-react';
+import { FolderOpen, CheckCircle, AlertCircle, RefreshCw, Folder, Loader2, GraduationCap, Mail, Copy, Download, Search, XCircle, Play } from 'lucide-react';
 import { extractFunctionErrorMessage, withTimeout } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -208,15 +208,64 @@ interface SyncDetail {
 }
 
 function SyncCoursesCard() {
-  const [running, setRunning] = useState(false);
-  const [progress, setProgress] = useState<SyncProgress | null>(null);
+  const [activeJob, setActiveJob] = useState<any>(null);
   const [logs, setLogs] = useState<SyncDetail[]>([]);
-  const [barValue, setBarValue] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
-  const cancelRef = useRef(false);
+  const [barValue, setBarValue] = useState(0);
 
+  // We use refs to keep track of the loop state without triggering re-renders in the loop itself
+  const cancelRef = useRef(false);
+  const isRunningLoopRef = useRef(false);
+  const activeJobIdRef = useRef<string | null>(null);
+
+  // 1. Initial fetch & Realtime subscription
   useEffect(() => {
-    if (!running) {
+    const fetchLatestJob = async () => {
+      const { data, error } = await supabase
+        .from('sync_jobs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+      
+      if (error && error.code !== 'PGRST116') {
+        console.error('Error fetching sync_jobs:', error);
+      } else if (data) {
+        setActiveJob(data);
+        if (data.logs) setLogs(data.logs);
+        activeJobIdRef.current = data.id;
+        cancelRef.current = data.cancel_requested;
+      }
+    };
+
+    fetchLatestJob();
+
+    const channel = supabase.channel('sync_jobs_changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'sync_jobs' },
+        (payload) => {
+          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            const updatedJob = payload.new as any;
+            if (!activeJobIdRef.current || updatedJob.id === activeJobIdRef.current || updatedJob.created_at > (activeJob?.created_at || '')) {
+              setActiveJob(updatedJob);
+              if (updatedJob.logs) setLogs(updatedJob.logs);
+              activeJobIdRef.current = updatedJob.id;
+              cancelRef.current = updatedJob.cancel_requested;
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  // 2. Progress bar animation
+  useEffect(() => {
+    if (activeJob?.status !== 'running') {
       if (barValue > 0 && barValue < 100) {
         setBarValue(100);
         setTimeout(() => setBarValue(0), 1000);
@@ -228,48 +277,122 @@ function SyncCoursesCard() {
       setBarValue(v => (v >= 90 ? v : v + (90 - v) * 0.1));
     }, 1000);
     return () => clearInterval(interval);
-  }, [running]);
+  }, [activeJob?.status]);
 
-  const runSync = async () => {
+  // 3. The Sync Loop
+  const startSyncLoop = async (jobId: string, initialCursor?: string, initialProgress?: SyncProgress, initialLogs?: SyncDetail[]) => {
+    if (isRunningLoopRef.current) return;
+    isRunningLoopRef.current = true;
     cancelRef.current = false;
-    setRunning(true);
-    setProgress(null);
-    setLogs([]);
-    let cursor: string | undefined = undefined;
-    const totals: SyncProgress = { coursesCreated: 0, coursesResynced: 0, lessonsImported: 0, batches: 0 };
+    
+    let cursor = initialCursor;
+    let currentProgress: SyncProgress = initialProgress || { coursesCreated: 0, coursesResynced: 0, lessonsImported: 0, batches: 0 };
+    let currentLogs: SyncDetail[] = initialLogs || [];
+
     try {
       // eslint-disable-next-line no-constant-condition
       while (true) {
         if (cancelRef.current) {
+          await supabase.from('sync_jobs').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', jobId);
           toast.info('Sincronização cancelada pelo usuário.');
           break;
         }
+
+        // Invoke edge function
         const { data, error } = await withTimeout(supabase.functions.invoke('member-sync-library', {
           body: { cursor, batchSize: 1, forceResync: true },
         }), 300000, 'Tempo limite de sincronização excedido (5 minutos)');
+        
         if (error || data?.error) {
           const msg = data?.error || await extractFunctionErrorMessage(error, 'Erro ao sincronizar cursos');
+          currentLogs = [...currentLogs, { course: 'Sistema', action: 'error', message: msg }];
+          await supabase.from('sync_jobs').update({ 
+            status: 'failed', 
+            logs: currentLogs,
+            updated_at: new Date().toISOString()
+          }).eq('id', jobId);
           throw new Error(msg);
         }
-        totals.batches += 1;
-        totals.coursesCreated += data.coursesCreated || 0;
-        totals.coursesResynced += data.coursesResynced || 0;
-        totals.lessonsImported += data.lessonsImported || 0;
-        setProgress({ ...totals });
-        if (data.details && Array.isArray(data.details)) {
-          setLogs(prev => [...prev, ...data.details]);
-        }
+
+        // Update progress
+        currentProgress.batches += 1;
+        currentProgress.coursesCreated += data.coursesCreated || 0;
+        currentProgress.coursesResynced += data.coursesResynced || 0;
+        currentProgress.lessonsImported += data.lessonsImported || 0;
         cursor = data.cursor || undefined;
-        if (data.done) break;
+
+        if (data.details && Array.isArray(data.details)) {
+          currentLogs = [...currentLogs, ...data.details];
+        }
+
+        if (data.done) {
+          await supabase.from('sync_jobs').update({ 
+            status: 'completed', 
+            progress: { ...currentProgress, cursor }, 
+            logs: currentLogs,
+            updated_at: new Date().toISOString(),
+            completed_at: new Date().toISOString()
+          }).eq('id', jobId);
+          toast.success(`Sincronização concluída: ${currentProgress.coursesCreated} cursos novos, ${currentProgress.coursesResynced} atualizados.`);
+          break;
+        } else {
+          // Update DB with intermediate progress
+          await supabase.from('sync_jobs').update({ 
+            progress: { ...currentProgress, cursor }, 
+            logs: currentLogs,
+            updated_at: new Date().toISOString()
+          }).eq('id', jobId);
+        }
       }
-      toast.success(`Sincronização concluída: ${totals.coursesCreated} cursos novos, ${totals.coursesResynced} atualizados, ${totals.lessonsImported} aulas importadas.`);
     } catch (e: any) {
       toast.error(e.message || 'Erro ao sincronizar cursos');
-      setLogs(prev => [...prev, { course: 'Sistema', action: 'error', message: e.message || 'Erro inesperado durante a sincronização.' }]);
     } finally {
-      setRunning(false);
+      isRunningLoopRef.current = false;
     }
   };
+
+  const runSyncNew = async () => {
+    // Create new job
+    const { data, error } = await supabase.from('sync_jobs').insert({
+      status: 'running',
+      progress: { coursesCreated: 0, coursesResynced: 0, lessonsImported: 0, batches: 0, cursor: null },
+      logs: [],
+    }).select().single();
+
+    if (error || !data) {
+      toast.error('Erro ao iniciar sincronização');
+      return;
+    }
+
+    setActiveJob(data);
+    activeJobIdRef.current = data.id;
+    setLogs([]);
+    startSyncLoop(data.id);
+  };
+
+  const resumeSync = async () => {
+    if (!activeJob) return;
+    const initialCursor = activeJob.progress?.cursor;
+    const initialProgress = activeJob.progress;
+    const initialLogs = activeJob.logs || [];
+    
+    // Mark as running again
+    await supabase.from('sync_jobs').update({ status: 'running', cancel_requested: false, updated_at: new Date().toISOString() }).eq('id', activeJob.id);
+    startSyncLoop(activeJob.id, initialCursor, initialProgress, initialLogs);
+  };
+
+  const requestCancel = async () => {
+    if (!activeJob) return;
+    cancelRef.current = true; // For local abort if we are the ones running it
+    await supabase.from('sync_jobs').update({ cancel_requested: true }).eq('id', activeJob.id);
+    toast.info('Solicitando cancelamento...');
+  };
+
+  const isRunning = activeJob?.status === 'running';
+  const progress = activeJob?.progress;
+  
+  // Check if job is likely interrupted (no updates for 90 seconds)
+  const isInterrupted = isRunning && activeJob?.updated_at && (new Date().getTime() - new Date(activeJob.updated_at).getTime() > 90000);
 
   return (
     <Card className="bg-background-paper border-border">
@@ -283,19 +406,28 @@ function SyncCoursesCard() {
         <p className="text-sm text-muted-foreground">
           Espelha a pasta "Cursos + Livros" do Drive para a área de membros (/membros). Pode rodar quantas vezes
           quiser — cursos e aulas já importados não são duplicados, e conteúdo novo que você adicionar no Drive
-          é detectado e importado.
+          é detectado e importado. O progresso é salvo para que você possa acompanhar de qualquer dispositivo.
         </p>
-        {progress && (
+        
+        {activeJob && (
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              {running && <Loader2 className="w-4 h-4 animate-spin text-primary shrink-0" />}
+              {isRunning && !isInterrupted && <Loader2 className="w-4 h-4 animate-spin text-primary shrink-0" />}
+              {activeJob.status === 'completed' && <GraduationCap className="w-4 h-4 text-green-500 shrink-0" />}
+              {activeJob.status === 'failed' && <XCircle className="w-4 h-4 text-red-500 shrink-0" />}
+              {activeJob.status === 'cancelled' && <XCircle className="w-4 h-4 text-yellow-500 shrink-0" />}
+              
               <span>
-                {progress.coursesCreated} curso{progress.coursesCreated !== 1 ? 's' : ''} novo{progress.coursesCreated !== 1 ? 's' : ''} ·{' '}
-                {progress.coursesResynced} atualizado{progress.coursesResynced !== 1 ? 's' : ''} ·{' '}
-                {progress.lessonsImported} aulas · lote {progress.batches}
+                {activeJob.status === 'completed' ? 'Sincronização Finalizada' : 
+                 activeJob.status === 'failed' ? 'Falha na Sincronização' :
+                 activeJob.status === 'cancelled' ? 'Sincronização Cancelada' :
+                 isInterrupted ? 'Sincronização Interrompida' :
+                 'Sincronizando...'} 
+                {' '}
+                {progress ? `(${progress.coursesCreated || 0} novos · ${progress.coursesResynced || 0} atualizados · ${progress.lessonsImported || 0} aulas)` : ''}
               </span>
             </div>
-            {(running || barValue > 0) && (
+            {(isRunning || barValue > 0) && !isInterrupted && (
               <Progress value={barValue} className="h-2" />
             )}
           </div>
@@ -352,16 +484,31 @@ function SyncCoursesCard() {
           </div>
         )}
 
-        <div className="flex gap-3">
-          <Button onClick={runSync} disabled={running} className="bg-primary hover:bg-primary-hover text-primary-foreground gap-2">
-            {running ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-            {running ? 'Sincronizando…' : 'Sincronizar Cursos'}
+        <div className="flex flex-wrap gap-3 mt-4">
+          <Button onClick={runSyncNew} disabled={isRunning && !isInterrupted} className="bg-primary hover:bg-primary-hover text-primary-foreground gap-2">
+            {isRunning && !isInterrupted ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            {activeJob ? 'Iniciar Nova Sincronização' : 'Sincronizar Cursos'}
           </Button>
-          {running && (
-            <Button onClick={() => cancelRef.current = true} variant="destructive" className="gap-2">
+          
+          {isInterrupted && (
+            <Button onClick={resumeSync} variant="outline" className="gap-2">
+              <Play className="w-4 h-4" />
+              Retomar Sincronização
+            </Button>
+          )}
+
+          {isRunning && !activeJob?.cancel_requested && (
+            <Button onClick={requestCancel} variant="destructive" className="gap-2">
               <XCircle className="w-4 h-4" />
               Cancelar
             </Button>
+          )}
+          
+          {isRunning && activeJob?.cancel_requested && (
+             <Button disabled variant="secondary" className="gap-2 opacity-70">
+               <Loader2 className="w-4 h-4 animate-spin" />
+               Cancelando...
+             </Button>
           )}
         </div>
       </CardContent>
