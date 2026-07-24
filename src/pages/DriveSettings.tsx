@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import AdminLayout from '@/components/AdminLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { FolderOpen, CheckCircle, AlertCircle, RefreshCw, Folder, Loader2, GraduationCap, Mail, Copy, Download } from 'lucide-react';
+import { FolderOpen, CheckCircle, AlertCircle, RefreshCw, Folder, Loader2, GraduationCap, Mail, Copy, Download, Search, XCircle } from 'lucide-react';
 import { extractFunctionErrorMessage, withTimeout } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -212,6 +212,8 @@ function SyncCoursesCard() {
   const [progress, setProgress] = useState<SyncProgress | null>(null);
   const [logs, setLogs] = useState<SyncDetail[]>([]);
   const [barValue, setBarValue] = useState(0);
+  const [searchTerm, setSearchTerm] = useState('');
+  const cancelRef = useRef(false);
 
   useEffect(() => {
     if (!running) {
@@ -229,6 +231,7 @@ function SyncCoursesCard() {
   }, [running]);
 
   const runSync = async () => {
+    cancelRef.current = false;
     setRunning(true);
     setProgress(null);
     setLogs([]);
@@ -237,6 +240,10 @@ function SyncCoursesCard() {
     try {
       // eslint-disable-next-line no-constant-condition
       while (true) {
+        if (cancelRef.current) {
+          toast.info('Sincronização cancelada pelo usuário.');
+          break;
+        }
         const { data, error } = await withTimeout(supabase.functions.invoke('member-sync-library', {
           body: { cursor, batchSize: 1, forceResync: true },
         }), 300000, 'Tempo limite de sincronização excedido (5 minutos)');
@@ -295,48 +302,68 @@ function SyncCoursesCard() {
         )}
 
         {logs.length > 0 && (
-          <div className="mt-4 bg-[#0a0a0a] border border-border rounded-md p-4 max-h-96 overflow-y-auto space-y-3 font-mono text-xs shadow-inner">
-            {logs.map((log, idx) => (
-              <div key={idx} className="border-b border-border/20 pb-3 last:border-0 last:pb-0">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <span className={
-                      log.action === 'created' ? 'text-green-500 font-bold' :
-                      log.action === 'updated' ? 'text-blue-500 font-bold' :
-                      log.action === 'error' ? 'text-red-500 font-bold' :
-                      'text-yellow-500 font-bold'
-                    }>
-                      [{log.action.toUpperCase()}]
-                    </span>
-                    <span className="text-foreground ml-2 font-medium">{log.course}</span>
-                  </div>
-                </div>
-                {log.message && <div className="text-muted-foreground mt-1 ml-1">{log.message}</div>}
-                {log.files && log.files.length > 0 && (
-                  <details className="mt-2 ml-1">
-                    <summary className="text-muted-foreground cursor-pointer hover:text-foreground inline-flex items-center select-none">
-                      <Folder className="w-3.5 h-3.5 mr-1.5 inline" />
-                      Ver {log.files.length} arquivos
-                    </summary>
-                    <div className="mt-2 pl-4 border-l border-border/50 max-h-32 overflow-y-auto space-y-1">
-                      {log.files.slice(0, 100).map((f, i) => (
-                        <div key={i} className="text-muted-foreground truncate" title={f}>- {f}</div>
-                      ))}
-                      {log.files.length > 100 && (
-                        <div className="text-muted-foreground italic mt-1">+ {log.files.length - 100} outros arquivos ocultados...</div>
-                      )}
+          <div className="mt-4 space-y-3">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                type="text"
+                placeholder="Buscar em cursos sincronizados..."
+                className="pl-9 bg-[#0a0a0a] border-border"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+            <div className="bg-[#0a0a0a] border border-border rounded-md p-4 max-h-96 overflow-y-auto space-y-3 font-mono text-xs shadow-inner">
+              {logs.filter(log => log.course.toLowerCase().includes(searchTerm.toLowerCase())).map((log, idx) => (
+                <div key={idx} className="border-b border-border/20 pb-3 last:border-0 last:pb-0">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <span className={
+                        log.action === 'created' ? 'text-green-500 font-bold' :
+                        log.action === 'updated' ? 'text-blue-500 font-bold' :
+                        log.action === 'error' ? 'text-red-500 font-bold' :
+                        'text-yellow-500 font-bold'
+                      }>
+                        [{log.action.toUpperCase()}]
+                      </span>
+                      <span className="text-foreground ml-2 font-medium">{log.course}</span>
                     </div>
-                  </details>
-                )}
-              </div>
-            ))}
+                  </div>
+                  {log.message && <div className="text-muted-foreground mt-1 ml-1">{log.message}</div>}
+                  {log.files && log.files.length > 0 && (
+                    <details className="mt-2 ml-1">
+                      <summary className="text-muted-foreground cursor-pointer hover:text-foreground inline-flex items-center select-none">
+                        <Folder className="w-3.5 h-3.5 mr-1.5 inline" />
+                        Ver {log.files.length} arquivos
+                      </summary>
+                      <div className="mt-2 pl-4 border-l border-border/50 max-h-32 overflow-y-auto space-y-1">
+                        {log.files.slice(0, 100).map((f, i) => (
+                          <div key={i} className="text-muted-foreground truncate" title={f}>- {f}</div>
+                        ))}
+                        {log.files.length > 100 && (
+                          <div className="text-muted-foreground italic mt-1">+ {log.files.length - 100} outros arquivos ocultados...</div>
+                        )}
+                      </div>
+                    </details>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
-        <Button onClick={runSync} disabled={running} className="bg-primary hover:bg-primary-hover text-primary-foreground gap-2">
-          {running ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-          {running ? 'Sincronizando…' : 'Sincronizar Cursos'}
-        </Button>
+        <div className="flex gap-3">
+          <Button onClick={runSync} disabled={running} className="bg-primary hover:bg-primary-hover text-primary-foreground gap-2">
+            {running ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            {running ? 'Sincronizando…' : 'Sincronizar Cursos'}
+          </Button>
+          {running && (
+            <Button onClick={() => cancelRef.current = true} variant="destructive" className="gap-2">
+              <XCircle className="w-4 h-4" />
+              Cancelar
+            </Button>
+          )}
+        </div>
       </CardContent>
     </Card>
   );

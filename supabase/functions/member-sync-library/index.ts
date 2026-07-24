@@ -317,6 +317,7 @@ serve(async (req) => {
 
       const LESSON_FLUSH_SIZE = 2000
       let pendingLessons: any[] = []
+      let batchFileNames: string[] = []
 
       async function flushLessons(force = false) {
         if (pendingLessons.length === 0) return
@@ -396,6 +397,7 @@ serve(async (req) => {
           for (const l of localLessons) {
              l.sort_order = lessonSortCounter++
              pendingLessons.push(l)
+             batchFileNames.push(l.title)
              collectedCount++
              if (l.type !== 'video') materialCount++
              if (l.duration_seconds) totalDuration += l.duration_seconds
@@ -420,6 +422,7 @@ serve(async (req) => {
            course: folder.name,
            action: isUpdate ? 'updated' : 'created',
            message: `Sincronização em andamento (já importados: ${collectedCount})...`,
+           files: batchFileNames,
          })
          
          newNextCursor = {
@@ -454,6 +457,7 @@ serve(async (req) => {
           course: folder.name,
           action: isUpdate ? 'updated' : 'created',
           message: `Concluído: ${finalLessonCount || collectedCount} aulas/arquivos.`,
+          files: batchFileNames,
         })
       }
     }
