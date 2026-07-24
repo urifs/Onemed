@@ -123,33 +123,29 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
+    const SYNC_SECRET = Deno.env.get('MEMBER_SYNC_SECRET')
     const providedSecret = req.headers.get('x-cron-secret') || ''
-    const expectedSecret = Deno.env.get('MEMBER_SYNC_SECRET') || 'NOT_SET'
-    const adminOk = expectedSecret !== 'NOT_SET' && (await secureCompare(providedSecret, expectedSecret))
-    
-    const tokenHeader = req.headers.get('Authorization')
-    const hasValidToken = tokenHeader && tokenHeader.startsWith('Bearer ')
+    const cronOk = !!SYNC_SECRET && SYNC_SECRET !== 'NOT_SET' && (await secureCompare(providedSecret, SYNC_SECRET))
 
-    if (!adminOk && !hasValidToken) {
+    let adminOk = false
+    if (!cronOk) {
+      const jwt = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
+      if (jwt) {
+        const { data: userData } = await supabaseClient.auth.getUser(jwt)
+        if (userData?.user) {
+          const { data: isAdmin } = await supabaseClient.rpc('has_role', { _user_id: userData.user.id, _role: 'admin' })
+          adminOk = !!isAdmin
+        }
+      }
+    }
+
+    if (!cronOk && !adminOk) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
       })
     }
     
     let supabase = supabaseClient
-    if (!adminOk && hasValidToken) {
-      supabase = createClient(
-        Deno.env.get('SUPABASE_URL') ?? '',
-        Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-        { global: { headers: { Authorization: tokenHeader } } }
-      )
-      const { data: { user }, error: authErr } = await supabase.auth.getUser()
-      if (authErr || !user) throw new Error('Unauthorized')
-      const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
-      if (profile?.role !== 'admin' && profile?.role !== 'owner') {
-        throw new Error('Forbidden: Admins only')
-      }
-    }
 
     const GOOGLE_CLIENT_SECRET = Deno.env.get('GOOGLE_CLIENT_SECRET')!
 
