@@ -29,14 +29,14 @@ import {
 import { formatWhatsApp, extractFunctionErrorMessage } from '@/lib/utils';
 
 const COUNTRIES = [
-  { code: '+55', country: 'Brasil', flag: '🇧🇷' },
-  { code: '+54', country: 'Argentina', flag: '🇦🇷' },
-  { code: '+595', country: 'Paraguai', flag: '🇵🇾' },
-  { code: '+598', country: 'Uruguai', flag: '🇺🇾' },
-  { code: '+591', country: 'Bolívia', flag: '🇧🇴' },
-  { code: '+56', country: 'Chile', flag: '🇨🇱' },
-  { code: '+51', country: 'Peru', flag: '🇵🇪' },
-  { code: '+57', country: 'Colômbia', flag: '🇨🇴' },
+  { code: '+55', country: 'Brasil', flag: 'BR' },
+  { code: '+54', country: 'Argentina', flag: 'AR' },
+  { code: '+595', country: 'Paraguai', flag: 'PY' },
+  { code: '+598', country: 'Uruguai', flag: 'UY' },
+  { code: '+591', country: 'Bolívia', flag: 'BO' },
+  { code: '+56', country: 'Chile', flag: 'CL' },
+  { code: '+51', country: 'Peru', flag: 'PE' },
+  { code: '+57', country: 'Colômbia', flag: 'CO' },
 ];
 
 const UPSELL_PRICE = 19.90;
@@ -533,7 +533,7 @@ export default function CheckoutPage() {
                 onClick={() => setShowCountryDropdown(!showCountryDropdown)}
                 className="flex items-center gap-1.5 h-12 px-3 bg-secondary border border-border rounded-lg text-sm text-foreground hover:border-border"
               >
-                <span>{selectedCountry.flag}</span>
+                <span className="text-xs font-mono text-muted-foreground">{selectedCountry.flag}</span>
                 <span>{selectedCountry.code}</span>
                 <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
               </button>
@@ -546,7 +546,7 @@ export default function CheckoutPage() {
                       onClick={() => { setSelectedCountry(c); setShowCountryDropdown(false); setCustomerWhatsapp(''); }}
                       className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-secondary text-left"
                     >
-                      <span>{c.flag}</span>
+                      <span className="text-xs font-mono text-muted-foreground w-6">{c.flag}</span>
                       <span>{c.country}</span>
                       <span className="ml-auto text-muted-foreground">{c.code}</span>
                     </button>

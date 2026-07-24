@@ -658,7 +658,7 @@ export default function WhatsAppPage() {
                 <textarea
                   value={autoReplyMessage}
                   onChange={e => setAutoReplyMessage(e.target.value)}
-                  placeholder={`Olá! Obrigado pelo interesse no OneMed! 😊\n\nAcesse agora seu trial gratuito de 10 minutos:\nhttps://onemedcursos.com.br\n\nQualquer dúvida é só falar! 🩺`}
+                  placeholder={`Olá! Obrigado pelo interesse no OneMed.\n\nAcesse agora seu trial gratuito de 10 minutos:\nhttps://onemedcursos.com.br\n\nQualquer dúvida é só falar.`}
                   rows={7}
                   className="w-full rounded-md border border-border bg-secondary text-foreground px-3 py-2.5 text-sm placeholder:text-muted-foreground resize-none leading-relaxed"
                 />

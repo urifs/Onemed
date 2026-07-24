@@ -202,7 +202,7 @@ export default function MemberDashboardPage() {
     
     // Add favorites to the top if any
     if (favorites.size > 0) {
-      cats.unshift({ name: '⭐ Favoritos', count: favorites.size });
+      cats.unshift({ name: 'Favoritos', count: favorites.size });
     }
     
     return cats;
@@ -210,7 +210,7 @@ export default function MemberDashboardPage() {
 
   const categoryCourses = useMemo(() => {
     if (!activeCategory) return [];
-    if (activeCategory === '⭐ Favoritos') {
+    if (activeCategory === 'Favoritos') {
       return courses.filter(c => favorites.has(c.id));
     }
     return courses.filter(c => c.category === activeCategory);
