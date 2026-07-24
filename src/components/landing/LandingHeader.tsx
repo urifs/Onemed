@@ -21,7 +21,7 @@ export const LandingHeader = () => {
             </Link>
             <Link
               to="/checkout"
-              className="hidden sm:flex items-center gap-2 bg-primary text-primary-foreground text-sm font-bold px-6 py-3 rounded-lg transition-all duration-200 shadow-[0_0_20px_rgba(239,68,68,0.5)] hover:shadow-[0_0_30px_rgba(239,68,68,0.7)] hover:bg-primary-hover hover:scale-105 border border-primary/60"
+              className="hidden sm:flex items-center gap-2 bg-primary text-primary-foreground text-sm font-bold px-6 py-3 rounded-lg transition-colors duration-150 hover:bg-primary-hover"
             >
               Adquirir Acesso Completo
             </Link>

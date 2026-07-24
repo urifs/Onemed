@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { HelpCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus } from 'lucide-react';
 
 const faqs = [
   {
@@ -30,45 +30,40 @@ const faqs = [
 ];
 
 export const FaqSection = () => {
-  const [openFaq, setOpenFaq] = useState<number | null>(null);
+  const [openFaq, setOpenFaq] = useState<number | null>(0);
 
   return (
     <section className="py-24 bg-background">
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-16">
-          <p className="font-mono text-xs uppercase tracking-widest text-primary mb-4">FAQ</p>
-          <h2 className="font-secondary text-4xl md:text-5xl font-bold text-foreground">
-            Dúvidas Frequentes
-          </h2>
-        </div>
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="grid lg:grid-cols-[0.8fr_1.2fr] gap-12">
+          <div>
+            <h2 className="font-secondary text-3xl md:text-4xl font-bold text-foreground mb-4">
+              Dúvidas frequentes
+            </h2>
+            <p className="text-muted-foreground text-sm max-w-xs">
+              Não encontrou o que procurava? Fale com a gente pelo WhatsApp e respondemos na hora.
+            </p>
+          </div>
 
-        <div className="space-y-3">
-          {faqs.map((faq, index) => (
-            <Collapsible
-              key={index}
-              open={openFaq === index}
-              onOpenChange={(open) => setOpenFaq(open ? index : null)}
-            >
-              <CollapsibleTrigger className="w-full glass rounded-xl px-5 py-4 flex items-center justify-between hover:border-primary/20 transition-colors duration-200 text-left group">
-                <div className="flex items-center gap-3">
-                  <HelpCircle className="w-4 h-4 text-primary flex-shrink-0" />
+          <div className="divide-y divide-border border-t border-b border-border">
+            {faqs.map((faq, index) => (
+              <Collapsible
+                key={index}
+                open={openFaq === index}
+                onOpenChange={(open) => setOpenFaq(open ? index : null)}
+              >
+                <CollapsibleTrigger className="w-full py-5 flex items-center justify-between gap-4 text-left group">
                   <span className="font-medium text-foreground">{faq.question}</span>
-                </div>
-                {openFaq === index ? (
-                  <ChevronUp className="w-4 h-4 text-primary flex-shrink-0" />
-                ) : (
-                  <ChevronDown className="w-4 h-4 text-muted-foreground group-hover:text-primary flex-shrink-0" />
-                )}
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <div className="glass rounded-b-xl border-t-0 px-5 pb-4">
-                  <p className="text-muted-foreground text-sm leading-relaxed pt-2 pl-7">
+                  <Plus className={`w-4 h-4 text-primary shrink-0 transition-transform duration-200 ${openFaq === index ? 'rotate-45' : ''}`} />
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <p className="text-muted-foreground text-sm leading-relaxed pb-5 pr-8">
                     {faq.answer}
                   </p>
-                </div>
-              </CollapsibleContent>
-            </Collapsible>
-          ))}
+                </CollapsibleContent>
+              </Collapsible>
+            ))}
+          </div>
         </div>
       </div>
     </section>
