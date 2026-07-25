@@ -116,7 +116,7 @@ serve(async (req) => {
       }
 
       const nextCursor: Cursor = { orderedTables, tableIndex: 0, offset: 0 }
-      await supabase.rpc('record_egress', { _source: 'admin-database-backup', _bytes: byteLengthOf(lines) }).catch(() => {})
+      try { await supabase.rpc('record_egress', { _source: 'admin-database-backup', _bytes: byteLengthOf(lines) }) } catch { /* egress tracking é best-effort */ }
       return new Response(JSON.stringify({ lines, cursor: nextCursor, done: false, totalTables: orderedTables.length }), {
         headers: { ...cors, 'Content-Type': 'application/json' },
       })
@@ -162,7 +162,7 @@ serve(async (req) => {
     const responseBody = JSON.stringify({
       lines, cursor: nextCursor, done, table: tableName, totalTables: orderedTables.length, tableIndex,
     })
-    await supabase.rpc('record_egress', { _source: 'admin-database-backup', _bytes: byteLengthOf(lines) }).catch(() => {})
+    try { await supabase.rpc('record_egress', { _source: 'admin-database-backup', _bytes: byteLengthOf(lines) }) } catch { /* egress tracking é best-effort */ }
     return new Response(responseBody, { headers: { ...cors, 'Content-Type': 'application/json' } })
   } catch (err: any) {
     console.error('admin-database-backup error:', err)
