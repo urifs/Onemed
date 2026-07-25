@@ -3,8 +3,8 @@ import { XCircle } from 'lucide-react';
 
 export default function PaymentErrorPage() {
   return (
-    <div className="min-h-screen bg-hero-gradient flex items-center justify-center p-4">
-      <div className="max-w-md w-full text-center glass-strong rounded-2xl p-10 border border-border animate-fade-in">
+    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <div className="max-w-md w-full text-center bg-card rounded-2xl p-10 border border-border">
         <div className="w-20 h-20 bg-primary/15 rounded-full flex items-center justify-center mx-auto mb-6">
           <XCircle className="w-10 h-10 text-primary" />
         </div>

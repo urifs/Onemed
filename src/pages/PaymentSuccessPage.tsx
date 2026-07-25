@@ -7,6 +7,7 @@ import {
   LogIn,
   Mail,
   ArrowRight,
+  ArrowLeft,
 } from 'lucide-react';
 
 export default function PaymentSuccessPage() {
@@ -39,7 +40,7 @@ export default function PaymentSuccessPage() {
   const loginHref = email ? `/login?email=${encodeURIComponent(email)}` : '/login';
 
   return (
-    <div className="min-h-screen bg-hero-gradient">
+    <div className="min-h-screen bg-background">
       <header className="px-6 py-6 border-b border-border/50">
         <nav className="max-w-6xl mx-auto flex items-center">
           <Link to="/" className="flex items-center gap-3">
@@ -56,7 +57,7 @@ export default function PaymentSuccessPage() {
 
       <main className="px-6 py-16">
         <div className="max-w-xl mx-auto">
-          <div className="glass rounded-2xl p-10 text-center animate-fade-in">
+          <div className="bg-card border border-border rounded-2xl p-10 text-center">
             <div className="w-20 h-20 rounded-full bg-accent-success/20 flex items-center justify-center mx-auto mb-6">
               <CheckCircle className="w-10 h-10 text-accent-success" />
             </div>
@@ -97,8 +98,8 @@ export default function PaymentSuccessPage() {
             </Link>
 
             <div className="mt-6">
-              <Link to="/" className="text-muted-foreground hover:text-foreground text-sm transition-colors">
-                ← Voltar para a página inicial
+              <Link to="/" className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground text-sm transition-colors">
+                <ArrowLeft className="w-3.5 h-3.5" /> Voltar para a página inicial
               </Link>
             </div>
           </div>

@@ -266,10 +266,9 @@ export default function CheckoutPage() {
   const renderPlanSelection = () => (
     <div className="space-y-6">
       <div className="flex justify-center">
-        <div className="bg-accent-warning/20 border border-accent-warning/40 rounded-full px-6 py-2 flex items-center gap-2 animate-pulse">
-          <Clock className="w-4 h-4 text-accent-warning" />
-          <span className="text-accent-warning font-semibold text-sm">OFERTA POR TEMPO LIMITADO</span>
-          <Clock className="w-4 h-4 text-accent-warning" />
+        <div className="inline-flex items-center gap-2 border border-accent-warning/30 text-accent-warning text-xs font-semibold uppercase tracking-wide rounded-full px-4 py-1.5">
+          <Clock className="w-3.5 h-3.5" />
+          Oferta por tempo limitado
         </div>
       </div>
 
@@ -335,7 +334,7 @@ export default function CheckoutPage() {
       </div>
 
       {/* Coupon */}
-      <div className="glass rounded-xl p-6">
+      <div className="bg-card border border-border rounded-xl p-6">
         <div className="flex items-center gap-2 mb-4">
           <Ticket className="w-5 h-5 text-accent-success" />
           <h3 className="text-foreground font-semibold">Tem um cupom de desconto?</h3>
@@ -502,7 +501,7 @@ export default function CheckoutPage() {
       </div>
 
       {/* Plan summary */}
-      <div className="glass rounded-xl p-4">
+      <div className="bg-card border border-border rounded-xl p-4">
         <div className="flex justify-between items-center">
           <div>
             <p className="text-muted-foreground text-sm">Plano selecionado</p>
@@ -601,7 +600,7 @@ export default function CheckoutPage() {
       </div>
 
       {/* Order summary */}
-      <div className="glass rounded-xl p-4">
+      <div className="bg-card border border-border rounded-xl p-4">
         <h4 className="text-foreground font-semibold mb-3">Resumo do Pedido</h4>
         <div className="space-y-2 text-sm">
           <div className="flex justify-between">
@@ -634,7 +633,7 @@ export default function CheckoutPage() {
       </div>
 
       {/* Available payment methods info */}
-      <div className="glass rounded-xl p-4">
+      <div className="bg-card border border-border rounded-xl p-4">
         <p className="text-muted-foreground text-sm text-center mb-3 font-medium">Métodos de pagamento disponíveis</p>
         <div className="flex items-center justify-center gap-6">
           <div className="flex flex-col items-center gap-1">
@@ -683,7 +682,7 @@ export default function CheckoutPage() {
 
   // ─── Layout ───────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-hero-gradient">
+    <div className="min-h-screen bg-background">
       {/* Header */}
       <header className="px-6 py-6 border-b border-border/50">
         <nav className="max-w-4xl mx-auto flex items-center justify-between">

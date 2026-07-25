@@ -70,7 +70,7 @@ export default function ClaimAccessPage() {
   };
 
   return (
-    <div className="min-h-screen bg-hero-gradient flex items-center justify-center p-4">
+    <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="max-w-md w-full">
         <div className="flex justify-center mb-8">
           <Link to="/" className="flex items-center gap-3">
@@ -81,7 +81,7 @@ export default function ClaimAccessPage() {
           </Link>
         </div>
 
-        <div className="glass-strong rounded-2xl p-8 border border-border">
+        <div className="bg-card rounded-2xl p-8 border border-border">
           {checking ? (
             <div className="text-center py-8">
               <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto mb-4" />
