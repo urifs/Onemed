@@ -39,12 +39,8 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="min-h-screen bg-hero-gradient flex items-center justify-center p-4">
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/3 left-1/3 w-96 h-96 bg-primary/8 rounded-full blur-[120px]" />
-      </div>
-
-      <div className="relative z-10 w-full max-w-md">
+    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <div className="w-full max-w-md">
         <Link to="/" className="flex items-center justify-center gap-3 mb-8">
           <div className="w-10 h-10 bg-primary/15 rounded-xl flex items-center justify-center">
             <Stethoscope className="w-6 h-6 text-primary" />
@@ -52,7 +48,7 @@ export default function RegisterPage() {
           <span className="font-secondary font-bold text-2xl text-foreground">OneMed</span>
         </Link>
 
-        <div className="glass-strong rounded-2xl p-8 border border-border">
+        <div className="bg-card rounded-2xl p-8 border border-border">
           <div className="text-center mb-8">
             <h1 className="font-secondary text-2xl font-bold text-foreground mb-2">Criar Conta Admin</h1>
             <p className="text-muted-foreground text-sm">Configure sua conta para gerenciar acessos</p>

@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Stethoscope, Mail, ArrowRight, Sparkles, Loader2, ShieldCheck } from 'lucide-react';
+import { Stethoscope, Mail, ArrowRight, ArrowLeft, KeyRound, Loader2, ShieldCheck } from 'lucide-react';
 
 const CAPTCHA_DELAY_MS = 3000;
 
@@ -81,13 +81,8 @@ export default function MemberLoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-hero-gradient flex items-center justify-center p-4 relative overflow-hidden">
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[520px] h-[520px] bg-primary/10 rounded-full blur-[140px]" />
-        <div className="absolute bottom-0 right-0 w-72 h-72 bg-primary/8 rounded-full blur-[110px]" />
-      </div>
-
-      <div className="relative z-10 w-full max-w-md">
+    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <div className="w-full max-w-md">
         <Link to="/" className="flex items-center justify-center gap-3 mb-8">
           <div className="w-10 h-10 bg-primary/15 rounded-xl flex items-center justify-center">
             <Stethoscope className="w-6 h-6 text-primary" />
@@ -95,7 +90,7 @@ export default function MemberLoginPage() {
           <span className="font-secondary font-bold text-2xl text-foreground">OneMed</span>
         </Link>
 
-        <div className="glass-strong rounded-2xl p-8 border border-border glow-red">
+        <div className="bg-card rounded-2xl p-8 border border-border">
           <div className="text-center mb-8">
             <h1 className="font-secondary text-2xl font-bold text-foreground mb-2">Área de Membros</h1>
             <p className="text-muted-foreground text-sm">Acesse seus cursos, aulas e materiais</p>
@@ -144,15 +139,15 @@ export default function MemberLoginPage() {
             </Button>
 
             <p className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground pt-1">
-              <Sparkles className="w-3.5 h-3.5 text-primary" />
+              <KeyRound className="w-3.5 h-3.5" />
               Sem senha — só o email cadastrado na compra
             </p>
           </form>
         </div>
 
         <p className="text-center mt-6">
-          <Link to="/" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-            ← Ainda não é aluno? Conheça o OneMed
+          <Link to="/" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+            <ArrowLeft className="w-3.5 h-3.5" /> Ainda não é aluno? Conheça o OneMed
           </Link>
         </p>
       </div>
