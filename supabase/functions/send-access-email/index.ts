@@ -24,25 +24,16 @@ function getBaseTemplate(content: string, title: string): string {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${title}</title>
 </head>
-<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0A0A0A;">
+<body style="margin: 0; padding: 0; font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; background-color: #0A0A0A;">
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #0A0A0A;">
     <tr>
       <td align="center" style="padding: 40px 20px;">
-        <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="max-width: 600px; background-color: #111111; border-radius: 16px; border: 1px solid rgba(239, 68, 68, 0.2);">
+        <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="max-width: 600px; background-color: #111111; border-radius: 12px; border: 1px solid #262626;">
 
           <!-- Header -->
           <tr>
-            <td style="padding: 40px 40px 20px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.1);">
-              <table role="presentation" cellspacing="0" cellpadding="0" style="margin: 0 auto;">
-                <tr>
-                  <td style="background: linear-gradient(135deg, #DC2626 0%, #991B1B 100%); width: 50px; height: 50px; border-radius: 12px; text-align: center; vertical-align: middle;">
-                    <span style="color: white; font-size: 24px; font-weight: bold;">+</span>
-                  </td>
-                  <td style="padding-left: 12px;">
-                    <span style="color: white; font-size: 28px; font-weight: bold;">One</span><span style="color: #EF4444; font-size: 28px; font-weight: bold;">Med</span>
-                  </td>
-                </tr>
-              </table>
+            <td style="padding: 32px 40px; text-align: center; border-bottom: 1px solid #262626;">
+              <span style="color: white; font-size: 22px; font-weight: 700; letter-spacing: -0.3px;">One</span><span style="color: #EF4444; font-size: 22px; font-weight: 700; letter-spacing: -0.3px;">Med</span>
             </td>
           </tr>
 
@@ -53,17 +44,17 @@ function getBaseTemplate(content: string, title: string): string {
             </td>
           </tr>
 
-          <!-- WhatsApp Support -->
+          <!-- Support -->
           <tr>
-            <td style="padding: 0 40px 30px; text-align: center;">
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: rgba(34, 197, 94, 0.1); border-radius: 12px; border: 1px solid rgba(34, 197, 94, 0.3);">
+            <td style="padding: 0 40px 32px; text-align: center;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #161616; border-radius: 10px; border: 1px solid #262626;">
                 <tr>
                   <td style="padding: 20px; text-align: center;">
                     <p style="color: #94A3B8; font-size: 14px; margin: 0 0 12px;">
-                      Precisa de ajuda? Fale com nosso suporte!
+                      Precisa de ajuda? Fale com nosso suporte
                     </p>
-                    <a href="${WHATSAPP_URL}" style="display: inline-block; background-color: #22C55E; color: white; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-size: 14px; font-weight: bold;">
-                      Suporte via WhatsApp
+                    <a href="${WHATSAPP_URL}" style="display: inline-block; background-color: #16A34A; color: white; text-decoration: none; padding: 11px 22px; border-radius: 6px; font-size: 14px; font-weight: 600;">
+                      Falar no WhatsApp
                     </a>
                   </td>
                 </tr>
@@ -73,19 +64,13 @@ function getBaseTemplate(content: string, title: string): string {
 
           <!-- Footer -->
           <tr>
-            <td style="padding: 30px 40px; background-color: #0A0A0A; border-radius: 0 0 16px 16px; border-top: 1px solid rgba(255,255,255,0.1);">
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
-                <tr>
-                  <td style="text-align: center;">
-                    <p style="color: #64748B; font-size: 14px; margin: 0 0 10px;">
-                      O maior acervo de conteúdos médicos da América Latina
-                    </p>
-                    <p style="color: #475569; font-size: 12px; margin: 0;">
-                      &copy; 2026 OneMed. Todos os direitos reservados.
-                    </p>
-                  </td>
-                </tr>
-              </table>
+            <td style="padding: 24px 40px 32px; border-top: 1px solid #262626;">
+              <p style="color: #64748B; font-size: 13px; margin: 0 0 6px; text-align: center;">
+                O maior acervo de conteúdos médicos da América Latina
+              </p>
+              <p style="color: #475569; font-size: 12px; margin: 0; text-align: center;">
+                &copy; ${new Date().getFullYear()} OneMed. Todos os direitos reservados.
+              </p>
             </td>
           </tr>
 
@@ -99,64 +84,48 @@ function getBaseTemplate(content: string, title: string): string {
 
 function getTrialAccessEmail(email: string): string {
   const content = `
-    <h1 style="color: white; font-size: 28px; margin: 0 0 20px; text-align: center;">
-      Bem-vindo ao <span style="color: #EF4444;">OneMed</span>!
+    <h1 style="color: white; font-size: 24px; font-weight: 700; margin: 0 0 16px;">
+      Seu acesso está liberado
     </h1>
 
-    <p style="color: #94A3B8; font-size: 16px; line-height: 1.6; margin: 0 0 20px;">
-      Olá! Seu acesso de teste gratuito foi ativado com sucesso.
+    <p style="color: #94A3B8; font-size: 15px; line-height: 1.6; margin: 0 0 24px;">
+      Olá! Seu teste gratuito de 10 minutos foi ativado — dá tempo de conhecer o acervo
+      com mais de <strong style="color: white;">530 cursos</strong> e <strong style="color: white;">9.000 livros médicos</strong>.
     </p>
 
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background: linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(153, 27, 27, 0.1) 100%); border-radius: 12px; border: 1px solid rgba(239, 68, 68, 0.3); margin: 20px 0;">
-      <tr>
-        <td style="padding: 24px;">
-          <p style="color: #EF4444; font-size: 18px; font-weight: bold; margin: 0 0 12px;">
-            Você tem 10 minutos de acesso gratuito!
-          </p>
-          <p style="color: #94A3B8; font-size: 14px; margin: 0;">
-            Aproveite para explorar nosso acervo com mais de <strong style="color: white;">530 cursos</strong> e <strong style="color: white;">9.000 livros médicos</strong>.
-          </p>
-        </td>
-      </tr>
-    </table>
-
-    <h2 style="color: white; font-size: 20px; margin: 30px 0 15px;">
-      O que você pode acessar:
-    </h2>
-
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
-      <tr><td style="padding: 10px 0;"><span style="color: #22C55E; font-size: 16px;">•</span><span style="color: #CBD5E1; font-size: 15px; margin-left: 10px;">Cursos completos de residência médica</span></td></tr>
-      <tr><td style="padding: 10px 0;"><span style="color: #22C55E; font-size: 16px;">•</span><span style="color: #CBD5E1; font-size: 15px; margin-left: 10px;">Livros de todas as especialidades</span></td></tr>
-      <tr><td style="padding: 10px 0;"><span style="color: #22C55E; font-size: 16px;">•</span><span style="color: #CBD5E1; font-size: 15px; margin-left: 10px;">Material preparatório para Revalida</span></td></tr>
-      <tr><td style="padding: 10px 0;"><span style="color: #22C55E; font-size: 16px;">•</span><span style="color: #CBD5E1; font-size: 15px; margin-left: 10px;">Atualizações constantes de conteúdo</span></td></tr>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin: 0 0 28px;">
+      <tr><td style="padding: 8px 0; color: #CBD5E1; font-size: 14px; border-bottom: 1px solid #262626;">Cursos completos de residência médica</td></tr>
+      <tr><td style="padding: 8px 0; color: #CBD5E1; font-size: 14px; border-bottom: 1px solid #262626;">Livros de todas as especialidades</td></tr>
+      <tr><td style="padding: 8px 0; color: #CBD5E1; font-size: 14px; border-bottom: 1px solid #262626;">Material preparatório para Revalida</td></tr>
+      <tr><td style="padding: 8px 0; color: #CBD5E1; font-size: 14px;">Conteúdo atualizado mensalmente</td></tr>
     </table>
 
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
       <tr>
-        <td align="center" style="padding: 30px 0 10px;">
-          <a href="${SITE_URL}/login" style="display: inline-block; background: linear-gradient(135deg, #DC2626 0%, #991B1B 100%); color: white; text-decoration: none; padding: 16px 40px; border-radius: 8px; font-size: 16px; font-weight: bold;">
-            Acessar a Plataforma
+        <td align="center" style="padding-bottom: 24px;">
+          <a href="${SITE_URL}/login" style="display: inline-block; background-color: #DC2626; color: white; text-decoration: none; padding: 14px 36px; border-radius: 8px; font-size: 15px; font-weight: 600;">
+            Acessar a plataforma
           </a>
         </td>
       </tr>
     </table>
 
-    <p style="color: #94A3B8; font-size: 16px; line-height: 1.6; margin: 30px 0 20px;">
-      Gostou do conteúdo? Garanta seu acesso completo com nossos planos:
+    <p style="color: #94A3B8; font-size: 14px; line-height: 1.6; margin: 0 0 12px;">
+      Gostou? Garanta acesso completo com nossos planos anual ou vitalício.
     </p>
 
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
       <tr>
-        <td align="center" style="padding: 10px 0 20px;">
-          <a href="${SITE_URL}/checkout?plan=annual" style="display: inline-block; background: linear-gradient(135deg, #DC2626 0%, #991B1B 100%); color: white; text-decoration: none; padding: 16px 40px; border-radius: 8px; font-size: 16px; font-weight: bold;">
-            Ver Planos e Preços
+        <td align="center" style="padding-bottom: 8px;">
+          <a href="${SITE_URL}/checkout?plan=annual" style="display: inline-block; border: 1px solid #404040; color: #E5E5E5; text-decoration: none; padding: 12px 32px; border-radius: 8px; font-size: 14px; font-weight: 600;">
+            Ver planos e preços
           </a>
         </td>
       </tr>
     </table>
 
-    <p style="color: #64748B; font-size: 13px; text-align: center; margin: 20px 0 0;">
-      Entre com o email: <strong style="color: white;">${email}</strong>
+    <p style="color: #64748B; font-size: 13px; margin: 20px 0 0;">
+      Login sem senha — use o e-mail <strong style="color: #94A3B8;">${email}</strong>.
     </p>
   `
   return getBaseTemplate(content, `Bem-vindo ao ${SITE_NAME}!`)
@@ -169,87 +138,57 @@ function getPaymentApprovedEmail(firstName: string, plan: string, amount?: numbe
   const duration = planDuration[plan] || ''
 
   const content = `
-    <h1 style="color: white; font-size: 28px; margin: 0 0 20px; text-align: center;">
-      Compra Confirmada no <span style="color: #EF4444;">OneMed</span>!
+    <h1 style="color: white; font-size: 24px; font-weight: 700; margin: 0 0 16px;">
+      Pagamento aprovado
     </h1>
 
-    <p style="color: #94A3B8; font-size: 16px; line-height: 1.6; margin: 0 0 20px; text-align: center;">
-      Parabéns, ${firstName}! Seu pagamento foi aprovado e seu acesso já está liberado.
+    <p style="color: #94A3B8; font-size: 15px; line-height: 1.6; margin: 0 0 24px;">
+      Parabéns, ${firstName}. Seu acesso já está liberado na plataforma.
     </p>
 
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background: linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, rgba(21, 128, 61, 0.1) 100%); border-radius: 12px; border: 1px solid rgba(34, 197, 94, 0.3); margin: 20px 0;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #161616; border-radius: 10px; border-left: 3px solid #16A34A; margin: 0 0 28px;">
       <tr>
-        <td style="padding: 24px;">
-          <h2 style="color: #22C55E; font-size: 20px; font-weight: bold; margin: 0 0 16px;">
-            Detalhes da Compra
-          </h2>
+        <td style="padding: 20px 24px;">
           <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
             <tr>
-              <td style="padding: 8px 0; color: #94A3B8;">Plano:</td>
-              <td style="padding: 8px 0; color: white; text-align: right; font-weight: bold;">${planLabel}</td>
+              <td style="padding: 4px 0; color: #94A3B8; font-size: 14px;">Plano</td>
+              <td style="padding: 4px 0; color: white; text-align: right; font-size: 14px; font-weight: 600;">${planLabel} (${duration})</td>
             </tr>
             ${amount ? `<tr>
-              <td style="padding: 8px 0; color: #94A3B8;">Valor:</td>
-              <td style="padding: 8px 0; color: white; text-align: right; font-weight: bold;">R$ ${amount.toFixed(2).replace('.', ',')}</td>
+              <td style="padding: 4px 0; color: #94A3B8; font-size: 14px;">Valor</td>
+              <td style="padding: 4px 0; color: white; text-align: right; font-size: 14px; font-weight: 600;">R$ ${amount.toFixed(2).replace('.', ',')}</td>
             </tr>` : ''}
             <tr>
-              <td style="padding: 8px 0; color: #94A3B8;">Duração:</td>
-              <td style="padding: 8px 0; color: #22C55E; text-align: right; font-weight: bold;">${duration}</td>
-            </tr>
-            <tr>
-              <td style="padding: 8px 0; color: #94A3B8;">Status:</td>
-              <td style="padding: 8px 0; color: #22C55E; text-align: right; font-weight: bold;">Pagamento Aprovado</td>
+              <td style="padding: 4px 0; color: #94A3B8; font-size: 14px;">Status</td>
+              <td style="padding: 4px 0; color: #4ADE80; text-align: right; font-size: 14px; font-weight: 600;">Aprovado</td>
             </tr>
           </table>
         </td>
       </tr>
     </table>
 
-    <h2 style="color: white; font-size: 20px; margin: 30px 0 15px;">
-      Como acessar o conteúdo:
+    <h2 style="color: white; font-size: 16px; font-weight: 700; margin: 0 0 12px;">
+      Como acessar
     </h2>
 
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
-      <tr><td style="padding: 10px 0; color: #94A3B8; font-size: 15px;"><span style="color: #22C55E; font-weight: bold;">1.</span>&nbsp; Clique no botão abaixo para acessar a plataforma</td></tr>
-      <tr><td style="padding: 10px 0; color: #94A3B8; font-size: 15px;"><span style="color: #22C55E; font-weight: bold;">2.</span>&nbsp; Faça login com o e-mail: <strong style="color: white;">${buyerEmail || 'seu email cadastrado'}</strong></td></tr>
-      <tr><td style="padding: 10px 0; color: #94A3B8; font-size: 15px;"><span style="color: #22C55E; font-weight: bold;">3.</span>&nbsp; Sem senha — você recebe um link de acesso direto no e-mail</td></tr>
-      <tr><td style="padding: 10px 0; color: #94A3B8; font-size: 15px;"><span style="color: #22C55E; font-weight: bold;">4.</span>&nbsp; Assista às aulas e leia os materiais direto pelo site!</td></tr>
-    </table>
-
-    <h2 style="color: white; font-size: 20px; margin: 30px 0 15px;">
-      O que você pode acessar:
-    </h2>
-
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
-      <tr><td style="padding: 10px 0;"><span style="color: #22C55E; font-size: 16px;">•</span><span style="color: #CBD5E1; font-size: 15px; margin-left: 10px;">+530 cursos completos de residência médica</span></td></tr>
-      <tr><td style="padding: 10px 0;"><span style="color: #22C55E; font-size: 16px;">•</span><span style="color: #CBD5E1; font-size: 15px; margin-left: 10px;">+9.000 livros de todas as especialidades</span></td></tr>
-      <tr><td style="padding: 10px 0;"><span style="color: #22C55E; font-size: 16px;">•</span><span style="color: #CBD5E1; font-size: 15px; margin-left: 10px;">Material preparatório para Revalida</span></td></tr>
-      <tr><td style="padding: 10px 0;"><span style="color: #22C55E; font-size: 16px;">•</span><span style="color: #CBD5E1; font-size: 15px; margin-left: 10px;">Apps Whitebook e WeMeds incluídos</span></td></tr>
-      <tr><td style="padding: 10px 0;"><span style="color: #22C55E; font-size: 16px;">•</span><span style="color: #CBD5E1; font-size: 15px; margin-left: 10px;">Atualizações constantes de conteúdo</span></td></tr>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin: 0 0 28px;">
+      <tr><td style="padding: 6px 0; color: #94A3B8; font-size: 14px;">1. Clique no botão abaixo para abrir a plataforma</td></tr>
+      <tr><td style="padding: 6px 0; color: #94A3B8; font-size: 14px;">2. Entre com o e-mail <strong style="color: white;">${buyerEmail || 'cadastrado na compra'}</strong></td></tr>
+      <tr><td style="padding: 6px 0; color: #94A3B8; font-size: 14px;">3. Sem senha — você recebe um link de acesso por e-mail</td></tr>
     </table>
 
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
       <tr>
-        <td align="center" style="padding: 30px 0 20px;">
-          <a href="${SITE_URL}/login${buyerEmail ? `?email=${encodeURIComponent(buyerEmail)}` : ''}" style="display: inline-block; background: linear-gradient(135deg, #DC2626 0%, #991B1B 100%); color: white; text-decoration: none; padding: 18px 50px; border-radius: 8px; font-size: 18px; font-weight: bold;">
-            Acessar a Plataforma
+        <td align="center" style="padding-bottom: 8px;">
+          <a href="${SITE_URL}/login${buyerEmail ? `?email=${encodeURIComponent(buyerEmail)}` : ''}" style="display: inline-block; background-color: #DC2626; color: white; text-decoration: none; padding: 14px 36px; border-radius: 8px; font-size: 15px; font-weight: 600;">
+            Acessar a plataforma
           </a>
         </td>
       </tr>
     </table>
 
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background: rgba(239, 68, 68, 0.1); border-radius: 8px; border: 1px solid rgba(239, 68, 68, 0.3);">
-      <tr>
-        <td style="padding: 16px;">
-          <p style="color: #F87171; font-size: 13px; margin: 0; text-align: center;">
-            <strong>Importante:</strong> Faça login com o email <strong style="color: white;">${buyerEmail || 'cadastrado na compra'}</strong>
-          </p>
-        </td>
-      </tr>
-    </table>
-
-    <p style="color: #64748B; font-size: 13px; text-align: center; margin-top: 30px;">
-      Dúvidas? Entre em contato pelo WhatsApp acima.
+    <p style="color: #64748B; font-size: 13px; text-align: center; margin: 24px 0 0;">
+      Dúvidas? Fale com a gente pelo WhatsApp abaixo.
     </p>
   `
   return getBaseTemplate(content, `Pagamento aprovado — Bem-vindo ao ${SITE_NAME}`)
