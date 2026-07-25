@@ -12,11 +12,12 @@ interface BackupCursor {
   orderedTables: string[];
   tableIndex: number;
   offset: number;
+  tableTotal?: number;
 }
 
 const BACKUP_RETRY_DELAYS_MS = [2000, 4000, 8000, 15000, 30000];
 const BACKUP_MAX_RETRIES = BACKUP_RETRY_DELAYS_MS.length;
-const BACKUP_MAX_CHUNKS = 5000; // trava de segurança contra loop infinito por bug — ~230 mil linhas / 2000 por página cabem tranquilamente
+const BACKUP_MAX_CHUNKS = 5000; // trava de segurança contra loop infinito por bug — ~230 mil linhas / 1000 por página cabem tranquilamente
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 

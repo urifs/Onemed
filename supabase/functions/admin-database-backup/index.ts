@@ -21,7 +21,17 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const ALLOWED_ORIGINS = ['https://onemedcursos.com.br', 'http://localhost:5173', 'http://localhost:3000']
-const PAGE_SIZE = 2000
+// O projeto tem max_rows=1000 configurado no PostgREST (Settings > API) —
+// pedir mais que isso num .range() não dá erro nenhum, o PostgREST simplesmente
+// devolve só os primeiros 1000 e ignora o resto em silêncio. Isso já causou
+// perda silenciosa de dados aqui uma vez: com PAGE_SIZE maior que o max_rows
+// real, "recebi menos linhas que pedi" parecia significar "tabela acabou"
+// quando na verdade só tinha sido cortada pelo servidor. Por isso a
+// detecção de "tabela terminou" abaixo NÃO depende de PAGE_SIZE == o que
+// realmente veio — ela sempre confirma contra o total exato da tabela
+// (COUNT via count:'exact' na primeira página), então funciona mesmo que
+// max_rows mude de novo no futuro sem avisar ninguém.
+const PAGE_SIZE = 1000
 
 function getCorsHeaders(req: Request) {
   const origin = req.headers.get('origin') || ''
@@ -44,6 +54,7 @@ interface Cursor {
   orderedTables: string[]
   tableIndex: number
   offset: number
+  tableTotal?: number // COUNT exato da tabela atual — undefined até a 1ª página dela ser buscada
 }
 
 const encoder = new TextEncoder()
@@ -126,7 +137,7 @@ serve(async (req) => {
     // ordem congelada contra o schema atual, caso alguma tabela tenha sido
     // removida no meio de um backup muito longo. ──
     const orderedTables = cursor.orderedTables.filter(name => tableByName.has(name))
-    let { tableIndex, offset } = cursor
+    let { tableIndex, offset, tableTotal } = cursor
 
     if (tableIndex >= orderedTables.length) {
       return new Response(JSON.stringify({
@@ -136,21 +147,36 @@ serve(async (req) => {
     }
 
     const tableName = orderedTables[tableIndex]
-    const { data, error } = await supabase.from(tableName).select('*').range(offset, offset + PAGE_SIZE - 1)
+
+    // Na primeira página de cada tabela, pede o COUNT exato junto — é essa
+    // contagem (não "quantas linhas vieram nesta página") que decide quando
+    // a tabela realmente terminou, então uma página truncada pelo max_rows
+    // do PostgREST nunca é confundida com "acabou".
+    const needsCount = tableTotal === undefined
+    const query = needsCount
+      ? supabase.from(tableName).select('*', { count: 'exact' }).range(offset, offset + PAGE_SIZE - 1)
+      : supabase.from(tableName).select('*').range(offset, offset + PAGE_SIZE - 1)
+    const { data, error, count } = await query
 
     const lines: string[] = []
+    let tableDone: boolean
     if (error) {
       lines.push(JSON.stringify({ type: 'error', table: tableName, message: error.message }))
-      tableIndex += 1
-      offset = 0
+      tableDone = true
     } else {
       for (const row of data || []) lines.push(JSON.stringify({ type: 'row', table: tableName, data: row }))
-      if (!data || data.length < PAGE_SIZE) {
-        tableIndex += 1
-        offset = 0
-      } else {
-        offset += PAGE_SIZE
-      }
+      if (needsCount && typeof count === 'number') tableTotal = count
+      const newOffset = offset + (data?.length || 0)
+      // Sem COUNT confiável (nunca deveria acontecer, mas por segurança):
+      // cai de volta pro critério antigo de "veio menos que o pedido".
+      tableDone = tableTotal !== undefined ? newOffset >= tableTotal : (!data || data.length < PAGE_SIZE)
+      offset = newOffset
+    }
+
+    if (tableDone) {
+      tableIndex += 1
+      offset = 0
+      tableTotal = undefined
     }
 
     const done = tableIndex >= orderedTables.length
@@ -158,7 +184,7 @@ serve(async (req) => {
       lines.push(JSON.stringify({ type: 'done', tables_exported: orderedTables, complete: true }))
     }
 
-    const nextCursor: Cursor | null = done ? null : { orderedTables, tableIndex, offset }
+    const nextCursor: Cursor | null = done ? null : { orderedTables, tableIndex, offset, tableTotal }
     const responseBody = JSON.stringify({
       lines, cursor: nextCursor, done, table: tableName, totalTables: orderedTables.length, tableIndex,
     })
