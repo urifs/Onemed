@@ -209,7 +209,7 @@ export default function BuyersPage() {
       {/* Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-          <div className="glass-strong rounded-2xl p-6 w-full max-w-md border border-border">
+          <div className="bg-background-paper rounded-2xl p-6 w-full max-w-md border border-border">
             <div className="flex items-center justify-between mb-6">
               <h2 className="font-secondary text-xl font-bold text-foreground">Novo Comprador</h2>
               <button onClick={() => setShowModal(false)} className="text-muted-foreground hover:text-foreground">
