@@ -8,12 +8,25 @@ import { Button } from '@/components/ui/button';
 import { Database, AlertTriangle, RefreshCw, DownloadCloud, Loader2, Activity } from 'lucide-react';
 import { EgressChart } from '@/components/EgressChart';
 
+interface BackupCursor {
+  orderedTables: string[];
+  tableIndex: number;
+  offset: number;
+}
+
+const BACKUP_RETRY_DELAYS_MS = [2000, 4000, 8000, 15000, 30000];
+const BACKUP_MAX_RETRIES = BACKUP_RETRY_DELAYS_MS.length;
+const BACKUP_MAX_CHUNKS = 5000; // trava de segurança contra loop infinito por bug — ~230 mil linhas / 2000 por página cabem tranquilamente
+
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 export default function DatabasePage() {
   const { session } = useAuth();
   const [tables, setTables] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [backingUp, setBackingUp] = useState(false);
+  const [backupProgress, setBackupProgress] = useState<{ table: string; tableIndex: number; totalTables: number; linesCount: number } | null>(null);
 
   const fetchCounts = useCallback(async () => {
     setLoading(true);
@@ -47,24 +60,71 @@ export default function DatabasePage() {
 
   useEffect(() => { fetchCounts(); }, [fetchCounts]);
 
-  // Streama NDJSON (uma linha JSON por registro) em vez de um único array —
-  // com dezenas de milhares de linhas somadas entre as tabelas, um array
-  // gigante estouraria memória/tempo tanto na function quanto aqui.
+  // Backup paginado: cada chamada à function devolve só uma página de uma
+  // tabela (até 2000 linhas) em vez de tentar exportar o banco inteiro numa
+  // única resposta HTTP de longa duração — isso é o que antes estourava o
+  // tempo de execução da function no meio da maior tabela e devolvia um
+  // arquivo cortado. Aqui o loop e o retry por página ficam no cliente: se
+  // uma página falhar (rede instável), só ela é refeita — o progresso
+  // acumulado nunca se perde, então o backup final é sempre completo.
   const downloadBackup = async () => {
     if (!session?.access_token) { toast.error('Sessão expirada, faça login novamente'); return; }
     setBackingUp(true);
+    setBackupProgress(null);
     try {
-      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-database-backup`, {
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-          'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-        },
-      });
-      if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        throw new Error(text || `Erro ${res.status}`);
+      const chunks: string[] = [];
+      let cursor: BackupCursor | null = null;
+      let done = false;
+      let attempt = 0;
+      let iterations = 0;
+
+      while (!done) {
+        iterations++;
+        if (iterations > BACKUP_MAX_CHUNKS) throw new Error('Backup excedeu o número máximo de páginas esperado — algo está errado.');
+
+        try {
+          const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-database-backup`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`,
+              'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ cursor }),
+          });
+          if (!res.ok) {
+            const text = await res.text().catch(() => '');
+            throw new Error(text || `Erro ${res.status}`);
+          }
+          const json = await res.json();
+          for (const line of json.lines as string[]) chunks.push(line + '\n');
+          cursor = json.cursor;
+          done = json.done;
+          attempt = 0;
+          setBackupProgress({
+            table: json.table || 'estrutura das tabelas',
+            tableIndex: json.tableIndex ?? 0,
+            totalTables: json.totalTables ?? 0,
+            linesCount: chunks.length,
+          });
+        } catch (chunkErr: any) {
+          attempt++;
+          if (attempt > BACKUP_MAX_RETRIES) throw chunkErr;
+          await sleep(BACKUP_RETRY_DELAYS_MS[attempt - 1]);
+        }
       }
-      const blob = await res.blob();
+
+      // Última linha da última página é sempre o marcador "done" com
+      // complete:true (o servidor garante isso) — confere mesmo assim como
+      // segunda camada de defesa antes de oferecer o download.
+      const lastLine = chunks[chunks.length - 1];
+      let complete = false;
+      try {
+        const parsed = JSON.parse(lastLine);
+        complete = parsed?.type === 'done' && parsed?.complete === true;
+      } catch { /* linha final não é JSON válido — trata como incompleto */ }
+
+      const blob = new Blob(chunks, { type: 'application/x-ndjson' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -72,28 +132,16 @@ export default function DatabasePage() {
       a.click();
       URL.revokeObjectURL(url);
 
-      // A function pode ser interrompida por timeout no meio da exportação
-      // (tabelas grandes demais) e ainda assim devolver HTTP 200 — o único
-      // jeito de saber se realmente terminou é conferir se a última linha
-      // é o marcador "done" com complete:true.
-      const text = await blob.text();
-      const lines = text.trim().split('\n');
-      const lastLine = lines[lines.length - 1];
-      let complete = false;
-      try {
-        const parsed = JSON.parse(lastLine);
-        complete = parsed?.type === 'done' && parsed?.complete === true;
-      } catch { /* linha final não é JSON válido — trata como incompleto */ }
-
       if (complete) {
         toast.success('Backup baixado com sucesso — todas as tabelas exportadas.');
       } else {
-        toast.warning('Backup baixado, mas foi interrompido antes de terminar (provavelmente por demorar demais). Tente novamente — as tabelas menores e mais críticas são exportadas primeiro.', { duration: 10000 });
+        toast.warning('Backup baixado, mas o marcador de conclusão não veio como esperado. Confira o arquivo antes de confiar nele.', { duration: 10000 });
       }
     } catch (err: any) {
       toast.error('Erro ao gerar backup: ' + (err?.message || 'desconhecido'));
     } finally {
       setBackingUp(false);
+      setBackupProgress(null);
     }
   };
 
@@ -123,6 +171,11 @@ export default function DatabasePage() {
               {backingUp ? <Loader2 className="w-4 h-4 animate-spin" /> : <DownloadCloud className="w-4 h-4" />}
               {backingUp ? 'Gerando backup...' : 'Baixar Backup Completo'}
             </Button>
+            {backupProgress && (
+              <p className="text-xs text-muted-foreground font-mono">
+                Tabela {Math.min(backupProgress.tableIndex + 1, backupProgress.totalTables)}/{backupProgress.totalTables} — {backupProgress.table} · {backupProgress.linesCount.toLocaleString('pt-BR')} linhas exportadas
+              </p>
+            )}
           </CardContent>
         </Card>
 
