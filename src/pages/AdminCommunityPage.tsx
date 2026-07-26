@@ -10,7 +10,81 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { formatDateTimeSP, fetchAllRows } from '@/lib/utils';
-import { AlertTriangle, RefreshCw, Search, Trash2, MessageCircle, MessagesSquare, BadgeCheck } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Search, Trash2, MessageCircle, MessagesSquare, BadgeCheck, Link2 } from 'lucide-react';
+
+interface CommunitySettingsRow {
+  id: string;
+  whatsapp_group_url: string | null;
+}
+
+function WhatsAppGroupSettingsCard() {
+  const [settingsId, setSettingsId] = useState<string | null>(null);
+  const [groupUrl, setGroupUrl] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const fetchSettings = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data } = await supabase.from('community_settings').select('*').maybeSingle();
+      const row = data as CommunitySettingsRow | null;
+      if (row) {
+        setSettingsId(row.id);
+        setGroupUrl(row.whatsapp_group_url || '');
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchSettings(); }, [fetchSettings]);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const url = groupUrl.trim();
+      if (settingsId) {
+        const { error } = await supabase.from('community_settings').update({ whatsapp_group_url: url || null }).eq('id', settingsId);
+        if (error) throw error;
+      } else {
+        const { data, error } = await supabase.from('community_settings').insert({ whatsapp_group_url: url || null }).select('id').single();
+        if (error) throw error;
+        setSettingsId((data as { id: string }).id);
+      }
+      toast.success('Link do grupo atualizado');
+    } catch (err: any) {
+      toast.error('Erro ao salvar: ' + (err?.message || 'desconhecido'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card className="bg-background-paper border-border">
+      <CardContent className="p-5 space-y-3">
+        <div className="flex items-center gap-2">
+          <Link2 className="w-4 h-4 text-primary" />
+          <p className="font-secondary text-base font-semibold text-foreground">Grupo do WhatsApp da comunidade</p>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Link exibido no card da aba Comunidade e na notificação fixa do sininho, pra todos os membros. Pode trocar aqui a qualquer momento.
+        </p>
+        <div className="flex flex-col sm:flex-row gap-2.5">
+          <Input
+            value={groupUrl}
+            onChange={e => setGroupUrl(e.target.value)}
+            placeholder="https://chat.whatsapp.com/..."
+            disabled={loading}
+            className="flex-1 bg-secondary border-border text-foreground"
+          />
+          <Button onClick={save} disabled={loading || saving} className="bg-primary hover:bg-primary-hover text-primary-foreground shrink-0">
+            {saving ? 'Salvando...' : 'Salvar link'}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 interface CommentRow {
   id: string;
@@ -118,6 +192,8 @@ export default function AdminCommunityPage() {
             <RefreshCw className="w-4 h-4" />
           </Button>
         </div>
+
+        <WhatsAppGroupSettingsCard />
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[

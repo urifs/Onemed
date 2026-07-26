@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Send, MessageCircle, AlertTriangle, RefreshCw, ChevronDown, BookOpen, Play, BadgeCheck, Tag, ListFilter, ArrowUpDown } from 'lucide-react';
+import { Send, MessageCircle, AlertTriangle, RefreshCw, ChevronDown, BookOpen, Play, BadgeCheck, Tag, ListFilter, ArrowUpDown, MessagesSquare, ExternalLink } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
 import { useRequireName } from '@/hooks/useRequireName';
+import { useCommunitySettings } from '@/hooks/useCommunitySettings';
 import { MemberHeader } from '@/components/member/MemberHeader';
 import { NameRequiredModal } from '@/components/member/NameRequiredModal';
 import { Button } from '@/components/ui/button';
@@ -228,9 +229,32 @@ const SORT_OPTIONS = [
   { value: 'relevant', label: 'Mais relevantes' },
 ];
 
+function WhatsAppGroupCard({ url }: { url: string }) {
+  return (
+    <div className="rounded-xl border border-primary/25 bg-primary/[0.06] p-5 flex items-center gap-4">
+      <div className="w-11 h-11 rounded-full bg-primary/15 border border-primary/30 flex items-center justify-center shrink-0">
+        <MessagesSquare className="w-5 h-5 text-primary" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold text-foreground">Grupo da comunidade no WhatsApp</p>
+        <p className="text-sm text-muted-foreground mt-0.5">Converse com outros alunos e a equipe OneMed em tempo real.</p>
+      </div>
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="shrink-0 inline-flex items-center gap-1.5 bg-primary hover:bg-primary-hover text-primary-foreground text-sm font-semibold px-4 py-2 rounded-lg transition-colors"
+      >
+        Entrar <ExternalLink className="w-3.5 h-3.5" />
+      </a>
+    </div>
+  );
+}
+
 export default function CommunityPage() {
   const { user } = useAuth();
   const { promptOpen, setPromptOpen, ensureName, submitName } = useRequireName();
+  const { whatsappGroupUrl } = useCommunitySettings();
   const [items, setItems] = useState<FeedItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -330,6 +354,8 @@ export default function CommunityPage() {
             Dúvidas e comentários de todos os cursos e conteúdos, num só lugar.
           </p>
         </div>
+
+        {whatsappGroupUrl && <WhatsAppGroupCard url={whatsappGroupUrl} />}
 
         <div className="glass rounded-xl p-5">
           <p className="text-sm font-semibold text-foreground mb-3">Abrir um novo tópico</p>
