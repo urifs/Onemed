@@ -367,7 +367,7 @@ export default function CourseDetailPage() {
             {tab === 'aulas' ? (
               <>
                 {lessons.length === 0 && (
-                  <p className="text-muted-foreground text-sm">Este curso ainda está sendo sincronizado. Volte em instantes.</p>
+                  <p className="text-muted-foreground text-sm">O curso está sendo sincronizado, aguarde alguns segundos.</p>
                 )}
                 {lessons.length > 0 && videoGroups.length === 0 && query.trim() && (
                   <p className="text-muted-foreground text-sm">Nenhuma aula encontrada para "{query}".</p>
@@ -380,7 +380,7 @@ export default function CourseDetailPage() {
             ) : tab === 'arquivos' ? (
               <>
                 {lessons.length === 0 && (
-                  <p className="text-muted-foreground text-sm">Este curso ainda está sendo sincronizado. Volte em instantes.</p>
+                  <p className="text-muted-foreground text-sm">O curso está sendo sincronizado, aguarde alguns segundos.</p>
                 )}
                 {lessons.length > 0 && fileGroups.length === 0 && query.trim() && (
                   <p className="text-muted-foreground text-sm">Nenhum arquivo encontrado para "{query}".</p>
