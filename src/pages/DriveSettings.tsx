@@ -172,6 +172,9 @@ export default function DriveSettings() {
         {/* Course Library Sync */}
         {driveStatus?.connected && <SyncCoursesCard />}
 
+        {/* Backfill missing lesson durations */}
+        {driveStatus?.connected && <DurationBackfillCard />}
+
         {/* Extract emails with access to a folder */}
         {driveStatus?.connected && <FolderEmailsCard />}
 
@@ -610,6 +613,109 @@ function SyncCoursesCard() {
                <Loader2 className="w-4 h-4 animate-spin" />
                Cancelando...
              </Button>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Sem cursor/offset — cada chamada devolve só as aulas ainda não checadas, e
+// o próprio ato de checá-las (mesmo sem sucesso) as tira do lote seguinte, ver
+// admin-backfill-lesson-durations. Isso também torna o "retomar depois de
+// fechar a aba" trivial: não há estado nenhum pra restaurar, só clicar nesse
+// botão de novo continua exatamente de onde parou.
+function DurationBackfillCard() {
+  const [running, setRunning] = useState(false);
+  const [totalProcessed, setTotalProcessed] = useState(0);
+  const [totalUpdated, setTotalUpdated] = useState(0);
+  const [remaining, setRemaining] = useState<number | null>(null);
+  const cancelRef = useRef(false);
+
+  const fetchRemaining = async () => {
+    const { count } = await supabase
+      .from('lessons')
+      .select('id', { count: 'exact', head: true })
+      .eq('type', 'video')
+      .is('duration_seconds', null)
+      .is('duration_checked_at', null);
+    setRemaining(count ?? 0);
+  };
+
+  useEffect(() => { fetchRemaining(); }, []);
+
+  const run = async () => {
+    setRunning(true);
+    cancelRef.current = false;
+    setTotalProcessed(0);
+    setTotalUpdated(0);
+    const RETRY_DELAYS_MS = [2000, 5000, 10000];
+    try {
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        if (cancelRef.current) { toast.info('Preenchimento interrompido.'); break; }
+
+        let data: any, error: any;
+        for (let attempt = 0; ; attempt++) {
+          ({ data, error } = await supabase.functions.invoke('admin-backfill-lesson-durations', { body: {} }));
+          if (!error && !data?.error) break;
+          if (attempt >= RETRY_DELAYS_MS.length || cancelRef.current) break;
+          await sleep(RETRY_DELAYS_MS[attempt]);
+        }
+
+        if (error || data?.error) {
+          toast.error('Erro ao preencher durações: ' + (data?.error || await extractFunctionErrorMessage(error, 'desconhecido')));
+          break;
+        }
+
+        setTotalProcessed(p => p + data.processed);
+        setTotalUpdated(u => u + data.updated);
+
+        if (data.done) {
+          toast.success('Durações preenchidas — todas as aulas foram checadas.');
+          break;
+        }
+        await sleep(500);
+      }
+    } finally {
+      setRunning(false);
+      fetchRemaining();
+    }
+  };
+
+  return (
+    <Card className="bg-background-paper border-border">
+      <CardHeader>
+        <CardTitle className="text-base font-medium text-foreground flex items-center gap-2">
+          <RefreshCw className="w-5 h-5 text-primary" />
+          Preencher Duração das Aulas
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          O Google Drive às vezes ainda não tinha terminado de processar o vídeo no momento da sincronização, e a
+          aula fica sem o tempo de duração exibido pro aluno. Isso consulta o Drive de novo pra cada aula sem duração
+          e preenche o que estiver disponível agora.
+        </p>
+        {remaining !== null && (
+          <p className="text-sm text-foreground">
+            {remaining === 0 ? 'Nenhuma aula pendente.' : <>Aulas ainda sem duração: <span className="font-semibold">{remaining}</span></>}
+          </p>
+        )}
+        {running && (
+          <p className="text-sm text-muted-foreground">
+            Processadas: {totalProcessed} — Atualizadas com sucesso: {totalUpdated}
+          </p>
+        )}
+        <div className="flex gap-2">
+          {!running ? (
+            <Button onClick={run} disabled={remaining === 0} className="bg-primary hover:bg-primary-hover text-primary-foreground gap-2">
+              <Play className="w-4 h-4" /> Preencher durações faltando
+            </Button>
+          ) : (
+            <Button onClick={() => { cancelRef.current = true; }} variant="outline" className="border-border text-muted-foreground hover:text-foreground gap-2">
+              <Loader2 className="w-4 h-4 animate-spin" /> Parar
+            </Button>
           )}
         </div>
       </CardContent>
