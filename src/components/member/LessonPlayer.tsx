@@ -1,12 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
-import { X, ChevronLeft, ChevronRight, Loader2, ExternalLink, Download, Printer } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Loader2, ExternalLink, Download, Printer, Gauge } from 'lucide-react';
 import { useLessonStreamUrl } from '@/hooks/useLessonStream';
 import { PdfViewer } from './PdfViewer';
 import { OfficeViewer } from './OfficeViewer';
 import { TxtViewer } from './TxtViewer';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import type { Database } from '@/integrations/supabase/types';
 
 type Lesson = Database['public']['Tables']['lessons']['Row'];
+
+const PLAYBACK_RATES = [1, 1.5, 2, 3];
+const PLAYBACK_RATE_STORAGE_KEY = 'onemed_playback_rate';
 
 // Vídeo/áudio ficam só em streaming (controlsList="nodownload") — mas
 // documentos (pdf/imagem/planilha/doc/txt) são conteúdo pra consulta e
@@ -62,6 +66,10 @@ export function LessonPlayer({
   const mediaRetries = useRef(0);
   const [imgRetryCount, setImgRetryCount] = useState(0);
   const [downloading, setDownloading] = useState(false);
+  const [playbackRate, setPlaybackRate] = useState(() => {
+    const stored = Number(localStorage.getItem(PLAYBACK_RATE_STORAGE_KEY));
+    return PLAYBACK_RATES.includes(stored) ? stored : 1;
+  });
 
   useEffect(() => {
     let alive = true;
@@ -111,6 +119,27 @@ export function LessonPlayer({
     v.addEventListener('loadedmetadata', onLoaded, { once: true });
     return () => v.removeEventListener('loadedmetadata', onLoaded);
   }, [src, lesson.type, initialWatchedSeconds]);
+
+  // Cada troca de aula recarrega o elemento <video>/<audio> com um src novo,
+  // o que reseta playbackRate pra 1 em alguns navegadores — reaplica a
+  // velocidade escolhida assim que os metadados do arquivo novo carregam.
+  useEffect(() => {
+    if (!src || (lesson.type !== 'video' && lesson.type !== 'audio')) return;
+    const v = videoRef.current;
+    if (!v) return;
+    const applyRate = () => { v.playbackRate = playbackRate; };
+    applyRate();
+    v.addEventListener('loadedmetadata', applyRate);
+    return () => v.removeEventListener('loadedmetadata', applyRate);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [src, lesson.type]);
+
+  const changePlaybackRate = (rate: number) => {
+    setPlaybackRate(rate);
+    localStorage.setItem(PLAYBACK_RATE_STORAGE_KEY, String(rate));
+    const v = videoRef.current;
+    if (v) v.playbackRate = rate;
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -195,6 +224,31 @@ export function LessonPlayer({
           <p className="text-sm font-semibold text-white truncate">{lesson.title}</p>
         </div>
         <div className="flex-1" />
+        {(lesson.type === 'video' || lesson.type === 'audio') && src && (
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                title="Velocidade de reprodução"
+                className="h-9 px-3 rounded-full bg-white/10 hover:bg-white/15 flex items-center gap-1.5 text-white text-xs font-semibold transition-colors mr-1"
+              >
+                <Gauge className="w-4 h-4" /> {playbackRate}x
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-36 bg-[#161616] border-white/10 p-1.5">
+              {PLAYBACK_RATES.map(rate => (
+                <button
+                  key={rate}
+                  onClick={() => changePlaybackRate(rate)}
+                  className={`w-full text-left px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                    rate === playbackRate ? 'bg-primary text-primary-foreground' : 'text-white/80 hover:bg-white/10'
+                  }`}
+                >
+                  {rate}x
+                </button>
+              ))}
+            </PopoverContent>
+          </Popover>
+        )}
         {canDownload && src && (
           <div className="flex items-center gap-2 mr-1">
             <button
