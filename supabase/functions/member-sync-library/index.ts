@@ -285,12 +285,12 @@ serve(async (req) => {
           coursesResynced++
         } else {
           const baseSlug = slugify(folder.name)
-          const slug = baseSlug
-          if (knownSlugs.has(slug)) {
-            details.push({ course: folder.name, action: 'skipped', message: 'Curso duplicado (já sincronizado por outra pasta do Drive).' })
-            coursesSkippedDuplicate++
-            continue
-          }
+          // Duas pastas de nível superior podem ter exatamente o mesmo nome
+          // (ex: duas turmas "Medcof 2024" em pastas diferentes) — isso NÃO
+          // significa que é o mesmo curso já importado, só que o slug bateu.
+          // Desambigua com os últimos caracteres do ID da pasta (estável e
+          // único) em vez de pular o curso pra sempre.
+          const slug = knownSlugs.has(baseSlug) ? `${baseSlug}-${folder.id.slice(-6).toLowerCase()}` : baseSlug
           knownSlugs.add(slug)
           knownFolderIds.add(folder.id)
   
