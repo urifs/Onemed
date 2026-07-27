@@ -154,16 +154,36 @@ serve(async (req) => {
         })
       }
 
-      const { data: previousBuyer } = await supabase
-        .from('buyers')
-        .select('amount')
-        .eq('email', String(email).toLowerCase().trim())
-        .eq('access_granted', true)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
+      const normalizedEmail = String(email).toLowerCase().trim()
+      const LIFETIME_TIER_RANK: Record<string, number> = { lifetime: 1, lifetime_plus: 2, lifetime_pro: 3 }
 
-      const alreadyPaid = previousBuyer?.amount ? Number(previousBuyer.amount) : 0
+      const [{ data: previousBuyer }, { data: activeAccesses }] = await Promise.all([
+        supabase.from('buyers').select('plan, amount')
+          .eq('email', normalizedEmail).eq('access_granted', true)
+          .order('created_at', { ascending: false }).limit(1).maybeSingle(),
+        supabase.from('accesses').select('access_type')
+          .eq('email', normalizedEmail).eq('status', 'active').neq('access_type', 'trial'),
+      ])
+
+      // Mesma resolução de "plano atual" do member-account-info: prefere o
+      // maior tier vitalício entre buyer/accesses, nunca "o primeiro que
+      // aparecer" (uma conta pode ter mais de uma linha ativa em accesses).
+      const bestAccessTier = (activeAccesses || [])
+        .filter(a => LIFETIME_TIER_RANK[a.access_type])
+        .sort((a, b) => LIFETIME_TIER_RANK[b.access_type] - LIFETIME_TIER_RANK[a.access_type])[0]?.access_type
+      const buyerTier = previousBuyer?.plan && LIFETIME_TIER_RANK[previousBuyer.plan] ? previousBuyer.plan : undefined
+      const currentPlan = [buyerTier, bestAccessTier].filter((p): p is string => !!p)
+        .sort((a, b) => LIFETIME_TIER_RANK[b] - LIFETIME_TIER_RANK[a])[0]
+        || previousBuyer?.plan
+        || (activeAccesses || [])[0]?.access_type
+
+      // Se não há valor real pago (acesso concedido manualmente, sem linha
+      // em buyers ou amount zerado), conta como se já tivesse pago o preço
+      // de tabela do plano atual — upgrade nunca cobra o preço cheio, seja
+      // a conta de um comprador de verdade ou de um grant manual do admin.
+      const realAmountPaid = previousBuyer?.amount ? Number(previousBuyer.amount) : 0
+      const alreadyPaid = realAmountPaid > 0 ? realAmountPaid : (currentPlan ? (PLAN_PRICES[currentPlan] ?? 0) : 0)
+
       const MIN_UPGRADE_PRICE = 1.00
       basePrice = Math.max(basePrice - alreadyPaid, MIN_UPGRADE_PRICE)
     }

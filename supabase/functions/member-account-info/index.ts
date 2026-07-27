@@ -9,6 +9,17 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const ALLOWED_ORIGINS = ['https://onemedcursos.com.br', 'http://localhost:5173', 'http://localhost:3000']
 
+// Pra calcular o desconto do upgrade quando não há compra registrada (ex:
+// acesso concedido manualmente pelo admin, sem linha em buyers) — conta
+// como se já tivesse "pago" o preço de tabela do plano atual, não zero.
+const PLAN_PRICES: Record<string, number> = {
+  monthly: 49.00,
+  annual: 199.00,
+  lifetime: 299.90,
+  lifetime_plus: 599.00,
+  lifetime_pro: 997.00,
+}
+
 function getCorsHeaders(req: Request) {
   const origin = req.headers.get('origin') || ''
   const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0]
@@ -85,7 +96,13 @@ serve(async (req) => {
       if (expiries.length > 0) expiresAt = expiries.sort().at(-1)!
     }
 
-    return jsonResponse(req, { email, plan, isLifetime, isAdmin: !!isAdmin, expiresAt, amountPaid: buyer?.amount ?? null })
+    // Se não há valor real pago (compra de verdade), usa o preço de tabela
+    // do plano atual como "já investido" — concedido manualmente ou não,
+    // o upgrade sempre mostra só a diferença, nunca o preço cheio.
+    const realAmountPaid = buyer?.amount ? Number(buyer.amount) : 0
+    const amountPaid = realAmountPaid > 0 ? realAmountPaid : (plan ? (PLAN_PRICES[plan] ?? 0) : 0)
+
+    return jsonResponse(req, { email, plan, isLifetime, isAdmin: !!isAdmin, expiresAt, amountPaid })
   } catch (err: any) {
     console.error(err)
     return jsonResponse(req, { error: err.message }, 500)
