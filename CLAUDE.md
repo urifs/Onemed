@@ -38,7 +38,7 @@
 
 | Serviço | Token / Valor |
 |---------|--------------|
-| **Supabase Management API** | `sbp_978755d6124e8183400830a25f8b5f8df3fff407` |
+| **Supabase Management API** | `sbp_0e4b7bf71a6909b65e1d928af78863a35e811ee8` |
 | **Vercel API Token** | `vcp_6m85MdQjg3YEmboL3Bg4x0fHzqTfXiuhQQubBmzGE3tjjqhdDt0JF7SY` |
 
 ### IDs e Referências dos Projetos
@@ -70,7 +70,7 @@
 
 ```bash
 # Autenticar Supabase CLI
-export SUPABASE_ACCESS_TOKEN="sbp_46a93dbb0118dfcdcef474f9287d4044284b30ec"
+export SUPABASE_ACCESS_TOKEN="sbp_0e4b7bf71a6909b65e1d928af78863a35e811ee8"
 
 # Deploy de uma Edge Function específica
 supabase functions deploy <nome> --project-ref jrrybiohwqabsdurqudc --use-api
@@ -601,6 +601,54 @@ usuário.
 no header da landing (`LandingHeader.tsx`) linkando pra `/login`; resultado da importação em
 massa de emails em `/admin/membros` (que já ignorava emails que já tinham acesso, sem duplicar)
 ganhou destaque visual com ícones/cores por categoria (concedidos/já tinham acesso/inválidos).
+
+---
+
+### 2026-07-27 (sessão remota) — incidente de deploy, limpeza de duplicatas, upgrade sem desconto, threads de comentários, detalhes do plano
+
+**Incidente em produção:** deploy via `PATCH .../functions/{slug}` (raw, sem multipart) corrompeu
+silenciosamente 6-7 Edge Functions (`BOOT_ERROR` em produção por ~8h, function aparecia "ACTIVE"
+na API mas falhava ao subir). Corrigido redeployando todas via multipart
+`POST .../functions/deploy?slug={slug}`, que é o único método de deploy confiável neste ambiente
+(CLI `supabase functions deploy` falha com `TransportError` pelo proxy). Nenhum pagamento
+aprovado foi perdido no incidente — todos os `buyers` afetados estavam `status:'pending'` sem
+`payment_id`.
+
+**3 novos planos:** `monthly` (R$49,90/30 dias), `lifetime_plus` (R$599 — vitalício + backup no
+Drive do usuário + 4 telas), `lifetime_pro` (R$997 — tudo do Plus + IA Meduf + download em massa
+na plataforma). Preços/labels/features centralizados em `src/lib/plans.ts`; `mp-create-payment` e
+`mp-webhook` reescritos com lookups por tabela (`PLAN_PRICES`, `LIFETIME_TIER_RANK`) em vez de
+ternários binários lifetime/annual.
+
+**Bug sistêmico de linhas duplicadas em `accesses`:** `MembersPage.tsx` sempre fazia `insert()` ao
+conceder acesso, nunca verificando se já existia uma linha ativa — 448 emails com múltiplas linhas
+`active` simultâneas (a mais antiga desde março/2026). Corrigido: `grantAccess()` agora
+UPDATE-ou-INSERT; `member-account-info`/`member-auth-request` passaram a resolver por
+maior-tier-entre-todas-as-linhas em vez de "a primeira que a query retornar"; 464 linhas antigas
+revogadas (não deletadas) em produção, autorizado explicitamente pelo usuário.
+
+**Upgrade de plano sempre mostrando preço cheio:** contas com acesso concedido manualmente (sem
+linha em `buyers`) tinham `amountPaid = 0`, então o cálculo de desconto do upgrade sempre dava o
+preço cheio. Corrigido em `member-account-info` e `mp-create-payment`: quando não há valor real
+pago, usa o preço de tabela do plano atual como "já investido" — upgrade sempre mostra só a
+diferença, pago ou concedido manualmente.
+
+**Threads aninhadas de comentários:** `community_replies`/`course_comments_feed` reescritas com
+`WITH RECURSIVE` (coluna `parent_id`, contagem recursiva de `reply_count`); novo componente
+compartilhado `CommentThread.tsx` (usado em `CommunityPage.tsx` e `CommunityTab.tsx`) permite
+responder qualquer resposta, não só o comentário raiz.
+
+**Tela de Detalhes do Plano:** botão "Detalhes do Plano" no `AccountMenu.tsx` abre
+`PlanDetailsModal.tsx` — mostra plano, benefícios, valor pago, vencimento, telas simultâneas, data
+de concessão, e-mail e WhatsApp. `member-account-info` passou a retornar `whatsapp`/`grantedAt`.
+
+**Outros:** card duplicado "Online agora" removido de `/admin/membros` (já existe versão em tempo
+real — Realtime Presence — no Dashboard `/admin`); pin de tópicos na comunidade (só admin) e edição
+de comentário próprio; favoritar aulas/arquivos individualmente (aba Favoritos separada por
+cursos/aulas/arquivos); limite de 4 telas simultâneas pra Vitalício Plus/Pro (era 2).
+
+**Token do Supabase Management API rotacionado** nesta sessão (o anterior passou a retornar 401
+em qualquer endpoint) — valor atual já refletido na tabela de credenciais no topo deste arquivo.
 
 ---
 
