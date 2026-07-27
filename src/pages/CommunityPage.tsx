@@ -2,13 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Send, MessageCircle, AlertTriangle, RefreshCw, ChevronDown, BookOpen, Play, BadgeCheck, Tag, ListFilter, ArrowUpDown, MessagesSquare, ExternalLink, Pin, Pencil } from 'lucide-react';
+import { Send, MessageCircle, AlertTriangle, RefreshCw, BookOpen, Play, BadgeCheck, Tag, ListFilter, ArrowUpDown, MessagesSquare, ExternalLink, Pin, Pencil } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
 import { useRequireName } from '@/hooks/useRequireName';
 import { useCommunitySettings } from '@/hooks/useCommunitySettings';
 import { MemberHeader } from '@/components/member/MemberHeader';
 import { NameRequiredModal } from '@/components/member/NameRequiredModal';
+import { CommentThread } from '@/components/member/CommentThread';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { withTimeout, stripYearFromTitle } from '@/lib/utils';
@@ -36,16 +37,6 @@ interface FeedItem {
   pinned: boolean;
 }
 
-interface Reply {
-  id: string;
-  body: string;
-  created_at: string;
-  user_id: string;
-  author_name: string | null;
-  author_email: string | null;
-  is_admin: boolean;
-}
-
 const PAGE_SIZE = 20;
 
 function initials(name?: string | null, email?: string | null): string {
@@ -61,162 +52,6 @@ function AdminBadge() {
     <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary bg-primary/10 border border-primary/25 rounded-full px-2 py-0.5">
       <BadgeCheck className="w-3 h-3" /> Equipe OneMed
     </span>
-  );
-}
-
-function RepliesSection({ postId }: { postId: string }) {
-  const { user } = useAuth();
-  const { promptOpen, setPromptOpen, ensureName, submitName } = useRequireName();
-  const [open, setOpen] = useState(false);
-  const [replies, setReplies] = useState<Reply[] | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [body, setBody] = useState('');
-  const [posting, setPosting] = useState(false);
-  const [editingReplyId, setEditingReplyId] = useState<string | null>(null);
-  const [editReplyBody, setEditReplyBody] = useState('');
-  const [savingReplyEdit, setSavingReplyEdit] = useState(false);
-
-  const loadReplies = async () => {
-    setLoading(true);
-    try {
-      const { data, error } = await supabase.rpc('community_replies', { _parent_id: postId });
-      if (error) throw error;
-      setReplies((data || []) as Reply[]);
-    } catch (err) {
-      console.error('Failed to load replies', err);
-      setReplies([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const toggle = () => {
-    setOpen(o => !o);
-    if (!replies) loadReplies();
-  };
-
-  const doReply = async () => {
-    if (!body.trim() || !user) return;
-    setPosting(true);
-    const { error } = await supabase.from('course_comments').insert({
-      parent_id: postId, user_id: user.id, body: body.trim(),
-    });
-    setPosting(false);
-    if (!error) { setBody(''); loadReplies(); }
-  };
-
-  const handleReply = () => ensureName(doReply);
-
-  const startEditReply = (r: Reply) => { setEditingReplyId(r.id); setEditReplyBody(r.body); };
-
-  const saveReplyEdit = async () => {
-    if (!editReplyBody.trim() || !editingReplyId) return;
-    setSavingReplyEdit(true);
-    const { error } = await supabase.from('course_comments').update({ body: editReplyBody.trim() }).eq('id', editingReplyId);
-    setSavingReplyEdit(false);
-    if (!error) {
-      setReplies(prev => (prev || []).map(r => r.id === editingReplyId ? { ...r, body: editReplyBody.trim() } : r));
-      setEditingReplyId(null);
-    }
-  };
-
-  return (
-    <div className="mt-2">
-      <button
-        onClick={toggle}
-        className="text-xs font-medium text-muted-foreground hover:text-primary flex items-center gap-1 transition-colors"
-      >
-        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
-        {open ? 'Ocultar respostas' : 'Responder / ver respostas'}
-      </button>
-
-      {open && (
-        <div className="mt-3 pl-4 border-l-2 border-border space-y-4">
-          {loading ? (
-            <div className="flex justify-center py-4">
-              <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-            </div>
-          ) : (
-            <>
-              {(replies || []).map(r => {
-                const isOwnReply = !!user && r.user_id === user.id;
-                return (
-                <div key={r.id} className="flex gap-2.5">
-                  <div className={`w-7 h-7 rounded-full border flex items-center justify-center font-semibold text-xs shrink-0 ${r.is_admin ? 'bg-primary/15 border-primary/40 text-primary' : 'bg-secondary border-border text-foreground'}`}>
-                    {initials(r.author_name, r.author_email)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-baseline gap-2 flex-wrap">
-                      <span className="text-xs font-semibold text-foreground">{displayName(r.author_name, r.author_email)}</span>
-                      {r.is_admin && <AdminBadge />}
-                      <span className="text-[11px] text-muted-foreground">
-                        {formatDistanceToNow(new Date(r.created_at), { addSuffix: true, locale: ptBR })}
-                      </span>
-                      {isOwnReply && editingReplyId !== r.id && (
-                        <button onClick={() => startEditReply(r)} className="ml-auto text-[11px] text-muted-foreground hover:text-primary flex items-center gap-1 transition-colors">
-                          <Pencil className="w-3 h-3" /> Editar
-                        </button>
-                      )}
-                    </div>
-                    {editingReplyId === r.id ? (
-                      <div className="mt-1.5 space-y-1.5">
-                        <textarea
-                          value={editReplyBody}
-                          onChange={e => setEditReplyBody(e.target.value)}
-                          rows={2}
-                          spellCheck
-                          lang="pt-BR"
-                          className="w-full resize-none rounded-lg bg-secondary border border-border px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors"
-                        />
-                        <div className="flex justify-end gap-2">
-                          <button onClick={() => setEditingReplyId(null)} className="text-xs text-muted-foreground hover:text-foreground px-2 py-1">Cancelar</button>
-                          <button
-                            onClick={saveReplyEdit}
-                            disabled={savingReplyEdit || !editReplyBody.trim()}
-                            className="text-xs font-semibold bg-primary hover:bg-primary-hover disabled:opacity-40 disabled:cursor-not-allowed text-primary-foreground px-3 py-1 rounded-lg transition-colors"
-                          >
-                            {savingReplyEdit ? 'Salvando...' : 'Salvar'}
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <p className="text-sm text-foreground/90 mt-0.5 whitespace-pre-wrap break-words">{r.body}</p>
-                    )}
-                  </div>
-                </div>
-                );
-              })}
-
-              <div className="flex gap-2.5">
-                <div className="w-7 h-7 rounded-full bg-primary/15 border border-primary/25 flex items-center justify-center text-primary font-semibold text-xs shrink-0">
-                  {initials(user?.user_metadata?.name as string | undefined, user?.email)}
-                </div>
-                <div className="flex-1 flex gap-2">
-                  <input
-                    value={body}
-                    onChange={e => setBody(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && handleReply()}
-                    placeholder="Escreva uma resposta…"
-                    spellCheck
-                    lang="pt-BR"
-                    className="flex-1 rounded-lg bg-secondary border border-border px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors"
-                  />
-                  <button
-                    onClick={handleReply}
-                    disabled={posting || !body.trim()}
-                    className="shrink-0 inline-flex items-center justify-center w-9 h-9 rounded-lg bg-primary hover:bg-primary-hover disabled:opacity-40 disabled:cursor-not-allowed text-primary-foreground transition-colors"
-                  >
-                    <Send className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      <NameRequiredModal open={promptOpen} onOpenChange={setPromptOpen} onSubmit={submitName} />
-    </div>
   );
 }
 
@@ -328,7 +163,7 @@ function FeedItemCard({ item, currentUserId, onUpdated }: {
             </>
           )}
 
-          <RepliesSection postId={item.id} />
+          <CommentThread rootId={item.id} replyCount={item.reply_count} />
         </div>
       </div>
     </div>

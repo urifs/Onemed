@@ -6,6 +6,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
 import { useRequireName } from '@/hooks/useRequireName';
 import { NameRequiredModal } from './NameRequiredModal';
+import { CommentThread } from './CommentThread';
 
 interface Comment {
   id: string;
@@ -15,6 +16,7 @@ interface Comment {
   author_name: string | null;
   author_email: string | null;
   is_admin: boolean;
+  reply_count: number;
 }
 
 export function CommunityTab({ courseId }: { courseId: string }) {
@@ -160,6 +162,7 @@ export function CommunityTab({ courseId }: { courseId: string }) {
                 ) : (
                   <p className="text-sm text-foreground/90 mt-0.5 whitespace-pre-wrap break-words">{c.body}</p>
                 )}
+                <CommentThread rootId={c.id} replyCount={c.reply_count} />
               </div>
             </div>
             );
