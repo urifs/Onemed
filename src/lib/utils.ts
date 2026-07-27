@@ -21,6 +21,38 @@ export function withTimeout<T>(promise: Promise<T>, ms: number, label: string): 
   });
 }
 
+// Uma falha isolada (blip de rede, query lenta sob carga, um 500 passageiro)
+// não deveria virar tela de erro pro aluno — a maioria se resolve sozinha
+// numa segunda tentativa. Só mostra o erro depois de esgotar as tentativas.
+export async function withRetry<T>(fn: () => Promise<T>, attempts = 2, delayMs = 1200): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i <= attempts; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (i < attempts) await new Promise(r => setTimeout(r, delayMs * (i + 1)));
+    }
+  }
+  throw lastErr;
+}
+
+// "Verifique sua conexão" só é uma mensagem honesta quando o erro realmente
+// veio de uma falha de rede no navegador (TypeError: Failed to fetch) — um
+// timeout da nossa própria função withTimeout ou um erro do Postgrest/RLS não
+// tem nada a ver com a internet do aluno, e dizer isso só confunde quem
+// reporta o problema achando que é culpa da própria conexão.
+export function describeLoadError(err: unknown, subject: string): string {
+  const message = err instanceof Error ? err.message : String(err ?? '');
+  if (message.startsWith('Tempo esgotado')) {
+    return `A busca de ${subject} demorou mais que o esperado. Tente novamente.`;
+  }
+  if (/failed to fetch|networkerror|network request failed/i.test(message)) {
+    return 'Não foi possível conectar. Verifique sua conexão e tente novamente.';
+  }
+  return `Não foi possível carregar ${subject} agora. Tente novamente.`;
+}
+
 const SAO_PAULO_TIMEZONE = 'America/Sao_Paulo';
 
 export function formatDateSP(dateStr: string | number | null, options: Intl.DateTimeFormatOptions = {}): string {

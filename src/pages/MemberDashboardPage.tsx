@@ -10,7 +10,7 @@ import { CourseCover } from '@/components/member/CourseCover';
 import { CategorySidebar } from '@/components/member/CategorySidebar';
 import { Checkbox } from '@/components/ui/checkbox';
 import { CATEGORY_ORDER } from '@/lib/courseCategories';
-import { formatDuration, matchesSearch, stripYearFromTitle, withTimeout } from '@/lib/utils';
+import { formatDuration, matchesSearch, stripYearFromTitle, withTimeout, withRetry, describeLoadError } from '@/lib/utils';
 import type { Database } from '@/integrations/supabase/types';
 
 type Course = Database['public']['Tables']['courses']['Row'];
@@ -38,6 +38,7 @@ export default function MemberDashboardPage() {
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  const [loadErrorMessage, setLoadErrorMessage] = useState('');
   const [retryTick, setRetryTick] = useState(0);
   const [query, setQuery] = useState(() => searchParams.get('q') || '');
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
@@ -83,7 +84,7 @@ export default function MemberDashboardPage() {
     let alive = true;
     (async () => {
       try {
-        const [{ data: coursesData, error: coursesErr }, progressResult, { data: favData }] = await withTimeout(
+        const [{ data: coursesData, error: coursesErr }, progressResult, { data: favData }] = await withRetry(() => withTimeout(
           Promise.all([
             supabase.from('courses').select('*').eq('active', true).order('sort_order').order('title'),
             userId
@@ -94,26 +95,27 @@ export default function MemberDashboardPage() {
                   .order('last_watched_at', { ascending: false })
                   .limit(12)
               : Promise.resolve({ data: [] as ProgressRow[] }),
-            userId 
+            userId
               ? supabase.from('user_favorites').select('course_id').eq('user_id', userId)
               : Promise.resolve({ data: [] })
           ]),
           12000,
           'busca de cursos',
-        );
+        ));
         if (coursesErr) throw coursesErr;
         if (!alive) return;
         setCourses(coursesData || []);
         setContinueList(((progressResult as any).data || []) as ProgressRow[]);
-        
+
         if (favData) {
           setFavorites(new Set(favData.map(f => f.course_id)));
         }
-        
+
         setLoadError(false);
       } catch (err) {
         console.error('Failed to load member dashboard', err);
         if (!alive) return;
+        setLoadErrorMessage(describeLoadError(err, 'os cursos'));
         setLoadError(true);
       } finally {
         if (alive) setLoading(false);
@@ -268,7 +270,7 @@ export default function MemberDashboardPage() {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4 px-4 text-center">
         <p className="text-foreground font-secondary text-xl font-bold">Não foi possível carregar os cursos</p>
-        <p className="text-muted-foreground text-sm max-w-xs">Verifique sua conexão e tente novamente.</p>
+        <p className="text-muted-foreground text-sm max-w-xs">{loadErrorMessage || 'Tente novamente em instantes.'}</p>
         <button
           onClick={handleRetry}
           className="inline-flex items-center gap-2 bg-primary hover:bg-primary-hover text-primary-foreground font-semibold px-5 py-2.5 rounded-xl transition-colors"

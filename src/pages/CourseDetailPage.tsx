@@ -12,7 +12,7 @@ import { CourseCover } from '@/components/member/CourseCover';
 import { LessonPlayer } from '@/components/member/LessonPlayer';
 import { CommunityTab } from '@/components/member/CommunityTab';
 import { CATEGORY_ICON } from '@/lib/courseCategories';
-import { formatDuration, formatFileSize, matchesSearch, stripYearFromTitle, withTimeout } from '@/lib/utils';
+import { formatDuration, formatFileSize, matchesSearch, stripYearFromTitle, withTimeout, withRetry, describeLoadError } from '@/lib/utils';
 import type { Database } from '@/integrations/supabase/types';
 
 type Course = Database['public']['Tables']['courses']['Row'];
@@ -75,6 +75,7 @@ export default function CourseDetailPage() {
   const [tab, setTab] = useState<'aulas' | 'arquivos' | 'comunidade'>('aulas');
   const [activeLesson, setActiveLesson] = useState<Lesson | null>(null);
   const [loadError, setLoadError] = useState(false);
+  const [loadErrorMessage, setLoadErrorMessage] = useState('');
   const [retryTick, setRetryTick] = useState(0);
   const [query, setQuery] = useState('');
   const [pendingScrollId, setPendingScrollId] = useState<string | null>(null);
@@ -90,67 +91,70 @@ export default function CourseDetailPage() {
     setLoadError(false);
     (async () => {
       try {
-        const { data: courseRow, error: courseErr } = await withTimeout(
-          supabase.from('courses').select('*').eq('slug', slug).eq('active', true).maybeSingle(),
-          12000,
-          'dados do curso',
-        );
-        if (courseErr) throw courseErr;
-        if (!alive) return;
-        setCourse(courseRow || null);
-        if (!courseRow) return;
+        await withRetry(async () => {
+          const { data: courseRow, error: courseErr } = await withTimeout(
+            supabase.from('courses').select('*').eq('slug', slug).eq('active', true).maybeSingle(),
+            12000,
+            'dados do curso',
+          );
+          if (courseErr) throw courseErr;
+          if (!alive) return;
+          setCourse(courseRow || null);
+          if (!courseRow) return;
 
-        const fetchAllLessons = async () => {
-          let items: Lesson[] = [];
-          let from = 0;
-          const step = 1000;
-          while (true) {
-            const { data, error } = await supabase.from('lessons').select('*').eq('course_id', courseRow.id).order('sort_order').range(from, from + step - 1);
-            if (error) throw error;
-            if (data) items = items.concat(data);
-            if (!data || data.length < step) break;
-            from += step;
-          }
-          return items;
-        };
+          const fetchAllLessons = async () => {
+            let items: Lesson[] = [];
+            let from = 0;
+            const step = 1000;
+            while (true) {
+              const { data, error } = await supabase.from('lessons').select('*').eq('course_id', courseRow.id).order('sort_order').range(from, from + step - 1);
+              if (error) throw error;
+              if (data) items = items.concat(data);
+              if (!data || data.length < step) break;
+              from += step;
+            }
+            return items;
+          };
 
-        const fetchAllProgress = async () => {
-          if (!user) return [];
-          let items: Progress[] = [];
-          let from = 0;
-          const step = 1000;
-          while (true) {
-            const { data, error } = await supabase.from('lesson_progress').select('*').eq('course_id', courseRow.id).eq('user_id', user.id).range(from, from + step - 1);
-            if (error) throw error;
-            if (data) items = items.concat(data);
-            if (!data || data.length < step) break;
-            from += step;
-          }
-          return items;
-        };
+          const fetchAllProgress = async () => {
+            if (!user) return [];
+            let items: Progress[] = [];
+            let from = 0;
+            const step = 1000;
+            while (true) {
+              const { data, error } = await supabase.from('lesson_progress').select('*').eq('course_id', courseRow.id).eq('user_id', user.id).range(from, from + step - 1);
+              if (error) throw error;
+              if (data) items = items.concat(data);
+              if (!data || data.length < step) break;
+              from += step;
+            }
+            return items;
+          };
 
-        const [moduleRows, lessonRows, progressRows, { data: favData }] = await withTimeout(
-          Promise.all([
-            supabase.from('course_modules').select('*').eq('course_id', courseRow.id).order('sort_order').then(res => { if (res.error) throw res.error; return res.data || []; }),
-            fetchAllLessons(),
-            fetchAllProgress(),
-            user?.id ? supabase.from('user_favorites').select('course_id').eq('user_id', user.id).eq('course_id', courseRow.id).maybeSingle() : Promise.resolve({ data: null }),
-          ]),
-          30000,
-          'aulas do curso'
-        );
+          const [moduleRows, lessonRows, progressRows, { data: favData }] = await withTimeout(
+            Promise.all([
+              supabase.from('course_modules').select('*').eq('course_id', courseRow.id).order('sort_order').then(res => { if (res.error) throw res.error; return res.data || []; }),
+              fetchAllLessons(),
+              fetchAllProgress(),
+              user?.id ? supabase.from('user_favorites').select('course_id').eq('user_id', user.id).eq('course_id', courseRow.id).maybeSingle() : Promise.resolve({ data: null }),
+            ]),
+            30000,
+            'aulas do curso'
+          );
 
-        if (!alive) return;
-        setModules(moduleRows);
-        setLessons(lessonRows);
-        setIsFavorite(!!favData);
-        const map: Record<string, Progress> = {};
-        for (const p of progressRows) map[p.lesson_id] = p;
-        setProgressMap(map);
-        setLoadError(false);
+          if (!alive) return;
+          setModules(moduleRows);
+          setLessons(lessonRows);
+          setIsFavorite(!!favData);
+          const map: Record<string, Progress> = {};
+          for (const p of progressRows) map[p.lesson_id] = p;
+          setProgressMap(map);
+          setLoadError(false);
+        });
       } catch (err) {
         console.error('Failed to load course', err);
         if (!alive) return;
+        setLoadErrorMessage(describeLoadError(err, 'o curso'));
         setLoadError(true);
       }
     })();
@@ -259,7 +263,7 @@ export default function CourseDetailPage() {
       return (
         <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4 px-4 text-center">
           <p className="text-foreground font-secondary text-xl font-bold">Não foi possível carregar o curso</p>
-          <p className="text-muted-foreground text-sm max-w-xs">Verifique sua conexão e tente novamente.</p>
+          <p className="text-muted-foreground text-sm max-w-xs">{loadErrorMessage || 'Tente novamente em instantes.'}</p>
           <button
             onClick={() => setRetryTick(t => t + 1)}
             className="inline-flex items-center gap-2 bg-primary hover:bg-primary-hover text-primary-foreground font-semibold px-5 py-2.5 rounded-xl transition-colors"
