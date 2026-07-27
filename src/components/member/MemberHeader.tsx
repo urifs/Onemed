@@ -25,8 +25,24 @@ function useMemberPresence() {
   }, [user?.id]);
 }
 
+// Geolocaliza por IP pro mapa de usuários do dashboard admin. Roda uma vez
+// por aba/sessão (não em todo login) — cobre também quem já estava logado
+// antes dessa feature existir e cujo token de sessão nunca mais passa por
+// member-auth-request/create-trial-access.
+function useLocationCapture() {
+  const { user } = useAuth();
+  useEffect(() => {
+    if (!user?.id) return;
+    const flagKey = `om_loc_captured_${user.id}`;
+    if (sessionStorage.getItem(flagKey)) return;
+    sessionStorage.setItem(flagKey, '1');
+    supabase.functions.invoke('member-capture-location').catch(() => {});
+  }, [user?.id]);
+}
+
 export function MemberHeader() {
   useMemberPresence();
+  useLocationCapture();
   return (
     <>
       <MemberPWAHead />
