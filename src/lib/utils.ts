@@ -53,6 +53,23 @@ export function describeLoadError(err: unknown, subject: string): string {
   return `Não foi possível carregar ${subject} agora. Tente novamente.`;
 }
 
+// signInWithPassword/signUp propagate a raw DOMException ("The operation was
+// aborted") when our own fetch timeout wrapper (client.ts) fires — technical,
+// scary, and useless to whoever's trying to log in. Map it (and the generic
+// network-failure case) to something actionable; anything else passes through
+// untouched since GoTrue's own messages ("Invalid login credentials", etc.)
+// are already clear.
+export function describeAuthError(err: unknown): Error {
+  const message = err instanceof Error ? err.message : String(err ?? '');
+  if (/aborted/i.test(message)) {
+    return new Error('Conexão lenta ou instável. Tente novamente.');
+  }
+  if (/failed to fetch|networkerror|network request failed/i.test(message)) {
+    return new Error('Não foi possível conectar. Verifique sua conexão e tente novamente.');
+  }
+  return err instanceof Error ? err : new Error(message || 'Erro inesperado. Tente novamente.');
+}
+
 const SAO_PAULO_TIMEZONE = 'America/Sao_Paulo';
 
 export function formatDateSP(dateStr: string | number | null, options: Intl.DateTimeFormatOptions = {}): string {
