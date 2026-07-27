@@ -32,6 +32,32 @@ function jsonResponse(req: Request, body: unknown, status = 200) {
   })
 }
 
+// Geolocaliza o IP do login e grava/atualiza member_locations — melhor
+// esforço, nunca derruba o login se a API de geolocalização falhar.
+async function captureMemberLocation(supabase: ReturnType<typeof createClient>, ip: string, userId: string, email: string) {
+  try {
+    if (!ip || ip === 'unknown') return
+    const geoRes = await fetch(`https://ipwho.is/${ip}`, { signal: AbortSignal.timeout(3000) })
+    if (!geoRes.ok) return
+    const geo = await geoRes.json()
+    if (!geo.success || geo.latitude == null || geo.longitude == null) return
+    await supabase.from('member_locations').upsert({
+      user_id: userId,
+      email,
+      ip,
+      city: geo.city || null,
+      region: geo.region || null,
+      country: geo.country || null,
+      country_code: geo.country_code || null,
+      latitude: geo.latitude,
+      longitude: geo.longitude,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'user_id' })
+  } catch (err) {
+    console.warn('captureMemberLocation falhou', err)
+  }
+}
+
 async function checkRateLimit(supabase: ReturnType<typeof createClient>, identifier: string) {
   const maxAttempts = 5
   const windowMs = 15 * 60 * 1000
@@ -66,6 +92,8 @@ serve(async (req) => {
 
     if (!EMAIL_REGEX.test(email)) return jsonResponse(req, { error: 'Email inválido' }, 400)
 
+    const ip = (req.headers.get('x-forwarded-for') || '').split(',')[0].trim() || req.headers.get('x-real-ip') || 'unknown'
+
     // Sem .limit(1).maybeSingle() de propósito: uma conta pode ter mais de
     // uma linha "active" em accesses (ex: grant manual antigo nunca
     // desativado ao fazer upgrade) — pegar só uma arbitrária já causou o
@@ -80,7 +108,6 @@ serve(async (req) => {
     // platform itself — rate limiting them out of their own site is a
     // self-inflicted lockout, not abuse prevention.
     if (!isAdminEmail) {
-      const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() || 'unknown'
       const rate = await checkRateLimit(supabase, ip)
       if (!rate.allowed) {
         return jsonResponse(req, { error: 'Muitas tentativas. Tente novamente em alguns minutos.', retryAfterSeconds: rate.retryAfterSeconds }, 429)
@@ -136,7 +163,10 @@ serve(async (req) => {
         ...(buyerRows || []).map(b => PLAN_DEVICE_LIMITS[b.plan]),
       ].filter((n): n is number => !!n)
       const maxSessions = planLimits.length > 0 ? Math.max(...planLimits) : DEFAULT_DEVICE_LIMIT
-      const { error: limitErr } = await supabase.rpc('enforce_session_limit', { _user_id: linkData.user.id, _max_sessions: maxSessions })
+      const [{ error: limitErr }] = await Promise.all([
+        supabase.rpc('enforce_session_limit', { _user_id: linkData.user.id, _max_sessions: maxSessions }),
+        captureMemberLocation(supabase, ip, linkData.user.id, email),
+      ])
       if (limitErr) console.error('enforce_session_limit error', limitErr)
     }
 

@@ -5,6 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import AdminLayout from '@/components/AdminLayout';
 import { OnlineMembersCard } from '@/components/admin/OnlineMembersCard';
+import { MemberLocationsMap } from '@/components/admin/MemberLocationsMap';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { formatDateTimeSP, todayStartISO } from '@/lib/utils';
@@ -137,6 +138,9 @@ export default function Dashboard() {
 
         {/* Quem está online (tempo real) */}
         <OnlineMembersCard />
+
+        {/* Mapa de localização aproximada (online inclui testes, offline só assinantes) */}
+        <MemberLocationsMap />
 
         {/* Trial vs Paid */}
         {stats && (

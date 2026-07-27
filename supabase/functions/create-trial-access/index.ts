@@ -127,12 +127,38 @@ async function recordIpTrial(
     .eq('identifier', identifier).eq('action', 'trial_per_ip')
 }
 
+// Geolocaliza o IP do login e grava/atualiza member_locations — melhor
+// esforço, nunca derruba o login se a API de geolocalização falhar.
+async function captureMemberLocation(supabase: ReturnType<typeof createClient>, ip: string, userId: string, email: string) {
+  try {
+    if (!ip || ip === 'unknown') return
+    const geoRes = await fetch(`https://ipwho.is/${ip}`, { signal: AbortSignal.timeout(3000) })
+    if (!geoRes.ok) return
+    const geo = await geoRes.json()
+    if (!geo.success || geo.latitude == null || geo.longitude == null) return
+    await supabase.from('member_locations').upsert({
+      user_id: userId,
+      email,
+      ip,
+      city: geo.city || null,
+      region: geo.region || null,
+      country: geo.country || null,
+      country_code: geo.country_code || null,
+      latitude: geo.latitude,
+      longitude: geo.longitude,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'user_id' })
+  } catch (err) {
+    console.warn('captureMemberLocation falhou', err)
+  }
+}
+
 // Redeems a fresh magic link server-side instead of emailing it, so the
 // caller gets a ready-to-use session back in the same response — same
 // technique as member-auth-request. A first-ever login has no confirmed
 // auth.users row yet, so GoTrue files the token as a "signup" confirmation
 // instead of a "magiclink" one; try both.
-async function issueSession(supabase: ReturnType<typeof createClient>, supabaseUrl: string, email: string) {
+async function issueSession(supabase: ReturnType<typeof createClient>, supabaseUrl: string, email: string, clientIp: string) {
   const { data: linkData, error: linkErr } = await supabase.auth.admin.generateLink({ type: 'magiclink', email })
   if (linkErr || !linkData?.properties?.hashed_token) {
     console.error('generateLink error', linkErr)
@@ -151,7 +177,10 @@ async function issueSession(supabase: ReturnType<typeof createClient>, supabaseU
       // Limite de 2 dispositivos simultâneos: mantém só as sessões mais
       // recentes, derrubando o refresh token do dispositivo mais antigo.
       if (linkData.user?.id) {
-        const { error: limitErr } = await supabase.rpc('enforce_session_limit', { _user_id: linkData.user.id, _max_sessions: 2 })
+        const [{ error: limitErr }] = await Promise.all([
+          supabase.rpc('enforce_session_limit', { _user_id: linkData.user.id, _max_sessions: 2 }),
+          captureMemberLocation(supabase, clientIp, linkData.user.id, email),
+        ])
         if (limitErr) console.error('enforce_session_limit error', limitErr)
       }
       return { access_token, refresh_token }
@@ -213,7 +242,7 @@ serve(async (req) => {
       if (existing.status === 'active' && existing.expires_at) {
         const diffMs = new Date(existing.expires_at).getTime() - Date.now()
         if (diffMs > 0) {
-          const session = await issueSession(supabase, supabaseUrl, normalizedEmail)
+          const session = await issueSession(supabase, supabaseUrl, normalizedEmail, clientIp)
           return jsonResponse(req, {
             alreadyActive: true,
             email: normalizedEmail,
@@ -266,7 +295,7 @@ serve(async (req) => {
       console.warn('Falha ao registrar trial por IP:', recErr.message)
     }
 
-    const session = await issueSession(supabase, supabaseUrl, normalizedEmail)
+    const session = await issueSession(supabase, supabaseUrl, normalizedEmail, clientIp)
     if (!session) {
       return jsonResponse(req, { error: 'Acesso criado, mas não foi possível iniciar a sessão. Tente entrar em /login.' }, 500)
     }
