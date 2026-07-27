@@ -674,6 +674,21 @@ tabela). Nova RPC `get_member_locations_map` (admin-only) cruza essa tabela com 
 `member-auth-request`: a extração de IP não tinha fallback pra `x-real-ip` quando
 `x-forwarded-for` vinha vazio — o rate limit por IP nunca pegava o IP real.
 
+**Bug crítico na sincronização — 24 cursos nunca importados:** usuário reportou que um curso
+existente no Drive (link de uma subpasta) não aparecia na plataforma. Investigação achou a causa
+raiz em `member-sync-library`: quando duas pastas de nível superior no Drive têm exatamente o
+mesmo nome (ex: duas turmas diferentes ambas chamadas "Medcof 2024"), a função gerava o mesmo
+slug pras duas e, ao ver que o slug já existia, **pulava a segunda pasta pra sempre** como
+"duplicata" — mesmo sendo conteúdo completamente diferente. Comparando a lista completa de pastas
+de nível superior do Drive (404 pastas) contra `courses.drive_folder_id`, todas as 24 pastas
+faltantes bateram exatamente nesse bug (slug colidindo com curso já existente). Corrigido:
+quando o slug colide, desambigua com os últimos 6 caracteres do ID da pasta (estável, único) em
+vez de descartar o curso — deployado em produção. Os 24 cursos faltantes foram importados
+manualmente nesta sessão (207.689 lições/arquivos, 15.078 módulos no total após a importação,
+404 cursos no total = paridade completa com as 404 pastas de nível superior do Drive). Uma
+próxima "Sincronizar biblioteca" pelo painel admin já vai funcionar normalmente para casos
+futuros com nomes repetidos, sem precisar de intervenção manual.
+
 ---
 
 ## Meta Ads — Contexto Geral
