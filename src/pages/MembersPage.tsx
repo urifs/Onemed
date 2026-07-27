@@ -98,7 +98,7 @@ export default function MembersPage() {
   const [bulkPlan, setBulkPlan] = useState('lifetime');
   const [bulkImporting, setBulkImporting] = useState(false);
   const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
-  const [bulkResult, setBulkResult] = useState<{ granted: number; skipped: number; invalid: number } | null>(null);
+  const [bulkResult, setBulkResult] = useState<{ granted: number; replaced: number; invalid: number } | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -199,20 +199,31 @@ export default function MembersPage() {
     setBulkResult(null);
     setBulkProgress({ done: 0, total: candidates.length });
     try {
-      // Anyone who already has active access (any grant type, or a purchase)
-      // gets skipped instead of a redundant second row.
-      const [{ data: existingAccesses }, { data: existingBuyers }] = await Promise.all([
-        fetchAllRows((f, t) => supabase.from('accesses').select('email').eq('status', 'active').range(f, t)),
-        fetchAllRows((f, t) => supabase.from('buyers').select('email').eq('access_granted', true).range(f, t)),
-      ]);
-      const covered = new Set([
-        ...(existingAccesses || []).map((a: any) => a.email.toLowerCase()),
-        ...(existingBuyers || []).map((b: any) => b.email.toLowerCase()),
-      ]);
+      // Quem já tem uma linha de acesso ativa (não-trial) tem ela SUBSTITUÍDA
+      // pelo plano selecionado aqui, em vez de pular ou duplicar — mesmo
+      // comportamento do "Conceder Acesso" individual. fetchAllRows já
+      // devolve o array pronto (não {data: [...]}).
+      const existingAccesses = await fetchAllRows<{ email: string }>((f, t) =>
+        supabase.from('accesses').select('email').eq('status', 'active').neq('access_type', 'trial').range(f, t)
+      );
+      const hasAccessRow = new Set(existingAccesses.map(a => a.email.toLowerCase()));
 
-      const toInsert = candidates.filter(e => !covered.has(e));
-      const skipped = candidates.length - toInsert.length;
+      const toReplace = candidates.filter(e => hasAccessRow.has(e));
+      const toInsert = candidates.filter(e => !hasAccessRow.has(e));
       const expiresAt = planExpiresAt(bulkPlan);
+
+      let replaced = 0;
+      for (let i = 0; i < toReplace.length; i += BULK_CHUNK_SIZE) {
+        const chunk = toReplace.slice(i, i + BULK_CHUNK_SIZE);
+        const { error } = await supabase.from('accesses')
+          .update({ access_type: bulkPlan, status: 'active', expires_at: expiresAt })
+          .in('email', chunk)
+          .eq('status', 'active')
+          .neq('access_type', 'trial');
+        if (error) throw error;
+        replaced += chunk.length;
+        setBulkProgress({ done: Math.min(i + BULK_CHUNK_SIZE, toReplace.length), total: candidates.length });
+      }
 
       let granted = 0;
       for (let i = 0; i < toInsert.length; i += BULK_CHUNK_SIZE) {
@@ -222,11 +233,11 @@ export default function MembersPage() {
         );
         if (error) throw error;
         granted += chunk.length;
-        setBulkProgress({ done: Math.min(i + BULK_CHUNK_SIZE, toInsert.length), total: toInsert.length });
+        setBulkProgress({ done: toReplace.length + Math.min(i + BULK_CHUNK_SIZE, toInsert.length), total: candidates.length });
       }
 
-      setBulkResult({ granted, skipped, invalid: Math.max(invalidCount, 0) });
-      toast.success(`${granted} acesso(s) concedido(s)`);
+      setBulkResult({ granted, replaced, invalid: Math.max(invalidCount, 0) });
+      toast.success(`${granted + replaced} acesso(s) processado(s)`);
       fetchData();
     } catch (err: any) {
       toast.error(err.message || 'Erro ao importar');
@@ -360,11 +371,11 @@ export default function MembersPage() {
                           <span className="font-bold text-accent-success text-base">{bulkResult.granted}</span> acesso(s) concedido(s)
                         </span>
                       </div>
-                      {bulkResult.skipped > 0 && (
+                      {bulkResult.replaced > 0 && (
                         <div className="flex items-center gap-2.5">
                           <UserCheck className="w-5 h-5 text-blue-400 shrink-0" />
                           <span className="text-sm text-foreground">
-                            <span className="font-bold text-blue-400 text-base">{bulkResult.skipped}</span> já tinham acesso à área de membros — não foram duplicados
+                            <span className="font-bold text-blue-400 text-base">{bulkResult.replaced}</span> já tinham acesso — plano substituído pelo novo
                           </span>
                         </div>
                       )}
