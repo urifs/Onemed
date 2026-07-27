@@ -17,3 +17,43 @@ export const PLAN_LABELS: Record<string, string> = {
   lifetime_plus: 'Plano Vitalício Plus',
   lifetime_pro: 'Plano Vitalício Pro',
 };
+
+export const PLAN_FEATURES: Record<string, string[]> = {
+  monthly: [
+    'Acesso por 30 dias',
+    '+530 cursos completos',
+    '+9.000 livros médicos',
+    'Ideal pra provas e residência',
+    'Suporte 24/7',
+  ],
+  annual: [
+    'Acesso por 12 meses',
+    '+530 cursos completos',
+    '+9.000 livros médicos',
+    'Atualizações mensais',
+    'Suporte 24/7',
+  ],
+  lifetime: [
+    'Acesso para sempre',
+    '+530 cursos completos',
+    '+9.000 livros médicos',
+    'Todas as atualizações futuras',
+    'Suporte 24/7 vitalício',
+  ],
+  lifetime_plus: [
+    'Tudo do Plano Vitalício',
+    'Backup privado de tudo no seu Google Drive',
+    'Download liberado de todo o conteúdo',
+    '4 telas simultâneas',
+  ],
+  lifetime_pro: [
+    'Tudo do Plano Vitalício Plus',
+    'IA de diagnósticos Meduf',
+    'Backup exclusivo de tudo no seu Google Drive',
+    'Download de aulas e arquivos em massa, direto na plataforma',
+    '4 telas simultâneas',
+  ],
+};
+
+// Planos Vitalício Plus/Pro liberam 4 telas simultâneas em vez das 2 padrão.
+export const PREMIUM_DEVICE_PLANS = new Set(['lifetime_plus', 'lifetime_pro']);

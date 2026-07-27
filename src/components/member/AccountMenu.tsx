@@ -8,9 +8,10 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { User, LogOut, MessageCircle, RefreshCw, Loader2, Save, Smartphone, Crown } from 'lucide-react';
+import { User, LogOut, MessageCircle, RefreshCw, Loader2, Save, Smartphone, Crown, FileText } from 'lucide-react';
 import { AddToHomeScreenModal } from './AddToHomeScreenModal';
 import { UpgradePlanModal, upgradeTargetsFor } from './UpgradePlanModal';
+import { PlanDetailsModal } from './PlanDetailsModal';
 
 const SUPPORT_PHONE = '5563999191551';
 const PLAN_LABELS: Record<string, string> = {
@@ -25,6 +26,8 @@ interface AccountInfo {
   isAdmin: boolean;
   expiresAt: string | null;
   amountPaid: number | null;
+  whatsapp: string | null;
+  grantedAt: string | null;
 }
 
 export function AccountMenu() {
@@ -38,6 +41,7 @@ export function AccountMenu() {
   const [renewing, setRenewing] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const [planDetailsOpen, setPlanDetailsOpen] = useState(false);
 
   const loadInfo = useCallback(async () => {
     if (!user) return;
@@ -203,6 +207,17 @@ export function AccountMenu() {
                 </span>
               </div>
 
+              {!info?.isAdmin && info?.plan && (
+                <Button
+                  onClick={() => { setOpen(false); setPlanDetailsOpen(true); }}
+                  size="sm"
+                  variant="outline"
+                  className="w-full mt-2 border-border text-foreground hover:bg-secondary gap-1.5"
+                >
+                  <FileText className="w-3.5 h-3.5" /> Detalhes do Plano
+                </Button>
+              )}
+
               {!info?.isAdmin && isTrial && (
                 <Button
                   onClick={() => navigate('/checkout')}
@@ -270,6 +285,19 @@ export function AccountMenu() {
         amountPaid={info.amountPaid ?? 0}
         userEmail={info.email}
         userName={name}
+      />
+    )}
+    {info?.plan && (
+      <PlanDetailsModal
+        open={planDetailsOpen}
+        onOpenChange={setPlanDetailsOpen}
+        plan={info.plan}
+        email={info.email}
+        whatsapp={info.whatsapp}
+        amountPaid={info.amountPaid ?? 0}
+        expiresAt={info.expiresAt}
+        isLifetime={info.isLifetime}
+        grantedAt={info.grantedAt}
       />
     )}
     </>

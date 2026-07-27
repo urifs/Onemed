@@ -52,10 +52,10 @@ serve(async (req) => {
 
     const [{ data: isAdmin }, { data: buyer }, { data: accessRows }] = await Promise.all([
       supabase.rpc('has_role', { _user_id: user.id, _role: 'admin' }),
-      supabase.from('buyers').select('plan, amount, created_at')
+      supabase.from('buyers').select('plan, amount, whatsapp, created_at')
         .eq('email', email).eq('access_granted', true)
         .order('created_at', { ascending: false }).limit(1).maybeSingle(),
-      supabase.from('accesses').select('access_type, expires_at, granted_at')
+      supabase.from('accesses').select('access_type, whatsapp, expires_at, granted_at')
         .eq('email', email).eq('status', 'active'),
     ])
 
@@ -71,6 +71,7 @@ serve(async (req) => {
 
     let expiresAt: string | null = null
     let plan: string | null = null
+    let grantedAt: string | null = null
 
     if (isAdmin) {
       plan = 'admin'
@@ -79,21 +80,24 @@ serve(async (req) => {
       // manual antigo nunca desativado ao fazer upgrade) — sempre usa a de
       // maior tier, nunca "a primeira que aparecer" nem só o buyer mais
       // recente, senão um upgrade pode continuar mostrando o plano antigo.
-      const bestAccessTier = nonTrialRows
+      const bestAccessRow = nonTrialRows
         .filter(a => LIFETIME_PLANS.has(a.access_type))
-        .sort((a, b) => LIFETIME_TIER_RANK[b.access_type] - LIFETIME_TIER_RANK[a.access_type])[0]?.access_type
+        .sort((a, b) => LIFETIME_TIER_RANK[b.access_type] - LIFETIME_TIER_RANK[a.access_type])[0]
       const buyerTier = buyer?.plan && LIFETIME_PLANS.has(buyer.plan) ? buyer.plan : undefined
-      plan = [buyerTier, bestAccessTier].filter((p): p is string => !!p)
+      plan = [buyerTier, bestAccessRow?.access_type].filter((p): p is string => !!p)
         .sort((a, b) => LIFETIME_TIER_RANK[b] - LIFETIME_TIER_RANK[a])[0] || 'lifetime'
+      grantedAt = buyer?.created_at || bestAccessRow?.granted_at || null
     } else if (nonTrialRows.length > 0 || buyer) {
       // Comprador (pago/anual) tem prioridade sobre um trial antigo que ainda esteja ativo
       plan = buyer?.plan || nonTrialRows[0]?.access_type || null
       const expiries = nonTrialRows.map(a => a.expires_at).filter((d): d is string => !!d)
       if (expiries.length > 0) expiresAt = expiries.sort().at(-1)!
+      grantedAt = buyer?.created_at || nonTrialRows[0]?.granted_at || null
     } else if (trialRows.length > 0) {
       plan = 'trial'
       const expiries = trialRows.map(a => a.expires_at).filter((d): d is string => !!d)
       if (expiries.length > 0) expiresAt = expiries.sort().at(-1)!
+      grantedAt = trialRows[0]?.granted_at || null
     }
 
     // Se não há valor real pago (compra de verdade), usa o preço de tabela
@@ -102,7 +106,9 @@ serve(async (req) => {
     const realAmountPaid = buyer?.amount ? Number(buyer.amount) : 0
     const amountPaid = realAmountPaid > 0 ? realAmountPaid : (plan ? (PLAN_PRICES[plan] ?? 0) : 0)
 
-    return jsonResponse(req, { email, plan, isLifetime, isAdmin: !!isAdmin, expiresAt, amountPaid })
+    const whatsapp = buyer?.whatsapp || nonTrialRows.find(a => a.whatsapp)?.whatsapp || null
+
+    return jsonResponse(req, { email, plan, isLifetime, isAdmin: !!isAdmin, expiresAt, amountPaid, whatsapp, grantedAt })
   } catch (err: any) {
     console.error(err)
     return jsonResponse(req, { error: err.message }, 500)
