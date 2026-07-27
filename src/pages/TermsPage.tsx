@@ -1,9 +1,11 @@
 import { Link } from 'react-router-dom';
 import { ArrowLeft, FileText } from 'lucide-react';
+import { ThemeToggle } from '@/components/ThemeToggle';
 
 export default function TermsPage() {
   return (
     <div className="min-h-screen bg-background text-foreground py-16 px-4">
+      <ThemeToggle className="fixed top-4 right-4 z-50" />
       <div className="max-w-3xl mx-auto">
         <Link to="/" className="flex items-center gap-2 text-muted-foreground hover:text-foreground mb-8 text-sm">
           <ArrowLeft className="w-4 h-4" /> Voltar

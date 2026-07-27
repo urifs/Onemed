@@ -311,7 +311,7 @@ export default function CourseDetailPage() {
           <div className="flex items-center justify-between gap-4 mb-4">
             <button
               onClick={() => navigate('/membros')}
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-white/80 hover:text-white bg-black/40 hover:bg-black/55 backdrop-blur px-3 py-1.5 rounded-full border border-white/10 transition-colors"
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground/80 hover:text-foreground bg-background/60 hover:bg-background/75 backdrop-blur px-3 py-1.5 rounded-full border border-border transition-colors"
             >
               <ArrowLeft className="w-3.5 h-3.5" /> Todos os cursos
             </button>
@@ -320,7 +320,7 @@ export default function CourseDetailPage() {
               className={`inline-flex items-center gap-2 text-xs font-medium backdrop-blur px-3 py-1.5 rounded-full border transition-colors ${
                 isFavorite 
                   ? 'bg-yellow-500/20 text-yellow-500 border-yellow-500/30 hover:bg-yellow-500/30' 
-                  : 'bg-black/40 text-white/80 border-white/10 hover:bg-black/55 hover:text-white'
+                  : 'bg-background/60 text-foreground/80 border-border hover:bg-background/75 hover:text-foreground'
               }`}
             >
               <Star className="w-3.5 h-3.5" fill={isFavorite ? 'currentColor' : 'none'} />

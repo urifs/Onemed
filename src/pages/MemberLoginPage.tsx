@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Stethoscope, Mail, ArrowRight, ArrowLeft, KeyRound, Loader2, ShieldCheck } from 'lucide-react';
+import { ThemeToggle } from '@/components/ThemeToggle';
 
 const CAPTCHA_DELAY_MS = 3000;
 
@@ -82,6 +83,7 @@ export default function MemberLoginPage() {
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <ThemeToggle className="fixed top-4 right-4 z-50" />
       <div className="w-full max-w-md">
         <Link to="/" className="flex items-center justify-center gap-3 mb-8">
           <div className="w-10 h-10 bg-primary/15 rounded-xl flex items-center justify-center">
@@ -132,7 +134,7 @@ export default function MemberLoginPage() {
               className="w-full h-12 bg-primary hover:bg-primary-hover text-primary-foreground font-semibold gap-2"
             >
               {loading ? (
-                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <div className="w-5 h-5 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
               ) : (
                 <>Entrar <ArrowRight className="w-4 h-4" /></>
               )}

@@ -27,6 +27,7 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import { formatWhatsApp, extractFunctionErrorMessage } from '@/lib/utils';
+import { ThemeToggle } from '@/components/ThemeToggle';
 
 const COUNTRIES = [
   { code: '+55', country: 'Brasil', flag: 'BR' },
@@ -695,9 +696,12 @@ export default function CheckoutPage() {
               <span className="text-muted-foreground text-xs block">Comunidade Médica</span>
             </div>
           </Link>
-          <div className="flex items-center gap-2 text-muted-foreground text-sm">
-            <Shield className="w-4 h-4" />
-            <span className="hidden sm:inline">Compra Segura</span>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 text-muted-foreground text-sm">
+              <Shield className="w-4 h-4" />
+              <span className="hidden sm:inline">Compra Segura</span>
+            </div>
+            <ThemeToggle />
           </div>
         </nav>
       </header>

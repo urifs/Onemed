@@ -544,21 +544,21 @@ function SyncCoursesCard() {
               <Input
                 type="text"
                 placeholder="Buscar em cursos sincronizados..."
-                className="pl-9 bg-[#0a0a0a] border-border"
+                className="pl-9 bg-secondary border-border"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
-            <div className="bg-[#0a0a0a] border border-border rounded-md p-4 max-h-96 overflow-y-auto space-y-3 font-mono text-xs shadow-inner">
+            <div className="bg-secondary border border-border rounded-md p-4 max-h-96 overflow-y-auto space-y-3 font-mono text-xs shadow-inner">
               {logs.filter(log => log.course.toLowerCase().includes(searchTerm.toLowerCase())).map((log, idx) => (
                 <div key={idx} className="border-b border-border/20 pb-3 last:border-0 last:pb-0">
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <span className={
-                        log.action === 'created' ? 'text-green-500 font-bold' :
-                        log.action === 'updated' ? 'text-blue-500 font-bold' :
-                        log.action === 'error' ? 'text-red-500 font-bold' :
-                        'text-yellow-500 font-bold'
+                        log.action === 'created' ? 'text-green-600 dark:text-green-500 font-bold' :
+                        log.action === 'updated' ? 'text-blue-600 dark:text-blue-500 font-bold' :
+                        log.action === 'error' ? 'text-red-600 dark:text-red-500 font-bold' :
+                        'text-yellow-600 dark:text-yellow-500 font-bold'
                       }>
                         [{log.action.toUpperCase()}]
                       </span>

@@ -25,6 +25,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { AdminPWAHead } from '@/components/AdminPWAHead';
+import { ThemeToggle } from '@/components/ThemeToggle';
 
 const navItems = [
   { path: '/admin', label: 'Dashboard', icon: LayoutDashboard },
@@ -78,16 +79,17 @@ export const AdminLayout = ({ children }: { children: React.ReactNode }) => {
         lg:translate-x-0 lg:relative lg:flex
       `}>
         {/* Logo */}
-        <div className="p-6 border-b border-border">
-          <Link to="/" className="flex items-center gap-3 group">
-            <div className="w-9 h-9 bg-primary/10 rounded-lg flex items-center justify-center">
+        <div className="p-6 border-b border-border flex items-center justify-between gap-2">
+          <Link to="/" className="flex items-center gap-3 group min-w-0">
+            <div className="w-9 h-9 bg-primary/10 rounded-lg flex items-center justify-center shrink-0">
               <Stethoscope className="w-5 h-5 text-primary" />
             </div>
-            <div>
+            <div className="min-w-0">
               <span className="font-secondary font-bold text-foreground text-lg">OneMed</span>
               <p className="text-muted-foreground text-xs">Painel Admin</p>
             </div>
           </Link>
+          <ThemeToggle />
         </div>
 
         {/* Navigation */}
@@ -150,6 +152,9 @@ export const AdminLayout = ({ children }: { children: React.ReactNode }) => {
           <div className="flex items-center gap-2">
             <Stethoscope className="w-5 h-5 text-primary" />
             <span className="font-secondary font-bold text-foreground">OneMed</span>
+          </div>
+          <div className="ml-auto">
+            <ThemeToggle />
           </div>
         </header>
 

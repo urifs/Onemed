@@ -140,7 +140,7 @@ export const HeroSection = ({
               className="w-full h-12 bg-primary hover:bg-primary-hover text-primary-foreground font-semibold rounded-lg flex items-center justify-center gap-2 transition-colors duration-150 disabled:opacity-50"
             >
               {loading ? (
-                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <div className="w-5 h-5 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
               ) : (
                 <>
                   Acessar grátis por 10 minutos

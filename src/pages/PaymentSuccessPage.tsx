@@ -9,6 +9,7 @@ import {
   ArrowRight,
   ArrowLeft,
 } from 'lucide-react';
+import { ThemeToggle } from '@/components/ThemeToggle';
 
 export default function PaymentSuccessPage() {
   const [searchParams] = useSearchParams();
@@ -42,7 +43,7 @@ export default function PaymentSuccessPage() {
   return (
     <div className="min-h-screen bg-background">
       <header className="px-6 py-6 border-b border-border/50">
-        <nav className="max-w-6xl mx-auto flex items-center">
+        <nav className="max-w-6xl mx-auto flex items-center justify-between">
           <Link to="/" className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-primary/15 flex items-center justify-center">
               <Stethoscope className="w-5 h-5 text-primary" />
@@ -52,6 +53,7 @@ export default function PaymentSuccessPage() {
               <span className="text-muted-foreground text-xs block">Comunidade Médica</span>
             </div>
           </Link>
+          <ThemeToggle />
         </nav>
       </header>
 

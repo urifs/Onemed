@@ -4,6 +4,7 @@ import { AccountMenu } from './AccountMenu';
 import { NotificationsBell } from './NotificationsBell';
 import { TrialCountdownBar } from './TrialCountdownBar';
 import { MemberPWAHead } from './MemberPWAHead';
+import { ThemeToggle } from '@/components/ThemeToggle';
 
 export function MemberHeader() {
   return (
@@ -34,6 +35,7 @@ export function MemberHeader() {
             <MessageCircle className="w-4 h-4" />
           </Link>
           <NotificationsBell />
+          <ThemeToggle />
           <AccountMenu />
         </div>
       </header>

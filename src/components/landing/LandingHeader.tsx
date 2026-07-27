@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Stethoscope } from 'lucide-react';
+import { ThemeToggle } from '@/components/ThemeToggle';
 
 export const LandingHeader = () => {
   return (
@@ -13,6 +14,7 @@ export const LandingHeader = () => {
             <span className="font-secondary font-bold text-xl text-foreground">OneMed</span>
           </Link>
           <div className="flex items-center gap-3">
+            <ThemeToggle />
             <Link
               to="/login"
               className="flex items-center gap-2 text-sm font-semibold text-foreground px-4 py-3 rounded-lg border border-border hover:bg-secondary transition-colors duration-200"

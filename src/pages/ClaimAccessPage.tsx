@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { supabase } from '@/integrations/supabase/client';
 import { CheckCircle, Mail, ArrowRight, LogIn, Loader2, AlertCircle, Stethoscope } from 'lucide-react';
+import { ThemeToggle } from '@/components/ThemeToggle';
 
 export default function ClaimAccessPage() {
   const [searchParams] = useSearchParams();
@@ -71,6 +72,7 @@ export default function ClaimAccessPage() {
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <ThemeToggle className="fixed top-4 right-4 z-50" />
       <div className="max-w-md w-full">
         <div className="flex justify-center mb-8">
           <Link to="/" className="flex items-center gap-3">

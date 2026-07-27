@@ -334,14 +334,14 @@ export default function MemberDashboardPage() {
                 </button>
                 <button
                   onClick={() => navigate(`/membros/curso/${featured.slug}`)}
-                  className="inline-flex items-center gap-2 bg-white/10 hover:bg-white/15 text-foreground font-semibold px-5 py-3 rounded-xl border border-white/15 transition-colors backdrop-blur"
+                  className="inline-flex items-center gap-2 bg-foreground/10 hover:bg-foreground/15 text-foreground font-semibold px-5 py-3 rounded-xl border border-foreground/15 transition-colors backdrop-blur"
                 >
                   <Info className="w-4 h-4" /> Detalhes
                 </button>
               </div>
               {featuredProgressPct > 0 && (
                 <div className="mt-5 max-w-xs">
-                  <div className="h-1.5 rounded-full bg-white/15 overflow-hidden">
+                  <div className="h-1.5 rounded-full bg-foreground/15 overflow-hidden">
                     <div className="h-full bg-primary rounded-full" style={{ width: `${featuredProgressPct}%` }} />
                   </div>
                   <p className="text-xs text-muted-foreground mt-1.5">{Math.round(featuredProgressPct)}% concluído</p>
