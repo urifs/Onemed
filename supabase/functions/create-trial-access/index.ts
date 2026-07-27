@@ -177,11 +177,21 @@ async function issueSession(supabase: ReturnType<typeof createClient>, supabaseU
       // Limite de 2 dispositivos simultâneos: mantém só as sessões mais
       // recentes, derrubando o refresh token do dispositivo mais antigo.
       if (linkData.user?.id) {
-        const [{ error: limitErr }] = await Promise.all([
-          supabase.rpc('enforce_session_limit', { _user_id: linkData.user.id, _max_sessions: 2 }),
-          captureMemberLocation(supabase, clientIp, linkData.user.id, email),
-        ])
+        const { error: limitErr } = await supabase.rpc('enforce_session_limit', { _user_id: linkData.user.id, _max_sessions: 2 })
         if (limitErr) console.error('enforce_session_limit error', limitErr)
+
+        // Geolocalização não pode ficar no caminho crítico do login — uma
+        // resposta lenta do ipwho.is já deixou o login inteiro estourar o
+        // timeout do fetch no frontend. waitUntil mantém o isolate vivo até
+        // terminar, sem segurar a resposta pro cliente.
+        const locationPromise = captureMemberLocation(supabase, clientIp, linkData.user.id, email)
+        // @ts-ignore EdgeRuntime é um global específico do runtime da Supabase
+        if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime.waitUntil) {
+          // @ts-ignore
+          EdgeRuntime.waitUntil(locationPromise)
+        } else {
+          await locationPromise
+        }
       }
       return { access_token, refresh_token }
     }

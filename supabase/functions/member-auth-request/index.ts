@@ -163,11 +163,22 @@ serve(async (req) => {
         ...(buyerRows || []).map(b => PLAN_DEVICE_LIMITS[b.plan]),
       ].filter((n): n is number => !!n)
       const maxSessions = planLimits.length > 0 ? Math.max(...planLimits) : DEFAULT_DEVICE_LIMIT
-      const [{ error: limitErr }] = await Promise.all([
-        supabase.rpc('enforce_session_limit', { _user_id: linkData.user.id, _max_sessions: maxSessions }),
-        captureMemberLocation(supabase, ip, linkData.user.id, email),
-      ])
+      const { error: limitErr } = await supabase.rpc('enforce_session_limit', { _user_id: linkData.user.id, _max_sessions: maxSessions })
       if (limitErr) console.error('enforce_session_limit error', limitErr)
+
+      // Geolocalização não pode ficar no caminho crítico do login — uma
+      // resposta lenta do ipwho.is já deixou o login inteiro estourar o
+      // timeout do fetch no frontend ("Failed to send a request to the
+      // Edge Function"). waitUntil mantém o isolate vivo até terminar, sem
+      // segurar a resposta pro cliente.
+      const locationPromise = captureMemberLocation(supabase, ip, linkData.user.id, email)
+      // @ts-ignore EdgeRuntime é um global específico do runtime da Supabase
+      if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime.waitUntil) {
+        // @ts-ignore
+        EdgeRuntime.waitUntil(locationPromise)
+      } else {
+        await locationPromise
+      }
     }
 
     return jsonResponse(req, { success: true, access_token, refresh_token })

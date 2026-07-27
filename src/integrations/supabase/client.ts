@@ -21,7 +21,10 @@ const AUTH_TIMEOUT_MS = 25000;
 // real bytes from Drive per lesson — a batch of 8 measured at ~30s) — exempt
 // them from the blanket timeout.
 const TIMEOUT_EXEMPT = /\/functions\/v1\/(member-sync-library|run-email-campaign|admin-backfill-lesson-durations)/;
-const AUTH_PATH = /\/auth\/v1\//;
+// member-auth-request/create-trial-access are the login/trial entry points —
+// same reasoning as /auth/v1/ below, just implemented as our own Edge
+// Functions instead of GoTrue's built-in endpoints.
+const AUTH_PATH = /\/auth\/v1\/|\/functions\/v1\/(member-auth-request|create-trial-access)/;
 
 // Without this, a request that never settles (dropped connection, a stuck
 // proxy, a backgrounded tab resuming mid-request) leaves its promise pending
