@@ -11,8 +11,10 @@ const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 const FETCH_TIMEOUT_MS = 10000;
 // A few admin-triggered batch jobs legitimately run longer than a normal
 // query (member-sync-library crawls large courses; run-email-campaign has
-// its own 6-minute per-batch allowance) — exempt them from the blanket timeout.
-const TIMEOUT_EXEMPT = /\/functions\/v1\/(member-sync-library|run-email-campaign)/;
+// its own 6-minute per-batch allowance; admin-backfill-lesson-durations reads
+// real bytes from Drive per lesson — a batch of 8 measured at ~30s) — exempt
+// them from the blanket timeout.
+const TIMEOUT_EXEMPT = /\/functions\/v1\/(member-sync-library|run-email-campaign|admin-backfill-lesson-durations)/;
 
 // Without this, a request that never settles (dropped connection, a stuck
 // proxy, a backgrounded tab resuming mid-request) leaves its promise pending

@@ -657,7 +657,7 @@ function DurationBackfillCard() {
 
         let data: any, error: any;
         for (let attempt = 0; ; attempt++) {
-          ({ data, error } = await supabase.functions.invoke('admin-backfill-lesson-durations', { body: {} }));
+          ({ data, error } = await withTimeout(supabase.functions.invoke('admin-backfill-lesson-durations', { body: {} }), 60000, 'preenchimento de durações'));
           if (!error && !data?.error) break;
           if (attempt >= RETRY_DELAYS_MS.length || cancelRef.current) break;
           await sleep(RETRY_DELAYS_MS[attempt]);

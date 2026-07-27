@@ -30,7 +30,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const ALLOWED_ORIGINS = ['https://onemedcursos.com.br', 'http://localhost:5173', 'http://localhost:3000']
-const BATCH_SIZE = 8 // menor que antes: agora cada aula pode envolver várias leituras de bytes do Drive, não só 1 chamada de metadata
+const BATCH_SIZE = 5 // um lote de 8 mediu ~30s em produção (várias leituras de bytes do Drive por aula) — reduzido por margem de segurança contra o limite de execução da function
 const GOOGLE_CLIENT_ID = '110017470335-2l6er8r451vj5hf3ob05rvolc2p4v9ku.apps.googleusercontent.com'
 const TS_PACKET_SIZE = 188
 
