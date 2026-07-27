@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Play, Info, FileText, File, Music, Image as ImageIcon, Loader2, FileSpreadsheet, FileType } from 'lucide-react';
+import { Play, Info, FileText, File, Music, Image as ImageIcon, Loader2, FileSpreadsheet, FileType, Megaphone } from 'lucide-react';
+import { useAnnouncementSettings } from '@/hooks/useAnnouncementSettings';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
 import { MemberHeader } from '@/components/member/MemberHeader';
@@ -31,6 +32,7 @@ const CONTENT_TYPE_ICON: Record<string, typeof Play> = {
 
 export default function MemberDashboardPage() {
   const { user } = useAuth();
+  const { message: announcementMessage } = useAnnouncementSettings();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [courses, setCourses] = useState<Course[]>([]);
@@ -284,12 +286,21 @@ export default function MemberDashboardPage() {
   return (
     <div className="min-h-screen bg-background">
       <MemberHeader />
-      <MemberSearchBar 
-        query={query} 
-        onQueryChange={handleQueryChange} 
+      <MemberSearchBar
+        query={query}
+        onQueryChange={handleQueryChange}
         contentTypeFilter={contentTypeFilter}
         onContentTypeFilterChange={setContentTypeFilter}
       />
+
+      {announcementMessage && (
+        <div className="max-w-[1400px] mx-auto px-4 md:px-8 pt-4">
+          <div className="rounded-xl bg-primary px-4 py-3 flex items-start gap-2.5">
+            <Megaphone className="w-4 h-4 text-white shrink-0 mt-0.5" />
+            <p className="text-sm text-white leading-snug">{announcementMessage}</p>
+          </div>
+        </div>
+      )}
 
       {!searching && !activeCategory && featured && (
         <section className="max-w-[1400px] mx-auto px-4 md:px-8 pt-6">
