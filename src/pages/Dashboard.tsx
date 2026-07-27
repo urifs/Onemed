@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import AdminLayout from '@/components/AdminLayout';
 import { OnlineMembersCard } from '@/components/admin/OnlineMembersCard';
 import { MemberLocationsMap } from '@/components/admin/MemberLocationsMap';
+import { MemberLocationsList } from '@/components/admin/MemberLocationsList';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { formatDateTimeSP, todayStartISO } from '@/lib/utils';
@@ -136,11 +137,13 @@ export default function Dashboard() {
           ))}
         </div>
 
-        {/* Quem está online (tempo real) */}
-        <OnlineMembersCard />
-
-        {/* Mapa de localização aproximada (online inclui testes, offline só assinantes) */}
-        <MemberLocationsMap />
+        {/* Quem está online (tempo real) + mapa de localização aproximada
+            (online inclui testes, offline só assinantes) lado a lado */}
+        <div className="grid lg:grid-cols-2 gap-6 items-start">
+          <OnlineMembersCard />
+          <MemberLocationsMap />
+        </div>
+        <MemberLocationsList />
 
         {/* Trial vs Paid */}
         {stats && (
