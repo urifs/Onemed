@@ -1,8 +1,9 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import 'leaflet/dist/leaflet.css';
 import { useTheme } from 'next-themes';
 import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { MapPin, Circle, AlertTriangle } from 'lucide-react';
 import { useMemberLocationsMap, MemberLocationPoint } from '@/hooks/useMemberLocationsMap';
 import { useOnlineMembers } from '@/hooks/useOnlineMembers';
@@ -25,6 +26,7 @@ export function MemberLocationsMap() {
   const { onlineIds } = useOnlineMembers();
   const { resolvedTheme } = useTheme();
   const colors = resolvedTheme === 'light' ? THEME_COLORS.light : THEME_COLORS.dark;
+  const [selectedLocation, setSelectedLocation] = useState<{ label: string; users: LocationPoint[] } | null>(null);
 
   // Online = está de fato no canal de presença em tempo real agora (mesma
   // fonte do card "Quem está online", nunca uma janela de tempo aproximada)
@@ -39,12 +41,13 @@ export function MemberLocationsMap() {
   const offline = visible.filter(p => !p.is_online);
 
   const topLocations = useMemo(() => {
-    const counts = new Map<string, number>();
+    const groups = new Map<string, LocationPoint[]>();
     for (const p of visible) {
       const label = [p.city, p.region].filter(Boolean).join(', ') || p.country || 'Desconhecido';
-      counts.set(label, (counts.get(label) || 0) + 1);
+      if (!groups.has(label)) groups.set(label, []);
+      groups.get(label)!.push(p);
     }
-    return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10);
+    return [...groups.entries()].sort((a, b) => b[1].length - a[1].length).slice(0, 10);
   }, [visible]);
 
   return (
@@ -124,12 +127,16 @@ export function MemberLocationsMap() {
                 <p className="text-[11px] text-muted-foreground mt-0.5">{visible.length} usuário{visible.length !== 1 ? 's' : ''} no total</p>
               </div>
               <div className="max-h-[372px] overflow-y-auto divide-y divide-border">
-                {topLocations.map(([label, count], i) => (
-                  <div key={label} className="flex items-center gap-2.5 px-4 py-2 text-sm">
+                {topLocations.map(([label, users], i) => (
+                  <button
+                    key={label}
+                    onClick={() => setSelectedLocation({ label, users })}
+                    className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-left hover:bg-secondary transition-colors"
+                  >
                     <span className="text-xs text-muted-foreground w-4 shrink-0">{i + 1}</span>
                     <span className="text-foreground truncate flex-1">{label}</span>
-                    <span className="text-xs font-semibold text-primary shrink-0">{count}</span>
-                  </div>
+                    <span className="text-xs font-semibold text-primary shrink-0">{users.length}</span>
+                  </button>
                 ))}
               </div>
             </div>
@@ -139,6 +146,33 @@ export function MemberLocationsMap() {
       <p className="text-xs text-muted-foreground px-5 py-3 border-t border-border">
         Localização aproximada, estimada pelo IP de acesso.
       </p>
+
+      <Dialog open={!!selectedLocation} onOpenChange={(open) => !open && setSelectedLocation(null)}>
+        <DialogContent className="bg-background-paper border-border max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-foreground flex items-center gap-2">
+              <MapPin className="w-4 h-4 text-primary" /> {selectedLocation?.label}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="max-h-96 overflow-y-auto divide-y divide-border -mx-6">
+            {selectedLocation?.users.map(u => (
+              <div key={u.user_id} className="flex items-center justify-between gap-3 px-6 py-2.5">
+                <span className="text-sm text-foreground truncate">{u.email}</span>
+                {u.is_online ? (
+                  <span className="inline-flex items-center gap-1.5 text-xs font-medium text-accent-success shrink-0">
+                    <Circle className="w-2 h-2 fill-accent-success text-accent-success animate-pulse" /> Online agora
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
+                    <Circle className="w-2 h-2 fill-muted-foreground/40 text-muted-foreground/40" />
+                    {u.last_active ? `Online ${formatLastSeen(u.last_active)}` : 'Offline'}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
