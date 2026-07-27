@@ -249,12 +249,11 @@ export default function MemberDashboardPage() {
     for (const key of counts.keys()) if (!order.includes(key)) order.push(key);
     
     const cats = order.filter(cat => counts.has(cat)).map(cat => ({ name: cat, count: counts.get(cat)! }));
-    
-    // Add favorites to the top if any
-    if (favorites.size > 0) {
-      cats.unshift({ name: 'Favoritos', count: favorites.size });
-    }
-    
+
+    // Favoritos sempre aparece, mesmo sem nada marcado ainda — o cliente
+    // precisa ver que a opção existe, não só depois de favoritar algo.
+    cats.unshift({ name: 'Favoritos', count: favorites.size });
+
     return cats;
   }, [courses, favorites.size]);
 
