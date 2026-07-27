@@ -32,7 +32,7 @@ export function MemberLocationsMap() {
             title={unlocated > 0 ? `${unlocated} online sem localização conhecida ainda (some ao navegar pra qualquer página)` : undefined}
           >
             <Circle className="w-2 h-2 fill-accent-success text-accent-success animate-pulse" />
-            {totalOnlineCount} online (inclui testes){unlocated > 0 ? ` · ${online.length} no mapa` : ''}
+            {totalOnlineCount} online{unlocated > 0 ? ` · ${online.length} no mapa` : ''}
           </span>
           <span className="inline-flex items-center gap-1.5 font-medium text-muted-foreground bg-secondary border border-border rounded-full px-2.5 py-1">
             <Circle className="w-2 h-2 fill-muted-foreground/50 text-muted-foreground/50" />
