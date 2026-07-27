@@ -41,7 +41,7 @@ serve(async (req) => {
 
     const [{ data: isAdmin }, { data: buyer }, { data: accessRows }] = await Promise.all([
       supabase.rpc('has_role', { _user_id: user.id, _role: 'admin' }),
-      supabase.from('buyers').select('plan, created_at')
+      supabase.from('buyers').select('plan, amount, created_at')
         .eq('email', email).eq('access_granted', true)
         .order('created_at', { ascending: false }).limit(1).maybeSingle(),
       supabase.from('accesses').select('access_type, expires_at, granted_at')
@@ -79,7 +79,7 @@ serve(async (req) => {
       if (expiries.length > 0) expiresAt = expiries.sort().at(-1)!
     }
 
-    return jsonResponse(req, { email, plan, isLifetime, isAdmin: !!isAdmin, expiresAt })
+    return jsonResponse(req, { email, plan, isLifetime, isAdmin: !!isAdmin, expiresAt, amountPaid: buyer?.amount ?? null })
   } catch (err: any) {
     console.error(err)
     return jsonResponse(req, { error: err.message }, 500)

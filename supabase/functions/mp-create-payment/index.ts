@@ -88,7 +88,7 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: getCorsHeaders(req) })
 
   try {
-    const { plan, email, name, whatsapp, externalReference, couponCode, upsell, upsell2 } = await req.json()
+    const { plan, email, name, whatsapp, externalReference, couponCode, upsell, upsell2, isUpgrade } = await req.json()
 
     // ── 1. Validar plano contra allowlist ─────────────────────────────────────
     if (!PLAN_PRICES[plan]) {
@@ -133,6 +133,40 @@ serve(async (req) => {
     let basePrice = PLAN_PRICES[plan]
     let discountPercent = 0
     let appliedCoupon: string | null = null
+
+    // ── 3b. Upgrade de plano: cobra só a diferença do que a pessoa já pagou.
+    // Nunca confia num "valor já pago" vindo do cliente — recalcula aqui, e só
+    // libera depois de confirmar (via JWT da sessão) que quem pede o upgrade
+    // é dono desse email. Sem isso, qualquer um poderia pedir um upgrade pro
+    // e-mail de outra pessoa e descobrir/manipular quanto ela pagou.
+    if (isUpgrade) {
+      const authHeader = req.headers.get('Authorization') || ''
+      const jwt = authHeader.replace(/^Bearer\s+/i, '')
+      if (!jwt) {
+        return new Response(JSON.stringify({ error: 'Faça login para fazer upgrade do seu plano' }), {
+          status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
+        })
+      }
+      const { data: { user: callerUser }, error: authErr } = await supabase.auth.getUser(jwt)
+      if (authErr || !callerUser || (callerUser.email || '').toLowerCase() !== String(email).toLowerCase().trim()) {
+        return new Response(JSON.stringify({ error: 'Sessão inválida para este email' }), {
+          status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
+        })
+      }
+
+      const { data: previousBuyer } = await supabase
+        .from('buyers')
+        .select('amount')
+        .eq('email', String(email).toLowerCase().trim())
+        .eq('access_granted', true)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      const alreadyPaid = previousBuyer?.amount ? Number(previousBuyer.amount) : 0
+      const MIN_UPGRADE_PRICE = 1.00
+      basePrice = Math.max(basePrice - alreadyPaid, MIN_UPGRADE_PRICE)
+    }
 
     // ── 4. Validar cupom no banco (nunca confiar no desconto do cliente) ──────
     if (couponCode) {
@@ -188,8 +222,8 @@ serve(async (req) => {
       items: [
         {
           id: plan,
-          title: PLAN_LABELS[plan] || 'OneMed - Acesso Completo',
-          description: 'Acesso completo a plataforma OneMed',
+          title: (isUpgrade ? 'Upgrade - ' : '') + (PLAN_LABELS[plan] || 'OneMed - Acesso Completo'),
+          description: isUpgrade ? 'Upgrade de plano na plataforma OneMed' : 'Acesso completo a plataforma OneMed',
           category_id: 'learningtools',
           quantity: 1,
           currency_id: 'BRL',
@@ -198,7 +232,7 @@ serve(async (req) => {
       ],
       external_reference: externalReference,
       notification_url: webhookUrl,
-      metadata: { plan, email, name, whatsapp, coupon: appliedCoupon },
+      metadata: { plan, email, name, whatsapp, coupon: appliedCoupon, isUpgrade: !!isUpgrade },
       back_urls: {
         success: 'https://onemedcursos.com.br/payment/success',
         failure: 'https://onemedcursos.com.br/payment/error',

@@ -8,8 +8,9 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { User, LogOut, MessageCircle, RefreshCw, Loader2, Save, Smartphone } from 'lucide-react';
+import { User, LogOut, MessageCircle, RefreshCw, Loader2, Save, Smartphone, Crown } from 'lucide-react';
 import { AddToHomeScreenModal } from './AddToHomeScreenModal';
+import { UpgradePlanModal, upgradeTargetsFor } from './UpgradePlanModal';
 
 const SUPPORT_PHONE = '5563999191551';
 const PLAN_LABELS: Record<string, string> = {
@@ -23,6 +24,7 @@ interface AccountInfo {
   isLifetime: boolean;
   isAdmin: boolean;
   expiresAt: string | null;
+  amountPaid: number | null;
 }
 
 export function AccountMenu() {
@@ -35,6 +37,7 @@ export function AccountMenu() {
   const [savingName, setSavingName] = useState(false);
   const [renewing, setRenewing] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
 
   const loadInfo = useCallback(async () => {
     if (!user) return;
@@ -138,8 +141,10 @@ export function AccountMenu() {
   })();
 
   const planLabel = info?.plan ? (PLAN_LABELS[info.plan] || info.plan) : '—';
+  const hasUpgradeTarget = upgradeTargetsFor(info?.plan).length > 0;
 
   return (
+    <>
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
@@ -198,15 +203,36 @@ export function AccountMenu() {
                 </span>
               </div>
 
-              {!info?.isLifetime && !info?.isAdmin && (
+              {!info?.isAdmin && isTrial && (
                 <Button
-                  onClick={isTrial ? () => navigate('/checkout') : handleRenew}
-                  disabled={renewing}
+                  onClick={() => navigate('/checkout')}
                   size="sm"
                   className="w-full mt-2 bg-primary hover:bg-primary-hover text-primary-foreground gap-1.5"
                 >
+                  <RefreshCw className="w-3.5 h-3.5" /> Adquirir Acesso Completo
+                </Button>
+              )}
+
+              {!info?.isAdmin && !isTrial && hasUpgradeTarget && (
+                <Button
+                  onClick={() => { setOpen(false); setUpgradeOpen(true); }}
+                  size="sm"
+                  className="w-full mt-2 bg-primary hover:bg-primary-hover text-primary-foreground gap-1.5"
+                >
+                  <Crown className="w-3.5 h-3.5" /> Fazer Upgrade de Plano
+                </Button>
+              )}
+
+              {!info?.isAdmin && !info?.isLifetime && !isTrial && (
+                <Button
+                  onClick={handleRenew}
+                  disabled={renewing}
+                  size="sm"
+                  variant={hasUpgradeTarget ? 'outline' : 'default'}
+                  className={hasUpgradeTarget ? 'w-full mt-2 border-border text-foreground hover:bg-secondary gap-1.5' : 'w-full mt-2 bg-primary hover:bg-primary-hover text-primary-foreground gap-1.5'}
+                >
                   {renewing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                  {renewing ? 'Abrindo pagamento...' : isTrial ? 'Adquirir Acesso Completo' : 'Renovar Assinatura'}
+                  {renewing ? 'Abrindo pagamento...' : 'Renovar Assinatura'}
                 </Button>
               )}
             </div>
@@ -236,5 +262,16 @@ export function AccountMenu() {
         )}
       </PopoverContent>
     </Popover>
+    {info?.plan && (
+      <UpgradePlanModal
+        open={upgradeOpen}
+        onOpenChange={setUpgradeOpen}
+        currentPlan={info.plan}
+        amountPaid={info.amountPaid ?? 0}
+        userEmail={info.email}
+        userName={name}
+      />
+    )}
+    </>
   );
 }
