@@ -13,8 +13,9 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const ALLOWED_ORIGINS = ['https://onemedcursos.com.br', 'http://localhost:5173', 'http://localhost:3000']
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
-// Planos Vitalício Plus/Pro liberam 4 telas simultâneas em vez das 2 padrão.
-const PREMIUM_DEVICE_PLANS = new Set(['lifetime_plus', 'lifetime_pro'])
+// Vitalício Plus libera 4 telas simultâneas e Pro libera 6, em vez das 2 padrão.
+const PLAN_DEVICE_LIMITS: Record<string, number> = { lifetime_plus: 4, lifetime_pro: 6 }
+const DEFAULT_DEVICE_LIMIT = 2
 
 function getCorsHeaders(req: Request) {
   const origin = req.headers.get('origin') || ''
@@ -125,12 +126,16 @@ serve(async (req) => {
       return jsonResponse(req, { error: 'Não foi possível concluir o login. Tente novamente.' }, 500)
     }
 
-    // Limite de dispositivos simultâneos por conta (2 no padrão, 4 pra quem
-    // tem plano Vitalício Plus/Pro): mantém só as sessões mais recentes (a
-    // que acabou de ser criada entra nessa contagem), o que derruba o
-    // refresh token do dispositivo mais antigo no próximo refresh.
+    // Limite de dispositivos simultâneos por conta (2 no padrão, 4 pra
+    // Vitalício Plus, 6 pra Vitalício Pro): mantém só as sessões mais
+    // recentes (a que acabou de ser criada entra nessa contagem), o que
+    // derruba o refresh token do dispositivo mais antigo no próximo refresh.
     if (linkData.user?.id) {
-      const maxSessions = (activeAccesses || []).some(a => PREMIUM_DEVICE_PLANS.has(a.access_type)) || (buyerRows || []).some(b => PREMIUM_DEVICE_PLANS.has(b.plan)) ? 4 : 2
+      const planLimits = [
+        ...(activeAccesses || []).map(a => PLAN_DEVICE_LIMITS[a.access_type]),
+        ...(buyerRows || []).map(b => PLAN_DEVICE_LIMITS[b.plan]),
+      ].filter((n): n is number => !!n)
+      const maxSessions = planLimits.length > 0 ? Math.max(...planLimits) : DEFAULT_DEVICE_LIMIT
       const { error: limitErr } = await supabase.rpc('enforce_session_limit', { _user_id: linkData.user.id, _max_sessions: maxSessions })
       if (limitErr) console.error('enforce_session_limit error', limitErr)
     }

@@ -51,9 +51,13 @@ export const PLAN_FEATURES: Record<string, string[]> = {
     'IA de diagnósticos Meduf',
     'Backup exclusivo de tudo no seu Google Drive',
     'Download de aulas e arquivos em massa, direto na plataforma',
-    '4 telas simultâneas',
+    '6 telas simultâneas',
   ],
 };
 
-// Planos Vitalício Plus/Pro liberam 4 telas simultâneas em vez das 2 padrão.
-export const PREMIUM_DEVICE_PLANS = new Set(['lifetime_plus', 'lifetime_pro']);
+// Vitalício Plus libera 4 telas simultâneas e Pro libera 6, em vez das 2 padrão.
+export const PLAN_DEVICE_LIMITS: Record<string, number> = {
+  lifetime_plus: 4,
+  lifetime_pro: 6,
+};
+export const DEFAULT_DEVICE_LIMIT = 2;

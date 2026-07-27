@@ -1,6 +1,6 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Check, Mail, Phone, Calendar, DollarSign, Monitor, Crown } from 'lucide-react';
-import { PLAN_LABELS, PLAN_FEATURES, PREMIUM_DEVICE_PLANS } from '@/lib/plans';
+import { PLAN_LABELS, PLAN_FEATURES, PLAN_DEVICE_LIMITS, DEFAULT_DEVICE_LIMIT } from '@/lib/plans';
 import { formatDateSP } from '@/lib/utils';
 
 interface PlanDetailsModalProps {
@@ -17,7 +17,7 @@ interface PlanDetailsModalProps {
 
 export function PlanDetailsModal({ open, onOpenChange, plan, email, whatsapp, amountPaid, expiresAt, isLifetime, grantedAt }: PlanDetailsModalProps) {
   const features = PLAN_FEATURES[plan] || [];
-  const deviceLimit = PREMIUM_DEVICE_PLANS.has(plan) ? 4 : 2;
+  const deviceLimit = PLAN_DEVICE_LIMITS[plan] ?? DEFAULT_DEVICE_LIMIT;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

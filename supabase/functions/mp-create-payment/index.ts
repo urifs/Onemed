@@ -71,7 +71,7 @@ const PLAN_LABELS: Record<string, string> = {
   annual:        'OneMed Anual - 12 Meses de Acesso',
   lifetime:      'OneMed Vitalicio - Acesso Permanente',
   lifetime_plus: 'OneMed Vitalicio Plus - Backup Drive + 4 Telas',
-  lifetime_pro:  'OneMed Vitalicio Pro - IA Meduf + Backup Exclusivo + 4 Telas',
+  lifetime_pro:  'OneMed Vitalicio Pro - IA Meduf + Backup Exclusivo + 6 Telas',
 }
 
 // Nome curto pra mensagens de erro (restrição de cupom) — PLAN_LABELS é o

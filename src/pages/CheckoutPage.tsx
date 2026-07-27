@@ -140,7 +140,7 @@ const PLANS: Record<string, {
       'IA de diagnósticos Meduf',
       'Backup exclusivo de tudo no seu Google Drive',
       'Download de aulas e arquivos em massa, direto na plataforma',
-      '4 telas simultâneas',
+      '6 telas simultâneas',
     ],
     badge: 'MAIS COMPLETO',
   },
