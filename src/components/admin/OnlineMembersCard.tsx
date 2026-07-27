@@ -38,7 +38,7 @@ export function OnlineMembersCard() {
         ) : members.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-6">Nenhum membro com atividade registrada ainda.</p>
         ) : (
-          <div className="max-h-96 overflow-y-auto divide-y divide-border">
+          <div className="h-[420px] overflow-y-auto divide-y divide-border">
             {members.map(m => (
               <div key={m.user_id} className="flex items-center justify-between gap-3 px-5 py-2.5">
                 <span className="text-sm text-foreground truncate">{m.email}</span>
@@ -56,6 +56,9 @@ export function OnlineMembersCard() {
           </div>
         )}
       </CardContent>
+      <p className="text-xs text-muted-foreground px-5 py-3 border-t border-border">
+        Atualizado em tempo real.
+      </p>
     </Card>
   );
 }
