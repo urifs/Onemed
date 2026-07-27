@@ -56,16 +56,32 @@ async function checkRateLimit(
 
 // ─── Preços canônicos definidos SERVER-SIDE ───────────────────────────────────
 const PLAN_PRICES: Record<string, number> = {
-  lifetime: 299.90,
-  annual:   199.00,
+  monthly:       49.00,
+  annual:        199.00,
+  lifetime:      299.90,
+  lifetime_plus: 599.00,
+  lifetime_pro:  997.00,
 }
 
 const UPSELL_PRICE  = 19.90
 const UPSELL2_PRICE = 9.90
 
 const PLAN_LABELS: Record<string, string> = {
-  lifetime: 'OneMed Vitalicio - Acesso Permanente',
-  annual:   'OneMed Anual - 12 Meses de Acesso',
+  monthly:       'OneMed Mensal - 30 Dias de Acesso',
+  annual:        'OneMed Anual - 12 Meses de Acesso',
+  lifetime:      'OneMed Vitalicio - Acesso Permanente',
+  lifetime_plus: 'OneMed Vitalicio Plus - Backup Drive + 4 Telas',
+  lifetime_pro:  'OneMed Vitalicio Pro - IA Meduf + Backup Exclusivo + 4 Telas',
+}
+
+// Nome curto pra mensagens de erro (restrição de cupom) — PLAN_LABELS é o
+// título completo do item no Mercado Pago, verboso demais pra essa frase.
+const PLAN_DISPLAY_NAMES: Record<string, string> = {
+  monthly:       'Plano Mensal',
+  annual:        'Plano Anual',
+  lifetime:      'Plano Vitalício',
+  lifetime_plus: 'Plano Vitalício Plus',
+  lifetime_pro:  'Plano Vitalício Pro',
 }
 
 serve(async (req) => {
@@ -143,7 +159,7 @@ serve(async (req) => {
         // Verificar restrição de plano
         const allowedPlans = coupon.allowed_plans || 'all'
         if (allowedPlans !== 'all' && allowedPlans !== plan) {
-          const planName = allowedPlans === 'annual' ? 'Plano Anual' : 'Plano Vitalício'
+          const planName = PLAN_DISPLAY_NAMES[allowedPlans] || allowedPlans
           return new Response(JSON.stringify({ error: `Este cupom é válido apenas para o ${planName}` }), {
             status: 400, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
           })

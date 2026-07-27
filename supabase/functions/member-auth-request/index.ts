@@ -13,6 +13,8 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const ALLOWED_ORIGINS = ['https://onemedcursos.com.br', 'http://localhost:5173', 'http://localhost:3000']
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
+// Planos Vitalício Plus/Pro liberam 4 telas simultâneas em vez das 2 padrão.
+const PREMIUM_DEVICE_PLANS = new Set(['lifetime_plus', 'lifetime_pro'])
 
 function getCorsHeaders(req: Request) {
   const origin = req.headers.get('origin') || ''
@@ -64,8 +66,8 @@ serve(async (req) => {
     if (!EMAIL_REGEX.test(email)) return jsonResponse(req, { error: 'Email inválido' }, 400)
 
     const [{ data: activeAccess }, { data: buyer }, { data: isAdminEmail }] = await Promise.all([
-      supabase.from('accesses').select('id').eq('email', email).eq('status', 'active').limit(1).maybeSingle(),
-      supabase.from('buyers').select('id').eq('email', email).eq('access_granted', true).limit(1).maybeSingle(),
+      supabase.from('accesses').select('id, access_type').eq('email', email).eq('status', 'active').limit(1).maybeSingle(),
+      supabase.from('buyers').select('id, plan').eq('email', email).eq('access_granted', true).limit(1).maybeSingle(),
       supabase.rpc('is_admin_email', { _email: email }),
     ])
 
@@ -119,11 +121,13 @@ serve(async (req) => {
       return jsonResponse(req, { error: 'Não foi possível concluir o login. Tente novamente.' }, 500)
     }
 
-    // Limite de 2 dispositivos simultâneos por conta: mantém só as sessões
-    // mais recentes (a que acabou de ser criada entra nessa contagem), o que
-    // derruba o refresh token do dispositivo mais antigo no próximo refresh.
+    // Limite de dispositivos simultâneos por conta (2 no padrão, 4 pra quem
+    // tem plano Vitalício Plus/Pro): mantém só as sessões mais recentes (a
+    // que acabou de ser criada entra nessa contagem), o que derruba o
+    // refresh token do dispositivo mais antigo no próximo refresh.
     if (linkData.user?.id) {
-      const { error: limitErr } = await supabase.rpc('enforce_session_limit', { _user_id: linkData.user.id, _max_sessions: 2 })
+      const maxSessions = PREMIUM_DEVICE_PLANS.has(activeAccess?.access_type || '') || PREMIUM_DEVICE_PLANS.has(buyer?.plan || '') ? 4 : 2
+      const { error: limitErr } = await supabase.rpc('enforce_session_limit', { _user_id: linkData.user.id, _max_sessions: maxSessions })
       if (limitErr) console.error('enforce_session_limit error', limitErr)
     }
 

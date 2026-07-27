@@ -10,6 +10,7 @@ import {
   ArrowLeft,
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { PLAN_LABELS, PLAN_PRICES } from '@/lib/plans';
 
 export default function PaymentSuccessPage() {
   const [searchParams] = useSearchParams();
@@ -27,7 +28,7 @@ export default function PaymentSuccessPage() {
         if (status === 'approved') {
           trackPurchase(
             info.plan,
-            info.plan === 'lifetime' ? 299.90 : 199,
+            info.amount ?? PLAN_PRICES[info.plan] ?? 0,
             'redirect',
             paymentId ? `purchase_${paymentId}` : undefined
           );
@@ -68,9 +69,9 @@ export default function PaymentSuccessPage() {
               Pagamento Confirmado!
             </h1>
             <p className="text-muted-foreground mb-8">
-              {purchaseInfo?.plan === 'lifetime'
-                ? 'Parabéns! Você adquiriu o Plano Vitalício.'
-                : 'Parabéns! Você adquiriu o Plano Anual.'}
+              {purchaseInfo?.plan && PLAN_LABELS[purchaseInfo.plan]
+                ? `Parabéns! Você adquiriu o ${PLAN_LABELS[purchaseInfo.plan]}.`
+                : 'Parabéns! Sua compra foi aprovada.'}
               {' '}Seu acesso já está liberado na plataforma.
             </p>
 

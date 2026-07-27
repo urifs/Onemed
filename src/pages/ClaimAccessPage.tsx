@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { supabase } from '@/integrations/supabase/client';
 import { CheckCircle, Mail, ArrowRight, LogIn, Loader2, AlertCircle, Stethoscope } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { PLAN_LABELS } from '@/lib/plans';
 
 export default function ClaimAccessPage() {
   const [searchParams] = useSearchParams();
@@ -110,7 +111,7 @@ export default function ClaimAccessPage() {
             <>
               <h2 className="font-secondary text-2xl font-bold text-foreground mb-2">Ativar seu Acesso</h2>
               <p className="text-muted-foreground text-sm mb-6">
-                Compra confirmada: <span className="text-foreground font-medium capitalize">{purchaseInfo?.plan}</span>
+                Compra confirmada: <span className="text-foreground font-medium">{PLAN_LABELS[purchaseInfo?.plan] || purchaseInfo?.plan}</span>
               </p>
               <form onSubmit={handleClaim} className="space-y-4">
                 <div className="space-y-2">

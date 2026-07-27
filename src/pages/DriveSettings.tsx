@@ -169,6 +169,11 @@ export default function DriveSettings() {
           <FolderConfig driveStatus={driveStatus} onRefresh={fetchStatus} />
         )}
 
+        {/* Backup Folder Config (planos Vitalício Plus/Pro) */}
+        {driveStatus?.connected && (
+          <BackupFolderConfig driveStatus={driveStatus} onRefresh={fetchStatus} />
+        )}
+
         {/* Course Library Sync */}
         {driveStatus?.connected && <SyncCoursesCard />}
 
@@ -893,6 +898,75 @@ function FolderConfig({ driveStatus, onRefresh }: { driveStatus: any; onRefresh:
         <Button onClick={save} disabled={saving} className="bg-primary hover:bg-primary-hover text-primary-foreground gap-2">
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
           Salvar Pasta
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Pasta separada da principal — compartilhada só com quem tem plano
+// Vitalício Plus/Pro, via drive-share-folder com folderType: 'backup'.
+// Precisa conter uma cópia de tudo que a plataforma oferece (o compartilhar
+// em si é automático no momento da compra; manter o CONTEÚDO da pasta em
+// dia é responsabilidade manual do admin, igual à pasta principal).
+function BackupFolderConfig({ driveStatus, onRefresh }: { driveStatus: any; onRefresh: () => void }) {
+  const [folderId, setFolderId] = useState(driveStatus?.backup_folder_id || '');
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    if (!folderId.trim()) { toast.error('Informe o ID da pasta'); return; }
+    setSaving(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('drive-save-folder', {
+        body: { folder_id: folderId.trim(), target: 'backup' },
+      });
+      if (error || data?.error) {
+        const msg = data?.error || await extractFunctionErrorMessage(error, 'Erro ao salvar pasta de backup');
+        throw new Error(msg);
+      }
+      toast.success('Pasta de backup salva!');
+      onRefresh();
+    } catch (e: any) {
+      toast.error(e?.message || 'Erro ao salvar pasta de backup');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card className="bg-background-paper border-border">
+      <CardHeader>
+        <CardTitle className="text-base font-medium text-foreground flex items-center gap-2">
+          <Folder className="w-5 h-5 text-primary" />
+          Pasta de Backup (Vitalício Plus/Pro)
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          Pasta separada da pasta principal — é compartilhada automaticamente (permissão de leitura) com quem
+          compra o plano Vitalício Plus ou Pro, pra servir de backup de tudo com download liberado. Mantenha o
+          conteúdo dela atualizado manualmente.
+        </p>
+        {driveStatus?.backup_folder_name && (
+          <div className="flex items-center gap-2 text-muted-foreground text-sm">
+            <Folder className="w-4 h-4" />
+            Pasta atual: <span className="text-foreground font-medium">{driveStatus.backup_folder_name}</span>
+          </div>
+        )}
+        <div>
+          <label className="text-sm text-muted-foreground block mb-1">ID da pasta de backup do Google Drive</label>
+          <input
+            value={folderId}
+            onChange={e => setFolderId(e.target.value)}
+            placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs"
+            className="w-full h-10 rounded-md border border-border bg-secondary text-foreground px-3 text-sm placeholder:text-muted-foreground"
+          />
+          <p className="text-xs text-muted-foreground mt-1">URL: drive.google.com/drive/folders/<strong>ID</strong></p>
+        </div>
+
+        <Button onClick={save} disabled={saving} className="bg-primary hover:bg-primary-hover text-primary-foreground gap-2">
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+          Salvar Pasta de Backup
         </Button>
       </CardContent>
     </Card>

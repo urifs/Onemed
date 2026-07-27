@@ -25,9 +25,36 @@ import {
   User,
   Infinity,
   ChevronDown,
+  Calendar,
+  HardDrive,
+  Crown,
 } from 'lucide-react';
 import { formatWhatsApp, extractFunctionErrorMessage } from '@/lib/utils';
 import { ThemeToggle } from '@/components/ThemeToggle';
+
+const MEDUF_URL = 'https://meduf.com.br/about';
+
+// Deixa clicável só o trecho "Meduf" dentro do texto da feature, sem
+// interromper o clique no card inteiro (que seleciona o plano).
+function renderFeatureText(feature: string) {
+  const idx = feature.indexOf('Meduf');
+  if (idx === -1) return feature;
+  return (
+    <>
+      {feature.slice(0, idx)}
+      <a
+        href={MEDUF_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={e => e.stopPropagation()}
+        className="underline decoration-dotted underline-offset-2 hover:text-foreground"
+      >
+        Meduf
+      </a>
+      {feature.slice(idx + 'Meduf'.length)}
+    </>
+  );
+}
 
 const COUNTRIES = [
   { code: '+55', country: 'Brasil', flag: 'BR' },
@@ -44,9 +71,22 @@ const UPSELL_PRICE = 19.90;
 const UPSELL2_PRICE = 9.90;
 
 const PLANS: Record<string, {
-  name: string; originalPrice: number; price: number; period: string;
-  icon: React.ElementType; features: string[]; highlight: boolean;
+  name: string; originalPrice?: number; price: number; period: string;
+  icon: React.ElementType; features: string[]; badge?: string;
 }> = {
+  monthly: {
+    name: 'Plano Mensal',
+    price: 49.00,
+    period: '/mês',
+    icon: Calendar,
+    features: [
+      'Acesso por 30 dias',
+      '+530 cursos completos',
+      '+9.000 livros médicos',
+      'Ideal pra provas e residência',
+      'Suporte 24/7',
+    ],
+  },
   annual: {
     name: 'Plano Anual',
     originalPrice: 399,
@@ -61,7 +101,6 @@ const PLANS: Record<string, {
       'Garantia 2026/2027',
       'Suporte 24/7',
     ],
-    highlight: false,
   },
   lifetime: {
     name: 'Plano Vitalício',
@@ -77,7 +116,33 @@ const PLANS: Record<string, {
       'Apps Whitebook e WeMeds',
       'Suporte 24/7 vitalício',
     ],
-    highlight: true,
+    badge: 'MAIS POPULAR',
+  },
+  lifetime_plus: {
+    name: 'Plano Vitalício Plus',
+    price: 599.00,
+    period: ' único',
+    icon: HardDrive,
+    features: [
+      'Tudo do Plano Vitalício',
+      'Backup privado de tudo no seu Google Drive',
+      'Download liberado de todo o conteúdo',
+      '4 telas simultâneas',
+    ],
+  },
+  lifetime_pro: {
+    name: 'Plano Vitalício Pro',
+    price: 997.00,
+    period: ' único',
+    icon: Crown,
+    features: [
+      'Tudo do Plano Vitalício Plus',
+      'IA de diagnósticos Meduf',
+      'Backup exclusivo de tudo no seu Google Drive',
+      'Download de aulas e arquivos em massa, direto na plataforma',
+      '4 telas simultâneas',
+    ],
+    badge: 'MAIS COMPLETO',
   },
 };
 
@@ -150,7 +215,7 @@ export default function CheckoutPage() {
   const handleContinueFromPlan = () => {
     const allowedPlans = couponApplied?.allowed_plans;
     if (allowedPlans && allowedPlans !== 'all' && allowedPlans !== selectedPlan) {
-      const planName = allowedPlans === 'annual' ? 'Plano Anual' : 'Plano Vitalício';
+      const planName = PLANS[allowedPlans]?.name || allowedPlans;
       toast.error(`O cupom ${couponApplied.code} é válido apenas para o ${planName}`);
       return;
     }
@@ -199,7 +264,7 @@ export default function CheckoutPage() {
     // seguir com uma combinação que o servidor vai rejeitar de qualquer forma.
     const allowedPlans = couponApplied?.allowed_plans;
     if (allowedPlans && allowedPlans !== 'all' && allowedPlans !== selectedPlan) {
-      const planName = allowedPlans === 'annual' ? 'Plano Anual' : 'Plano Vitalício';
+      const planName = PLANS[allowedPlans]?.name || allowedPlans;
       toast.error(`O cupom ${couponApplied.code} é válido apenas para o ${planName}`);
       return;
     }
@@ -278,7 +343,7 @@ export default function CheckoutPage() {
         <p className="text-muted-foreground">Acesso ilimitado a todo o conteúdo médico</p>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-6">
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
         {Object.entries(PLANS).map(([key, plan]) => {
           const lockedByCoupon = Boolean(
             couponApplied?.allowed_plans && couponApplied.allowed_plans !== 'all' && couponApplied.allowed_plans !== key
@@ -291,7 +356,7 @@ export default function CheckoutPage() {
               lockedByCoupon ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'
             } ${
               selectedPlan === key ? 'bg-primary/10 border-primary' : 'bg-secondary/30 border-border hover:border-border'
-            } ${plan.highlight ? 'ring-2 ring-primary/20' : ''}`}
+            } ${plan.badge ? 'ring-2 ring-primary/20' : ''}`}
           >
             {lockedByCoupon && (
               <div className="absolute -top-3 right-4">
@@ -300,29 +365,31 @@ export default function CheckoutPage() {
                 </span>
               </div>
             )}
-            {plan.highlight && (
+            {plan.badge && !lockedByCoupon && (
               <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                <span className="bg-primary text-primary-foreground text-xs font-bold px-3 py-1 rounded-full">MAIS POPULAR</span>
+                <span className="bg-primary text-primary-foreground text-xs font-bold px-3 py-1 rounded-full whitespace-nowrap">{plan.badge}</span>
               </div>
             )}
             <div className="flex items-center gap-3 mb-4">
-              <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${selectedPlan === key ? 'bg-primary' : 'bg-secondary'}`}>
+              <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${selectedPlan === key ? 'bg-primary' : 'bg-secondary'}`}>
                 <plan.icon className={`w-6 h-6 ${selectedPlan === key ? 'text-primary-foreground' : 'text-muted-foreground'}`} />
               </div>
-              <h3 className="font-secondary text-xl font-bold text-foreground">{plan.name}</h3>
+              <h3 className="font-secondary text-lg font-bold text-foreground">{plan.name}</h3>
             </div>
             <div className="mb-6">
               <div className="flex items-baseline gap-2">
-                <span className="text-lg text-muted-foreground line-through">R${plan.originalPrice}</span>
+                {plan.originalPrice && (
+                  <span className="text-lg text-muted-foreground line-through">R${plan.originalPrice}</span>
+                )}
                 <span className="text-4xl font-bold text-foreground">R${plan.price.toFixed(2).replace('.', ',')}</span>
               </div>
               <span className="text-muted-foreground text-sm">{plan.period}</span>
             </div>
             <ul className="space-y-2">
               {plan.features.map((feature, i) => (
-                <li key={i} className="flex items-center gap-2 text-sm">
-                  <Check className={`w-4 h-4 flex-shrink-0 ${selectedPlan === key ? 'text-primary' : 'text-accent-success'}`} />
-                  <span className="text-muted-foreground">{feature}</span>
+                <li key={i} className="flex items-start gap-2 text-sm">
+                  <Check className={`w-4 h-4 flex-shrink-0 mt-0.5 ${selectedPlan === key ? 'text-primary' : 'text-accent-success'}`} />
+                  <span className="text-muted-foreground">{renderFeatureText(feature)}</span>
                 </li>
               ))}
             </ul>
@@ -730,7 +797,7 @@ export default function CheckoutPage() {
 
       {/* Content */}
       <main className="px-6 py-12">
-        <div className="max-w-2xl mx-auto">
+        <div className={step === 1 ? 'max-w-5xl mx-auto' : 'max-w-2xl mx-auto'}>
           {step === 1 && renderPlanSelection()}
           {step === 2 && renderUpsellStep()}
           {step === 3 && renderCustomerDataForm()}

@@ -5,6 +5,7 @@ import { PdfViewer } from './PdfViewer';
 import { OfficeViewer } from './OfficeViewer';
 import { TxtViewer } from './TxtViewer';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { fileExtensionFor, sanitizeFilename } from '@/lib/utils';
 import type { Database } from '@/integrations/supabase/types';
 
 type Lesson = Database['public']['Tables']['lessons']['Row'];
@@ -14,34 +15,10 @@ const PLAYBACK_RATE_STORAGE_KEY = 'onemed_playback_rate';
 
 // Vídeo/áudio ficam só em streaming (controlsList="nodownload") — mas
 // documentos (pdf/imagem/planilha/doc/txt) são conteúdo pra consulta e
-// impressão, então ganham download/impressão de verdade.
+// impressão, então ganham download/impressão de verdade. (Vitalício Pro tem
+// um caminho de download separado — o seletor em massa da CourseDetailPage —
+// que libera vídeo/áudio também; isso aqui só rege o player avulso.)
 const DOWNLOADABLE_TYPES = ['pdf', 'image', 'doc', 'sheet', 'txt'];
-
-const EXTENSION_BY_MIME: Record<string, string> = {
-  'application/pdf': 'pdf',
-  'application/msword': 'doc',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
-  'application/vnd.ms-excel': 'xls',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
-  'text/plain': 'txt',
-  'image/jpeg': 'jpg',
-  'image/png': 'png',
-  'image/gif': 'gif',
-  'image/webp': 'webp',
-  'image/svg+xml': 'svg',
-};
-
-const EXTENSION_BY_TYPE: Record<string, string> = {
-  pdf: 'pdf', doc: 'docx', sheet: 'xlsx', txt: 'txt', image: 'jpg',
-};
-
-function fileExtensionFor(lesson: Lesson): string {
-  return (lesson.mime_type && EXTENSION_BY_MIME[lesson.mime_type]) || EXTENSION_BY_TYPE[lesson.type] || 'bin';
-}
-
-function sanitizeFilename(title: string): string {
-  return title.replace(/[\\/:*?"<>|]/g, '').trim() || 'arquivo';
-}
 
 interface LessonPlayerProps {
   lesson: Lesson;

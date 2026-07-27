@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams, Link } from 'react-router-dom';
+import { toast } from 'sonner';
 import {
   ArrowLeft, Play, FileText, File, Music, Image as ImageIcon, CheckCircle2, Clock,
-  FileSpreadsheet, FileType, Star, ListOrdered, Menu, X,
+  FileSpreadsheet, FileType, Star, ListOrdered, Menu, X, Check, Download, Loader2,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
@@ -12,7 +13,10 @@ import { CourseCover } from '@/components/member/CourseCover';
 import { LessonPlayer } from '@/components/member/LessonPlayer';
 import { CommunityTab } from '@/components/member/CommunityTab';
 import { CATEGORY_ICON } from '@/lib/courseCategories';
-import { formatDuration, formatFileSize, matchesSearch, stripYearFromTitle, withTimeout, withRetry, describeLoadError } from '@/lib/utils';
+import {
+  formatDuration, formatFileSize, matchesSearch, stripYearFromTitle, withTimeout, withRetry, describeLoadError,
+  fileExtensionFor, sanitizeFilename,
+} from '@/lib/utils';
 import type { Database } from '@/integrations/supabase/types';
 
 type Course = Database['public']['Tables']['courses']['Row'];
@@ -80,6 +84,22 @@ export default function CourseDetailPage() {
   const [query, setQuery] = useState('');
   const [pendingScrollId, setPendingScrollId] = useState<string | null>(null);
   const autoOpenId = searchParams.get('lesson');
+
+  // Download em massa (aulas + arquivos) é um perk exclusivo do Vitalício
+  // Pro — os demais planos continuam vendo a plataforma exatamente como hoje.
+  const [canBulkDownload, setCanBulkDownload] = useState(false);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDownloading, setBulkDownloading] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    supabase.functions.invoke('member-account-info').then(({ data }) => {
+      if (alive && data && !data.error) setCanBulkDownload(data.plan === 'lifetime_pro' || data.isAdmin === true);
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -256,6 +276,46 @@ export default function CourseDetailPage() {
     }
   };
 
+  const toggleSelectLesson = (lesson: Lesson) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(lesson.id)) next.delete(lesson.id); else next.add(lesson.id);
+      return next;
+    });
+  };
+
+  const currentTabLessons = tab === 'aulas' ? orderedVideoLessons : orderedFileLessons;
+
+  const handleBulkDownload = async () => {
+    const toDownload = lessons.filter(l => selectedIds.has(l.id));
+    if (toDownload.length === 0 || bulkDownloading) return;
+    setBulkDownloading(true);
+    setBulkProgress({ done: 0, total: toDownload.length });
+    for (let i = 0; i < toDownload.length; i++) {
+      const lesson = toDownload[i];
+      try {
+        const { data, error } = await supabase.functions.invoke('member-lesson-token', { body: { lessonId: lesson.id } });
+        if (error || !data?.url) throw new Error(data?.error || 'Erro ao gerar link de download');
+        const res = await fetch(data.url);
+        const blob = await res.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = `${sanitizeFilename(lesson.title)}.${fileExtensionFor(lesson)}`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(blobUrl);
+      } catch (err) {
+        console.error('Falha ao baixar', lesson.title, err);
+        toast.error(`Falha ao baixar "${lesson.title}"`);
+      }
+      setBulkProgress({ done: i + 1, total: toDownload.length });
+    }
+    setBulkDownloading(false);
+    toast.success('Download em massa concluído');
+  };
+
   const activeIndex = activeLesson ? activeOrderedLessons.findIndex(l => l.id === activeLesson.id) : -1;
 
   if (course === undefined) {
@@ -342,30 +402,54 @@ export default function CourseDetailPage() {
         </div>
       </section>
 
-      <main className="max-w-[1280px] mx-auto px-4 md:px-8 pb-16">
+      <main className={`max-w-[1280px] mx-auto px-4 md:px-8 ${selectMode && selectedIds.size > 0 ? 'pb-24' : 'pb-16'}`}>
         <div className="md:flex md:items-start md:gap-8">
           <CourseSummarySidebar blocks={summaryBlocks} onSelect={handleSummarySelect} />
 
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1 border-b border-border mb-6">
-              <button
-                onClick={() => setTab('aulas')}
-                className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${tab === 'aulas' ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
-              >
-                Aulas
-              </button>
-              <button
-                onClick={() => setTab('arquivos')}
-                className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${tab === 'arquivos' ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
-              >
-                Arquivos
-              </button>
-              <button
-                onClick={() => setTab('comunidade')}
-                className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${tab === 'comunidade' ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
-              >
-                Comunidade
-              </button>
+            <div className="flex items-center justify-between gap-2 border-b border-border mb-6">
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setTab('aulas')}
+                  className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${tab === 'aulas' ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+                >
+                  Aulas
+                </button>
+                <button
+                  onClick={() => setTab('arquivos')}
+                  className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${tab === 'arquivos' ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+                >
+                  Arquivos
+                </button>
+                <button
+                  onClick={() => setTab('comunidade')}
+                  className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${tab === 'comunidade' ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+                >
+                  Comunidade
+                </button>
+              </div>
+
+              {canBulkDownload && tab !== 'comunidade' && (
+                <div className="flex items-center gap-3 pb-2 shrink-0">
+                  {selectMode && (
+                    <>
+                      <button onClick={() => setSelectedIds(new Set(currentTabLessons.map(l => l.id)))} className="text-xs text-primary hover:underline whitespace-nowrap">
+                        Selecionar todos
+                      </button>
+                      <button onClick={() => setSelectedIds(new Set())} className="text-xs text-muted-foreground hover:underline whitespace-nowrap">
+                        Limpar
+                      </button>
+                    </>
+                  )}
+                  <button
+                    onClick={() => { setSelectMode(m => !m); setSelectedIds(new Set()); }}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full border border-border text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors whitespace-nowrap"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    {selectMode ? 'Cancelar seleção' : 'Baixar em massa'}
+                  </button>
+                </div>
+              )}
             </div>
 
             {tab === 'aulas' ? (
@@ -379,7 +463,10 @@ export default function CourseDetailPage() {
                 {lessons.length > 0 && videoGroups.length === 0 && !query.trim() && (
                   <p className="text-muted-foreground text-sm">Nenhuma aula em vídeo neste curso.</p>
                 )}
-                <LessonGroupList groups={videoGroups} progressMap={progressMap} onSelect={setActiveLesson} />
+                <LessonGroupList
+                  groups={videoGroups} progressMap={progressMap} onSelect={setActiveLesson}
+                  selectMode={selectMode} selectedIds={selectedIds} onToggleSelect={toggleSelectLesson}
+                />
               </>
             ) : tab === 'arquivos' ? (
               <>
@@ -392,7 +479,10 @@ export default function CourseDetailPage() {
                 {lessons.length > 0 && fileGroups.length === 0 && !query.trim() && (
                   <p className="text-muted-foreground text-sm">Nenhum arquivo complementar neste curso.</p>
                 )}
-                <LessonGroupList groups={fileGroups} progressMap={progressMap} onSelect={setActiveLesson} />
+                <LessonGroupList
+                  groups={fileGroups} progressMap={progressMap} onSelect={setActiveLesson}
+                  selectMode={selectMode} selectedIds={selectedIds} onToggleSelect={toggleSelectLesson}
+                />
               </>
             ) : (
               <CommunityTab courseId={course.id} />
@@ -400,6 +490,23 @@ export default function CourseDetailPage() {
           </div>
         </div>
       </main>
+
+      {selectMode && selectedIds.size > 0 && (
+        <div className="fixed bottom-0 left-0 right-0 z-40 bg-card border-t border-border px-4 md:px-8 py-3 flex items-center justify-between gap-3">
+          <span className="text-sm text-foreground font-medium">
+            {selectedIds.size} selecionado{selectedIds.size !== 1 ? 's' : ''}
+            {bulkDownloading && bulkProgress && ` · baixando ${bulkProgress.done}/${bulkProgress.total}`}
+          </span>
+          <button
+            onClick={handleBulkDownload}
+            disabled={bulkDownloading}
+            className="inline-flex items-center gap-2 bg-primary hover:bg-primary-hover text-primary-foreground font-semibold px-5 py-2 rounded-lg transition-colors disabled:opacity-60"
+          >
+            {bulkDownloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+            {bulkDownloading ? 'Baixando...' : 'Baixar selecionados'}
+          </button>
+        </div>
+      )}
 
       {activeLesson && (
         <LessonPlayer
@@ -504,11 +611,14 @@ function CourseSummarySidebar({ blocks, onSelect }: { blocks: SummaryBlock[]; on
 }
 
 function LessonGroupList({
-  groups, progressMap, onSelect,
+  groups, progressMap, onSelect, selectMode, selectedIds, onToggleSelect,
 }: {
   groups: { id: string; title: string; lessons: Lesson[] }[];
   progressMap: Record<string, Progress>;
   onSelect: (lesson: Lesson) => void;
+  selectMode?: boolean;
+  selectedIds?: Set<string>;
+  onToggleSelect?: (lesson: Lesson) => void;
 }) {
   return (
     <div className="space-y-8">
@@ -524,12 +634,18 @@ function LessonGroupList({
               const Icon = TYPE_ICON[lesson.type] || File;
               const p = progressMap[lesson.id];
               const pct = p && lesson.duration_seconds ? Math.min(100, (p.watched_seconds / lesson.duration_seconds) * 100) : 0;
+              const isSelected = !!selectedIds?.has(lesson.id);
               return (
                 <button
                   key={lesson.id}
-                  onClick={() => onSelect(lesson)}
+                  onClick={() => selectMode ? onToggleSelect?.(lesson) : onSelect(lesson)}
                   className="w-full flex items-center gap-3.5 px-4 py-3.5 bg-card hover:bg-secondary text-left transition-colors group"
                 >
+                  {selectMode && (
+                    <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${isSelected ? 'bg-primary border-primary' : 'border-muted-foreground/40'}`}>
+                      {isSelected && <Check className="w-3.5 h-3.5 text-primary-foreground" />}
+                    </div>
+                  )}
                   <div className="w-9 h-9 rounded-full bg-secondary group-hover:bg-primary/15 flex items-center justify-center shrink-0 transition-colors">
                     {p?.completed ? (
                       <CheckCircle2 className="w-4 h-4 text-accent-success" />

@@ -51,7 +51,11 @@ serve(async (req) => {
     const nonTrialRows = (accessRows || []).filter(a => a.access_type !== 'trial')
     const trialRows = (accessRows || []).filter(a => a.access_type === 'trial')
 
-    const isLifetime = !!isAdmin || buyer?.plan === 'lifetime' || nonTrialRows.some(a => a.access_type === 'lifetime')
+    // lifetime/lifetime_plus/lifetime_pro contam igual pra "nunca expira" —
+    // Plus/Pro só adicionam perks (backup no Drive, mais telas), não mudam
+    // a duração do acesso à plataforma.
+    const LIFETIME_PLANS = new Set(['lifetime', 'lifetime_plus', 'lifetime_pro'])
+    const isLifetime = !!isAdmin || LIFETIME_PLANS.has(buyer?.plan || '') || nonTrialRows.some(a => LIFETIME_PLANS.has(a.access_type))
 
     let expiresAt: string | null = null
     let plan: string | null = null
@@ -59,7 +63,11 @@ serve(async (req) => {
     if (isAdmin) {
       plan = 'admin'
     } else if (isLifetime) {
-      plan = 'lifetime'
+      // Mantém o tier exato (lifetime_plus/lifetime_pro) em vez de achatar
+      // tudo pra 'lifetime' — é o que diferencia os planos no AccountMenu.
+      plan = (buyer?.plan && LIFETIME_PLANS.has(buyer.plan))
+        ? buyer.plan
+        : nonTrialRows.find(a => LIFETIME_PLANS.has(a.access_type))?.access_type || 'lifetime'
     } else if (nonTrialRows.length > 0 || buyer) {
       // Comprador (pago/anual) tem prioridade sobre um trial antigo que ainda esteja ativo
       plan = buyer?.plan || nonTrialRows[0]?.access_type || null

@@ -1,6 +1,35 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
+// ─── PLANOS ───────────────────────────────────────────────────────────────────
+// Cada plano define o access_type gravado em `accesses` e por quantos dias
+// dura (null = vitalício, nunca expira). lifetime/lifetime_plus/lifetime_pro
+// formam a "família vitalícia" — rankeados pra nunca rebaixar quem já comprou
+// um nível superior, e permitir upgrade (comprar lifetime_plus tendo lifetime).
+const PLAN_ACCESS_TYPE: Record<string, string> = {
+  lifetime: 'lifetime',
+  lifetime_plus: 'lifetime_plus',
+  lifetime_pro: 'lifetime_pro',
+}
+const PLAN_DURATION_DAYS: Record<string, number> = {
+  annual: 365,
+  monthly: 30,
+}
+const LIFETIME_TIER_RANK: Record<string, number> = {
+  lifetime: 1,
+  lifetime_plus: 2,
+  lifetime_pro: 3,
+}
+const PLAN_CONTENT_NAMES: Record<string, string> = {
+  monthly: 'Plano Mensal',
+  annual: 'Plano Anual',
+  lifetime: 'Plano Vitalício',
+  lifetime_plus: 'Plano Vitalício Plus',
+  lifetime_pro: 'Plano Vitalício Pro',
+}
+// Planos que dão direito ao backup exclusivo no Google Drive do aluno.
+const BACKUP_FOLDER_PLANS = new Set(['lifetime_plus', 'lifetime_pro'])
+
 // ─── META CAPI ────────────────────────────────────────────────────────────────
 const CAPI_PIXEL_IDS = ['797374160058274', '2400702203708115']
 
@@ -59,7 +88,7 @@ async function sendMetaCAPIEvent(opts: {
       custom_data: {
         value: opts.value,
         currency: 'BRL',
-        content_name: opts.plan === 'lifetime' ? 'Plano Vitalício' : 'Plano Anual',
+        content_name: PLAN_CONTENT_NAMES[opts.plan] || 'Plano Anual',
         content_category: 'Subscription',
         content_ids: [opts.plan],
         content_type: 'product',
@@ -84,6 +113,22 @@ async function sendMetaCAPIEvent(opts: {
     } catch (err: any) {
       console.error(`CAPI network error pixel ${pixelId}:`, err.message)
     }
+  }
+}
+
+// ─── BACKUP NO GOOGLE DRIVE (planos Vitalício Plus/Pro) ───────────────────────
+// Compartilha a pasta de backup configurada em /admin/drive com o email do
+// comprador — mesma engrenagem de drive-share-folder, só que numa pasta
+// separada da usada pro streaming das aulas (ver folderType: 'backup').
+async function shareBackupFolder(supabase: ReturnType<typeof createClient>, email: string): Promise<void> {
+  try {
+    const { error } = await supabase.functions.invoke('drive-share-folder', {
+      body: { email, folderType: 'backup' },
+    })
+    if (error) console.error('Backup folder share error:', JSON.stringify(error))
+    else console.log('Backup folder shared with:', email)
+  } catch (err: any) {
+    console.error('Backup folder share exception:', err?.message || err)
   }
 }
 
@@ -275,11 +320,12 @@ serve(async (req) => {
         return new Response('ok', { headers: getCorsHeaders(req) })
       }
 
-      // Annual plans expire a year out; lifetime never does. This also backs
-      // the account panel's "Renovar Assinatura" flow — without an expiry,
-      // an annual purchase looked identical to a lifetime one.
-      const accessType = buyer.plan === 'lifetime' ? 'lifetime' : 'paid'
-      const expiresAt = buyer.plan === 'annual' ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString() : null
+      // Annual/monthly plans expire out; lifetime (e as camadas Plus/Pro)
+      // nunca expira. Isso também alimenta o "Renovar Assinatura" do painel
+      // da conta — sem expiry, uma compra anual parecia idêntica a vitalícia.
+      const accessType = PLAN_ACCESS_TYPE[buyer.plan] || 'paid'
+      const durationDays = PLAN_DURATION_DAYS[buyer.plan]
+      const expiresAt = durationDays ? new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000).toISOString() : null
 
       const { data: existingAccess } = await supabase
         .from('accesses')
@@ -291,16 +337,25 @@ serve(async (req) => {
         .limit(1)
         .maybeSingle()
 
-      if (existingAccess?.access_type === 'lifetime') {
-        console.log('Already has lifetime access for:', buyer.email, '— skipping')
+      // Nunca rebaixa quem já tem um nível vitalício igual ou superior — mas
+      // permite upgrade (ex: já tinha lifetime, comprou lifetime_plus).
+      const existingRank = existingAccess ? LIFETIME_TIER_RANK[existingAccess.access_type] : undefined
+      const newRank = LIFETIME_TIER_RANK[accessType]
+      const alreadyAtOrAboveTier = existingRank !== undefined && (newRank === undefined || existingRank >= newRank)
+
+      if (alreadyAtOrAboveTier) {
+        console.log('Already has equal-or-higher lifetime tier for:', buyer.email, '— skipping')
       } else if (existingAccess) {
-        // A renewal purchase — extend the same row instead of leaving its
-        // old (possibly already-past) expiry untouched.
+        // A renewal (ou upgrade de tier) — extend the same row instead of
+        // leaving its old (possibly already-past) expiry untouched.
         const { error: updateErr } = await supabase.from('accesses').update({
           access_type: accessType, status: 'active', expires_at: expiresAt, whatsapp: buyer.whatsapp,
         }).eq('id', existingAccess.id)
         if (updateErr) console.error('Error renewing access:', updateErr.message)
-        else console.log('Access renewed for:', buyer.email)
+        else {
+          console.log('Access renewed for:', buyer.email)
+          if (BACKUP_FOLDER_PLANS.has(accessType)) await shareBackupFolder(supabase, buyer.email)
+        }
       } else {
         const { error: accessErr } = await supabase.from('accesses').insert({
           email: buyer.email,
@@ -314,6 +369,7 @@ serve(async (req) => {
           console.error('Error inserting access:', accessErr.message)
         } else {
           console.log('Access granted for:', buyer.email)
+          if (BACKUP_FOLDER_PLANS.has(accessType)) await shareBackupFolder(supabase, buyer.email)
         }
       }
 

@@ -30,6 +30,11 @@ import { Link } from 'react-router-dom';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const BULK_CHUNK_SIZE = 300;
+const PLAN_DURATION_DAYS: Record<string, number> = { annual: 365, monthly: 30 };
+function planExpiresAt(plan: string): string | null {
+  const days = PLAN_DURATION_DAYS[plan];
+  return days ? new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString() : null;
+}
 
 function extractEmails(raw: string): string[] {
   // Accepts one-per-line, comma/semicolon-separated, or a messy paste with
@@ -102,7 +107,7 @@ export default function MembersPage() {
       const [manualAccesses, buyers, courses] = await Promise.all([
         fetchAllRows((f, t) =>
           supabase.from('accesses').select('id, email, access_type, status, granted_at')
-            .eq('status', 'active').in('access_type', ['paid', 'lifetime', 'annual']).range(f, t)
+            .eq('status', 'active').in('access_type', ['paid', 'lifetime', 'lifetime_plus', 'lifetime_pro', 'annual', 'monthly']).range(f, t)
         ),
         fetchAllRows((f, t) =>
           supabase.from('buyers').select('email, plan, created_at').eq('access_granted', true).range(f, t)
@@ -147,9 +152,7 @@ export default function MembersPage() {
     if (!newEmail) { toast.error('Informe um email'); return; }
     setAdding(true);
     try {
-      const expiresAt = newPlan === 'annual'
-        ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
-        : null;
+      const expiresAt = planExpiresAt(newPlan);
       const { error } = await supabase.from('accesses').insert({
         email: newEmail.toLowerCase(),
         access_type: newPlan,
@@ -195,9 +198,7 @@ export default function MembersPage() {
 
       const toInsert = candidates.filter(e => !covered.has(e));
       const skipped = candidates.length - toInsert.length;
-      const expiresAt = bulkPlan === 'annual'
-        ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
-        : null;
+      const expiresAt = planExpiresAt(bulkPlan);
 
       let granted = 0;
       for (let i = 0; i < toInsert.length; i += BULK_CHUNK_SIZE) {
@@ -237,7 +238,10 @@ export default function MembersPage() {
     }
   };
 
-  const planLabel = (plan: string) => ({ lifetime: 'Vitalício', annual: 'Anual', paid: 'Pago' }[plan] || plan);
+  const planLabel = (plan: string) => ({
+    lifetime: 'Vitalício', lifetime_plus: 'Vitalício Plus', lifetime_pro: 'Vitalício Pro',
+    annual: 'Anual', monthly: 'Mensal', paid: 'Pago',
+  }[plan] || plan);
 
   return (
     <AdminLayout>
@@ -274,7 +278,10 @@ export default function MembersPage() {
                       <SelectTrigger className="bg-secondary border-border text-foreground"><SelectValue /></SelectTrigger>
                       <SelectContent className="bg-background-paper border-border">
                         <SelectItem value="lifetime">Vitalício</SelectItem>
+                        <SelectItem value="lifetime_plus">Vitalício Plus</SelectItem>
+                        <SelectItem value="lifetime_pro">Vitalício Pro</SelectItem>
                         <SelectItem value="annual">Anual (365 dias)</SelectItem>
+                        <SelectItem value="monthly">Mensal (30 dias)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -322,7 +329,10 @@ export default function MembersPage() {
                       <SelectTrigger className="bg-secondary border-border text-foreground"><SelectValue /></SelectTrigger>
                       <SelectContent className="bg-background-paper border-border">
                         <SelectItem value="lifetime">Vitalício</SelectItem>
+                        <SelectItem value="lifetime_plus">Vitalício Plus</SelectItem>
+                        <SelectItem value="lifetime_pro">Vitalício Pro</SelectItem>
                         <SelectItem value="annual">Anual (365 dias)</SelectItem>
+                        <SelectItem value="monthly">Mensal (30 dias)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

@@ -4,6 +4,8 @@
  * Pixels: 797374160058274 e 2400702203708115
  */
 
+import { PLAN_LABELS } from './plans';
+
 declare global {
   interface Window {
     fbq?: (...args: any[]) => void;
@@ -36,7 +38,7 @@ export const trackInitiateCheckout = (plan: string, value: number) => {
   if (!isFbqAvailable()) return;
 
   window.fbq!('track', 'InitiateCheckout', {
-    content_name: plan === 'lifetime' ? 'Plano Vitalício' : 'Plano Anual',
+    content_name: PLAN_LABELS[plan] || plan,
     content_category: 'Subscription',
     content_ids: [plan],
     value,
@@ -60,7 +62,7 @@ export const trackPurchase = (
   if (!isFbqAvailable()) return;
 
   const params = {
-    content_name: plan === 'lifetime' ? 'Plano Vitalício' : 'Plano Anual',
+    content_name: PLAN_LABELS[plan] || plan,
     content_category: 'Subscription',
     content_ids: [plan],
     content_type: 'product',

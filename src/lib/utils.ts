@@ -209,3 +209,36 @@ export function formatWhatsApp(value: string, countryCode: string): string {
   }
   return nums;
 }
+
+// Compartilhado entre LessonPlayer (download de documento avulso) e o
+// download em massa do plano Vitalício Pro em CourseDetailPage.
+const EXTENSION_BY_MIME: Record<string, string> = {
+  'application/pdf': 'pdf',
+  'application/msword': 'doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.ms-excel': 'xls',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'text/plain': 'txt',
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+  'image/svg+xml': 'svg',
+  'video/mp4': 'mp4',
+  'video/webm': 'webm',
+  'video/quicktime': 'mov',
+  'audio/mpeg': 'mp3',
+  'audio/mp4': 'm4a',
+};
+
+const EXTENSION_BY_TYPE: Record<string, string> = {
+  pdf: 'pdf', doc: 'docx', sheet: 'xlsx', txt: 'txt', image: 'jpg', video: 'mp4', audio: 'mp3',
+};
+
+export function fileExtensionFor(lesson: { type: string; mime_type?: string | null }): string {
+  return (lesson.mime_type && EXTENSION_BY_MIME[lesson.mime_type]) || EXTENSION_BY_TYPE[lesson.type] || 'bin';
+}
+
+export function sanitizeFilename(title: string): string {
+  return title.replace(/[\\/:*?"<>|]/g, '').trim() || 'arquivo';
+}

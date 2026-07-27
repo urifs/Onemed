@@ -132,8 +132,12 @@ function getTrialAccessEmail(email: string): string {
 }
 
 function getPaymentApprovedEmail(firstName: string, plan: string, amount?: number, buyerEmail?: string): string {
-  const planLabels: Record<string, string> = { lifetime: 'Vitalício', annual: 'Anual' }
-  const planDuration: Record<string, string> = { lifetime: 'para sempre', annual: 'por 1 ano' }
+  const planLabels: Record<string, string> = {
+    monthly: 'Mensal', annual: 'Anual', lifetime: 'Vitalício', lifetime_plus: 'Vitalício Plus', lifetime_pro: 'Vitalício Pro',
+  }
+  const planDuration: Record<string, string> = {
+    monthly: 'por 30 dias', annual: 'por 1 ano', lifetime: 'para sempre', lifetime_plus: 'para sempre', lifetime_pro: 'para sempre',
+  }
   const planLabel = planLabels[plan] || plan
   const duration = planDuration[plan] || ''
 

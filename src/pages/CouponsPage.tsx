@@ -12,9 +12,12 @@ import { formatDateSP } from '@/lib/utils';
 import { Tag, Plus, Pencil, Trash2, X, AlertTriangle, RefreshCw } from 'lucide-react';
 
 const PLAN_LABELS: Record<string, string> = {
-  all:      'Ambos',
-  annual:   'Só Anual',
-  lifetime: 'Só Vitalício',
+  all:           'Todos os planos',
+  monthly:       'Só Mensal',
+  annual:        'Só Anual',
+  lifetime:      'Só Vitalício',
+  lifetime_plus: 'Só Vitalício Plus',
+  lifetime_pro:  'Só Vitalício Pro',
 };
 
 export default function CouponsPage() {
@@ -184,9 +187,12 @@ export default function CouponsPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="bg-background-paper border-border">
-                    <SelectItem value="all">Ambos os planos</SelectItem>
+                    <SelectItem value="all">Todos os planos</SelectItem>
+                    <SelectItem value="monthly">Só Plano Mensal (R$ 49)</SelectItem>
                     <SelectItem value="annual">Só Plano Anual (R$ 199)</SelectItem>
                     <SelectItem value="lifetime">Só Plano Vitalício (R$ 299,90)</SelectItem>
+                    <SelectItem value="lifetime_plus">Só Plano Vitalício Plus (R$ 599)</SelectItem>
+                    <SelectItem value="lifetime_pro">Só Plano Vitalício Pro (R$ 997)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

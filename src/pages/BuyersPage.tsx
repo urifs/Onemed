@@ -11,6 +11,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { DollarSign, Users, Clock, TrendingUp, Mail, Calendar, Phone, Trash2, UserPlus, Loader2, RefreshCw, CheckCircle, XCircle, X, Download, AlertTriangle } from 'lucide-react';
 import { WhatsAppLink } from '@/components/WhatsAppLink';
 
+const PLAN_LABELS: Record<string, string> = {
+  monthly: 'Mensal', annual: 'Anual', lifetime: 'Vitalício', lifetime_plus: 'Vitalício Plus', lifetime_pro: 'Vitalício Pro',
+};
+
 export default function BuyersPage() {
   const { session } = useAuth();
   const [buyers, setBuyers] = useState<any[]>([]);
@@ -39,7 +43,7 @@ export default function BuyersPage() {
         total: today.length,
         approved: today.filter(b => b.status === 'approved').length,
         revenue: today.filter(b => b.status === 'approved').reduce((s: number, b: any) => s + (b.amount || 0), 0),
-        lifetime: today.filter(b => b.plan === 'lifetime').length,
+        lifetime: today.filter(b => b.plan === 'lifetime' || b.plan === 'lifetime_plus' || b.plan === 'lifetime_pro').length,
         annual: today.filter(b => b.plan === 'annual').length,
       });
     } catch {
@@ -176,7 +180,7 @@ export default function BuyersPage() {
                         ) : '—'}
                       </td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">{buyer.name || '—'}</td>
-                      <td className="px-4 py-3 text-sm text-muted-foreground capitalize">{buyer.plan}</td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground">{PLAN_LABELS[buyer.plan] || buyer.plan}</td>
                       <td className="px-4 py-3 text-sm text-foreground">{buyer.amount ? `R$ ${Number(buyer.amount).toFixed(2)}` : '—'}</td>
                       <td className="px-4 py-3">{statusBadge(buyer.status)}</td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">{formatDateTimeSP(buyer.created_at)}</td>
@@ -226,8 +230,11 @@ export default function BuyersPage() {
                 <Select value={newPlan} onValueChange={setNewPlan}>
                   <SelectTrigger className="bg-secondary border-border text-foreground"><SelectValue /></SelectTrigger>
                   <SelectContent className="bg-background-paper border-border">
+                    <SelectItem value="monthly">Mensal</SelectItem>
                     <SelectItem value="annual">Anual</SelectItem>
                     <SelectItem value="lifetime">Vitalício</SelectItem>
+                    <SelectItem value="lifetime_plus">Vitalício Plus</SelectItem>
+                    <SelectItem value="lifetime_pro">Vitalício Pro</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
