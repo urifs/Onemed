@@ -65,9 +65,13 @@ serve(async (req) => {
 
     if (!EMAIL_REGEX.test(email)) return jsonResponse(req, { error: 'Email inválido' }, 400)
 
-    const [{ data: activeAccess }, { data: buyer }, { data: isAdminEmail }] = await Promise.all([
-      supabase.from('accesses').select('id, access_type').eq('email', email).eq('status', 'active').limit(1).maybeSingle(),
-      supabase.from('buyers').select('id, plan').eq('email', email).eq('access_granted', true).limit(1).maybeSingle(),
+    // Sem .limit(1).maybeSingle() de propósito: uma conta pode ter mais de
+    // uma linha "active" em accesses (ex: grant manual antigo nunca
+    // desativado ao fazer upgrade) — pegar só uma arbitrária já causou o
+    // limite de telas cair pro plano errado. Busca todas e decide com .some().
+    const [{ data: activeAccesses }, { data: buyerRows }, { data: isAdminEmail }] = await Promise.all([
+      supabase.from('accesses').select('id, access_type').eq('email', email).eq('status', 'active'),
+      supabase.from('buyers').select('id, plan').eq('email', email).eq('access_granted', true),
       supabase.rpc('is_admin_email', { _email: email }),
     ])
 
@@ -82,7 +86,7 @@ serve(async (req) => {
       }
     }
 
-    if (!activeAccess && !buyer && !isAdminEmail) {
+    if (!activeAccesses?.length && !buyerRows?.length && !isAdminEmail) {
       return jsonResponse(req, { error: 'Nenhum acesso ativo encontrado para este email. Faça um trial gratuito ou verifique sua compra.' }, 404)
     }
 
@@ -126,7 +130,7 @@ serve(async (req) => {
     // que acabou de ser criada entra nessa contagem), o que derruba o
     // refresh token do dispositivo mais antigo no próximo refresh.
     if (linkData.user?.id) {
-      const maxSessions = PREMIUM_DEVICE_PLANS.has(activeAccess?.access_type || '') || PREMIUM_DEVICE_PLANS.has(buyer?.plan || '') ? 4 : 2
+      const maxSessions = (activeAccesses || []).some(a => PREMIUM_DEVICE_PLANS.has(a.access_type)) || (buyerRows || []).some(b => PREMIUM_DEVICE_PLANS.has(b.plan)) ? 4 : 2
       const { error: limitErr } = await supabase.rpc('enforce_session_limit', { _user_id: linkData.user.id, _max_sessions: maxSessions })
       if (limitErr) console.error('enforce_session_limit error', limitErr)
     }

@@ -54,7 +54,8 @@ serve(async (req) => {
     // lifetime/lifetime_plus/lifetime_pro contam igual pra "nunca expira" —
     // Plus/Pro só adicionam perks (backup no Drive, mais telas), não mudam
     // a duração do acesso à plataforma.
-    const LIFETIME_PLANS = new Set(['lifetime', 'lifetime_plus', 'lifetime_pro'])
+    const LIFETIME_TIER_RANK: Record<string, number> = { lifetime: 1, lifetime_plus: 2, lifetime_pro: 3 }
+    const LIFETIME_PLANS = new Set(Object.keys(LIFETIME_TIER_RANK))
     const isLifetime = !!isAdmin || LIFETIME_PLANS.has(buyer?.plan || '') || nonTrialRows.some(a => LIFETIME_PLANS.has(a.access_type))
 
     let expiresAt: string | null = null
@@ -63,11 +64,16 @@ serve(async (req) => {
     if (isAdmin) {
       plan = 'admin'
     } else if (isLifetime) {
-      // Mantém o tier exato (lifetime_plus/lifetime_pro) em vez de achatar
-      // tudo pra 'lifetime' — é o que diferencia os planos no AccountMenu.
-      plan = (buyer?.plan && LIFETIME_PLANS.has(buyer.plan))
-        ? buyer.plan
-        : nonTrialRows.find(a => LIFETIME_PLANS.has(a.access_type))?.access_type || 'lifetime'
+      // Uma conta pode ter mais de uma linha "active" em accesses (ex: grant
+      // manual antigo nunca desativado ao fazer upgrade) — sempre usa a de
+      // maior tier, nunca "a primeira que aparecer" nem só o buyer mais
+      // recente, senão um upgrade pode continuar mostrando o plano antigo.
+      const bestAccessTier = nonTrialRows
+        .filter(a => LIFETIME_PLANS.has(a.access_type))
+        .sort((a, b) => LIFETIME_TIER_RANK[b.access_type] - LIFETIME_TIER_RANK[a.access_type])[0]?.access_type
+      const buyerTier = buyer?.plan && LIFETIME_PLANS.has(buyer.plan) ? buyer.plan : undefined
+      plan = [buyerTier, bestAccessTier].filter((p): p is string => !!p)
+        .sort((a, b) => LIFETIME_TIER_RANK[b] - LIFETIME_TIER_RANK[a])[0] || 'lifetime'
     } else if (nonTrialRows.length > 0 || buyer) {
       // Comprador (pago/anual) tem prioridade sobre um trial antigo que ainda esteja ativo
       plan = buyer?.plan || nonTrialRows[0]?.access_type || null

@@ -152,15 +152,29 @@ export default function MembersPage() {
     if (!newEmail) { toast.error('Informe um email'); return; }
     setAdding(true);
     try {
+      const email = newEmail.toLowerCase();
       const expiresAt = planExpiresAt(newPlan);
-      const { error } = await supabase.from('accesses').insert({
-        email: newEmail.toLowerCase(),
-        access_type: newPlan,
-        status: 'active',
-        expires_at: expiresAt,
-      });
+
+      // Atualiza a linha ativa já existente em vez de sempre inserir uma
+      // nova — sem isso, conceder/trocar o plano de quem já tinha acesso
+      // deixava duas linhas "active" pro mesmo email (uma antiga e uma
+      // nova), e as telas que leem "o acesso ativo" podiam pegar a errada
+      // (plano errado no perfil, limite de telas errado).
+      const { data: existing } = await supabase
+        .from('accesses')
+        .select('id')
+        .eq('email', email)
+        .eq('status', 'active')
+        .neq('access_type', 'trial')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const { error } = existing
+        ? await supabase.from('accesses').update({ access_type: newPlan, status: 'active', expires_at: expiresAt }).eq('id', existing.id)
+        : await supabase.from('accesses').insert({ email, access_type: newPlan, status: 'active', expires_at: expiresAt });
       if (error) throw error;
-      toast.success('Acesso à área de membros concedido');
+      toast.success(existing ? 'Plano do membro atualizado' : 'Acesso à área de membros concedido');
       setIsAddOpen(false);
       setNewEmail('');
       fetchData();
