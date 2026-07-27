@@ -4,6 +4,8 @@ import { useCommunitySettings } from '@/hooks/useCommunitySettings';
 
 const COURSES_UPDATING = [
   { name: 'MedReview 2026', done: true },
+  { name: 'Apostilas EstratégiaMed 2026', done: true },
+  { name: 'Casal MED 2026', done: true },
   { name: 'Medcurso 2026', done: false },
   { name: 'Medcel 2026', done: false },
   { name: 'Estratégia MED 2026', done: false },
