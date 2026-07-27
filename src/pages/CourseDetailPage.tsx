@@ -71,6 +71,7 @@ export default function CourseDetailPage() {
   const { user } = useAuth();
 
   const [isFavorite, setIsFavorite] = useState(false);
+  const [favoriteLessonIds, setFavoriteLessonIds] = useState<Set<string>>(new Set());
   const [contentTypeFilter, setContentTypeFilter] = useState<ContentTypeFilter>('all');
   const [course, setCourse] = useState<Course | null | undefined>(undefined);
   const [modules, setModules] = useState<CourseModule[]>([]);
@@ -151,12 +152,13 @@ export default function CourseDetailPage() {
             return items;
           };
 
-          const [moduleRows, lessonRows, progressRows, { data: favData }] = await withTimeout(
+          const [moduleRows, lessonRows, progressRows, { data: favData }, { data: lessonFavData }] = await withTimeout(
             Promise.all([
               supabase.from('course_modules').select('*').eq('course_id', courseRow.id).order('sort_order').then(res => { if (res.error) throw res.error; return res.data || []; }),
               fetchAllLessons(),
               fetchAllProgress(),
               user?.id ? supabase.from('user_favorites').select('course_id').eq('user_id', user.id).eq('course_id', courseRow.id).maybeSingle() : Promise.resolve({ data: null }),
+              user?.id ? supabase.from('user_lesson_favorites').select('lesson_id').eq('user_id', user.id) : Promise.resolve({ data: [] as { lesson_id: string }[] }),
             ]),
             30000,
             'aulas do curso'
@@ -166,6 +168,7 @@ export default function CourseDetailPage() {
           setModules(moduleRows);
           setLessons(lessonRows);
           setIsFavorite(!!favData);
+          setFavoriteLessonIds(new Set((lessonFavData || []).map(f => f.lesson_id)));
           const map: Record<string, Progress> = {};
           for (const p of progressRows) map[p.lesson_id] = p;
           setProgressMap(map);
@@ -273,6 +276,21 @@ export default function CourseDetailPage() {
       await supabase.from('user_favorites').delete().match({ user_id: user.id, course_id: course.id });
     } else {
       await supabase.from('user_favorites').insert({ user_id: user.id, course_id: course.id });
+    }
+  };
+
+  const handleToggleLessonFavorite = async (lesson: Lesson) => {
+    if (!user) return;
+    const currentStatus = favoriteLessonIds.has(lesson.id);
+    setFavoriteLessonIds(prev => {
+      const next = new Set(prev);
+      if (currentStatus) next.delete(lesson.id); else next.add(lesson.id);
+      return next;
+    });
+    if (currentStatus) {
+      await supabase.from('user_lesson_favorites').delete().match({ user_id: user.id, lesson_id: lesson.id });
+    } else {
+      await supabase.from('user_lesson_favorites').insert({ user_id: user.id, lesson_id: lesson.id });
     }
   };
 
@@ -466,6 +484,7 @@ export default function CourseDetailPage() {
                 <LessonGroupList
                   groups={videoGroups} progressMap={progressMap} onSelect={setActiveLesson}
                   selectMode={selectMode} selectedIds={selectedIds} onToggleSelect={toggleSelectLesson}
+                  favoriteIds={favoriteLessonIds} onToggleFavorite={handleToggleLessonFavorite}
                 />
               </>
             ) : tab === 'arquivos' ? (
@@ -482,6 +501,7 @@ export default function CourseDetailPage() {
                 <LessonGroupList
                   groups={fileGroups} progressMap={progressMap} onSelect={setActiveLesson}
                   selectMode={selectMode} selectedIds={selectedIds} onToggleSelect={toggleSelectLesson}
+                  favoriteIds={favoriteLessonIds} onToggleFavorite={handleToggleLessonFavorite}
                 />
               </>
             ) : (
@@ -611,7 +631,7 @@ function CourseSummarySidebar({ blocks, onSelect }: { blocks: SummaryBlock[]; on
 }
 
 function LessonGroupList({
-  groups, progressMap, onSelect, selectMode, selectedIds, onToggleSelect,
+  groups, progressMap, onSelect, selectMode, selectedIds, onToggleSelect, favoriteIds, onToggleFavorite,
 }: {
   groups: { id: string; title: string; lessons: Lesson[] }[];
   progressMap: Record<string, Progress>;
@@ -619,6 +639,8 @@ function LessonGroupList({
   selectMode?: boolean;
   selectedIds?: Set<string>;
   onToggleSelect?: (lesson: Lesson) => void;
+  favoriteIds?: Set<string>;
+  onToggleFavorite?: (lesson: Lesson) => void;
 }) {
   return (
     <div className="space-y-8">
@@ -635,36 +657,48 @@ function LessonGroupList({
               const p = progressMap[lesson.id];
               const pct = p && lesson.duration_seconds ? Math.min(100, (p.watched_seconds / lesson.duration_seconds) * 100) : 0;
               const isSelected = !!selectedIds?.has(lesson.id);
+              const isLessonFavorite = !!favoriteIds?.has(lesson.id);
               return (
-                <button
-                  key={lesson.id}
-                  onClick={() => selectMode ? onToggleSelect?.(lesson) : onSelect(lesson)}
-                  className="w-full flex items-center gap-3.5 px-4 py-3.5 bg-card hover:bg-secondary text-left transition-colors group"
-                >
-                  {selectMode && (
-                    <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${isSelected ? 'bg-primary border-primary' : 'border-muted-foreground/40'}`}>
-                      {isSelected && <Check className="w-3.5 h-3.5 text-primary-foreground" />}
-                    </div>
-                  )}
-                  <div className="w-9 h-9 rounded-full bg-secondary group-hover:bg-primary/15 flex items-center justify-center shrink-0 transition-colors">
-                    {p?.completed ? (
-                      <CheckCircle2 className="w-4 h-4 text-accent-success" />
-                    ) : (
-                      <Icon className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" fill={lesson.type === 'video' ? 'currentColor' : 'none'} />
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate">{lesson.title}</p>
-                    {pct > 0 && !p?.completed && (
-                      <div className="h-1 w-24 rounded-full bg-secondary mt-1.5 overflow-hidden">
-                        <div className="h-full bg-primary" style={{ width: `${pct}%` }} />
+                // Não é <button> — dentro tem dois controles clicáveis
+                // independentes (abrir/selecionar vs favoritar), e botão
+                // aninhado dentro de botão é HTML inválido.
+                <div key={lesson.id} className="w-full flex items-center gap-3.5 px-4 py-3.5 bg-card hover:bg-secondary transition-colors group">
+                  <button
+                    onClick={() => selectMode ? onToggleSelect?.(lesson) : onSelect(lesson)}
+                    className="flex-1 min-w-0 flex items-center gap-3.5 text-left"
+                  >
+                    {selectMode && (
+                      <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${isSelected ? 'bg-primary border-primary' : 'border-muted-foreground/40'}`}>
+                        {isSelected && <Check className="w-3.5 h-3.5 text-primary-foreground" />}
                       </div>
                     )}
-                  </div>
-                  <span className="text-xs text-muted-foreground tabular-nums shrink-0">
-                    {lesson.type === 'video' ? formatDuration(lesson.duration_seconds) : formatFileSize(lesson.size_bytes)}
-                  </span>
-                </button>
+                    <div className="w-9 h-9 rounded-full bg-secondary group-hover:bg-primary/15 flex items-center justify-center shrink-0 transition-colors">
+                      {p?.completed ? (
+                        <CheckCircle2 className="w-4 h-4 text-accent-success" />
+                      ) : (
+                        <Icon className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" fill={lesson.type === 'video' ? 'currentColor' : 'none'} />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">{lesson.title}</p>
+                      {pct > 0 && !p?.completed && (
+                        <div className="h-1 w-24 rounded-full bg-secondary mt-1.5 overflow-hidden">
+                          <div className="h-full bg-primary" style={{ width: `${pct}%` }} />
+                        </div>
+                      )}
+                    </div>
+                    <span className="text-xs text-muted-foreground tabular-nums shrink-0">
+                      {lesson.type === 'video' ? formatDuration(lesson.duration_seconds) : formatFileSize(lesson.size_bytes)}
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => onToggleFavorite?.(lesson)}
+                    className={`shrink-0 p-1.5 rounded-lg transition-colors ${isLessonFavorite ? 'text-accent-warning' : 'text-muted-foreground/30 hover:text-muted-foreground'}`}
+                    title={isLessonFavorite ? 'Remover dos favoritos' : 'Favoritar'}
+                  >
+                    <Star className="w-4 h-4" fill={isLessonFavorite ? 'currentColor' : 'none'} />
+                  </button>
+                </div>
               );
             })}
           </div>

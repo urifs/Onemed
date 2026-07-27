@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Play, Info, FileText, File, Music, Image as ImageIcon, Loader2, FileSpreadsheet, FileType, Megaphone } from 'lucide-react';
+import { Play, Info, FileText, File, Music, Image as ImageIcon, Loader2, FileSpreadsheet, FileType, Megaphone, Star } from 'lucide-react';
 import { useAnnouncementSettings } from '@/hooks/useAnnouncementSettings';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
@@ -26,6 +26,12 @@ interface ContentResult {
   course_id: string; course_title: string; course_slug: string; course_category: string;
 }
 
+interface FavoriteLesson {
+  lesson_id: string; title: string; type: string;
+  duration_seconds: number | null; size_bytes: number | null;
+  course_title: string; course_slug: string;
+}
+
 const CONTENT_TYPE_ICON: Record<string, typeof Play> = {
   video: Play, pdf: FileText, doc: File, sheet: FileSpreadsheet, txt: FileType, audio: Music, image: ImageIcon, other: File,
 };
@@ -38,6 +44,8 @@ export default function MemberDashboardPage() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [continueList, setContinueList] = useState<ProgressRow[]>([]);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const [favoriteLessons, setFavoriteLessons] = useState<FavoriteLesson[]>([]);
+  const [favoriteLessonsLoading, setFavoriteLessonsLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [loadErrorMessage, setLoadErrorMessage] = useState('');
@@ -148,6 +156,44 @@ export default function MemberDashboardPage() {
       await supabase.from('user_favorites').insert({ user_id: userId, course_id: courseId });
     }
   };
+
+  // Só busca aulas/arquivos favoritados quando a aba Favoritos é aberta —
+  // ninguém precisa disso carregado de cara junto com o resto do dashboard.
+  useEffect(() => {
+    if (activeCategory !== 'Favoritos' || !userId) return;
+    let alive = true;
+    setFavoriteLessonsLoading(true);
+    supabase
+      .from('user_lesson_favorites')
+      .select('lesson_id, lessons(id, title, type, duration_seconds, size_bytes, courses(title, slug))')
+      .eq('user_id', userId)
+      .then(({ data }) => {
+        if (!alive) return;
+        const rows: FavoriteLesson[] = (data || [])
+          .map((r: any) => r.lessons && r.lessons.courses ? {
+            lesson_id: r.lessons.id as string,
+            title: r.lessons.title as string,
+            type: r.lessons.type as string,
+            duration_seconds: r.lessons.duration_seconds,
+            size_bytes: r.lessons.size_bytes,
+            course_title: r.lessons.courses.title as string,
+            course_slug: r.lessons.courses.slug as string,
+          } : null)
+          .filter((r: FavoriteLesson | null): r is FavoriteLesson => r !== null);
+        setFavoriteLessons(rows);
+        setFavoriteLessonsLoading(false);
+      });
+    return () => { alive = false; };
+  }, [activeCategory, userId]);
+
+  const handleUnfavoriteLesson = async (lessonId: string) => {
+    if (!userId) return;
+    setFavoriteLessons(prev => prev.filter(l => l.lesson_id !== lessonId));
+    await supabase.from('user_lesson_favorites').delete().match({ user_id: userId, lesson_id: lessonId });
+  };
+
+  const favoriteVideos = useMemo(() => favoriteLessons.filter(l => l.type === 'video'), [favoriteLessons]);
+  const favoriteFiles = useMemo(() => favoriteLessons.filter(l => l.type !== 'video'), [favoriteLessons]);
 
   // 81 mil linhas em lessons é demais pra trazer pro cliente e filtrar em
   // JS — a busca de conteúdo roda no banco (search_lessons), com debounce
@@ -437,6 +483,101 @@ export default function MemberDashboardPage() {
                     )}
                   </div>
                 )}
+              </section>
+            ) : activeCategory === 'Favoritos' ? (
+              <section className="space-y-8">
+                <h2 className="font-secondary text-lg font-bold text-foreground mb-1">Favoritos</h2>
+
+                <div>
+                  <p className="text-sm font-semibold text-foreground mb-3">
+                    Cursos favoritados {categoryCourses.length > 0 && `(${categoryCourses.length})`}
+                  </p>
+                  {categoryCourses.length > 0 ? (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-8 items-start">
+                      {categoryCourses.map(c => <CourseCard key={c.id} course={c} isFavorite={favorites.has(c.id)} onToggleFavorite={handleToggleFavorite} />)}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">Nenhum curso favoritado ainda.</p>
+                  )}
+                </div>
+
+                <div>
+                  <p className="text-sm font-semibold text-foreground mb-3">
+                    Aulas favoritadas {favoriteVideos.length > 0 && `(${favoriteVideos.length})`}
+                  </p>
+                  {favoriteLessonsLoading ? (
+                    <div className="flex justify-center py-6">
+                      <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                    </div>
+                  ) : favoriteVideos.length > 0 ? (
+                    <div className="rounded-xl border border-border overflow-hidden divide-y divide-border">
+                      {favoriteVideos.map(l => (
+                        <div key={l.lesson_id} className="w-full flex items-center gap-3.5 px-4 py-3.5 bg-card hover:bg-secondary transition-colors group">
+                          <button
+                            onClick={() => navigate(`/membros/curso/${l.course_slug}?lesson=${l.lesson_id}`)}
+                            className="flex-1 min-w-0 flex items-center gap-3.5 text-left"
+                          >
+                            <div className="w-9 h-9 rounded-full bg-secondary group-hover:bg-primary/15 flex items-center justify-center shrink-0 transition-colors">
+                              <Play className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" fill="currentColor" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-foreground truncate">{l.title}</p>
+                              <p className="text-xs text-muted-foreground truncate">{stripYearFromTitle(l.course_title)}</p>
+                            </div>
+                            <span className="text-xs text-muted-foreground tabular-nums shrink-0">{formatDuration(l.duration_seconds)}</span>
+                          </button>
+                          <button
+                            onClick={() => handleUnfavoriteLesson(l.lesson_id)}
+                            className="shrink-0 p-1.5 rounded-lg text-accent-warning hover:text-accent-warning/70 transition-colors"
+                            title="Remover dos favoritos"
+                          >
+                            <Star className="w-4 h-4" fill="currentColor" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">Nenhuma aula favoritada ainda.</p>
+                  )}
+                </div>
+
+                <div>
+                  <p className="text-sm font-semibold text-foreground mb-3">
+                    Arquivos favoritados {favoriteFiles.length > 0 && `(${favoriteFiles.length})`}
+                  </p>
+                  {favoriteLessonsLoading ? null : favoriteFiles.length > 0 ? (
+                    <div className="rounded-xl border border-border overflow-hidden divide-y divide-border">
+                      {favoriteFiles.map(l => {
+                        const Icon = CONTENT_TYPE_ICON[l.type] || File;
+                        return (
+                          <div key={l.lesson_id} className="w-full flex items-center gap-3.5 px-4 py-3.5 bg-card hover:bg-secondary transition-colors group">
+                            <button
+                              onClick={() => navigate(`/membros/curso/${l.course_slug}?lesson=${l.lesson_id}`)}
+                              className="flex-1 min-w-0 flex items-center gap-3.5 text-left"
+                            >
+                              <div className="w-9 h-9 rounded-full bg-secondary group-hover:bg-primary/15 flex items-center justify-center shrink-0 transition-colors">
+                                <Icon className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-foreground truncate">{l.title}</p>
+                                <p className="text-xs text-muted-foreground truncate">{stripYearFromTitle(l.course_title)}</p>
+                              </div>
+                            </button>
+                            <button
+                              onClick={() => handleUnfavoriteLesson(l.lesson_id)}
+                              className="shrink-0 p-1.5 rounded-lg text-accent-warning hover:text-accent-warning/70 transition-colors"
+                              title="Remover dos favoritos"
+                            >
+                              <Star className="w-4 h-4" fill="currentColor" />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">Nenhum arquivo favoritado ainda.</p>
+                  )}
+                </div>
               </section>
             ) : activeCategory ? (
               <section>
