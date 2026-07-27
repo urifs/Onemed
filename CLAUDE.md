@@ -650,6 +650,30 @@ cursos/aulas/arquivos); limite de 4 telas simultâneas pra Vitalício Plus/Pro (
 **Token do Supabase Management API rotacionado** nesta sessão (o anterior passou a retornar 401
 em qualquer endpoint) — valor atual já refletido na tabela de credenciais no topo deste arquivo.
 
+**Tela de Detalhes do Plano:** botão "Detalhes do Plano" no `AccountMenu.tsx` abre
+`PlanDetailsModal.tsx` — plano, benefícios, valor pago, vencimento, telas simultâneas, data de
+concessão, e-mail e WhatsApp. `member-account-info` retorna `whatsapp`/`grantedAt`.
+
+**Vitalício Pro passa a ter 6 telas simultâneas** (era 4, igual ao Plus). `PLAN_DEVICE_LIMITS` em
+`plans.ts`/`member-auth-request` substituiu o `PREMIUM_DEVICE_PLANS` (Set binário) por um mapa
+plano→limite.
+
+**Correções pontuais:** categoria "Favoritos" em `/membros` agora sempre aparece na sidebar (antes
+só aparecia com cursos favoritados, escondendo a opção de quem só tinha aulas/arquivos
+favoritados); botão "Adquirir Acesso Completo" na landing virou um botão de verdade (antes era só
+um link de texto discreto abaixo do CTA de trial).
+
+**Mapa de usuários no dashboard admin:** novo card `MemberLocationsMap.tsx`, abaixo de "Quem está
+online", com Leaflet + tiles CARTO (dark/light conforme o tema). Online mostra qualquer tipo de
+acesso, inclusive trial; offline só assinantes com plano pago ativo — trial que saiu do ar some do
+mapa. Localização aproximada por IP, capturada a cada login bem-sucedido (`member-auth-request` e
+`create-trial-access`) via `ipwho.is` (testado — `ipapi.co` retorna 429 rate-limited quase sempre
+a partir de IPs de datacenter/serverless compartilhados) e gravada em `member_locations` (nova
+tabela). Nova RPC `get_member_locations_map` (admin-only) cruza essa tabela com `auth.sessions`
+(online/offline) e `accesses` (trial vs assinante). De quebra, corrigido bug preexistente em
+`member-auth-request`: a extração de IP não tinha fallback pra `x-real-ip` quando
+`x-forwarded-for` vinha vazio — o rate limit por IP nunca pegava o IP real.
+
 ---
 
 ## Meta Ads — Contexto Geral
