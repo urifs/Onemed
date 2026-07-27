@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Send, MessageCircle, BadgeCheck } from 'lucide-react';
+import { Send, MessageCircle, BadgeCheck, Pencil } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
 import { useRequireName } from '@/hooks/useRequireName';
@@ -24,6 +24,9 @@ export function CommunityTab({ courseId }: { courseId: string }) {
   const [body, setBody] = useState('');
   const [loading, setLoading] = useState(true);
   const [posting, setPosting] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editBody, setEditBody] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const load = async () => {
     try {
@@ -53,6 +56,19 @@ export function CommunityTab({ courseId }: { courseId: string }) {
   };
 
   const handlePost = () => ensureName(doPost);
+
+  const startEdit = (c: Comment) => { setEditingId(c.id); setEditBody(c.body); };
+
+  const saveEdit = async () => {
+    if (!editBody.trim() || !editingId) return;
+    setSavingEdit(true);
+    const { error } = await supabase.from('course_comments').update({ body: editBody.trim() }).eq('id', editingId);
+    setSavingEdit(false);
+    if (!error) {
+      setComments(prev => prev.map(c => c.id === editingId ? { ...c, body: editBody.trim() } : c));
+      setEditingId(null);
+    }
+  };
 
   const initials = (name?: string | null, email?: string | null) => (name || email || '?').trim().charAt(0).toUpperCase();
   const displayName = (c: Comment) => c.author_name || c.author_email?.split('@')[0] || 'Aluno';
@@ -96,7 +112,9 @@ export function CommunityTab({ courseId }: { courseId: string }) {
         </div>
       ) : (
         <div className="space-y-5">
-          {comments.map(c => (
+          {comments.map(c => {
+            const isOwn = !!user && c.user_id === user.id;
+            return (
             <div key={c.id} className="flex gap-3">
               <div className={`w-9 h-9 rounded-full border flex items-center justify-center font-semibold text-sm shrink-0 ${c.is_admin ? 'bg-primary/15 border-primary/40 text-primary' : 'bg-secondary border-border text-foreground'}`}>
                 {initials(c.author_name, c.author_email)}
@@ -112,11 +130,40 @@ export function CommunityTab({ courseId }: { courseId: string }) {
                   <span className="text-xs text-muted-foreground">
                     {formatDistanceToNow(new Date(c.created_at), { addSuffix: true, locale: ptBR })}
                   </span>
+                  {isOwn && editingId !== c.id && (
+                    <button onClick={() => startEdit(c)} className="ml-auto text-xs text-muted-foreground hover:text-primary flex items-center gap-1 transition-colors">
+                      <Pencil className="w-3 h-3" /> Editar
+                    </button>
+                  )}
                 </div>
-                <p className="text-sm text-foreground/90 mt-0.5 whitespace-pre-wrap break-words">{c.body}</p>
+                {editingId === c.id ? (
+                  <div className="mt-1.5 space-y-1.5">
+                    <textarea
+                      value={editBody}
+                      onChange={e => setEditBody(e.target.value)}
+                      rows={2}
+                      spellCheck
+                      lang="pt-BR"
+                      className="w-full resize-none rounded-lg bg-secondary border border-border px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors"
+                    />
+                    <div className="flex justify-end gap-2">
+                      <button onClick={() => setEditingId(null)} className="text-xs text-muted-foreground hover:text-foreground px-2 py-1">Cancelar</button>
+                      <button
+                        onClick={saveEdit}
+                        disabled={savingEdit || !editBody.trim()}
+                        className="text-xs font-semibold bg-primary hover:bg-primary-hover disabled:opacity-40 disabled:cursor-not-allowed text-primary-foreground px-3 py-1 rounded-lg transition-colors"
+                      >
+                        {savingEdit ? 'Salvando...' : 'Salvar'}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-foreground/90 mt-0.5 whitespace-pre-wrap break-words">{c.body}</p>
+                )}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
       <NameRequiredModal open={promptOpen} onOpenChange={setPromptOpen} onSubmit={submitName} />

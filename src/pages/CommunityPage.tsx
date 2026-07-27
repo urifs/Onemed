@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Send, MessageCircle, AlertTriangle, RefreshCw, ChevronDown, BookOpen, Play, BadgeCheck, Tag, ListFilter, ArrowUpDown, MessagesSquare, ExternalLink } from 'lucide-react';
+import { Send, MessageCircle, AlertTriangle, RefreshCw, ChevronDown, BookOpen, Play, BadgeCheck, Tag, ListFilter, ArrowUpDown, MessagesSquare, ExternalLink, Pin, Pencil } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
 import { useRequireName } from '@/hooks/useRequireName';
@@ -33,6 +33,7 @@ interface FeedItem {
   body: string;
   created_at: string;
   reply_count: number;
+  pinned: boolean;
 }
 
 interface Reply {
@@ -71,6 +72,9 @@ function RepliesSection({ postId }: { postId: string }) {
   const [loading, setLoading] = useState(false);
   const [body, setBody] = useState('');
   const [posting, setPosting] = useState(false);
+  const [editingReplyId, setEditingReplyId] = useState<string | null>(null);
+  const [editReplyBody, setEditReplyBody] = useState('');
+  const [savingReplyEdit, setSavingReplyEdit] = useState(false);
 
   const loadReplies = async () => {
     setLoading(true);
@@ -103,6 +107,19 @@ function RepliesSection({ postId }: { postId: string }) {
 
   const handleReply = () => ensureName(doReply);
 
+  const startEditReply = (r: Reply) => { setEditingReplyId(r.id); setEditReplyBody(r.body); };
+
+  const saveReplyEdit = async () => {
+    if (!editReplyBody.trim() || !editingReplyId) return;
+    setSavingReplyEdit(true);
+    const { error } = await supabase.from('course_comments').update({ body: editReplyBody.trim() }).eq('id', editingReplyId);
+    setSavingReplyEdit(false);
+    if (!error) {
+      setReplies(prev => (prev || []).map(r => r.id === editingReplyId ? { ...r, body: editReplyBody.trim() } : r));
+      setEditingReplyId(null);
+    }
+  };
+
   return (
     <div className="mt-2">
       <button
@@ -121,7 +138,9 @@ function RepliesSection({ postId }: { postId: string }) {
             </div>
           ) : (
             <>
-              {(replies || []).map(r => (
+              {(replies || []).map(r => {
+                const isOwnReply = !!user && r.user_id === user.id;
+                return (
                 <div key={r.id} className="flex gap-2.5">
                   <div className={`w-7 h-7 rounded-full border flex items-center justify-center font-semibold text-xs shrink-0 ${r.is_admin ? 'bg-primary/15 border-primary/40 text-primary' : 'bg-secondary border-border text-foreground'}`}>
                     {initials(r.author_name, r.author_email)}
@@ -133,11 +152,40 @@ function RepliesSection({ postId }: { postId: string }) {
                       <span className="text-[11px] text-muted-foreground">
                         {formatDistanceToNow(new Date(r.created_at), { addSuffix: true, locale: ptBR })}
                       </span>
+                      {isOwnReply && editingReplyId !== r.id && (
+                        <button onClick={() => startEditReply(r)} className="ml-auto text-[11px] text-muted-foreground hover:text-primary flex items-center gap-1 transition-colors">
+                          <Pencil className="w-3 h-3" /> Editar
+                        </button>
+                      )}
                     </div>
-                    <p className="text-sm text-foreground/90 mt-0.5 whitespace-pre-wrap break-words">{r.body}</p>
+                    {editingReplyId === r.id ? (
+                      <div className="mt-1.5 space-y-1.5">
+                        <textarea
+                          value={editReplyBody}
+                          onChange={e => setEditReplyBody(e.target.value)}
+                          rows={2}
+                          spellCheck
+                          lang="pt-BR"
+                          className="w-full resize-none rounded-lg bg-secondary border border-border px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors"
+                        />
+                        <div className="flex justify-end gap-2">
+                          <button onClick={() => setEditingReplyId(null)} className="text-xs text-muted-foreground hover:text-foreground px-2 py-1">Cancelar</button>
+                          <button
+                            onClick={saveReplyEdit}
+                            disabled={savingReplyEdit || !editReplyBody.trim()}
+                            className="text-xs font-semibold bg-primary hover:bg-primary-hover disabled:opacity-40 disabled:cursor-not-allowed text-primary-foreground px-3 py-1 rounded-lg transition-colors"
+                          >
+                            {savingReplyEdit ? 'Salvando...' : 'Salvar'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-foreground/90 mt-0.5 whitespace-pre-wrap break-words">{r.body}</p>
+                    )}
                   </div>
                 </div>
-              ))}
+                );
+              })}
 
               <div className="flex gap-2.5">
                 <div className="w-7 h-7 rounded-full bg-primary/15 border border-primary/25 flex items-center justify-center text-primary font-semibold text-xs shrink-0">
@@ -172,7 +220,32 @@ function RepliesSection({ postId }: { postId: string }) {
   );
 }
 
-function FeedItemCard({ item }: { item: FeedItem }) {
+function FeedItemCard({ item, currentUserId, onUpdated }: {
+  item: FeedItem;
+  currentUserId?: string;
+  onUpdated: (id: string, patch: Partial<FeedItem>) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState(item.title || '');
+  const [editBody, setEditBody] = useState(item.body);
+  const [saving, setSaving] = useState(false);
+
+  const isOwn = !!currentUserId && item.user_id === currentUserId;
+
+  const startEdit = () => { setEditTitle(item.title || ''); setEditBody(item.body); setEditing(true); };
+
+  const saveEdit = async () => {
+    if (!editBody.trim()) return;
+    setSaving(true);
+    const patch = { title: editTitle.trim() || null, body: editBody.trim() };
+    const { error } = await supabase.from('course_comments').update(patch).eq('id', item.id);
+    setSaving(false);
+    if (!error) {
+      onUpdated(item.id, patch);
+      setEditing(false);
+    }
+  };
+
   return (
     <div className="glass rounded-xl p-5">
       <div className="flex gap-3">
@@ -183,9 +256,19 @@ function FeedItemCard({ item }: { item: FeedItem }) {
           <div className="flex items-baseline gap-2 flex-wrap">
             <span className="text-sm font-semibold text-foreground">{displayName(item.author_name, item.author_email)}</span>
             {item.is_admin && <AdminBadge />}
+            {item.pinned && (
+              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-accent-warning bg-accent-warning/10 border border-accent-warning/25 rounded-full px-2 py-0.5">
+                <Pin className="w-3 h-3" /> Fixado
+              </span>
+            )}
             <span className="text-xs text-muted-foreground">
               {formatDistanceToNow(new Date(item.created_at), { addSuffix: true, locale: ptBR })}
             </span>
+            {isOwn && !editing && (
+              <button onClick={startEdit} className="ml-auto text-xs text-muted-foreground hover:text-primary flex items-center gap-1 transition-colors">
+                <Pencil className="w-3 h-3" /> Editar
+              </button>
+            )}
           </div>
 
           {(item.course_title || item.lesson_title || item.category) && (
@@ -207,10 +290,43 @@ function FeedItemCard({ item }: { item: FeedItem }) {
             </div>
           )}
 
-          {item.title && (
-            <p className="text-base font-semibold text-foreground mt-2">{item.title}</p>
+          {editing ? (
+            <div className="mt-2 space-y-2">
+              <input
+                value={editTitle}
+                onChange={e => setEditTitle(e.target.value)}
+                placeholder="Título (opcional)"
+                spellCheck
+                lang="pt-BR"
+                className="w-full rounded-lg bg-secondary border border-border px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors"
+              />
+              <textarea
+                value={editBody}
+                onChange={e => setEditBody(e.target.value)}
+                rows={3}
+                spellCheck
+                lang="pt-BR"
+                className="w-full resize-none rounded-lg bg-secondary border border-border px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors"
+              />
+              <div className="flex justify-end gap-2">
+                <button onClick={() => setEditing(false)} className="text-xs text-muted-foreground hover:text-foreground px-3 py-1.5">Cancelar</button>
+                <button
+                  onClick={saveEdit}
+                  disabled={saving || !editBody.trim()}
+                  className="text-xs font-semibold bg-primary hover:bg-primary-hover disabled:opacity-40 disabled:cursor-not-allowed text-primary-foreground px-3 py-1.5 rounded-lg transition-colors"
+                >
+                  {saving ? 'Salvando...' : 'Salvar'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              {item.title && (
+                <p className="text-base font-semibold text-foreground mt-2">{item.title}</p>
+              )}
+              <p className="text-sm text-foreground/90 mt-1.5 whitespace-pre-wrap break-words">{item.body}</p>
+            </>
           )}
-          <p className="text-sm text-foreground/90 mt-1.5 whitespace-pre-wrap break-words">{item.body}</p>
 
           <RepliesSection postId={item.id} />
         </div>
@@ -342,6 +458,10 @@ export default function CommunityPage() {
 
   const handleNewTopic = () => ensureName(doNewTopic);
 
+  const handleItemUpdated = (id: string, patch: Partial<FeedItem>) => {
+    setItems(prev => prev.map(it => it.id === id ? { ...it, ...patch } : it));
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <MemberHeader />
@@ -459,7 +579,9 @@ export default function CommunityPage() {
           </div>
         ) : (
           <div className="space-y-4">
-            {items.map(item => <FeedItemCard key={item.id} item={item} />)}
+            {items.map(item => (
+              <FeedItemCard key={item.id} item={item} currentUserId={user?.id} onUpdated={handleItemUpdated} />
+            ))}
             {hasMore && (
               <div className="flex justify-center pt-2">
                 <Button onClick={handleLoadMore} disabled={loadingMore} variant="outline" className="border-border text-muted-foreground hover:text-foreground">

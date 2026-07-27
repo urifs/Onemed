@@ -10,7 +10,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { formatDateTimeSP, fetchAllRows } from '@/lib/utils';
-import { AlertTriangle, RefreshCw, Search, Trash2, MessageCircle, MessagesSquare, BadgeCheck, Link2 } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Search, Trash2, MessageCircle, MessagesSquare, BadgeCheck, Link2, Pin, PinOff } from 'lucide-react';
 
 interface CommunitySettingsRow {
   id: string;
@@ -96,10 +96,15 @@ interface CommentRow {
   parent_id: string | null;
   course_id: string | null;
   lesson_id: string | null;
+  pinned: boolean;
   profiles: { name: string | null; email: string | null } | null;
   courses: { title: string | null } | null;
   lessons: { title: string | null } | null;
 }
+
+// Fixar só faz sentido pra tópico de verdade (sem parent, sem curso) — o
+// mesmo critério já usado no card de estatística "Tópicos" logo abaixo.
+const isTopic = (c: CommentRow) => !c.parent_id && !c.course_id;
 
 export default function AdminCommunityPage() {
   const [comments, setComments] = useState<CommentRow[]>([]);
@@ -110,6 +115,7 @@ export default function AdminCommunityPage() {
   const [search, setSearch] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<CommentRow | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [togglingPinId, setTogglingPinId] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -119,7 +125,7 @@ export default function AdminCommunityPage() {
         fetchAllRows<CommentRow>((f, t) =>
           supabase
             .from('course_comments')
-            .select('id, body, title, category, created_at, user_id, parent_id, course_id, lesson_id, profiles(name, email), courses(title), lessons(title)')
+            .select('id, body, title, category, created_at, user_id, parent_id, course_id, lesson_id, pinned, profiles(name, email), courses(title), lessons(title)')
             .order('created_at', { ascending: false })
             .range(f, t) as any,
         ),
@@ -166,6 +172,20 @@ export default function AdminCommunityPage() {
       toast.error('Erro ao excluir: ' + (err?.message || 'desconhecido'));
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const handleTogglePin = async (c: CommentRow) => {
+    setTogglingPinId(c.id);
+    try {
+      const { error } = await supabase.rpc('set_topic_pinned', { _topic_id: c.id, _pinned: !c.pinned });
+      if (error) throw error;
+      setComments(prev => prev.map(row => row.id === c.id ? { ...row, pinned: !c.pinned } : row));
+      toast.success(c.pinned ? 'Tópico desafixado' : 'Tópico fixado no topo');
+    } catch (err: any) {
+      toast.error('Erro ao fixar: ' + (err?.message || 'desconhecido'));
+    } finally {
+      setTogglingPinId(null);
     }
   };
 
@@ -244,9 +264,16 @@ export default function AdminCommunityPage() {
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-secondary text-foreground">
-                          {typeLabel(c)}
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-secondary text-foreground">
+                            {typeLabel(c)}
+                          </span>
+                          {c.pinned && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-accent-warning bg-accent-warning/10 border border-accent-warning/25 rounded-full px-1.5 py-0.5">
+                              <Pin className="w-2.5 h-2.5" /> Fixado
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-sm text-muted-foreground max-w-[200px] truncate">{contextLabel(c)}</td>
                       <td className="px-4 py-3 text-sm text-foreground max-w-[320px]">
@@ -254,9 +281,20 @@ export default function AdminCommunityPage() {
                       </td>
                       <td className="px-4 py-3 text-sm text-muted-foreground whitespace-nowrap">{formatDateTimeSP(c.created_at)}</td>
                       <td className="px-4 py-3">
-                        <Button variant="ghost" size="icon" onClick={() => setDeleteTarget(c)} className="text-muted-foreground hover:text-destructive">
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
+                        <div className="flex items-center gap-1">
+                          {isTopic(c) && (
+                            <Button
+                              variant="ghost" size="icon" onClick={() => handleTogglePin(c)} disabled={togglingPinId === c.id}
+                              className={c.pinned ? 'text-accent-warning hover:text-accent-warning/80' : 'text-muted-foreground hover:text-foreground'}
+                              title={c.pinned ? 'Desafixar tópico' : 'Fixar tópico no topo'}
+                            >
+                              {c.pinned ? <PinOff className="w-4 h-4" /> : <Pin className="w-4 h-4" />}
+                            </Button>
+                          )}
+                          <Button variant="ghost" size="icon" onClick={() => setDeleteTarget(c)} className="text-muted-foreground hover:text-destructive">
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))}
