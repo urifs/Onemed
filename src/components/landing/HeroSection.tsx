@@ -152,10 +152,10 @@ export const HeroSection = ({
 
           <Link
             to="/checkout"
-            className="inline-flex items-center gap-1.5 mt-4 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+            className="w-full max-w-md mt-3 h-12 border border-border hover:border-primary/50 bg-secondary hover:bg-secondary/70 text-foreground font-semibold rounded-lg flex items-center justify-center gap-2 transition-colors duration-150"
           >
-            <ShoppingCart className="w-3.5 h-3.5" />
-            Ou adquira acesso completo agora
+            <ShoppingCart className="w-4 h-4" />
+            Adquirir Acesso Completo
           </Link>
         </div>
 
