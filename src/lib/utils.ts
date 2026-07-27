@@ -242,3 +242,16 @@ export function fileExtensionFor(lesson: { type: string; mime_type?: string | nu
 export function sanitizeFilename(title: string): string {
   return title.replace(/[\\/:*?"<>|]/g, '').trim() || 'arquivo';
 }
+
+// "Online há X" no quadro de presença do admin — diferente do timeAgo curto
+// de MembersPage (só minutos), aqui a janela pode ser de dias.
+export function formatLastSeen(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const mins = Math.max(0, Math.floor(diffMs / 60000));
+  if (mins < 1) return 'agora mesmo';
+  if (mins < 60) return `há ${mins} min`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `há ${hours}h`;
+  const days = Math.floor(hours / 24);
+  return `há ${days} dia${days !== 1 ? 's' : ''}`;
+}

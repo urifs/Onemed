@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Stethoscope, MessageCircle } from 'lucide-react';
 import { AccountMenu } from './AccountMenu';
@@ -5,8 +6,27 @@ import { NotificationsBell } from './NotificationsBell';
 import { TrialCountdownBar } from './TrialCountdownBar';
 import { MemberPWAHead } from './MemberPWAHead';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { useAuth } from '@/context/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
+
+// Presença em tempo real pro quadro "Quem está online" do admin — sem PII
+// no payload (só a chave anônima da conexão, o user_id), o admin resolve
+// email a partir do roster (RPC admin-only), nunca lendo direto do canal.
+// Monta uma vez por sessão (MemberHeader está em toda página de membro).
+function useMemberPresence() {
+  const { user } = useAuth();
+  useEffect(() => {
+    if (!user?.id) return;
+    const channel = supabase.channel('online-members', { config: { presence: { key: user.id } } });
+    channel.subscribe(async (status) => {
+      if (status === 'SUBSCRIBED') await channel.track({ online_at: new Date().toISOString() });
+    });
+    return () => { supabase.removeChannel(channel); };
+  }, [user?.id]);
+}
 
 export function MemberHeader() {
+  useMemberPresence();
   return (
     <>
       <MemberPWAHead />
