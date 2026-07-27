@@ -3,18 +3,19 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { useCommunitySettings } from '@/hooks/useCommunitySettings';
 
 const COURSES_UPDATING = [
-  'Medcurso 2026',
-  'Medcel 2026',
-  'Estratégia MED 2026',
-  'Casal MED Resumos 2026',
-  'Medcof USA 2026',
-  'MEDgrupo 2026',
-  'Eu Médico Residente 2026',
-  'MedCards 2026',
-  'MedWay 2026',
-  'PS Zerado 2026',
-  'HardWork Revalida 2026',
-  'TEPs Medcof 2026',
+  { name: 'MedReview 2026', done: true },
+  { name: 'Medcurso 2026', done: false },
+  { name: 'Medcel 2026', done: false },
+  { name: 'Estratégia MED 2026', done: false },
+  { name: 'Casal MED Resumos 2026', done: false },
+  { name: 'Medcof USA 2026', done: false },
+  { name: 'MEDgrupo 2026', done: false },
+  { name: 'Eu Médico Residente 2026', done: false },
+  { name: 'MedCards 2026', done: false },
+  { name: 'MedWay 2026', done: false },
+  { name: 'PS Zerado 2026', done: false },
+  { name: 'HardWork Revalida 2026', done: false },
+  { name: 'TEPs Medcof 2026', done: false },
 ];
 
 export function NotificationsBell() {
@@ -55,9 +56,9 @@ export function NotificationsBell() {
         <div>
           <p className="text-sm font-semibold text-foreground mb-2.5">Cursos em processo de atualização:</p>
           <ul className="space-y-1.5">
-            {COURSES_UPDATING.map(name => (
+            {COURSES_UPDATING.map(({ name, done }) => (
               <li key={name} className="text-sm text-muted-foreground flex items-start gap-2">
-                <span className="text-primary mt-0.5">•</span> {name}
+                <span className={`mt-0.5 ${done ? 'text-accent-success' : 'text-primary'}`}>•</span> {name}
               </li>
             ))}
           </ul>
