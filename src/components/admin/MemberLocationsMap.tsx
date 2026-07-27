@@ -15,9 +15,10 @@ const THEME_COLORS = {
 };
 
 export function MemberLocationsMap() {
-  const { visible, online, offline, loading, loadError } = useVisibleMemberLocations();
+  const { visible, online, offline, totalOnlineCount, loading, loadError } = useVisibleMemberLocations();
   const { resolvedTheme } = useTheme();
   const colors = resolvedTheme === 'light' ? THEME_COLORS.light : THEME_COLORS.dark;
+  const unlocated = totalOnlineCount - online.length;
 
   return (
     <Card className="bg-background-paper border-border overflow-hidden flex flex-col">
@@ -26,9 +27,12 @@ export function MemberLocationsMap() {
           <MapPin className="w-4 h-4 text-primary" /> Mapa de Usuários
         </CardTitle>
         <div className="flex items-center gap-2 text-xs">
-          <span className="inline-flex items-center gap-1.5 font-semibold text-accent-success bg-accent-success/10 border border-accent-success/25 rounded-full px-2.5 py-1">
+          <span
+            className="inline-flex items-center gap-1.5 font-semibold text-accent-success bg-accent-success/10 border border-accent-success/25 rounded-full px-2.5 py-1"
+            title={unlocated > 0 ? `${unlocated} online sem localização conhecida ainda (some ao navegar pra qualquer página)` : undefined}
+          >
             <Circle className="w-2 h-2 fill-accent-success text-accent-success animate-pulse" />
-            {online.length} online (inclui testes)
+            {totalOnlineCount} online (inclui testes){unlocated > 0 ? ` · ${online.length} no mapa` : ''}
           </span>
           <span className="inline-flex items-center gap-1.5 font-medium text-muted-foreground bg-secondary border border-border rounded-full px-2.5 py-1">
             <Circle className="w-2 h-2 fill-muted-foreground/50 text-muted-foreground/50" />

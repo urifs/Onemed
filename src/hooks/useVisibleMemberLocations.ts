@@ -24,6 +24,12 @@ export function useVisibleMemberLocations() {
 
   const online = visible.filter(p => p.is_online);
   const offline = visible.filter(p => !p.is_online);
+  // Total online de verdade (mesma contagem do card "Quem está online") —
+  // pode ser maior que online.length: só entra no mapa quem já teve a
+  // localização capturada (1ª navegação numa página de membro depois do
+  // login), então uma sessão recém-conectada que ainda não navegou fica
+  // online mas sem ponto no mapa por alguns instantes.
+  const totalOnlineCount = onlineIds.size;
 
   const topLocations = useMemo(() => {
     const groups = new Map<string, LocationPoint[]>();
@@ -35,5 +41,5 @@ export function useVisibleMemberLocations() {
     return [...groups.entries()].sort((a, b) => b[1].length - a[1].length).slice(0, 10);
   }, [visible]);
 
-  return { visible, online, offline, topLocations, loading, loadError };
+  return { visible, online, offline, totalOnlineCount, topLocations, loading, loadError };
 }
