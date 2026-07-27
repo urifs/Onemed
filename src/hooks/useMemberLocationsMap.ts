@@ -11,15 +11,17 @@ export interface MemberLocationPoint {
   latitude: number;
   longitude: number;
   last_active: string | null;
-  is_online: boolean;
   is_trial: boolean;
 }
 
 const POLL_MS = 60000;
-// Considera "online" quem teve atividade de sessão nos últimos N minutos —
-// aproximação por polling, diferente do dot em tempo real do OnlineMembersCard.
-const ONLINE_WINDOW_MINUTES = 5;
 
+// A RPC só devolve candidatos (localização + trial-ou-assinante); quem está
+// online de verdade é decidido aqui no frontend, cruzando com o mesmo canal
+// de presença em tempo real do card "Quem está online" — nunca com base em
+// auth.sessions (o refresh do token só bate essa coluna perto da expiração,
+// não a cada atividade real, então usar ela pra "online" sempre subestimava
+// muito quem estava genuinamente conectado).
 export function useMemberLocationsMap() {
   const [points, setPoints] = useState<MemberLocationPoint[]>([]);
   const [loading, setLoading] = useState(true);
@@ -27,7 +29,7 @@ export function useMemberLocationsMap() {
 
   const fetchPoints = useCallback(async () => {
     try {
-      const { data, error } = await supabase.rpc('get_member_locations_map', { _online_minutes: ONLINE_WINDOW_MINUTES });
+      const { data, error } = await supabase.rpc('get_member_locations_map');
       if (error) throw error;
       setPoints((data || []) as MemberLocationPoint[]);
       setLoadError(false);

@@ -62,5 +62,5 @@ export function useOnlineMembers() {
       return new Date(b.last_active).getTime() - new Date(a.last_active).getTime();
     });
 
-  return { members, onlineCount: onlineIds.size, loading, loadError, refetch: fetchRoster };
+  return { members, onlineIds, onlineCount: onlineIds.size, loading, loadError, refetch: fetchRoster };
 }
