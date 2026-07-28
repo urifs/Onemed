@@ -265,10 +265,14 @@ export default function MemberDashboardPage() {
     return courses.filter(c => c.category === activeCategory);
   }, [courses, activeCategory, favorites]);
 
-  // Hero rotation: the in-progress course (if any) leads, followed by the
-  // biggest flagship courses — ranked by lesson_count as a proxy for "maior
-  // nome" — so the destaque card cycles through the platform's best content.
+  // Hero rotation: the in-progress course (if any) leads, followed by
+  // courses marked is_featured (admin-promoted, regardless of size — a
+  // freshly-added course is otherwise never big enough by lesson_count to
+  // make the cut below), then the biggest flagship courses — ranked by
+  // lesson_count as a proxy for "maior nome" — so the destaque card cycles
+  // through the platform's best content.
   const featuredPool = useMemo(() => {
+    const pinned = courses.filter(c => c.is_featured);
     const flagship = courses
       .filter(c => c.category === 'Extensivo & Intensivo · Residência')
       .slice()
@@ -278,6 +282,7 @@ export default function MemberDashboardPage() {
     const seen = new Set<string>();
     const continuing = continueList[0]?.courses;
     if (continuing) { pool.push(continuing); seen.add(continuing.id); }
+    for (const c of pinned) { if (!seen.has(c.id)) { pool.push(c); seen.add(c.id); } }
     for (const c of flagship) { if (!seen.has(c.id)) { pool.push(c); seen.add(c.id); } }
     if (pool.length === 0 && courses[0]) pool.push(courses[0]);
     return pool;

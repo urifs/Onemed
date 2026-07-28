@@ -267,6 +267,7 @@ export type Database = {
           description: string | null
           drive_folder_id: string
           id: string
+          is_featured: boolean
           lesson_count: number
           material_count: number
           slug: string
@@ -285,6 +286,7 @@ export type Database = {
           description?: string | null
           drive_folder_id: string
           id?: string
+          is_featured?: boolean
           lesson_count?: number
           material_count?: number
           slug: string
@@ -303,6 +305,7 @@ export type Database = {
           description?: string | null
           drive_folder_id?: string
           id?: string
+          is_featured?: boolean
           lesson_count?: number
           material_count?: number
           slug?: string
