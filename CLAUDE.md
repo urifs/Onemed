@@ -689,6 +689,15 @@ manualmente nesta sessão (207.689 lições/arquivos, 15.078 módulos no total a
 próxima "Sincronizar biblioteca" pelo painel admin já vai funcionar normalmente para casos
 futuros com nomes repetidos, sem precisar de intervenção manual.
 
+**Bug crítico — 1418 aulas .ts nunca tocavam:** clientes relatando que aulas com nome terminando
+em "#Aprenda.ts" nunca abriam. Causa: `mime_type` real dessas aulas é `video/mp2t` (MPEG Transport
+Stream) — nenhum navegador toca esse container num `<video src>` nativo, mesmo os codecs internos
+(H.264/AAC) sendo suportados normalmente num `.mp4`. Corrigido em `LessonPlayer.tsx` com
+`mpegts.js` (novo pacote), que remuxa TS → fragmented MP4 no próprio navegador via MediaSource
+Extensions, reaproveitando a mesma URL autenticada do `stream-lesson` Worker (Cloudflare) sem
+precisar reprocessar nada no servidor/Drive — biblioteca carregada sob demanda (import dinâmico,
+chunk separado de ~64KB gzip) só quando uma aula `.ts` é aberta de fato.
+
 ---
 
 ## Meta Ads — Contexto Geral
