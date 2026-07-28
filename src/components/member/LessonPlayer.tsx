@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import type Mpegts from 'mpegts.js';
 import { X, ChevronLeft, ChevronRight, Loader2, ExternalLink, Download, Printer, Gauge } from 'lucide-react';
 import { useLessonStreamUrl } from '@/hooks/useLessonStream';
 import { PdfViewer } from './PdfViewer';
@@ -75,8 +76,55 @@ export function LessonPlayer({
     }
     const delay = RETRY_DELAYS_MS[mediaRetries.current];
     mediaRetries.current += 1;
-    setTimeout(() => { videoRef.current?.load(); }, delay);
+    setTimeout(() => {
+      if (mpegtsPlayerRef.current) {
+        mpegtsPlayerRef.current.unload();
+        mpegtsPlayerRef.current.load();
+      } else {
+        videoRef.current?.load();
+      }
+    }, delay);
   };
+
+  // Arquivos .ts (MPEG Transport Stream — comuns nas aulas "#Aprenda") não
+  // tocam num <video src> nativo em nenhum navegador principal: o container
+  // em si não é suportado, mesmo com os codecs H.264/AAC de dentro (que
+  // tocariam normal num .mp4). mpegts.js remuxa TS → fMP4 no próprio
+  // navegador via MediaSource Extensions, reaproveitando a mesma URL
+  // autenticada do worker de streaming (que já suporta Range) sem precisar
+  // reprocessar o arquivo no servidor. Carregado sob demanda (import
+  // dinâmico) — a grande maioria das aulas não é .ts e não deveria pagar
+  // pelo peso dessa biblioteca no carregamento inicial do app.
+  const isTsVideo = lesson.type === 'video' && lesson.mime_type === 'video/mp2t';
+  const [mpegtsLib, setMpegtsLib] = useState<typeof Mpegts | null>(null);
+  const mpegtsPlayerRef = useRef<Mpegts.Player | null>(null);
+
+  useEffect(() => {
+    if (!isTsVideo) { setMpegtsLib(null); return; }
+    let alive = true;
+    import('mpegts.js').then(mod => { if (alive) setMpegtsLib(mod.default); });
+    return () => { alive = false; };
+  }, [isTsVideo]);
+
+  const useMpegts = isTsVideo && !!mpegtsLib?.isSupported();
+
+  useEffect(() => {
+    if (!src || !useMpegts || !mpegtsLib) return;
+    const video = videoRef.current as HTMLVideoElement | null;
+    if (!video) return;
+    const player = mpegtsLib.createPlayer({ type: 'mpegts', url: src, isLive: false }, { enableWorker: true });
+    mpegtsPlayerRef.current = player;
+    player.attachMediaElement(video);
+    player.load();
+    player.on(mpegtsLib.Events.ERROR, handleMediaError);
+    return () => {
+      player.off(mpegtsLib.Events.ERROR, handleMediaError);
+      player.detachMediaElement();
+      player.destroy();
+      mpegtsPlayerRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [src, useMpegts]);
 
   const handleImageError = () => {
     if (imgRetryCount >= RETRY_DELAYS_MS.length) {
@@ -269,10 +317,12 @@ export function LessonPlayer({
           <p className="text-white/70 text-sm max-w-sm text-center">{error}</p>
         ) : !src ? (
           <Loader2 className="w-8 h-8 text-primary animate-spin" />
+        ) : isTsVideo && !mpegtsLib ? (
+          <Loader2 className="w-8 h-8 text-primary animate-spin" />
         ) : lesson.type === 'video' ? (
           <video
             ref={videoRef}
-            src={src}
+            {...(useMpegts ? {} : { src })}
             controls
             controlsList="nodownload noremoteplayback"
             disablePictureInPicture
@@ -280,7 +330,7 @@ export function LessonPlayer({
             className="max-w-full max-h-full rounded-lg bg-black"
             onTimeUpdate={handleTimeUpdate}
             onEnded={handleEnded}
-            onError={handleMediaError}
+            onError={useMpegts ? undefined : handleMediaError}
             onContextMenu={e => e.preventDefault()}
           />
         ) : lesson.type === 'pdf' ? (
