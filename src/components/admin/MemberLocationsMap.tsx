@@ -1,24 +1,47 @@
+import { useMemo } from 'react';
 import 'leaflet/dist/leaflet.css';
 import { useTheme } from 'next-themes';
 import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { MapPin, Circle, AlertTriangle } from 'lucide-react';
-import { useVisibleMemberLocations } from '@/hooks/useVisibleMemberLocations';
+import { useVisibleMemberLocations, LocationPoint } from '@/hooks/useVisibleMemberLocations';
 import { formatLastSeen } from '@/lib/utils';
 
-// Mesmos tons de --success/--muted-foreground de src/index.css (claro e
-// escuro), pra bater com o resto do painel admin — o Leaflet não lê
-// variáveis CSS do Tailwind, então os valores precisam vir hardcoded aqui.
+// Mesmo tom de --primary de src/index.css (claro e escuro) — todo ponto no
+// mapa usa a cor da marca; online/offline se distingue por opacidade e
+// tamanho, não por cor.
 const THEME_COLORS = {
-  dark: { online: 'hsl(160, 84%, 39%)', offline: 'hsl(215, 20%, 55%)', tiles: 'dark_all' },
-  light: { online: 'hsl(160, 84%, 30%)', offline: 'hsl(215, 14%, 40%)', tiles: 'light_all' },
+  dark: { dot: 'hsl(0, 84%, 60%)', tiles: 'dark_all' },
+  light: { dot: 'hsl(0, 74%, 46%)', tiles: 'light_all' },
 };
+
+// IPs de geolocalização costumam devolver a mesma lat/lng pra cidade/ISP
+// inteiros — vários usuários da mesma cidade caem exatamente em cima uns
+// dos outros e viram um único ponto visível, mesmo dando zoom. Um
+// deslocamento pequeno e determinístico (mesmo usuário sempre desloca pro
+// mesmo lugar, não pula a cada atualização) espalha esses pontos o
+// suficiente pra dar pra contar/ver cada um ao aproximar o zoom.
+function jitter(seed: string): [number, number] {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) {
+    hash = (hash << 5) - hash + seed.charCodeAt(i);
+    hash |= 0;
+  }
+  const angle = (hash % 360) * (Math.PI / 180);
+  const radiusDeg = 0.03 + (Math.abs(hash >> 8) % 100) / 100 * 0.03;
+  return [Math.cos(angle) * radiusDeg, Math.sin(angle) * radiusDeg];
+}
 
 export function MemberLocationsMap() {
   const { visible, online, offline, totalOnlineCount, loading, loadError } = useVisibleMemberLocations();
   const { resolvedTheme } = useTheme();
   const colors = resolvedTheme === 'light' ? THEME_COLORS.light : THEME_COLORS.dark;
   const unlocated = totalOnlineCount - online.length;
+
+  const plotted = useMemo(() => visible.map((p: LocationPoint) => {
+    const [dLat, dLng] = jitter(p.user_id);
+    return { ...p, center: [p.latitude + dLat, p.longitude + dLng] as [number, number] };
+  }), [visible]);
 
   return (
     <Card className="bg-background-paper border-border overflow-hidden flex flex-col">
@@ -71,15 +94,16 @@ export function MemberLocationsMap() {
                 url={`https://{s}.basemaps.cartocdn.com/${colors.tiles}/{z}/{x}/{y}{r}.png`}
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
               />
-              {visible.map(p => (
+              {plotted.map(p => (
                 <CircleMarker
                   key={p.user_id}
-                  center={[p.latitude, p.longitude]}
-                  radius={5}
+                  center={p.center}
+                  radius={p.is_online ? 6 : 4}
                   pathOptions={{
-                    color: p.is_online ? colors.online : colors.offline,
-                    fillColor: p.is_online ? colors.online : colors.offline,
-                    fillOpacity: 0.85,
+                    color: colors.dot,
+                    fillColor: colors.dot,
+                    fillOpacity: p.is_online ? 0.9 : 0.35,
+                    opacity: p.is_online ? 1 : 0.6,
                     weight: 1,
                   }}
                 >
