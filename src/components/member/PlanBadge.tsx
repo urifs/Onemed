@@ -17,7 +17,7 @@ const GOLD_GRADIENT = 'conic-gradient(from 0deg, #fef3c7, #d97706, #fbbf24, #d97
 export function PlanAvatarRing({ plan, isAdmin, children }: { plan?: string | null; isAdmin?: boolean; children: React.ReactNode }) {
   if (!isAdmin && plan === 'lifetime_pro') {
     return (
-      <div className="relative shrink-0 rounded-full">
+      <div className="relative self-start shrink-0 rounded-full leading-none">
         <div
           className="absolute -inset-[3px] rounded-full animate-spin-slow"
           style={{ background: GOLD_GRADIENT }}
@@ -28,7 +28,7 @@ export function PlanAvatarRing({ plan, isAdmin, children }: { plan?: string | nu
     );
   }
   const ringClass = !isAdmin && plan ? RING_CLASSES[plan] || '' : '';
-  return <div className={`relative shrink-0 rounded-full ${ringClass}`}>{children}</div>;
+  return <div className={`relative self-start shrink-0 rounded-full leading-none ${ringClass}`}>{children}</div>;
 }
 
 const BADGE_STYLES: Record<string, string> = {
