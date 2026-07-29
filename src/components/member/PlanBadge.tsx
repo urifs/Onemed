@@ -19,6 +19,10 @@ function SpinningRingAvatar({ gradient, children }: { gradient: string; children
         style={{ background: gradient }}
         aria-hidden
       />
+      {/* Máscara opaca do tamanho exato do avatar — sem ela, avatares com fundo
+          translúcido (ex: bg-primary/15 do admin) deixam o degradê vazar pro
+          meio inteiro em vez de aparecer só nos 3px de borda. */}
+      <div className="absolute inset-0 rounded-full bg-background" aria-hidden />
       <div className="relative">{children}</div>
     </div>
   );
