@@ -10,6 +10,7 @@ import { useCommunitySettings } from '@/hooks/useCommunitySettings';
 import { MemberHeader } from '@/components/member/MemberHeader';
 import { NameRequiredModal } from '@/components/member/NameRequiredModal';
 import { CommentThread } from '@/components/member/CommentThread';
+import { PlanAvatarRing, PlanBadge } from '@/components/member/PlanBadge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { withTimeout, stripYearFromTitle } from '@/lib/utils';
@@ -24,6 +25,7 @@ interface FeedItem {
   author_name: string | null;
   author_email: string | null;
   is_admin: boolean;
+  plan: string | null;
   course_id: string | null;
   course_title: string | null;
   course_slug: string | null;
@@ -84,13 +86,16 @@ function FeedItemCard({ item, currentUserId, onUpdated }: {
   return (
     <div className="glass rounded-xl p-5">
       <div className="flex gap-3">
-        <div className={`w-9 h-9 rounded-full border flex items-center justify-center font-semibold text-sm shrink-0 ${item.is_admin ? 'bg-primary/15 border-primary/40 text-primary' : 'bg-secondary border-border text-foreground'}`}>
-          {initials(item.author_name, item.author_email)}
-        </div>
+        <PlanAvatarRing plan={item.plan} isAdmin={item.is_admin}>
+          <div className={`w-9 h-9 rounded-full border flex items-center justify-center font-semibold text-sm shrink-0 ${item.is_admin ? 'bg-primary/15 border-primary/40 text-primary' : 'bg-secondary border-border text-foreground'}`}>
+            {initials(item.author_name, item.author_email)}
+          </div>
+        </PlanAvatarRing>
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline gap-2 flex-wrap">
             <span className="text-sm font-semibold text-foreground">{displayName(item.author_name, item.author_email)}</span>
             {item.is_admin && <AdminBadge />}
+            {!item.is_admin && <PlanBadge plan={item.plan} />}
             {item.pinned && (
               <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-accent-warning bg-accent-warning/10 border border-accent-warning/25 rounded-full px-2 py-0.5">
                 <Pin className="w-3 h-3" /> Fixado

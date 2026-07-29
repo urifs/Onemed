@@ -700,6 +700,36 @@ chunk separado de ~64KB gzip) só quando uma aula `.ts` é aberta de fato.
 
 ---
 
+### 2026-07-29 (sessão remota) — benefícios de upgrade, planos redefinidos, badges/anéis de plano na comunidade
+
+**Modal de upgrade mostrando só a diferença:** cliente não via o que ganhava a mais em cada opção
+de upgrade, só preço com desconto. `UpgradePlanModal.tsx` agora calcula `newFeatures` (diferença
+de conjunto entre `PLAN_FEATURES[currentPlan]` e `PLAN_FEATURES[targetPlan]`) e lista só os
+benefícios novos sob "O que você ganha a mais", por opção de upgrade.
+
+**Benefícios por plano redefinidos** em `src/lib/plans.ts` (`PLAN_FEATURES`) e espelhados nos
+cards do `CheckoutPage.tsx`, usando os mesmos textos literais entre planos vizinhos de propósito
+(pra o diff acima funcionar): Mensal (1 tela, acesso 1 mês), Anual (2 telas, atualizações mensais,
+acesso 1 ano), Vitalício (2 telas, atualizações mensais, acesso vitalício), Vitalício Plus (4
+telas, atualizações mensais, backup no Drive próprio, downloads liberados), Vitalício Pro (6
+telas, atualizações mensais + semanais, backup no Drive próprio, downloads liberados em massa,
+acesso a todas as atualizações sem depender de nenhuma colaboração, IA de diagnósticos Meduf).
+
+**Rótulo + anel de plano na comunidade:** nova migration `20260729010000_community_plan_badges.sql`
+com `member_plan_tier(_user_id)` (mesmo critério de "maior tier entre linhas ativas" já usado em
+`get_member_locations_map`, só que resolvendo por `user_id` via `profiles.email → accesses.email`
+em vez de email direto) — `community_feed`, `community_replies` e `course_comments_feed` passaram
+a devolver `plan` junto com `is_admin`. Novo `src/components/member/PlanBadge.tsx` exporta
+`<PlanAvatarRing>` (anel ao redor do avatar) e `<PlanBadge>` (pill com o nome do plano), plugados
+em `CommunityPage.tsx`, `CommunityTab.tsx` e `CommentThread.tsx`. Mensal fica sem anel; Anual
+ganha anel vermelho claro (`ring-primary/40`); Vitalício ganha anel vermelho cheio (`ring-primary`);
+Vitalício Plus ganha anel laranja; Vitalício Pro ganha um anel dourado girando (conic-gradient +
+nova animação Tailwind `spin-slow`, já que o `ring` do Tailwind não anima cor/rotação — só planos
+Pro pagam esse custo extra de DOM/CSS). Admin sempre mantém só o badge "Equipe OneMed" (sem anel
+de plano, mesmo que tenha um acesso concedido).
+
+---
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management

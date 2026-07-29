@@ -6,6 +6,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
 import { useRequireName } from '@/hooks/useRequireName';
 import { NameRequiredModal } from './NameRequiredModal';
+import { PlanAvatarRing, PlanBadge } from './PlanBadge';
 
 interface ReplyNode {
   id: string;
@@ -16,6 +17,7 @@ interface ReplyNode {
   author_name: string | null;
   author_email: string | null;
   is_admin: boolean;
+  plan: string | null;
 }
 
 function initials(name?: string | null, email?: string | null): string {
@@ -67,13 +69,16 @@ function ReplyItem({ node, depth, state }: { node: ReplyNode; depth: number; sta
   return (
     <div className={depth > 0 ? 'mt-3 pl-3 border-l-2 border-border' : 'mt-3'} style={indent > 1 ? { marginLeft: `${(indent - 1) * 1.25}rem` } : undefined}>
       <div className="flex gap-2.5">
-        <div className={`w-7 h-7 rounded-full border flex items-center justify-center font-semibold text-xs shrink-0 ${node.is_admin ? 'bg-primary/15 border-primary/40 text-primary' : 'bg-secondary border-border text-foreground'}`}>
-          {initials(node.author_name, node.author_email)}
-        </div>
+        <PlanAvatarRing plan={node.plan} isAdmin={node.is_admin}>
+          <div className={`w-7 h-7 rounded-full border flex items-center justify-center font-semibold text-xs shrink-0 ${node.is_admin ? 'bg-primary/15 border-primary/40 text-primary' : 'bg-secondary border-border text-foreground'}`}>
+            {initials(node.author_name, node.author_email)}
+          </div>
+        </PlanAvatarRing>
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline gap-2 flex-wrap">
             <span className="text-xs font-semibold text-foreground">{displayName(node.author_name, node.author_email)}</span>
             {node.is_admin && <AdminBadge />}
+            {!node.is_admin && <PlanBadge plan={node.plan} />}
             <span className="text-[11px] text-muted-foreground">
               {formatDistanceToNow(new Date(node.created_at), { addSuffix: true, locale: ptBR })}
             </span>

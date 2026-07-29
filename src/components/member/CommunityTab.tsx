@@ -7,6 +7,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useRequireName } from '@/hooks/useRequireName';
 import { NameRequiredModal } from './NameRequiredModal';
 import { CommentThread } from './CommentThread';
+import { PlanAvatarRing, PlanBadge } from './PlanBadge';
 
 interface Comment {
   id: string;
@@ -16,6 +17,7 @@ interface Comment {
   author_name: string | null;
   author_email: string | null;
   is_admin: boolean;
+  plan: string | null;
   reply_count: number;
 }
 
@@ -118,9 +120,11 @@ export function CommunityTab({ courseId }: { courseId: string }) {
             const isOwn = !!user && c.user_id === user.id;
             return (
             <div key={c.id} className="flex gap-3">
-              <div className={`w-9 h-9 rounded-full border flex items-center justify-center font-semibold text-sm shrink-0 ${c.is_admin ? 'bg-primary/15 border-primary/40 text-primary' : 'bg-secondary border-border text-foreground'}`}>
-                {initials(c.author_name, c.author_email)}
-              </div>
+              <PlanAvatarRing plan={c.plan} isAdmin={c.is_admin}>
+                <div className={`w-9 h-9 rounded-full border flex items-center justify-center font-semibold text-sm shrink-0 ${c.is_admin ? 'bg-primary/15 border-primary/40 text-primary' : 'bg-secondary border-border text-foreground'}`}>
+                  {initials(c.author_name, c.author_email)}
+                </div>
+              </PlanAvatarRing>
               <div className="flex-1 min-w-0">
                 <div className="flex items-baseline gap-2 flex-wrap">
                   <span className="text-sm font-semibold text-foreground">{displayName(c)}</span>
@@ -129,6 +133,7 @@ export function CommunityTab({ courseId }: { courseId: string }) {
                       <BadgeCheck className="w-3 h-3" /> Equipe OneMed
                     </span>
                   )}
+                  {!c.is_admin && <PlanBadge plan={c.plan} />}
                   <span className="text-xs text-muted-foreground">
                     {formatDistanceToNow(new Date(c.created_at), { addSuffix: true, locale: ptBR })}
                   </span>

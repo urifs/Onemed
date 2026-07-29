@@ -102,6 +102,7 @@ export default {
         "pulse-glow": "pulse-glow 2s infinite",
         "pulse-slow": "pulse-slow 2s ease-in-out infinite",
         "fade-in": "fade-in 0.4s ease-out",
+        "spin-slow": "spin 3s linear infinite",
       },
     },
   },
