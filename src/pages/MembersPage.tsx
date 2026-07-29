@@ -48,72 +48,28 @@ interface MemberRow {
   accessId?: string;
 }
 
-export default function MembersPage() {
-  const [members, setMembers] = useState<MemberRow[]>([]);
-  const [filtered, setFiltered] = useState<MemberRow[]>([]);
-  const [courseStats, setCourseStats] = useState<{ active: number; categories: number } | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState(false);
-  const [search, setSearch] = useState('');
-  const [isAddOpen, setIsAddOpen] = useState(false);
+const PLAN_SELECT_ITEMS = (
+  <>
+    <SelectItem value="lifetime">Vitalício</SelectItem>
+    <SelectItem value="lifetime_plus">Vitalício Plus</SelectItem>
+    <SelectItem value="lifetime_pro">Vitalício Pro</SelectItem>
+    <SelectItem value="annual">Anual (365 dias)</SelectItem>
+    <SelectItem value="monthly">Mensal (30 dias)</SelectItem>
+  </>
+);
+
+// Estado do formulário (email/plano digitados) isolado num componente
+// próprio — antes vivia direto em MembersPage, então cada tecla digitada
+// no email (ou troca de plano) re-renderizava a página inteira, incluindo
+// a tabela de membros (centenas/milhares de linhas), travando a digitação.
+function GrantAccessDialog({ open, onOpenChange, onGranted }: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onGranted: () => void;
+}) {
   const [newEmail, setNewEmail] = useState('');
   const [newPlan, setNewPlan] = useState('lifetime');
   const [adding, setAdding] = useState(false);
-
-  const [isBulkOpen, setIsBulkOpen] = useState(false);
-  const [bulkText, setBulkText] = useState('');
-  const [bulkPlan, setBulkPlan] = useState('lifetime');
-  const [bulkImporting, setBulkImporting] = useState(false);
-  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
-  const [bulkResult, setBulkResult] = useState<{ granted: number; replaced: number; invalid: number } | null>(null);
-
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    setLoadError(false);
-    try {
-      const [manualAccesses, buyers, courses] = await Promise.all([
-        fetchAllRows((f, t) =>
-          supabase.from('accesses').select('id, email, access_type, status, granted_at')
-            .eq('status', 'active').in('access_type', ['paid', 'lifetime', 'lifetime_plus', 'lifetime_pro', 'annual', 'monthly']).range(f, t)
-        ),
-        fetchAllRows((f, t) =>
-          supabase.from('buyers').select('email, plan, created_at').eq('access_granted', true).range(f, t)
-        ),
-        fetchAllRows((f, t) => supabase.from('courses').select('category, active').range(f, t)),
-      ]);
-
-      // Buyers take priority when the same email appears in both lists —
-      // a manual grant for someone who later bought is still one member, not two.
-      const buyerEmails = new Set((buyers || []).map((b: any) => b.email.toLowerCase()));
-      const manualOnly: MemberRow[] = (manualAccesses || [])
-        .filter((a: any) => !buyerEmails.has(a.email.toLowerCase()))
-        .map((a: any) => ({ email: a.email, source: 'manual' as const, plan: a.access_type, grantedAt: a.granted_at, accessId: a.id }));
-      const fromBuyers: MemberRow[] = (buyers || []).map((b: any) => ({
-        email: b.email, source: 'buyer' as const, plan: b.plan, grantedAt: b.created_at,
-      }));
-
-      const all = [...fromBuyers, ...manualOnly].sort((a, b) => (b.grantedAt || '').localeCompare(a.grantedAt || ''));
-      setMembers(all);
-
-      const activeCourses = (courses || []).filter((c: any) => c.active);
-      setCourseStats({
-        active: activeCourses.length,
-        categories: new Set(activeCourses.map((c: any) => c.category)).size,
-      });
-    } catch {
-      toast.error('Erro ao carregar membros');
-      setLoadError(true);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { fetchData(); }, [fetchData]);
-
-  useEffect(() => {
-    const term = search.toLowerCase();
-    setFiltered(term ? members.filter(m => m.email.toLowerCase().includes(term)) : members);
-  }, [members, search]);
 
   const grantAccess = async () => {
     if (!newEmail) { toast.error('Informe um email'); return; }
@@ -142,15 +98,64 @@ export default function MembersPage() {
         : await supabase.from('accesses').insert({ email, access_type: newPlan, status: 'active', expires_at: expiresAt });
       if (error) throw error;
       toast.success(existing ? 'Plano do membro atualizado' : 'Acesso à área de membros concedido');
-      setIsAddOpen(false);
+      onOpenChange(false);
       setNewEmail('');
-      fetchData();
+      onGranted();
     } catch (err: any) {
       toast.error(err.message || 'Erro ao conceder acesso');
     } finally {
       setAdding(false);
     }
   };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogTrigger asChild>
+        <Button className="bg-primary hover:bg-primary-hover text-primary-foreground gap-2">
+          <UserPlus className="w-4 h-4" /> Conceder Acesso
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="bg-background-paper border-border">
+        <DialogHeader>
+          <DialogTitle className="text-foreground">Conceder Acesso à Área de Membros</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 pt-2">
+          <div className="space-y-2">
+            <Label className="text-foreground">Email</Label>
+            <Input value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="email@exemplo.com" className="bg-secondary border-border text-foreground" />
+          </div>
+          <div className="space-y-2">
+            <Label className="text-foreground">Plano</Label>
+            <Select value={newPlan} onValueChange={setNewPlan}>
+              <SelectTrigger className="bg-secondary border-border text-foreground"><SelectValue /></SelectTrigger>
+              <SelectContent className="bg-background-paper border-border">
+                {PLAN_SELECT_ITEMS}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button onClick={grantAccess} disabled={adding} className="w-full bg-primary hover:bg-primary-hover text-primary-foreground gap-2">
+            {adding ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+            {adding ? 'Concedendo...' : 'Conceder Acesso'}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Mesmo motivo do GrantAccessDialog acima — bulkText é um texto grande
+// (potencialmente milhares de emails colados), então cada tecla digitada
+// no textarea não pode re-renderizar a tabela de membros da página.
+function BulkImportDialog({ open, onOpenChange, onImported }: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onImported: () => void;
+}) {
+  const [bulkText, setBulkText] = useState('');
+  const [bulkPlan, setBulkPlan] = useState('lifetime');
+  const [bulkImporting, setBulkImporting] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
+  const [bulkResult, setBulkResult] = useState<{ granted: number; replaced: number; invalid: number } | null>(null);
 
   const handleBulkFile = async (file: File) => {
     const text = await file.text();
@@ -205,7 +210,7 @@ export default function MembersPage() {
 
       setBulkResult({ granted, replaced, invalid: Math.max(invalidCount, 0) });
       toast.success(`${granted + replaced} acesso(s) processado(s)`);
-      fetchData();
+      onImported();
     } catch (err: any) {
       toast.error(err.message || 'Erro ao importar');
     } finally {
@@ -214,10 +219,149 @@ export default function MembersPage() {
     }
   };
 
-  const closeBulkDialog = (open: boolean) => {
-    setIsBulkOpen(open);
-    if (!open) { setBulkText(''); setBulkResult(null); }
+  const handleOpenChange = (next: boolean) => {
+    onOpenChange(next);
+    if (!next) { setBulkText(''); setBulkResult(null); }
   };
+
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogTrigger asChild>
+        <Button variant="outline" className="gap-2 border-border text-foreground hover:bg-secondary">
+          <Upload className="w-4 h-4" /> Importar em Massa
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="bg-background-paper border-border max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="text-foreground">Importar Acessos em Massa</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 pt-2">
+          <div className="space-y-2">
+            <Label className="text-foreground">Emails (um por linha, ou cole uma lista/TXT)</Label>
+            <Textarea
+              value={bulkText}
+              onChange={e => setBulkText(e.target.value)}
+              placeholder={'aluno1@email.com\naluno2@email.com\naluno3@email.com'}
+              rows={8}
+              className="bg-secondary border-border text-foreground font-mono text-xs"
+            />
+            <label className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline cursor-pointer">
+              <Upload className="w-3 h-3" /> ou selecione um arquivo .txt
+              <input
+                type="file"
+                accept=".txt,text/plain"
+                className="hidden"
+                onChange={e => { const f = e.target.files?.[0]; if (f) handleBulkFile(f); e.target.value = ''; }}
+              />
+            </label>
+          </div>
+          <div className="space-y-2">
+            <Label className="text-foreground">Plano</Label>
+            <Select value={bulkPlan} onValueChange={setBulkPlan}>
+              <SelectTrigger className="bg-secondary border-border text-foreground"><SelectValue /></SelectTrigger>
+              <SelectContent className="bg-background-paper border-border">
+                {PLAN_SELECT_ITEMS}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {bulkResult && (
+            <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 space-y-2.5">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Resultado da importação</p>
+              <div className="flex items-center gap-2.5">
+                <CheckCircle2 className="w-5 h-5 text-accent-success shrink-0" />
+                <span className="text-sm text-foreground">
+                  <span className="font-bold text-accent-success text-base">{bulkResult.granted}</span> acesso(s) concedido(s)
+                </span>
+              </div>
+              {bulkResult.replaced > 0 && (
+                <div className="flex items-center gap-2.5">
+                  <UserCheck className="w-5 h-5 text-blue-400 shrink-0" />
+                  <span className="text-sm text-foreground">
+                    <span className="font-bold text-blue-400 text-base">{bulkResult.replaced}</span> já tinham acesso — plano substituído pelo novo
+                  </span>
+                </div>
+              )}
+              {bulkResult.invalid > 0 && (
+                <div className="flex items-center gap-2.5">
+                  <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
+                  <span className="text-sm text-foreground">
+                    <span className="font-bold text-amber-400 text-base">{bulkResult.invalid}</span> linha(s) inválida(s) ignorada(s)
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
+          <Button onClick={bulkImport} disabled={bulkImporting || !bulkText.trim()} className="w-full bg-primary hover:bg-primary-hover text-primary-foreground gap-2">
+            {bulkImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+            {bulkImporting
+              ? `Importando... ${bulkProgress ? `${bulkProgress.done}/${bulkProgress.total}` : ''}`
+              : 'Importar e Conceder Acesso'}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export default function MembersPage() {
+  const [members, setMembers] = useState<MemberRow[]>([]);
+  const [filtered, setFiltered] = useState<MemberRow[]>([]);
+  const [courseStats, setCourseStats] = useState<{ active: number; categories: number } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [search, setSearch] = useState('');
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isBulkOpen, setIsBulkOpen] = useState(false);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setLoadError(false);
+    try {
+      const [manualAccesses, buyers, courses] = await Promise.all([
+        fetchAllRows((f, t) =>
+          supabase.from('accesses').select('id, email, access_type, status, granted_at')
+            .eq('status', 'active').in('access_type', ['paid', 'lifetime', 'lifetime_plus', 'lifetime_pro', 'annual', 'monthly']).range(f, t)
+        ),
+        fetchAllRows((f, t) =>
+          supabase.from('buyers').select('email, plan, created_at').eq('access_granted', true).range(f, t)
+        ),
+        fetchAllRows((f, t) => supabase.from('courses').select('category, active').range(f, t)),
+      ]);
+
+      // Buyers take priority when the same email appears in both lists —
+      // a manual grant for someone who later bought is still one member, not two.
+      const buyerEmails = new Set((buyers || []).map((b: any) => b.email.toLowerCase()));
+      const manualOnly: MemberRow[] = (manualAccesses || [])
+        .filter((a: any) => !buyerEmails.has(a.email.toLowerCase()))
+        .map((a: any) => ({ email: a.email, source: 'manual' as const, plan: a.access_type, grantedAt: a.granted_at, accessId: a.id }));
+      const fromBuyers: MemberRow[] = (buyers || []).map((b: any) => ({
+        email: b.email, source: 'buyer' as const, plan: b.plan, grantedAt: b.created_at,
+      }));
+
+      const all = [...fromBuyers, ...manualOnly].sort((a, b) => (b.grantedAt || '').localeCompare(a.grantedAt || ''));
+      setMembers(all);
+
+      const activeCourses = (courses || []).filter((c: any) => c.active);
+      setCourseStats({
+        active: activeCourses.length,
+        categories: new Set(activeCourses.map((c: any) => c.category)).size,
+      });
+    } catch {
+      toast.error('Erro ao carregar membros');
+      setLoadError(true);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  useEffect(() => {
+    const term = search.toLowerCase();
+    setFiltered(term ? members.filter(m => m.email.toLowerCase().includes(term)) : members);
+  }, [members, search]);
 
   const revokeAccess = async (accessId: string) => {
     try {
@@ -249,123 +393,8 @@ export default function MembersPage() {
                 <ExternalLink className="w-4 h-4" /> Abrir Área de Membros
               </Button>
             </a>
-            <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-              <DialogTrigger asChild>
-                <Button className="bg-primary hover:bg-primary-hover text-primary-foreground gap-2">
-                  <UserPlus className="w-4 h-4" /> Conceder Acesso
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="bg-background-paper border-border">
-                <DialogHeader>
-                  <DialogTitle className="text-foreground">Conceder Acesso à Área de Membros</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4 pt-2">
-                  <div className="space-y-2">
-                    <Label className="text-foreground">Email</Label>
-                    <Input value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="email@exemplo.com" className="bg-secondary border-border text-foreground" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-foreground">Plano</Label>
-                    <Select value={newPlan} onValueChange={setNewPlan}>
-                      <SelectTrigger className="bg-secondary border-border text-foreground"><SelectValue /></SelectTrigger>
-                      <SelectContent className="bg-background-paper border-border">
-                        <SelectItem value="lifetime">Vitalício</SelectItem>
-                        <SelectItem value="lifetime_plus">Vitalício Plus</SelectItem>
-                        <SelectItem value="lifetime_pro">Vitalício Pro</SelectItem>
-                        <SelectItem value="annual">Anual (365 dias)</SelectItem>
-                        <SelectItem value="monthly">Mensal (30 dias)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <Button onClick={grantAccess} disabled={adding} className="w-full bg-primary hover:bg-primary-hover text-primary-foreground gap-2">
-                    {adding ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                    {adding ? 'Concedendo...' : 'Conceder Acesso'}
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
-
-            <Dialog open={isBulkOpen} onOpenChange={closeBulkDialog}>
-              <DialogTrigger asChild>
-                <Button variant="outline" className="gap-2 border-border text-foreground hover:bg-secondary">
-                  <Upload className="w-4 h-4" /> Importar em Massa
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="bg-background-paper border-border max-w-lg">
-                <DialogHeader>
-                  <DialogTitle className="text-foreground">Importar Acessos em Massa</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4 pt-2">
-                  <div className="space-y-2">
-                    <Label className="text-foreground">Emails (um por linha, ou cole uma lista/TXT)</Label>
-                    <Textarea
-                      value={bulkText}
-                      onChange={e => setBulkText(e.target.value)}
-                      placeholder={'aluno1@email.com\naluno2@email.com\naluno3@email.com'}
-                      rows={8}
-                      className="bg-secondary border-border text-foreground font-mono text-xs"
-                    />
-                    <label className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline cursor-pointer">
-                      <Upload className="w-3 h-3" /> ou selecione um arquivo .txt
-                      <input
-                        type="file"
-                        accept=".txt,text/plain"
-                        className="hidden"
-                        onChange={e => { const f = e.target.files?.[0]; if (f) handleBulkFile(f); e.target.value = ''; }}
-                      />
-                    </label>
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-foreground">Plano</Label>
-                    <Select value={bulkPlan} onValueChange={setBulkPlan}>
-                      <SelectTrigger className="bg-secondary border-border text-foreground"><SelectValue /></SelectTrigger>
-                      <SelectContent className="bg-background-paper border-border">
-                        <SelectItem value="lifetime">Vitalício</SelectItem>
-                        <SelectItem value="lifetime_plus">Vitalício Plus</SelectItem>
-                        <SelectItem value="lifetime_pro">Vitalício Pro</SelectItem>
-                        <SelectItem value="annual">Anual (365 dias)</SelectItem>
-                        <SelectItem value="monthly">Mensal (30 dias)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {bulkResult && (
-                    <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 space-y-2.5">
-                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Resultado da importação</p>
-                      <div className="flex items-center gap-2.5">
-                        <CheckCircle2 className="w-5 h-5 text-accent-success shrink-0" />
-                        <span className="text-sm text-foreground">
-                          <span className="font-bold text-accent-success text-base">{bulkResult.granted}</span> acesso(s) concedido(s)
-                        </span>
-                      </div>
-                      {bulkResult.replaced > 0 && (
-                        <div className="flex items-center gap-2.5">
-                          <UserCheck className="w-5 h-5 text-blue-400 shrink-0" />
-                          <span className="text-sm text-foreground">
-                            <span className="font-bold text-blue-400 text-base">{bulkResult.replaced}</span> já tinham acesso — plano substituído pelo novo
-                          </span>
-                        </div>
-                      )}
-                      {bulkResult.invalid > 0 && (
-                        <div className="flex items-center gap-2.5">
-                          <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
-                          <span className="text-sm text-foreground">
-                            <span className="font-bold text-amber-400 text-base">{bulkResult.invalid}</span> linha(s) inválida(s) ignorada(s)
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  <Button onClick={bulkImport} disabled={bulkImporting || !bulkText.trim()} className="w-full bg-primary hover:bg-primary-hover text-primary-foreground gap-2">
-                    {bulkImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                    {bulkImporting
-                      ? `Importando... ${bulkProgress ? `${bulkProgress.done}/${bulkProgress.total}` : ''}`
-                      : 'Importar e Conceder Acesso'}
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
+            <GrantAccessDialog open={isAddOpen} onOpenChange={setIsAddOpen} onGranted={fetchData} />
+            <BulkImportDialog open={isBulkOpen} onOpenChange={setIsBulkOpen} onImported={fetchData} />
           </div>
         </div>
 
