@@ -39,12 +39,15 @@ export default function BuyersPage() {
       const all = buyersData;
       const todayISO = todayStartISO();
       const today = all.filter(b => b.created_at >= todayISO);
+      const byPlan: Record<string, number> = {};
+      for (const plan of Object.keys(PLAN_LABELS)) {
+        byPlan[plan] = today.filter(b => b.plan === plan).length;
+      }
       setStats({
         total: today.length,
         approved: today.filter(b => b.status === 'approved').length,
         revenue: today.filter(b => b.status === 'approved').reduce((s: number, b: any) => s + (b.amount || 0), 0),
-        lifetime: today.filter(b => b.plan === 'lifetime' || b.plan === 'lifetime_plus' || b.plan === 'lifetime_pro').length,
-        annual: today.filter(b => b.plan === 'annual').length,
+        byPlan,
       });
     } catch {
       toast.error('Erro ao carregar compradores');
@@ -141,7 +144,6 @@ export default function BuyersPage() {
             { label: 'Compradores', value: loading ? '—' : buyers.length, icon: Users, color: 'text-primary' },
             { label: 'Receita Hoje', value: stats ? `R$ ${stats.revenue.toFixed(2)}` : '—', icon: DollarSign, color: 'text-accent-warning' },
             { label: 'Aprovados Hoje', value: stats?.approved ?? '—', icon: CheckCircle, color: 'text-accent-success' },
-            { label: 'Vitalícios Hoje', value: stats?.lifetime ?? '—', icon: TrendingUp, color: 'text-accent-info' },
           ].map((s, i) => (
             <Card key={i} className="bg-background-paper border-border">
               <CardContent className="p-5">
@@ -153,6 +155,22 @@ export default function BuyersPage() {
               </CardContent>
             </Card>
           ))}
+          <Card className="bg-background-paper border-border col-span-2 lg:col-span-3">
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-sm text-muted-foreground">Vendas Hoje por Plano</p>
+                <TrendingUp className="w-4 h-4 text-accent-info" />
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                {Object.entries(PLAN_LABELS).map(([plan, label]) => (
+                  <div key={plan} className="rounded-lg bg-secondary/50 border border-border px-3 py-2">
+                    <p className="text-xs text-muted-foreground truncate">{label}</p>
+                    <p className="font-secondary text-lg font-bold text-foreground">{loading ? '—' : stats?.byPlan?.[plan] ?? 0}</p>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Search */}
