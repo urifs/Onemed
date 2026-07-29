@@ -9,25 +9,30 @@ const RING_CLASSES: Record<string, string> = {
 };
 
 const GOLD_GRADIENT = 'conic-gradient(from 0deg, #fef3c7, #d97706, #fbbf24, #d97706, #fef3c7)';
+const BLUE_GRADIENT = 'conic-gradient(from 0deg, #dbeafe, #2563eb, #60a5fa, #2563eb, #dbeafe)';
 
-// Envolve o avatar (children) com o anel do plano. Vitalício Pro ganha um
-// anel dourado girando (pseudo-borda via conic-gradient + animate-spin-slow,
-// já que box-shadow/ring do Tailwind não anima cor/rotação) — os demais
-// planos usam só a classe `ring-*` estática, sem custo extra de DOM.
+function SpinningRingAvatar({ gradient, children }: { gradient: string; children: React.ReactNode }) {
+  return (
+    <div className="relative self-start shrink-0 rounded-full leading-none">
+      <div
+        className="absolute -inset-[3px] rounded-full animate-spin-slow"
+        style={{ background: gradient }}
+        aria-hidden
+      />
+      <div className="relative">{children}</div>
+    </div>
+  );
+}
+
+// Envolve o avatar (children) com o anel do plano. Admin e Vitalício Pro
+// ganham um anel girando (pseudo-borda via conic-gradient +
+// animate-spin-slow, já que box-shadow/ring do Tailwind não anima
+// cor/rotação) — azul pra admin, dourado pra Pro. Os demais planos usam só
+// a classe `ring-*` estática, sem custo extra de DOM.
 export function PlanAvatarRing({ plan, isAdmin, children }: { plan?: string | null; isAdmin?: boolean; children: React.ReactNode }) {
-  if (!isAdmin && plan === 'lifetime_pro') {
-    return (
-      <div className="relative self-start shrink-0 rounded-full leading-none">
-        <div
-          className="absolute -inset-[3px] rounded-full animate-spin-slow"
-          style={{ background: GOLD_GRADIENT }}
-          aria-hidden
-        />
-        <div className="relative">{children}</div>
-      </div>
-    );
-  }
-  const ringClass = !isAdmin && plan ? RING_CLASSES[plan] || '' : '';
+  if (isAdmin) return <SpinningRingAvatar gradient={BLUE_GRADIENT}>{children}</SpinningRingAvatar>;
+  if (plan === 'lifetime_pro') return <SpinningRingAvatar gradient={GOLD_GRADIENT}>{children}</SpinningRingAvatar>;
+  const ringClass = plan ? RING_CLASSES[plan] || '' : '';
   return <div className={`relative self-start shrink-0 rounded-full leading-none ${ringClass}`}>{children}</div>;
 }
 
