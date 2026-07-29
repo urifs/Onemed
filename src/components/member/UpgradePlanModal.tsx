@@ -2,10 +2,10 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { ArrowRight, Loader2, Crown } from 'lucide-react';
+import { ArrowRight, Loader2, Crown, Check } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { extractFunctionErrorMessage } from '@/lib/utils';
-import { PLAN_LABELS, PLAN_PRICES } from '@/lib/plans';
+import { PLAN_LABELS, PLAN_PRICES, PLAN_FEATURES } from '@/lib/plans';
 
 // Ordem de valor dos planos — upgrade só oferece o que vem DEPOIS do plano
 // atual nessa lista (nunca downgrade).
@@ -89,26 +89,42 @@ export function UpgradePlanModal({ open, onOpenChange, currentPlan, amountPaid, 
               {targets.map(targetPlan => {
                 const fullPrice = PLAN_PRICES[targetPlan];
                 const diff = Math.max(fullPrice - amountPaid, 1);
+                const currentFeatures = PLAN_FEATURES[currentPlan] || [];
+                const newFeatures = (PLAN_FEATURES[targetPlan] || []).filter(f => !currentFeatures.includes(f));
                 return (
-                  <div key={targetPlan} className="rounded-xl border border-border p-4 flex items-center justify-between gap-3 flex-wrap">
-                    <div>
-                      <p className="text-foreground font-semibold">{PLAN_LABELS[targetPlan]}</p>
-                      <p className="text-xs text-muted-foreground">
-                        Preço cheio: <span className="line-through">R$ {fullPrice.toFixed(2).replace('.', ',')}</span>
-                      </p>
-                      <p className="text-sm text-accent-success font-semibold mt-1">
-                        Você paga apenas R$ {diff.toFixed(2).replace('.', ',')}
-                      </p>
+                  <div key={targetPlan} className="rounded-xl border border-border p-4 space-y-3">
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <div>
+                        <p className="text-foreground font-semibold">{PLAN_LABELS[targetPlan]}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Preço cheio: <span className="line-through">R$ {fullPrice.toFixed(2).replace('.', ',')}</span>
+                        </p>
+                        <p className="text-sm text-accent-success font-semibold mt-1">
+                          Você paga apenas R$ {diff.toFixed(2).replace('.', ',')}
+                        </p>
+                      </div>
+                      <Button
+                        onClick={() => handleUpgrade(targetPlan)}
+                        disabled={loadingPlan !== null}
+                        size="sm"
+                        className="shrink-0 gap-1.5 bg-primary hover:bg-primary-hover text-primary-foreground"
+                      >
+                        {loadingPlan === targetPlan ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowRight className="w-3.5 h-3.5" />}
+                        {loadingPlan === targetPlan ? 'Abrindo...' : 'Fazer upgrade'}
+                      </Button>
                     </div>
-                    <Button
-                      onClick={() => handleUpgrade(targetPlan)}
-                      disabled={loadingPlan !== null}
-                      size="sm"
-                      className="shrink-0 gap-1.5 bg-primary hover:bg-primary-hover text-primary-foreground"
-                    >
-                      {loadingPlan === targetPlan ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowRight className="w-3.5 h-3.5" />}
-                      {loadingPlan === targetPlan ? 'Abrindo...' : 'Fazer upgrade'}
-                    </Button>
+                    {newFeatures.length > 0 && (
+                      <div className="pt-3 border-t border-border">
+                        <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold mb-1.5">O que você ganha a mais</p>
+                        <ul className="space-y-1">
+                          {newFeatures.map((f, i) => (
+                            <li key={i} className="flex items-start gap-2 text-sm text-foreground">
+                              <Check className="w-4 h-4 text-accent-success shrink-0 mt-0.5" /> {f}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </div>
                 );
               })}
