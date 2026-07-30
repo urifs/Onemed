@@ -1,0 +1,12 @@
+-- Permite servir uma aula a partir do Supabase Storage em vez do Google
+-- Drive — usado pra aulas cujo arquivo original tem um codec sem suporte
+-- nativo em navegador (ex: .wmv/VC-1, sem equivalente ao truque de remux do
+-- mpegts.js) e que por isso precisam ser retranscodificadas. A conta do
+-- Google Drive conectada está acima da cota de armazenamento e recusa
+-- qualquer upload de conteúdo novo (mesmo substituindo um arquivo por outro
+-- menor), então o arquivo corrigido não pode voltar pro Drive — fica no
+-- bucket `lesson-media` do Supabase Storage. member-lesson-token passa a
+-- checar essa coluna primeiro; quando presente, assina uma URL do Storage
+-- em vez de gerar o link assinado pro Worker de streaming (drive_file_id
+-- continua salvo, sem uso, só como referência histórica).
+ALTER TABLE public.lessons ADD COLUMN storage_path text;

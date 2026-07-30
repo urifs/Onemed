@@ -21,6 +21,18 @@
 //   pro volume de vídeo do site (~1TB/dia visto no pico). Movido pra um
 //   Cloudflare Worker, que não cobra por tráfego de saída — mesma lógica de
 //   proxy, só muda o destino da URL assinada.
+//
+// 2026-07-30 — lessons.storage_path (opcional): algumas aulas têm o arquivo
+// original num codec sem suporte nativo em nenhum navegador (ex: .wmv/VC-1 —
+// diferente do .ts/mpegts, não existe truque de remux, precisa
+// retranscodificar de verdade). O destino óbvio seria devolver o arquivo
+// corrigido pro Google Drive, mas a conta conectada está acima da cota de
+// armazenamento e o Google recusa (403) QUALQUER upload de conteúdo novo,
+// mesmo substituindo por um arquivo menor. Pra essas aulas, o arquivo
+// corrigido fica no bucket `lesson-media` do Supabase Storage em vez do
+// Drive — quando `storage_path` está preenchido, devolve uma signed URL do
+// Storage e pula o fluxo do Worker/Drive inteiro (drive_file_id continua
+// salvo, só não é mais usado, fica de referência histórica).
 // ─────────────────────────────────────────────────────────────────────────────
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -71,9 +83,9 @@ serve(async (req) => {
     if (!lessonId) return jsonResponse(req, { error: 'lessonId obrigatório' }, 400)
 
     const { data: lesson, error: lessonErr } = await supabase.from('lessons')
-      .select('id, course_id, drive_file_id, mime_type').eq('id', lessonId).maybeSingle()
+      .select('id, course_id, drive_file_id, mime_type, storage_path').eq('id', lessonId).maybeSingle()
     if (lessonErr || !lesson) return jsonResponse(req, { error: 'Aula não encontrada' }, 404)
-    if (!lesson.drive_file_id) return jsonResponse(req, { error: 'Arquivo não configurado' }, 404)
+    if (!lesson.drive_file_id && !lesson.storage_path) return jsonResponse(req, { error: 'Arquivo não configurado' }, 404)
 
     const email = (user.email || '').toLowerCase()
     const [{ data: activeAccess }, { data: buyer }, { data: isAdmin }] = await Promise.all([
@@ -82,6 +94,14 @@ serve(async (req) => {
       supabase.rpc('has_role', { _user_id: user.id, _role: 'admin' }),
     ])
     if (!activeAccess && !buyer && !isAdmin) return jsonResponse(req, { error: 'Sem acesso ativo' }, 403)
+
+    if (lesson.storage_path) {
+      const { data: signed, error: signErr } = await supabase.storage
+        .from('lesson-media')
+        .createSignedUrl(lesson.storage_path, STREAM_TTL_SECONDS)
+      if (signErr || !signed?.signedUrl) return jsonResponse(req, { error: 'Não foi possível gerar o link do arquivo' }, 502)
+      return jsonResponse(req, { url: signed.signedUrl, expiresAt: Math.floor(Date.now() / 1000) + STREAM_TTL_SECONDS })
+    }
 
     const streamSecret = Deno.env.get('LESSON_STREAM_SECRET')!
     // Cloudflare Workers não cobra por tráfego de saída (diferente de
