@@ -95,11 +95,38 @@ export default {
         { headers: { Authorization: `Bearer ${accessToken}` } },
       );
     } else {
+      // ── pedido ABERTO vira pedido LIMITADO ─────────────────────────────
+      // O navegador pede `bytes=0-` (do início até o fim). Medido no Drive,
+      // no MESMO arquivo e no MESMO instante:
+      //
+      //     Range: bytes=0-              → 403
+      //     Range: bytes=0-104857599     → 206
+      //
+      // Ou seja, o Drive recusa o pedido ABERTO mesmo quando ainda há
+      // franquia — ele parece avaliar o pedido pelo arquivo inteiro. Com um
+      // teto explícito, a mesma aula responde normalmente.
+      //
+      // Isso não fura o limite: a franquia de bytes continua valendo e se
+      // esgota do mesmo jeito. O que muda é que a aula PASSA A ABRIR em vez
+      // de falhar de cara, e o aluno assiste enquanto houver franquia — que
+      // é exatamente o comportamento do player do próprio Drive, que também
+      // pede em pedaços.
+      //
+      // Responder 206 com um trecho menor que o pedido é HTTP normal: o
+      // navegador lê o Content-Range e pede a continuação sozinho.
+      const CHUNK = 24 * 1024 * 1024;
       const range = request.headers.get('range');
+      let driveRange = range;
+      const aberto = range && /^bytes=(\d+)-$/.exec(range);
+      if (aberto) {
+        const inicio = Number(aberto[1]);
+        driveRange = `bytes=${inicio}-${inicio + CHUNK - 1}`;
+      }
+
       driveRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
         headers: {
           Authorization: `Bearer ${accessToken}`,
-          ...(range ? { Range: range } : {}),
+          ...(driveRange ? { Range: driveRange } : {}),
         },
       });
     }
