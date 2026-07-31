@@ -11,6 +11,7 @@ import { MemberHeader } from '@/components/member/MemberHeader';
 import { NameRequiredModal } from '@/components/member/NameRequiredModal';
 import { CommentThread } from '@/components/member/CommentThread';
 import { PlanAvatarRing, PlanBadge } from '@/components/member/PlanBadge';
+import { LikeButton } from '@/components/member/LikeButton';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { withTimeout, stripYearFromTitle } from '@/lib/utils';
@@ -37,6 +38,8 @@ interface FeedItem {
   created_at: string;
   reply_count: number;
   pinned: boolean;
+  like_count: number;
+  liked_by_me: boolean;
 }
 
 const PAGE_SIZE = 20;
@@ -167,6 +170,14 @@ function FeedItemCard({ item, currentUserId, onUpdated }: {
               <p className="text-sm text-foreground/90 mt-1.5 whitespace-pre-wrap break-words">{item.body}</p>
             </>
           )}
+
+          <div className="mt-2.5">
+            <LikeButton
+              commentId={item.id}
+              initialCount={Number(item.like_count ?? 0)}
+              initialLiked={!!item.liked_by_me}
+            />
+          </div>
 
           <CommentThread rootId={item.id} replyCount={item.reply_count} />
         </div>

@@ -7,6 +7,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useRequireName } from '@/hooks/useRequireName';
 import { NameRequiredModal } from './NameRequiredModal';
 import { PlanAvatarRing, PlanBadge } from './PlanBadge';
+import { LikeButton } from './LikeButton';
 
 interface ReplyNode {
   id: string;
@@ -18,6 +19,8 @@ interface ReplyNode {
   author_email: string | null;
   is_admin: boolean;
   plan: string | null;
+  like_count: number;
+  liked_by_me: boolean;
 }
 
 function initials(name?: string | null, email?: string | null): string {
@@ -114,12 +117,20 @@ function ReplyItem({ node, depth, state }: { node: ReplyNode; depth: number; sta
             <p className="text-sm text-foreground/90 mt-0.5 whitespace-pre-wrap break-words">{node.body}</p>
           )}
 
-          <button
-            onClick={() => { state.setReplyingTo(isReplying ? null : node.id); state.setReplyBody(''); }}
-            className="text-[11px] font-medium text-muted-foreground hover:text-primary transition-colors mt-1"
-          >
-            {isReplying ? 'Cancelar' : 'Responder'}
-          </button>
+          <div className="flex items-center gap-1 mt-1">
+            <LikeButton
+              commentId={node.id}
+              initialCount={Number(node.like_count ?? 0)}
+              initialLiked={!!node.liked_by_me}
+              size="sm"
+            />
+            <button
+              onClick={() => { state.setReplyingTo(isReplying ? null : node.id); state.setReplyBody(''); }}
+              className="text-[11px] font-medium text-muted-foreground hover:text-primary transition-colors px-1.5 py-0.5"
+            >
+              {isReplying ? 'Cancelar' : 'Responder'}
+            </button>
+          </div>
 
           {isReplying && (
             <div className="flex gap-2 mt-1.5">

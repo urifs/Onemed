@@ -8,6 +8,7 @@ import { useRequireName } from '@/hooks/useRequireName';
 import { NameRequiredModal } from './NameRequiredModal';
 import { CommentThread } from './CommentThread';
 import { PlanAvatarRing, PlanBadge } from './PlanBadge';
+import { LikeButton } from './LikeButton';
 
 interface Comment {
   id: string;
@@ -19,6 +20,8 @@ interface Comment {
   is_admin: boolean;
   plan: string | null;
   reply_count: number;
+  like_count: number;
+  liked_by_me: boolean;
 }
 
 export function CommunityTab({ courseId }: { courseId: string }) {
@@ -167,6 +170,13 @@ export function CommunityTab({ courseId }: { courseId: string }) {
                 ) : (
                   <p className="text-sm text-foreground/90 mt-0.5 whitespace-pre-wrap break-words">{c.body}</p>
                 )}
+                <div className="mt-2">
+                  <LikeButton
+                    commentId={c.id}
+                    initialCount={Number(c.like_count ?? 0)}
+                    initialLiked={!!c.liked_by_me}
+                  />
+                </div>
                 <CommentThread rootId={c.id} replyCount={c.reply_count} />
               </div>
             </div>
