@@ -260,6 +260,28 @@ export default function CourseDetailPage() {
     }, { onConflict: 'user_id,lesson_id' });
   };
   
+  // Marcar/desmarcar conclusão manualmente, de qualquer tipo de arquivo.
+  // Ao desmarcar zera o progresso junto: manter "assistiu 95%" numa aula que o
+  // aluno acabou de declarar não concluída deixaria a barra cheia embaixo de
+  // uma caixa vazia.
+  const handleToggleCompleted = async (lesson: Lesson, completed: boolean) => {
+    if (!user || !course) return;
+    const watched = completed ? (progressMap[lesson.id]?.watched_seconds ?? lesson.duration_seconds ?? 0) : 0;
+    setProgressMap(prev => ({
+      ...prev,
+      [lesson.id]: {
+        ...(prev[lesson.id] || { id: '', user_id: user.id, course_id: course.id, lesson_id: lesson.id }),
+        watched_seconds: watched,
+        completed,
+        last_watched_at: new Date().toISOString(),
+      } as Progress,
+    }));
+    await supabase.from('lesson_progress').upsert({
+      user_id: user.id, course_id: course.id, lesson_id: lesson.id,
+      watched_seconds: watched, completed, last_watched_at: new Date().toISOString(),
+    }, { onConflict: 'user_id,lesson_id' });
+  };
+
   const handleToggleFavorite = async () => {
     if (!user || !course) return;
     const nextState = !isFavorite;
@@ -483,6 +505,7 @@ export default function CourseDetailPage() {
                   groups={videoGroups} progressMap={progressMap} onSelect={setActiveLesson}
                   selectMode={selectMode} selectedIds={selectedIds} onToggleSelect={toggleSelectLesson}
                   favoriteIds={favoriteLessonIds} onToggleFavorite={handleToggleLessonFavorite}
+                  onToggleCompleted={handleToggleCompleted}
                 />
               </>
             ) : tab === 'arquivos' ? (
@@ -500,6 +523,7 @@ export default function CourseDetailPage() {
                   groups={fileGroups} progressMap={progressMap} onSelect={setActiveLesson}
                   selectMode={selectMode} selectedIds={selectedIds} onToggleSelect={toggleSelectLesson}
                   favoriteIds={favoriteLessonIds} onToggleFavorite={handleToggleLessonFavorite}
+                  onToggleCompleted={handleToggleCompleted}
                 />
               </>
             ) : (
@@ -533,6 +557,8 @@ export default function CourseDetailPage() {
           initialWatchedSeconds={progressMap[activeLesson.id]?.watched_seconds}
           onClose={() => setActiveLesson(null)}
           onProgress={handleProgress}
+          completed={!!progressMap[activeLesson.id]?.completed}
+          onToggleCompleted={(c) => handleToggleCompleted(activeLesson, c)}
           hasPrev={activeIndex > 0}
           hasNext={activeIndex >= 0 && activeIndex < activeOrderedLessons.length - 1}
           onPrev={() => activeIndex > 0 && setActiveLesson(activeOrderedLessons[activeIndex - 1])}
@@ -618,6 +644,7 @@ function CourseSummarySidebar({
 
 function LessonGroupList({
   groups, progressMap, onSelect, selectMode, selectedIds, onToggleSelect, favoriteIds, onToggleFavorite,
+  onToggleCompleted,
 }: {
   groups: { id: string; title: string; lessons: Lesson[] }[];
   progressMap: Record<string, Progress>;
@@ -627,6 +654,7 @@ function LessonGroupList({
   onToggleSelect?: (lesson: Lesson) => void;
   favoriteIds?: Set<string>;
   onToggleFavorite?: (lesson: Lesson) => void;
+  onToggleCompleted?: (lesson: Lesson, completed: boolean) => void;
 }) {
   return (
     <div className="space-y-8">
@@ -676,6 +704,22 @@ function LessonGroupList({
                     <span className="text-xs text-muted-foreground tabular-nums shrink-0">
                       {lesson.type === 'video' ? formatDuration(lesson.duration_seconds) : formatFileSize(lesson.size_bytes)}
                     </span>
+                  </button>
+                  {/* Caixa de concluída: vale pra qualquer tipo. Antes só
+                      vídeo virava "assistido" (pelos 92% de reprodução) — PDF,
+                      apostila e imagem não tinham como ser marcados. */}
+                  <button
+                    onClick={() => onToggleCompleted?.(lesson, !p?.completed)}
+                    className={`shrink-0 w-6 h-6 rounded-md border-2 flex items-center justify-center transition-colors ${
+                      p?.completed
+                        ? 'bg-accent-success border-accent-success text-white'
+                        : 'border-muted-foreground/30 hover:border-accent-success text-transparent'
+                    }`}
+                    title={p?.completed ? 'Marcar como não concluída' : 'Marcar como concluída'}
+                    aria-pressed={!!p?.completed}
+                    aria-label="Concluída"
+                  >
+                    <Check className="w-3.5 h-3.5" strokeWidth={3} />
                   </button>
                   <button
                     onClick={() => onToggleFavorite?.(lesson)}

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type Mpegts from 'mpegts.js';
-import { X, ChevronLeft, ChevronRight, Loader2, ExternalLink, Download, Printer, Gauge } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Loader2, ExternalLink, Download, Printer, Gauge, Check } from 'lucide-react';
 import { useLessonStreamUrl } from '@/hooks/useLessonStream';
 import { PdfViewer } from './PdfViewer';
 import { OfficeViewer } from './OfficeViewer';
@@ -30,6 +30,8 @@ interface LessonPlayerProps {
   initialWatchedSeconds?: number;
   onClose: () => void;
   onProgress: (lessonId: string, watchedSeconds: number, completed: boolean) => void;
+  completed?: boolean;
+  onToggleCompleted?: (completed: boolean) => void;
   onPrev?: () => void;
   onNext?: () => void;
   hasPrev?: boolean;
@@ -38,6 +40,7 @@ interface LessonPlayerProps {
 
 export function LessonPlayer({
   lesson, courseTitle, initialWatchedSeconds, onClose, onProgress, onPrev, onNext, hasPrev, hasNext,
+  completed, onToggleCompleted,
 }: LessonPlayerProps) {
   const getUrl = useLessonStreamUrl();
   const [src, setSrc] = useState<string | null>(null);
@@ -263,6 +266,28 @@ export function LessonPlayer({
           <p className="text-sm font-semibold text-white truncate">{lesson.title}</p>
         </div>
         <div className="flex-1" />
+        {/* Marcar como concluída direto do player. Vale pra qualquer tipo —
+            vídeo se marca sozinho ao passar de 92%, mas apostila, imagem e
+            planilha não tinham nenhuma forma de virar "concluída". */}
+        {onToggleCompleted && (
+          <button
+            onClick={() => onToggleCompleted(!completed)}
+            aria-pressed={!!completed}
+            title={completed ? 'Marcar como não concluída' : 'Marcar como concluída'}
+            className={`h-9 px-3 rounded-full flex items-center gap-2 text-xs font-semibold transition-colors mr-1 shrink-0 ${
+              completed
+                ? 'bg-accent-success text-white'
+                : 'bg-white/10 hover:bg-white/15 text-white/80'
+            }`}
+          >
+            <span className={`w-4 h-4 rounded border-2 flex items-center justify-center ${
+              completed ? 'bg-white/25 border-white' : 'border-white/50'
+            }`}>
+              {completed && <Check className="w-3 h-3" strokeWidth={3} />}
+            </span>
+            <span className="hidden sm:inline">{completed ? 'Concluída' : 'Marcar concluída'}</span>
+          </button>
+        )}
         {(lesson.type === 'video' || lesson.type === 'audio') && src && (
           <Popover>
             <PopoverTrigger asChild>
