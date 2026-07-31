@@ -71,7 +71,14 @@ async function fetchQuota(accessToken: string) {
     'https://www.googleapis.com/drive/v3/about?fields=storageQuota,user(emailAddress)',
     { headers: { Authorization: `Bearer ${accessToken}` } },
   )
-  if (!res.ok) return null
+  // O motivo importa: "API do Drive desativada no projeto" e "escopo faltando"
+  // dão o mesmo sintoma na tela, e sem o texto do Google não dá para saber
+  // qual dos dois é.
+  if (!res.ok) {
+    const detalhe = await res.text().catch(() => '')
+    console.error('Drive about falhou', res.status, detalhe)
+    throw new Error(`Google recusou ler a conta (HTTP ${res.status}): ${detalhe.slice(0, 220)}`)
+  }
   const d = await res.json()
   return {
     email: d.user?.emailAddress as string | undefined,
@@ -106,7 +113,7 @@ serve(async (req) => {
     })
     if (!isAdmin) return json(req, { error: 'Acesso restrito a administradores' }, 403)
 
-    const { action = 'list', code, redirect_uri, id, label } = await req.json().catch(() => ({}))
+    const { action = 'list', code, redirect_uri, id, label, folder_id } = await req.json().catch(() => ({}))
 
     // ── config ─────────────────────────────────────────────────────────────
     // O painel pergunta qual client_id usar em vez de ter o valor embutido no
@@ -135,7 +142,12 @@ serve(async (req) => {
       const tokens = await tokenRes.json()
       if (tokens.error) return json(req, { error: tokens.error_description || tokens.error }, 400)
 
-      const quota = await fetchQuota(tokens.access_token)
+      let quota
+      try {
+        quota = await fetchQuota(tokens.access_token)
+      } catch (e) {
+        return json(req, { error: (e as Error).message }, 502)
+      }
       if (!quota?.email) return json(req, { error: 'Não foi possível ler a conta do Google' }, 502)
 
       // Sem refresh_token a conta só serve por uma hora e depois morre em
@@ -178,6 +190,58 @@ serve(async (req) => {
       return json(req, { success: true, email: quota.email })
     }
 
+    // ── definir pasta de destino ───────────────────────────────────────────
+    // Valida o ID contra o Drive antes de salvar: um ID errado só apareceria
+    // muito depois, no meio da cópia, como um erro sem explicação.
+    if (action === 'set_folder') {
+      if (!id) return json(req, { error: 'Conta não informada' }, 400)
+      const { data: acc } = await admin
+        .from('drive_storage_accounts')
+        .select('id, access_token, refresh_token, token_expiry')
+        .eq('id', id).single()
+      if (!acc) return json(req, { error: 'Conta não encontrada' }, 404)
+
+      let accessToken = acc.access_token as string | null
+      const expirado = !acc.token_expiry || new Date(acc.token_expiry).getTime() < Date.now() + 60_000
+      if (expirado && acc.refresh_token) {
+        accessToken = await refreshAccessToken(acc.refresh_token, GOOGLE_CLIENT_SECRET)
+        if (accessToken) {
+          await admin.from('drive_storage_accounts').update({
+            access_token: accessToken,
+            token_expiry: new Date(Date.now() + 3600 * 1000).toISOString(),
+          }).eq('id', id)
+        }
+      }
+      if (!accessToken) return json(req, { error: 'Autorização expirada — reconecte a conta.' }, 401)
+
+      const folderId = String(folder_id || '').trim()
+      if (!folderId) {
+        await admin.from('drive_storage_accounts').update({ folder_id: null, folder_name: null }).eq('id', id)
+        return json(req, { success: true, folder_id: null })
+      }
+
+      const metaRes = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(folderId)}?fields=id,name,mimeType,capabilities(canAddChildren)`,
+        { headers: { Authorization: `Bearer ${accessToken}` } },
+      )
+      if (!metaRes.ok) {
+        const t = await metaRes.text()
+        return json(req, { error: `Pasta não encontrada nesta conta (${metaRes.status}). ${t.slice(0, 160)}` }, 400)
+      }
+      const meta = await metaRes.json()
+      if (meta.mimeType !== 'application/vnd.google-apps.folder') {
+        return json(req, { error: 'Esse ID é de um arquivo, não de uma pasta.' }, 400)
+      }
+      if (meta.capabilities && meta.capabilities.canAddChildren === false) {
+        return json(req, { error: 'Esta conta não tem permissão para criar arquivos nessa pasta.' }, 400)
+      }
+
+      await admin.from('drive_storage_accounts')
+        .update({ folder_id: meta.id, folder_name: meta.name, updated_at: new Date().toISOString() })
+        .eq('id', id)
+      return json(req, { success: true, folder_id: meta.id, folder_name: meta.name })
+    }
+
     // ── desconectar ────────────────────────────────────────────────────────
     if (action === 'disconnect') {
       if (!id) return json(req, { error: 'Conta não informada' }, 400)
@@ -191,7 +255,7 @@ serve(async (req) => {
     // dia em que foi conectada. Os tokens NUNCA entram na resposta.
     const { data: accounts, error } = await admin
       .from('drive_storage_accounts')
-      .select('id, email, label, connected, storage_limit_bytes, storage_usage_bytes, quota_checked_at, created_at')
+      .select('id, email, label, connected, storage_limit_bytes, storage_usage_bytes, quota_checked_at, created_at, folder_id, folder_name')
       .order('created_at')
     if (error) return json(req, { error: error.message }, 500)
 
@@ -216,7 +280,12 @@ serve(async (req) => {
 
       if (!accessToken) return { ...acc, connected: false, erro: 'Autorização expirada — reconecte a conta.' }
 
-      const quota = await fetchQuota(accessToken)
+      let quota
+      try {
+        quota = await fetchQuota(accessToken)
+      } catch (e) {
+        return { ...acc, connected: false, erro: (e as Error).message }
+      }
       if (!quota) return { ...acc, connected: false, erro: 'Não foi possível ler a conta no Google.' }
 
       await admin.from('drive_storage_accounts').update({

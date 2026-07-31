@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { HardDrive, Loader2, Plus, RefreshCw, Trash2, AlertCircle, CheckCircle } from 'lucide-react';
-import { formatFileSize } from '@/lib/utils';
+import { Input } from '@/components/ui/input';
+import { formatFileSize, extractFunctionErrorMessage } from '@/lib/utils';
 
 /**
  * Marca no endereço que o retorno do Google é de uma conta de ARMAZENAMENTO.
@@ -24,6 +25,8 @@ export interface StorageAccount {
   connected: boolean;
   storage_limit_bytes: number | null;
   storage_usage_bytes: number | null;
+  folder_id: string | null;
+  folder_name: string | null;
   erro?: string;
 }
 
@@ -80,7 +83,9 @@ export function StorageAccountsCard() {
       const { data, error } = await supabase.functions.invoke('drive-storage-accounts', {
         body: { action: 'list' },
       });
-      if (error || data?.error) throw new Error(data?.error || 'Falha ao carregar contas');
+      if (error || data?.error) {
+        throw new Error(data?.error || await extractFunctionErrorMessage(error, 'Falha ao carregar contas'));
+      }
       setAccounts(data.accounts || []);
     } catch (err) {
       toast.error((err as Error).message);
@@ -111,6 +116,27 @@ export function StorageAccountsCard() {
       toast.error((err as Error).message);
     } finally {
       setRemoving(null);
+    }
+  };
+
+  const [folderDraft, setFolderDraft] = useState<Record<string, string>>({});
+  const [savingFolder, setSavingFolder] = useState<string | null>(null);
+
+  const saveFolder = async (acc: StorageAccount) => {
+    setSavingFolder(acc.id);
+    try {
+      const { data, error } = await supabase.functions.invoke('drive-storage-accounts', {
+        body: { action: 'set_folder', id: acc.id, folder_id: folderDraft[acc.id] ?? '' },
+      });
+      if (error || data?.error) {
+        throw new Error(data?.error || await extractFunctionErrorMessage(error, 'Falha ao salvar a pasta'));
+      }
+      toast.success(data.folder_name ? `Pasta definida: ${data.folder_name}` : 'Pasta removida');
+      load();
+    } catch (err) {
+      toast.error((err as Error).message, { duration: 12000 });
+    } finally {
+      setSavingFolder(null);
     }
   };
 
@@ -198,6 +224,41 @@ export function StorageAccountsCard() {
                           : <Trash2 className="w-4 h-4" />}
                       </Button>
                     </div>
+
+                    {acc.connected && (
+                      <div className="mt-3 pt-3 border-t border-border">
+                        <label className="block text-xs text-muted-foreground mb-1.5" htmlFor={`pasta-${acc.id}`}>
+                          Pasta de destino no Drive desta conta
+                          {acc.folder_name && (
+                            <span className="text-accent-success"> · atual: {acc.folder_name}</span>
+                          )}
+                        </label>
+                        <div className="flex gap-2">
+                          <Input
+                            id={`pasta-${acc.id}`}
+                            value={folderDraft[acc.id] ?? acc.folder_id ?? ''}
+                            onChange={e => setFolderDraft(d => ({ ...d, [acc.id]: e.target.value }))}
+                            placeholder="ID da pasta (deixe vazio para usar a raiz)"
+                            className="h-9 text-sm font-mono"
+                          />
+                          <Button
+                            onClick={() => saveFolder(acc)}
+                            disabled={savingFolder === acc.id}
+                            size="sm"
+                            variant="outline"
+                            className="border-border shrink-0"
+                          >
+                            {savingFolder === acc.id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Salvar'}
+                          </Button>
+                        </div>
+                        {/* O ID é o trecho depois de /folders/ na URL da pasta
+                            aberta no Drive — pedir a URL inteira e recortar aqui
+                            esconderia erro de cópia. */}
+                        <p className="text-[11px] text-muted-foreground mt-1.5">
+                          Abra a pasta no Drive e copie o trecho depois de <code>/folders/</code> na URL.
+                        </p>
+                      </div>
+                    )}
 
                     {acc.connected && (
                       ilimitado ? (

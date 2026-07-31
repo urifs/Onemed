@@ -61,11 +61,16 @@ export default function DriveSettings() {
       setConnecting(true);
       supabase.functions.invoke('drive-storage-accounts', {
         body: { action: 'connect', code, redirect_uri: REDIRECT_URI },
-      }).then(({ data, error }) => {
+      }).then(async ({ data, error }) => {
         setConnecting(false);
         navigate('/admin/drive', { replace: true });
         if (error || data?.error) {
-          toast.error(data?.error || 'Erro ao conectar a conta de armazenamento');
+          // `functions.invoke` devolve "non-2xx status code" e joga o corpo
+          // real em error.context — sem ler dali, o motivo (API do Drive
+          // desativada, escopo faltando) nunca aparece na tela.
+          const msg = data?.error
+            || await extractFunctionErrorMessage(error, 'Erro ao conectar a conta de armazenamento');
+          toast.error(msg, { duration: 12000 });
         } else {
           toast.success(`Conta ${data.email} conectada como armazenamento`);
           setStorageReloadKey(k => k + 1);
