@@ -345,7 +345,7 @@ export function LessonPlayer({
             onContextMenu={e => e.preventDefault()}
           />
         ) : lesson.type === 'pdf' ? (
-          <PdfViewer url={src} title={lesson.title} />
+          <PdfViewer url={src} title={lesson.title} lessonId={lesson.id} />
         ) : lesson.type === 'doc' || lesson.type === 'sheet' ? (
           <OfficeViewer url={src} title={lesson.title} />
         ) : lesson.type === 'txt' ? (
