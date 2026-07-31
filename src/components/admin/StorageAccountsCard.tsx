@@ -7,8 +7,6 @@ import { Progress } from '@/components/ui/progress';
 import { HardDrive, Loader2, Plus, RefreshCw, Trash2, AlertCircle, CheckCircle } from 'lucide-react';
 import { formatFileSize } from '@/lib/utils';
 
-const GOOGLE_CLIENT_ID = '110017470335-2l6er8r451vj5hf3ob05rvolc2p4v9ku.apps.googleusercontent.com';
-
 /**
  * Marca no endereço que o retorno do Google é de uma conta de ARMAZENAMENTO.
  *
@@ -29,9 +27,22 @@ export interface StorageAccount {
   erro?: string;
 }
 
-export function startStorageOAuth() {
+/**
+ * O `client_id` vem do servidor, não embutido aqui: o fluxo de armazenamento
+ * pode usar um client OAuth diferente do de conteúdo, e assim trocá-lo é só
+ * mexer nos secrets, sem republicar o site. (client_id é público — ele
+ * aparece na própria URL de autorização do Google.)
+ */
+export async function startStorageOAuth() {
+  const { data, error } = await supabase.functions.invoke('drive-storage-accounts', {
+    body: { action: 'config' },
+  });
+  if (error || !data?.clientId) {
+    toast.error('Não foi possível iniciar a conexão com o Google.');
+    return;
+  }
   const params = new URLSearchParams({
-    client_id: GOOGLE_CLIENT_ID,
+    client_id: data.clientId,
     redirect_uri: `${window.location.origin}/admin/drive`,
     response_type: 'code',
     scope: 'https://www.googleapis.com/auth/drive',

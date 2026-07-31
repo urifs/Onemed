@@ -16,7 +16,17 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const GOOGLE_CLIENT_ID = '110017470335-2l6er8r451vj5hf3ob05rvolc2p4v9ku.apps.googleusercontent.com'
+// Client OAuth usado SÓ pelo fluxo de contas de armazenamento.
+//
+// Pode ser um client diferente do que serve o Drive de conteúdo, e isso é
+// proposital: o refresh token do Google fica amarrado ao client que o emitiu.
+// Trocar o client das funções de conteúdo invalidaria o refresh token salvo em
+// `drive_config` e derrubaria o acervo inteiro para os alunos. Aqui a troca é
+// isolada — se os secrets abaixo não existirem, cai no client atual e nada
+// muda.
+const GOOGLE_CLIENT_ID = Deno.env.get('GOOGLE_STORAGE_CLIENT_ID')
+  || '110017470335-2l6er8r451vj5hf3ob05rvolc2p4v9ku.apps.googleusercontent.com'
+const CLIENT_SECRET_ENV = Deno.env.get('GOOGLE_STORAGE_CLIENT_SECRET') ? 'GOOGLE_STORAGE_CLIENT_SECRET' : 'GOOGLE_CLIENT_SECRET'
 
 async function secureCompare(a: string, b: string): Promise<boolean> {
   const encoder = new TextEncoder()
@@ -64,7 +74,7 @@ serve(async (req) => {
       })
     }
 
-    const GOOGLE_CLIENT_SECRET = Deno.env.get('GOOGLE_CLIENT_SECRET')!
+    const GOOGLE_CLIENT_SECRET = Deno.env.get(CLIENT_SECRET_ENV)!
     const supabase = createClient(Deno.env.get('SUPABASE_URL')!, serviceKey)
 
     const { email } = await req.json().catch(() => ({}))

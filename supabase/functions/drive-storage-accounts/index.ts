@@ -31,7 +31,17 @@ function getCorsHeaders(req: Request) {
   }
 }
 
-const GOOGLE_CLIENT_ID = '110017470335-2l6er8r451vj5hf3ob05rvolc2p4v9ku.apps.googleusercontent.com'
+// Client OAuth usado SÓ pelo fluxo de contas de armazenamento.
+//
+// Pode ser um client diferente do que serve o Drive de conteúdo, e isso é
+// proposital: o refresh token do Google fica amarrado ao client que o emitiu.
+// Trocar o client das funções de conteúdo invalidaria o refresh token salvo em
+// `drive_config` e derrubaria o acervo inteiro para os alunos. Aqui a troca é
+// isolada — se os secrets abaixo não existirem, cai no client atual e nada
+// muda.
+const GOOGLE_CLIENT_ID = Deno.env.get('GOOGLE_STORAGE_CLIENT_ID')
+  || '110017470335-2l6er8r451vj5hf3ob05rvolc2p4v9ku.apps.googleusercontent.com'
+const CLIENT_SECRET_ENV = Deno.env.get('GOOGLE_STORAGE_CLIENT_SECRET') ? 'GOOGLE_STORAGE_CLIENT_SECRET' : 'GOOGLE_CLIENT_SECRET'
 
 function json(req: Request, body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -75,7 +85,7 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: getCorsHeaders(req) })
 
   try {
-    const GOOGLE_CLIENT_SECRET = Deno.env.get('GOOGLE_CLIENT_SECRET')!
+    const GOOGLE_CLIENT_SECRET = Deno.env.get(CLIENT_SECRET_ENV)!
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const admin = createClient(supabaseUrl, serviceKey)
@@ -97,6 +107,15 @@ serve(async (req) => {
     if (!isAdmin) return json(req, { error: 'Acesso restrito a administradores' }, 403)
 
     const { action = 'list', code, redirect_uri, id, label } = await req.json().catch(() => ({}))
+
+    // ── config ─────────────────────────────────────────────────────────────
+    // O painel pergunta qual client_id usar em vez de ter o valor embutido no
+    // bundle: assim trocar o client OAuth é só mexer nos secrets, sem precisar
+    // publicar o site de novo. O client_id é público por natureza (aparece na
+    // URL de autorização do Google) — o secret nunca sai daqui.
+    if (action === 'config') {
+      return json(req, { clientId: GOOGLE_CLIENT_ID })
+    }
 
     // ── conectar ───────────────────────────────────────────────────────────
     if (action === 'connect') {
