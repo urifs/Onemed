@@ -260,17 +260,30 @@ export function sanitizeFilename(title: string): string {
   return title.replace(/[\\/:*?"<>|]/g, '').trim() || 'arquivo';
 }
 
-// O título da aula é o nome do arquivo no Drive, extensão inclusa. Anexar uma
-// extensão derivada por cima disso corrompia o download: um baralho do Anki
-// `Imunização.apkg` virava `Imunização.apkg.bin` (o mime que o Drive dá para
-// .apkg — `application/vnd.anki` ou `application/octetstream` — não estava na
-// tabela, e o tipo 'other' também não, então caía no 'bin'), e o Anki recusa
-// importar o arquivo com esse nome. Até PDF saía como `Apostila.pdf.pdf`.
-// Se o nome já termina em extensão, ela é a fonte da verdade — só arquivo sem
-// extensão nenhuma precisa que a gente adivinhe a partir do mime/tipo.
+// REGRA: o arquivo baixado tem que sair com exatamente a mesma extensão que
+// aparece na plataforma. O título da aula É o nome do arquivo no Drive,
+// extensão inclusa, e é ele que a lista e a árvore mostram — então o nome do
+// download é o título, ponto. Anexar uma extensão derivada por cima corrompia
+// tudo que não fosse formato de escritório: um baralho `Imunização.apkg` saía
+// como `Imunização.apkg.bin` e o Anki recusava importar; `.colpkg` idem; até
+// PDF saía como `Apostila.pdf.pdf`. Os mimes que o Drive dá pra esses casos
+// (`application/vnd.anki`, `application/octetstream`, `application/x-zip`)
+// nunca vão estar todos numa tabela nossa — o nome do arquivo já sabe.
+//
+// A extensão derivada do mime/tipo é só a rede de segurança para os arquivos
+// que não têm extensão nenhuma no nome (1.268 na biblioteca).
+function extensionInName(name: string): string | null {
+  const match = /\.([A-Za-z0-9_-]{1,12})$/.exec(name);
+  if (!match) return null;
+  // Precisa ter pelo menos uma letra: `Aula 1.2` não termina em extensão,
+  // termina em número de capítulo — baixar como "Aula 1.2" não abriria nada.
+  return /[A-Za-z]/.test(match[1]) ? match[1] : null;
+}
+
 export function downloadFilenameFor(lesson: { title: string; type: string; mime_type?: string | null }): string {
   const name = sanitizeFilename(lesson.title);
-  if (/\.[A-Za-z0-9]{1,8}$/.test(name)) return name;
+  const existing = extensionInName(name);
+  if (existing) return name;
   return `${name}.${fileExtensionFor(lesson)}`;
 }
 
