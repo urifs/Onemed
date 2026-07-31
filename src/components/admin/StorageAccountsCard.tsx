@@ -66,10 +66,12 @@ export function StorageAccountsCard() {
   const [accounts, setAccounts] = useState<StorageAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [removing, setRemoving] = useState<string | null>(null);
-  // Qual app do Google o botão vai usar. Mostrado na tela porque já houve
-  // confusão entre o app de conteúdo e o de armazenamento: sem isso, um
-  // JavaScript velho em cache no navegador manda para o app errado e a única
-  // pista é o nome que aparece na tela do Google.
+  // Qual app do Google o botão vai usar.
+  //
+  // Mostrado na tela porque o NOME do app não serve para identificá-lo: os
+  // dois projetos (conteúdo e armazenamento) foram nomeados
+  // "onemedcursos.com.br", então a tela de permissão do Google fica idêntica
+  // nos dois casos. O client_id é o único identificador confiável.
   const [clientId, setClientId] = useState<string | null>(null);
 
   const load = async () => {
@@ -146,8 +148,8 @@ export function StorageAccountsCard() {
               <span className="text-muted-foreground">…{clientId.slice(-28)}</span>
             </p>
             <p className="text-muted-foreground mt-1.5">
-              Se a tela do Google mostrar um app diferente do esperado, o navegador está com uma
-              versão antiga desta página: recarregue com <strong className="text-foreground">Ctrl+Shift+R</strong>.
+              A tela do Google mostra o mesmo nome nos dois apps da conta, então ela não
+              identifica qual está sendo usado — este número acima é o que vale.
             </p>
           </div>
         )}
