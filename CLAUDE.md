@@ -40,6 +40,7 @@
 |---------|--------------|
 | **Supabase Management API** | `sbp_0e4b7bf71a6909b65e1d928af78863a35e811ee8` |
 | **Vercel API Token** | `vcp_20YyrugF3ObL0f1W9bMxIOCgwWOduJ0euny7PuYBfC3HMeY4lV0K9wOb` |
+| **Cloudflare API Token** | `cfut_U6GR6uJmiuON1dNVvBCra46fNVpy4H2d4OO6dq4Mb9b7ed40` |
 
 ### IDs e Referências dos Projetos
 
@@ -50,6 +51,12 @@
 | Supabase Anon Key | `VITE_SUPABASE_PUBLISHABLE_KEY` | ver `.env.example` |
 | Vercel Project ID | `VERCEL_PROJECT_ID` | `prj_6xtdW0fF2j3x3FBComSPvCBtrTVt` |
 | Vercel Project Name | — | `onemed` |
+| Cloudflare Account ID | — | `35d2b284ad198776e07ad0b4e7aa2e47` |
+| Cloudflare Worker | — | `onemed-stream-lesson` (há também `medbrasil-stream-lesson`, de outro projeto — **não mexer**) |
+
+> ⚠️ A API de secrets do Supabase devolve o **SHA-256** do valor, não o valor. Conferido comparando
+> com o `SUPABASE_URL`, cujo valor real se conhece. Ou seja: os secrets guardados lá não podem ser
+> recuperados por aqui, só sobrescritos — é por isso que o token do Cloudflare está nesta tabela.
 
 ### Secrets Configurados no Supabase (Edge Functions)
 
@@ -82,6 +89,42 @@ done
 
 # Deploy do frontend (push para main — Vercel detecta automaticamente)
 git add -A && git commit -m "feat: ..." && git push origin main
+```
+
+### Deploy do Worker do Cloudflare (`cloudflare/stream-lesson/worker.js`)
+
+Não sobe junto com o frontend nem com as Edge Functions — é um deploy separado, à mão.
+
+```bash
+export CF=cfut_U6GR6uJmiuON1dNVvBCra46fNVpy4H2d4OO6dq4Mb9b7ed40
+export ACC=35d2b284ad198776e07ad0b4e7aa2e47
+
+# `keep_bindings` é OBRIGATÓRIO: sem ele o upload APAGA os secrets do worker
+# (LESSON_STREAM_SECRET, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY) e o
+# streaming cai para todos os alunos. A API não devolve o valor deles, então
+# não há como recolocá-los depois — só o dono reconfigurando à mão.
+echo '{"main_module":"worker.js","compatibility_date":"2024-09-23","keep_bindings":["secret_text"]}' > /tmp/meta.json
+
+curl -X PUT "https://api.cloudflare.com/client/v4/accounts/$ACC/workers/scripts/onemed-stream-lesson" \
+  -H "Authorization: Bearer $CF" \
+  -F "metadata=@/tmp/meta.json;type=application/json" \
+  -F "worker.js=@cloudflare/stream-lesson/worker.js;type=application/javascript+module"
+```
+
+**Antes de subir**, baixe o que está no ar e compare com o repo — a resposta vem embrulhada em
+multipart, o conteúdo fica depois de `name="worker.js"`:
+
+```bash
+curl -s ".../workers/scripts/onemed-stream-lesson" -H "Authorization: Bearer $CF"
+```
+
+**Depois de subir**, confira as duas coisas:
+
+```bash
+# 1. os 3 bindings continuam lá
+curl -s ".../workers/scripts/onemed-stream-lesson/settings" -H "Authorization: Bearer $CF"
+# 2. o worker sobe (500 no OPTIONS = BOOT_ERROR, igual às Edge Functions)
+curl -o /dev/null -w "%{http_code}\n" -X OPTIONS "https://onemed-stream-lesson.onemed-stream.workers.dev/"
 ```
 
 ---
@@ -981,6 +1024,11 @@ Enquanto a cota não reseta, essas 46 aulas também não abrem para os alunos: o
 o motivo** em vez de um 502 genérico, e o `LessonPlayer` refaz a requisição ao falhar para ler
 esse status (o evento `error` do `<video>` é igual para qualquer causa) — nesse caso para de
 tentar de novo, porque insistir não resolve.
+
+Conferido em produção com uma conta de teste temporária (criada e apagada na mesma sessão):
+aula normal devolve `206` com bytes de MP4 de verdade (streaming intacto), aula bloqueada
+devolve a mensagem nova. Detalhe: a bloqueada responde `206` normalmente para um range pequeno
+— só o `bytes=0-` que o navegador manda é recusado.
 
 **Retomar quando a cota resetar** (idempotente, filtra por `storage_path IS NULL`):
 
