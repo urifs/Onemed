@@ -1010,6 +1010,29 @@ seria trabalho e perda de qualidade à toa.
 Não é da conta: o resto do acervo continua baixando normalmente na mesma hora, com o mesmo
 token. Reseta sozinho.
 
+**A cota é por BYTES, não por número de downloads** — medido em 31/07 comparando arquivos da
+mesma conta de origem (`medbrasil31@gmail.com`):
+
+| arquivo | tamanho | resultado |
+|---|---|---|
+| `INTRODUÇÃO.MOV` | 1,57 GB | 403 cota |
+| `SINDROME NEFRÍTICA.MOV` | 2,11 GB | 403 cota |
+| `ATUALIZAÇÕES ATLS 11ª ED.MOV` | 3,17 GB | 403 cota |
+| `Questões.pdf` (mesma conta) | 1 MB | **206 normal** |
+
+Ou seja: a conta de origem não está bloqueada, o que estoura é o **volume de bytes por
+arquivo**. Um arquivo de 3 GB gasta a franquia dele em UM download; um de 1 MB nunca chega
+perto. Por isso as 46 (0,41 a 5,33 GB, 93 GB no total) praticamente não saem por tentativa
+repetida: baixar o arquivo é exatamente o que esgota a cota dele de novo.
+
+> Consequência para o aluno: essas 46 aulas também não abrem na plataforma, pelo mesmo motivo —
+> e uma única pessoa assistindo uma aula de 3 GB esgota a cota dela para todo mundo naquele dia.
+
+**Saída definitiva bloqueada por espaço:** `files.copy` tornaria a conta DONA do arquivo, e dono
+não tem cota de download no próprio arquivo. Mas `onemedcursos@gmail.com` está com **18,91 GB
+usados de 16,11 GB** (2,8 GB acima do limite) e as 46 somam 93 GB. Sem ampliar o plano do Google
+One, não há como copiar.
+
 > ⚠️ Duas causas erradas foram perseguidas antes de achar essa, porque o corpo da resposta do
 > Google — que diz o motivo — era descartado: primeiro pelo ffmpeg (só mostra
 > `Server returned 403`), depois pelo `curl --fail`. **Ao investigar um 403 do Drive, leia o
