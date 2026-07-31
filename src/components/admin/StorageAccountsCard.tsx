@@ -66,6 +66,11 @@ export function StorageAccountsCard() {
   const [accounts, setAccounts] = useState<StorageAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [removing, setRemoving] = useState<string | null>(null);
+  // Qual app do Google o botão vai usar. Mostrado na tela porque já houve
+  // confusão entre o app de conteúdo e o de armazenamento: sem isso, um
+  // JavaScript velho em cache no navegador manda para o app errado e a única
+  // pista é o nome que aparece na tela do Google.
+  const [clientId, setClientId] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -83,6 +88,12 @@ export function StorageAccountsCard() {
   };
 
   useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    supabase.functions.invoke('drive-storage-accounts', { body: { action: 'config' } })
+      .then(({ data }) => { if (data?.clientId) setClientId(data.clientId); })
+      .catch(() => {});
+  }, []);
 
   const disconnect = async (acc: StorageAccount) => {
     if (!confirm(`Remover a conta ${acc.email}? Os arquivos já copiados para ela NÃO são apagados.`)) return;
@@ -126,6 +137,20 @@ export function StorageAccountsCard() {
           copiar aulas grandes que o Google bloqueia por limite diário de download. A conexão que serve o
           conteúdo hoje não é afetada — conectar aqui não substitui nem desconecta nada.
         </p>
+
+        {clientId && (
+          <div className="rounded-lg border border-border bg-card px-4 py-3 text-xs">
+            <p className="text-muted-foreground">
+              App do Google usado por este botão:{' '}
+              <strong className="text-foreground font-mono">{clientId.split('-')[0]}</strong>
+              <span className="text-muted-foreground">…{clientId.slice(-28)}</span>
+            </p>
+            <p className="text-muted-foreground mt-1.5">
+              Se a tela do Google mostrar um app diferente do esperado, o navegador está com uma
+              versão antiga desta página: recarregue com <strong className="text-foreground">Ctrl+Shift+R</strong>.
+            </p>
+          </div>
+        )}
 
         {loading && accounts.length === 0 ? (
           <div className="flex items-center gap-2 text-muted-foreground text-sm">
