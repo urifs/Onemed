@@ -39,7 +39,7 @@
 | Serviço | Token / Valor |
 |---------|--------------|
 | **Supabase Management API** | `sbp_0e4b7bf71a6909b65e1d928af78863a35e811ee8` |
-| **Vercel API Token** | `vcp_6m85MdQjg3YEmboL3Bg4x0fHzqTfXiuhQQubBmzGE3tjjqhdDt0JF7SY` |
+| **Vercel API Token** | `vcp_20YyrugF3ObL0f1W9bMxIOCgwWOduJ0euny7PuYBfC3HMeY4lV0K9wOb` |
 
 ### IDs e Referências dos Projetos
 
@@ -905,7 +905,20 @@ conferir `OPTIONS` — 500 ali é BOOT_ERROR, não erro de aplicação.
 
 ### Renovação do META_CAPI_ACCESS_TOKEN
 
-**⚠️ Renovar em: 2026-07-09** (5 dias antes do vencimento em 2026-07-14)
+> **🔴 VENCIDO desde 2026-07-14 13:16 PDT** (erro 190, confirmado em 31/07/2026 pela
+> função `admin-capi-health`). Enquanto não for renovado, NENHUMA compra chega à Meta
+> pelo servidor — só o disparo do navegador em `/payment/success`, que a maior parte
+> dos compradores nunca vê. Depois de renovar, rodar o reenvio em `/admin` →
+> card "Rastreamento Meta" → "Reenviar compras não enviadas" (a Meta só aceita
+> eventos de até **7 dias** atrás; o que passou disso é perda definitiva).
+
+**Caminho mais curto (não precisa do client_secret):**
+Events Manager → pixel "Site onemed" (`797374160058274`) → Configurações →
+seção Conversions API → **Gerar token de acesso**. Depois é só o passo 3 abaixo.
+
+**Caminho pelo Graph API Explorer** (exige o client_secret do app, que NÃO está
+guardado em nenhum secret deste projeto — pegar em developers.facebook.com →
+app Tokenonemed → Configurações → Básico):
 
 ```bash
 # 1. Gere um novo short-lived token em:
@@ -924,4 +937,8 @@ curl -X POST "https://api.supabase.com/v1/projects/jrrybiohwqabsdurqudc/secrets"
   -H "Authorization: Bearer MGMT_KEY" \
   -H "Content-Type: application/json" \
   -d '[{"name":"META_CAPI_ACCESS_TOKEN","value":"LONG_TOKEN"}]'
+
+# 4. Conferir que valeu (responde "ok": true quando o token está bom):
+curl -X POST "https://jrrybiohwqabsdurqudc.supabase.co/functions/v1/admin-capi-health" \
+  -H "Authorization: Bearer SUPABASE_SERVICE_ROLE_KEY"
 ```
