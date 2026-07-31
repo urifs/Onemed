@@ -142,11 +142,14 @@ export default function Dashboard() {
             (online inclui testes, offline só assinantes) lado a lado */}
         <div className="grid lg:grid-cols-2 gap-6 items-start">
           <OnlineMembersCard />
-          <MetaPixelHealthCard />
-
           <MemberLocationsMap />
         </div>
         <MemberLocationsList />
+
+        {/* Rastreamento Meta ocupa a largura toda, abaixo do mapa: são números
+            de campanha, não de presença — e no meio da dupla acima ele empurrava
+            o mapa pra linha de baixo. */}
+        <MetaPixelHealthCard />
 
         {/* Trial vs Paid */}
         {stats && (
