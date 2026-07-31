@@ -931,6 +931,70 @@ no nome. 7 testes cobrindo os casos reais da biblioteca.
 
 ---
 
+### 2026-07-31 (sessão remota) — vídeos que o navegador não toca: varredura por codec real
+
+**Regra que orientou tudo:** container ≠ codec, e o nome do arquivo mente. A decisão tem que
+vir do `ffprobe`, arquivo a arquivo — `scripts/fix-unplayable-videos.mjs` escolhe a operação
+mais barata que ainda entrega um MP4 tocável:
+
+| codec de vídeo | codec de áudio | operação |
+|---|---|---|
+| h264 | aac (ou sem áudio) | **remux** (`-c copy`) — troca só o container, instantâneo, sem perda |
+| h264 | outro | copia o vídeo, recodifica só o áudio |
+| qualquer outro | — | **transcodifica** para h264/aac |
+
+Resultado vai pro bucket `lesson-media` e a aula passa a apontar pra lá (`lessons.storage_path`),
+igual às 58 `.wmv`. O arquivo original no Drive nunca é tocado.
+
+**Situação por extensão:**
+
+| ext | total | convertidas | pendentes | observação |
+|---|---|---|---|---|
+| `.mpg` | 80 | 80 | 0 | MPEG-1 → h264. 1043 MB → 240 MB |
+| `.mkv` | 63 | 63 | 0 | 61 só remux + 2 transcode |
+| `.wmv` | 58 | 58 | 0 | migradas na sessão anterior |
+| `.mov` | 81 | 35 | **46** | bloqueadas pela cota do Drive (abaixo) |
+| `.avi` | 2 | 2 | 0 | |
+| `.flv` | 62 | — | **0** | **não precisam de conversão** |
+
+**Os 62 `.flv` não são FLV.** Conferido pelos bytes mágicos: começam com `0x47`, o sync byte do
+MPEG-TS, e por dentro são h264/aac. Já caem no caminho do `mpegts.js` no `LessonPlayer` (o
+`mime_type` gravado é `video/mp2t`, que casa com `isTsVideo`) e tocam normalmente. Converter
+seria trabalho e perda de qualidade à toa.
+
+**Os 46 `.mov` restantes: cota de download do Google, não bug nosso.** O Drive responde
+`403 downloadQuotaExceeded` — limite de bytes baixados **daquele arquivo específico** em 24h.
+Não é da conta: o resto do acervo continua baixando normalmente na mesma hora, com o mesmo
+token. Reseta sozinho.
+
+> ⚠️ Duas causas erradas foram perseguidas antes de achar essa, porque o corpo da resposta do
+> Google — que diz o motivo — era descartado: primeiro pelo ffmpeg (só mostra
+> `Server returned 403`), depois pelo `curl --fail`. **Ao investigar um 403 do Drive, leia o
+> corpo.** O script agora faz isso e separa "bloqueada por cota" de "falha" no relatório.
+
+Um range pequeno (1 MB) passa mesmo com a cota estourada — só o pedido do arquivo inteiro é
+recusado. Então **teste de disponibilidade tem que usar `Range: bytes=0-`**, senão dá falso
+positivo. Foi o que invalidou a primeira sondagem que fiz.
+
+Enquanto a cota não reseta, essas 46 aulas também não abrem para os alunos: o worker
+`cloudflare/stream-lesson` usa exatamente o mesmo `alt=media`. Ele passou a devolver **429 com
+o motivo** em vez de um 502 genérico, e o `LessonPlayer` refaz a requisição ao falhar para ler
+esse status (o evento `error` do `<video>` é igual para qualquer causa) — nesse caso para de
+tentar de novo, porque insistir não resolve.
+
+**Retomar quando a cota resetar** (idempotente, filtra por `storage_path IS NULL`):
+
+```bash
+SUPABASE_MGMT_TOKEN=... SUPABASE_SECRET_KEY=... SUPABASE_SERVICE_JWT=... \
+  CONCURRENCY=2 node scripts/fix-unplayable-videos.mjs --ext=mov
+```
+
+> `SUPABASE_SERVICE_JWT` é a `service_role` **legada** (`eyJ...`): o Storage recusa a chave nova
+> `sb_secret_...` com "Invalid Compact JWS", enquanto as Edge Functions exigem justamente a nova.
+> Duas chaves diferentes para dois serviços do mesmo projeto.
+
+---
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
