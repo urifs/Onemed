@@ -129,6 +129,27 @@ export default {
     headers.set('accept-ranges', 'bytes');
     headers.set('cache-control', 'private, max-age=0, no-store');
 
+    // `dl=<nome>` faz o navegador SALVAR em vez de tocar, com o nome exato que
+    // aparece na plataforma. É o único jeito de garantir o nome quando o
+    // arquivo vem de outra origem: o atributo `download` do <a> é ignorado
+    // nesse caso. Assim o vídeo é escrito direto no disco, sem a aba ter que
+    // segurar o arquivo inteiro na memória.
+    //
+    // O nome não vai assinado junto — trocá-lo só muda como o arquivo é salvo
+    // no computador de quem já tem o link, não dá acesso a nada. Mas ele entra
+    // num cabeçalho, então CR/LF precisam sumir antes (senão dá pra injetar
+    // cabeçalho), e o `filename*` RFC 5987 é o que preserva os acentos dos
+    // títulos em português.
+    const dl = url.searchParams.get('dl');
+    if (dl) {
+      const clean = dl.replace(/[\r\n"\\]/g, '').slice(0, 200) || 'arquivo';
+      const ascii = clean.replace(/[^\x20-\x7E]/g, '_');
+      headers.set(
+        'content-disposition',
+        `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(clean)}`,
+      );
+    }
+
     return new Response(driveRes.body, { status: driveRes.status, headers });
   },
 };

@@ -15,8 +15,8 @@ import { CommunityTab } from '@/components/member/CommunityTab';
 import { CATEGORY_ICON } from '@/lib/courseCategories';
 import {
   formatDuration, formatFileSize, matchesSearch, stripYearFromTitle, withTimeout, withRetry, describeLoadError,
-  downloadFilenameFor,
 } from '@/lib/utils';
+import { downloadLesson } from '@/lib/lessonDownload';
 import { CourseTree } from '@/components/member/CourseTree';
 import type { Database } from '@/integrations/supabase/types';
 
@@ -97,21 +97,9 @@ export default function CourseDetailPage() {
   const [query, setQuery] = useState('');
   const autoOpenId = searchParams.get('lesson');
 
-  // Download em massa (aulas + arquivos) é um perk exclusivo do Vitalício
-  // Pro — os demais planos continuam vendo a plataforma exatamente como hoje.
-  const [canBulkDownload, setCanBulkDownload] = useState(false);
-  const [selectMode, setSelectMode] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [bulkDownloading, setBulkDownloading] = useState(false);
-  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
-
-  useEffect(() => {
-    let alive = true;
-    supabase.functions.invoke('member-account-info').then(({ data }) => {
-      if (alive && data && !data.error) setCanBulkDownload(data.plan === 'lifetime_pro' || data.isAdmin === true);
-    }).catch(() => {});
-    return () => { alive = false; };
-  }, []);
+  // Qual aula está sendo baixada agora (spinner no ícone da linha). O
+  // download é um de cada vez, por item — não existe mais seleção em massa.
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -308,44 +296,18 @@ export default function CourseDetailPage() {
     }
   };
 
-  const toggleSelectLesson = (lesson: Lesson) => {
-    setSelectedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(lesson.id)) next.delete(lesson.id); else next.add(lesson.id);
-      return next;
-    });
-  };
-
-  const currentTabLessons = tab === 'aulas' ? orderedVideoLessons : orderedFileLessons;
-
-  const handleBulkDownload = async () => {
-    const toDownload = lessons.filter(l => selectedIds.has(l.id));
-    if (toDownload.length === 0 || bulkDownloading) return;
-    setBulkDownloading(true);
-    setBulkProgress({ done: 0, total: toDownload.length });
-    for (let i = 0; i < toDownload.length; i++) {
-      const lesson = toDownload[i];
-      try {
-        const { data, error } = await supabase.functions.invoke('member-lesson-token', { body: { lessonId: lesson.id } });
-        if (error || !data?.url) throw new Error(data?.error || 'Erro ao gerar link de download');
-        const res = await fetch(data.url);
-        const blob = await res.blob();
-        const blobUrl = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = blobUrl;
-        a.download = downloadFilenameFor(lesson);
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(blobUrl);
-      } catch (err) {
-        console.error('Falha ao baixar', lesson.title, err);
-        toast.error(`Falha ao baixar "${lesson.title}"`);
-      }
-      setBulkProgress({ done: i + 1, total: toDownload.length });
+  // Baixar direto da lista, sem precisar abrir a aula.
+  const handleDownloadLesson = async (lesson: Lesson) => {
+    if (downloadingId) return;
+    setDownloadingId(lesson.id);
+    try {
+      await downloadLesson(lesson);
+    } catch (err) {
+      console.error('Falha ao baixar', lesson.title, err);
+      toast.error(`Não foi possível baixar "${lesson.title}"`);
+    } finally {
+      setDownloadingId(null);
     }
-    setBulkDownloading(false);
-    toast.success('Download em massa concluído');
   };
 
   const activeIndex = activeLesson ? activeOrderedLessons.findIndex(l => l.id === activeLesson.id) : -1;
@@ -434,7 +396,7 @@ export default function CourseDetailPage() {
         </div>
       </section>
 
-      <main className={`max-w-[1280px] mx-auto px-4 md:px-8 ${selectMode && selectedIds.size > 0 ? 'pb-24' : 'pb-16'}`}>
+      <main className="max-w-[1280px] mx-auto px-4 md:px-8 pb-16">
         <div className="md:flex md:items-start md:gap-8">
           <CourseSummarySidebar
             modules={modules}
@@ -467,27 +429,6 @@ export default function CourseDetailPage() {
                 </button>
               </div>
 
-              {canBulkDownload && tab !== 'comunidade' && (
-                <div className="flex items-center gap-3 pb-2 shrink-0">
-                  {selectMode && (
-                    <>
-                      <button onClick={() => setSelectedIds(new Set(currentTabLessons.map(l => l.id)))} className="text-xs text-primary hover:underline whitespace-nowrap">
-                        Selecionar todos
-                      </button>
-                      <button onClick={() => setSelectedIds(new Set())} className="text-xs text-muted-foreground hover:underline whitespace-nowrap">
-                        Limpar
-                      </button>
-                    </>
-                  )}
-                  <button
-                    onClick={() => { setSelectMode(m => !m); setSelectedIds(new Set()); }}
-                    className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full border border-border text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors whitespace-nowrap"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    {selectMode ? 'Cancelar seleção' : 'Baixar em massa'}
-                  </button>
-                </div>
-              )}
             </div>
 
             {tab === 'aulas' ? (
@@ -503,9 +444,9 @@ export default function CourseDetailPage() {
                 )}
                 <LessonGroupList
                   groups={videoGroups} progressMap={progressMap} onSelect={setActiveLesson}
-                  selectMode={selectMode} selectedIds={selectedIds} onToggleSelect={toggleSelectLesson}
                   favoriteIds={favoriteLessonIds} onToggleFavorite={handleToggleLessonFavorite}
                   onToggleCompleted={handleToggleCompleted}
+                  onDownload={handleDownloadLesson} downloadingId={downloadingId}
                 />
               </>
             ) : tab === 'arquivos' ? (
@@ -521,9 +462,9 @@ export default function CourseDetailPage() {
                 )}
                 <LessonGroupList
                   groups={fileGroups} progressMap={progressMap} onSelect={setActiveLesson}
-                  selectMode={selectMode} selectedIds={selectedIds} onToggleSelect={toggleSelectLesson}
                   favoriteIds={favoriteLessonIds} onToggleFavorite={handleToggleLessonFavorite}
                   onToggleCompleted={handleToggleCompleted}
+                  onDownload={handleDownloadLesson} downloadingId={downloadingId}
                 />
               </>
             ) : (
@@ -532,23 +473,6 @@ export default function CourseDetailPage() {
           </div>
         </div>
       </main>
-
-      {selectMode && selectedIds.size > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 z-40 bg-card border-t border-border px-4 md:px-8 py-3 flex items-center justify-between gap-3">
-          <span className="text-sm text-foreground font-medium">
-            {selectedIds.size} selecionado{selectedIds.size !== 1 ? 's' : ''}
-            {bulkDownloading && bulkProgress && ` · baixando ${bulkProgress.done}/${bulkProgress.total}`}
-          </span>
-          <button
-            onClick={handleBulkDownload}
-            disabled={bulkDownloading}
-            className="inline-flex items-center gap-2 bg-primary hover:bg-primary-hover text-primary-foreground font-semibold px-5 py-2 rounded-lg transition-colors disabled:opacity-60"
-          >
-            {bulkDownloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-            {bulkDownloading ? 'Baixando...' : 'Baixar selecionados'}
-          </button>
-        </div>
-      )}
 
       {activeLesson && (
         <LessonPlayer
@@ -643,18 +567,17 @@ function CourseSummarySidebar({
 }
 
 function LessonGroupList({
-  groups, progressMap, onSelect, selectMode, selectedIds, onToggleSelect, favoriteIds, onToggleFavorite,
-  onToggleCompleted,
+  groups, progressMap, onSelect, favoriteIds, onToggleFavorite,
+  onToggleCompleted, onDownload, downloadingId,
 }: {
   groups: { id: string; title: string; lessons: Lesson[] }[];
   progressMap: Record<string, Progress>;
   onSelect: (lesson: Lesson) => void;
-  selectMode?: boolean;
-  selectedIds?: Set<string>;
-  onToggleSelect?: (lesson: Lesson) => void;
   favoriteIds?: Set<string>;
   onToggleFavorite?: (lesson: Lesson) => void;
   onToggleCompleted?: (lesson: Lesson, completed: boolean) => void;
+  onDownload?: (lesson: Lesson) => void;
+  downloadingId?: string | null;
 }) {
   return (
     <div className="space-y-8">
@@ -670,22 +593,17 @@ function LessonGroupList({
               const Icon = TYPE_ICON[lesson.type] || File;
               const p = progressMap[lesson.id];
               const pct = p && lesson.duration_seconds ? Math.min(100, (p.watched_seconds / lesson.duration_seconds) * 100) : 0;
-              const isSelected = !!selectedIds?.has(lesson.id);
               const isLessonFavorite = !!favoriteIds?.has(lesson.id);
+              const isDownloading = downloadingId === lesson.id;
               return (
-                // Não é <button> — dentro tem dois controles clicáveis
-                // independentes (abrir/selecionar vs favoritar), e botão
+                // Não é <button> — dentro tem vários controles clicáveis
+                // independentes (abrir, baixar, concluir, favoritar), e botão
                 // aninhado dentro de botão é HTML inválido.
                 <div key={lesson.id} className="w-full flex items-center gap-3.5 px-4 py-3.5 bg-card hover:bg-secondary transition-colors group">
                   <button
-                    onClick={() => selectMode ? onToggleSelect?.(lesson) : onSelect(lesson)}
+                    onClick={() => onSelect(lesson)}
                     className="flex-1 min-w-0 flex items-center gap-3.5 text-left"
                   >
-                    {selectMode && (
-                      <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${isSelected ? 'bg-primary border-primary' : 'border-muted-foreground/40'}`}>
-                        {isSelected && <Check className="w-3.5 h-3.5 text-primary-foreground" />}
-                      </div>
-                    )}
                     <div className="w-9 h-9 rounded-full bg-secondary group-hover:bg-primary/15 flex items-center justify-center shrink-0 transition-colors">
                       {p?.completed ? (
                         <CheckCircle2 className="w-4 h-4 text-accent-success" />
@@ -704,6 +622,20 @@ function LessonGroupList({
                     <span className="text-xs text-muted-foreground tabular-nums shrink-0">
                       {lesson.type === 'video' ? formatDuration(lesson.duration_seconds) : formatFileSize(lesson.size_bytes)}
                     </span>
+                  </button>
+                  {/* Baixar sem precisar abrir. Vale pra aula em vídeo do
+                      mesmo jeito que pra PDF — o arquivo sai com o nome e a
+                      extensão que aparecem aqui na lista. */}
+                  <button
+                    onClick={() => onDownload?.(lesson)}
+                    disabled={!!downloadingId}
+                    className="shrink-0 p-1.5 rounded-lg text-muted-foreground/50 hover:text-primary hover:bg-primary/10 disabled:opacity-40 transition-colors"
+                    title={`Baixar "${lesson.title}"`}
+                    aria-label={`Baixar ${lesson.title}`}
+                  >
+                    {isDownloading
+                      ? <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                      : <Download className="w-4 h-4" />}
                   </button>
                   {/* Caixa de concluída: vale pra qualquer tipo. Antes só
                       vídeo virava "assistido" (pelos 92% de reprodução) — PDF,

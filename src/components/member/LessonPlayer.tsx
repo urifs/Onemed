@@ -6,7 +6,8 @@ import { PdfViewer } from './PdfViewer';
 import { OfficeViewer } from './OfficeViewer';
 import { TxtViewer } from './TxtViewer';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { downloadFilenameFor } from '@/lib/utils';
+import { downloadLesson } from '@/lib/lessonDownload';
+import { toast } from 'sonner';
 import type { Database } from '@/integrations/supabase/types';
 
 type Lesson = Database['public']['Tables']['lessons']['Row'];
@@ -14,15 +15,11 @@ type Lesson = Database['public']['Tables']['lessons']['Row'];
 const PLAYBACK_RATES = [1, 1.5, 2, 3];
 const PLAYBACK_RATE_STORAGE_KEY = 'onemed_playback_rate';
 
-// Vídeo/áudio ficam só em streaming (controlsList="nodownload") — mas
-// documentos (pdf/imagem/planilha/doc/txt) são conteúdo pra consulta e
-// impressão, então ganham download/impressão de verdade. (Vitalício Pro tem
-// um caminho de download separado — o seletor em massa da CourseDetailPage —
-// que libera vídeo/áudio também; isso aqui só rege o player avulso.)
-// 'other' entra na lista porque é onde caem os materiais que não dá pra
-// consumir dentro do navegador de jeito nenhum — baralho do Anki (.apkg),
-// .epub, .zip: sem download eles são inúteis pro aluno.
-const DOWNLOADABLE_TYPES = ['pdf', 'image', 'doc', 'sheet', 'txt', 'other'];
+// Baixar vale para QUALQUER aula ou arquivo, vídeo incluso — só imprimir é
+// que continua restrito ao que se lê. (Antes vídeo/áudio ficavam de fora
+// daqui e só saíam pelo seletor em massa do Vitalício Pro, que não existe
+// mais: agora todo mundo baixa, um de cada vez.)
+const PRINTABLE_TYPES = ['pdf', 'image', 'doc', 'sheet', 'txt'];
 
 interface LessonPlayerProps {
   lesson: Lesson;
@@ -247,24 +244,18 @@ export function LessonPlayer({
     onProgress(lesson.id, Math.floor(v?.duration || lastReported.current), true);
   };
 
-  const canDownload = DOWNLOADABLE_TYPES.includes(lesson.type);
+  // Imprimir só faz sentido para o que se lê; baixar vale para tudo,
+  // vídeo e áudio inclusive.
+  const canPrint = PRINTABLE_TYPES.includes(lesson.type);
 
   const handleDownload = async () => {
-    if (!src || downloading) return;
+    if (downloading) return;
     setDownloading(true);
     try {
-      const res = await fetch(src);
-      const blob = await res.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = blobUrl;
-      a.download = downloadFilenameFor(lesson);
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(blobUrl);
+      await downloadLesson(lesson);
     } catch (err) {
       console.error('Failed to download file', err);
+      toast.error('Não foi possível baixar este arquivo.');
     } finally {
       setDownloading(false);
     }
@@ -359,8 +350,8 @@ export function LessonPlayer({
             </PopoverContent>
           </Popover>
         )}
-        {canDownload && src && (
-          <div className="flex items-center gap-2 mr-1">
+        <div className="flex items-center gap-2 mr-1">
+          {canPrint && src && (
             <button
               onClick={handlePrint}
               title="Imprimir"
@@ -368,16 +359,19 @@ export function LessonPlayer({
             >
               <Printer className="w-4 h-4" />
             </button>
-            <button
-              onClick={handleDownload}
-              disabled={downloading}
-              title="Baixar"
-              className="w-9 h-9 rounded-full bg-white/10 disabled:opacity-40 hover:bg-white/15 flex items-center justify-center text-white transition-colors"
-            >
-              {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-            </button>
-          </div>
-        )}
+          )}
+          {/* Não depende de `src`: o link de download é gerado na hora, então
+              dá pra baixar mesmo que o vídeo não esteja tocando. */}
+          <button
+            onClick={handleDownload}
+            disabled={downloading}
+            title="Baixar"
+            aria-label="Baixar"
+            className="w-9 h-9 rounded-full bg-white/10 disabled:opacity-40 hover:bg-white/15 flex items-center justify-center text-white transition-colors"
+          >
+            {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+          </button>
+        </div>
         <div className="hidden sm:flex items-center gap-2">
           <button
             disabled={!hasPrev} onClick={onPrev}

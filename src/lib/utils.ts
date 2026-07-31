@@ -227,8 +227,8 @@ export function formatWhatsApp(value: string, countryCode: string): string {
   return nums;
 }
 
-// Compartilhado entre LessonPlayer (download de documento avulso) e o
-// download em massa do plano Vitalício Pro em CourseDetailPage.
+// Compartilhado entre o botão de download dentro do player e o ícone de
+// download de cada linha da lista de aulas/arquivos.
 const EXTENSION_BY_MIME: Record<string, string> = {
   'application/pdf': 'pdf',
   'application/msword': 'doc',
@@ -280,11 +280,58 @@ function extensionInName(name: string): string | null {
   return /[A-Za-z]/.test(match[1]) ? match[1] : null;
 }
 
-export function downloadFilenameFor(lesson: { title: string; type: string; mime_type?: string | null }): string {
+// Exceção à regra acima: as aulas em formato que nenhum navegador toca
+// (.wmv, .mkv, .mpg, .mov, .avi) foram RECONVERTIDAS para MP4 e vivem no
+// Storage — o título continua com a extensão antiga (é o nome do arquivo no
+// Drive), mas os bytes são MP4. Baixar "AULA.MOV" com conteúdo MP4 faz o
+// player do computador recusar o arquivo. `storage_path` preenchido é o sinal
+// confiável de que a conversão é nossa; o mime do Drive, sozinho, não serve
+// (ele erra o palpite em parte da biblioteca).
+const CONVERTED_VIDEO_EXT = /\.(wmv|mkv|mpg|mpeg|mov|avi|flv|ts)$/i;
+
+export function downloadFilenameFor(lesson: {
+  title: string;
+  type: string;
+  mime_type?: string | null;
+  storage_path?: string | null;
+}): string {
   const name = sanitizeFilename(lesson.title);
+
+  if (lesson.storage_path && lesson.mime_type === 'video/mp4' && CONVERTED_VIDEO_EXT.test(name)) {
+    return name.replace(CONVERTED_VIDEO_EXT, '.mp4');
+  }
+
   const existing = extensionInName(name);
   if (existing) return name;
   return `${name}.${fileExtensionFor(lesson)}`;
+}
+
+/**
+ * Transforma a URL de streaming numa URL de DOWNLOAD com o nome certo.
+ *
+ * Não dá para usar o atributo `download` do <a>: ele é ignorado quando o
+ * arquivo vem de outra origem (o Worker da Cloudflare e o Storage do Supabase
+ * são as duas), e o arquivo cairia com um nome aleatório — exatamente o
+ * problema que os alunos relataram com os baralhos `.colpkg`. Quem manda o
+ * nome, nesse caso, é o cabeçalho `Content-Disposition` do servidor.
+ *
+ * E não dá para baixar via `fetch` + blob (como era antes): isso segura o
+ * arquivo INTEIRO na memória da aba antes de salvar. Para PDF de 10 MB passa;
+ * para uma aula em vídeo de 1,5 GB trava ou derruba a aba, ainda mais no
+ * celular. Com o cabeçalho, o navegador escreve direto no disco.
+ *
+ * Cada serviço tem seu jeito de pedir isso:
+ *   - Storage do Supabase: `?download=<nome>` (recurso nativo dele)
+ *   - Worker da Cloudflare: `&dl=<nome>`, tratado no nosso worker.js
+ */
+export function downloadUrlFor(streamUrl: string, filename: string): string {
+  try {
+    const url = new URL(streamUrl);
+    url.searchParams.set(url.hostname.includes('supabase') ? 'download' : 'dl', filename);
+    return url.toString();
+  } catch {
+    return streamUrl;
+  }
 }
 
 // "Online há X" no quadro de presença do admin — diferente do timeAgo curto
