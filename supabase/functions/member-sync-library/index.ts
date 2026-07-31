@@ -328,6 +328,15 @@ serve(async (req) => {
             .update({ state: 'pending', page_token: null, attempts: 0, error: null, updated_at: new Date().toISOString() })
             .eq('course_id', courseId)
             .neq('state', 'pending')
+        } else {
+          // Sem reimportação, ainda assim as pastas que o Drive recusou a
+          // listar voltam para a fila: senão um curso 'incomplete' nunca se
+          // recuperaria sozinho de um 429 passageiro, e o conteúdo daquela
+          // subárvore ficaria faltando para sempre.
+          await supabase.from('sync_folder_queue')
+            .update({ state: 'pending', attempts: 0, error: null, updated_at: new Date().toISOString() })
+            .eq('course_id', courseId)
+            .eq('state', 'error')
         }
         await supabase.from('sync_folder_queue')
           .upsert({ course_id: courseId, drive_folder_id: resolved.id, module_id: null, path: '', depth: 0 },

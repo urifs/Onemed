@@ -775,6 +775,63 @@ original permanece intocado no Drive da conta (nunca foi tocado, só lido).
 
 ---
 
+### 2026-07-31 (sessão remota) — varredura profunda e verificável da biblioteca
+
+**Pedido:** uma sincronização que varra a pasta de cursos INTEIRA — pasta dentro de pasta dentro
+de pasta, todos os arquivos — e que dê para conferir, somando tamanho por arquivo, que não faltou
+nada. São alunos de medicina, não pode faltar conteúdo.
+
+**Auditoria independente do Drive** (varredura completa própria, sem passar pela função antiga):
+407 pastas de topo, **34.192 pastas**, **211.147 arquivos**, **12,038 TB**, zero pastas que
+falharam, zero atalhos quebrados, zero arquivos soltos na raiz. Rodada duas vezes, com números
+idênticas nas duas.
+
+**O que estava errado (três buracos, todos silenciosos):**
+
+1. `MAX_MODULE_DEPTH = 2` — só dois níveis de subpasta viravam módulo, e qualquer pasta abaixo do
+   nível 10 era descartada de vez.
+2. O `catch` em volta da listagem de pasta **engolia o erro**: quando o Drive recusava listar uma
+   pasta (429/5xx/token), aquela subárvore inteira ficava de fora e o curso ainda era reportado
+   como "Concluído". Não havia como saber depois que faltou conteúdo.
+3. O estado da varredura vivia dentro do cursor HTTP — queda de aba/rede no meio perdia a posição,
+   e o que ficou faltando nunca era recuperado.
+
+**Resultado da comparação arquivo a arquivo (por ID do Drive):** faltavam **913 arquivos reais**
+(802 vídeos `.mp4` + 111 PDFs, 11,08 GB) — todos em pastas de **nível 5** e todos no curso
+`QUESTÕES COMENTADAS POR ESTADO／INSTITUIÇÃO MEDGRUP` (tinha 11.321 das 12.234 aulas do Drive).
+Os outros 1.302 arquivos que apareciam como "faltando" eram `.html` soltos, ignorados de propósito
+desde a migration `20260719200000_remove_html_lessons.sql`.
+
+**Arquitetura nova — fila durável no Postgres.** `sync_folder_queue` (PK `course_id` +
+`drive_folder_id`): cada pasta encontrada vira uma linha, a Edge Function consome pendências e
+enfileira as filhas. Disso sai de graça: profundidade ilimitada (a fila não tem noção de nível),
+proteção contra ciclo de atalho (a PK barra revisitar), retomada exata de qualquer dispositivo, e
+a prova de cobertura — um curso só vira `sync_status='complete'` com **zero pastas pendentes e
+zero pastas com erro**. Pasta que o Drive recusa a listar agora fica REGISTRADA (`state='error'`,
+com a mensagem), e volta pra fila sozinha na sincronização seguinte.
+
+| Arquivo | Mudança |
+|---------|---------|
+| `supabase/migrations/20260731020000_deep_library_sync.sql` | `sync_folder_queue`; `course_modules.parent_module_id/depth/path`; `courses.total_size_bytes/folder_count/sync_status/sync_error/deep_synced_at`; `lessons.drive_path/last_seen_at/missing_since`; `recalc_course_totals()`; RPCs `get_library_sync_report()` e `get_library_totals()` |
+| `supabase/functions/member-sync-library/index.ts` | Reescrita sobre a fila. Duas etapas: `discover` (pastas de topo → cursos) e `crawl` (drena pendências, 6 pastas em paralelo, janelas de 40s). Erro de pasta nunca mais é engolido |
+| `src/pages/DriveSettings.tsx` | Novo card "Conferência da Biblioteca": cursos/pastas varridas/arquivos/tamanho total + lista dos cursos que não fecharam |
+| `src/pages/CourseDetailPage.tsx` | Título do módulo agora é o caminho completo (`Módulo 2 › Aula 3 › Anexos`) — com vários níveis, dois módulos podem se chamar igual |
+| `scripts/deep-library-sync.mjs` | Varredura/auditoria completa fora do runtime de borda (`audit` não escreve nada, `sync` grava). É o que permite conferir a biblioteca toda de uma vez, em minutos |
+
+**Ordenação:** com profundidade ilimitada não dá pra numerar módulo durante a varredura (a fila não
+percorre em ordem de árvore). `recalc_course_totals` ordena tudo de uma vez quando o curso fecha, por
+`path` — como o caminho do filho começa com o do pai, ordenar por texto reproduz a ordem da árvore.
+
+**Aulas que sumiram do Drive são MARCADAS (`missing_since`), nunca apagadas** — apagar levaria junto
+o progresso do aluno pela FK CASCADE em `lesson_progress`. Só marca quando a varredura fechou 100%
+limpa; com pasta que falhou, "não vi o arquivo" pode significar só que não deu pra olhar.
+
+**Cuidado ao revarrer:** as 58 aulas migradas pro Supabase Storage (`storage_path` preenchido) não
+podem ter o `mime_type` sobrescrito pelo do Drive — voltaria a `video/x-ms-wmv` e nenhum navegador
+tocaria de novo. O script trata essas linhas à parte.
+
+---
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
