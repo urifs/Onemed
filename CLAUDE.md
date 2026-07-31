@@ -730,6 +730,51 @@ de plano, mesmo que tenha um acesso concedido).
 
 ---
 
+### 2026-07-31 (sessão remota) — 58 aulas .wmv migradas do Drive pro Supabase Storage
+
+**Problema relatado:** cliente mandou print de "No video with supported format and MIME type
+found" — o erro nativo do `<video>` do Chrome quando o container/codec não é suportado por nenhum
+navegador. Diferente do bug do `.ts` (mpegts.js só resolveu porque o codec ali, H.264/AAC, já era
+nativo do navegador — só o container MPEG-TS precisava de remux). `.wmv` usa WMV3/VC-1, que não
+tem NENHUM decoder nativo em navegador nem equivalente ao truque do mpegts.js — precisa
+retranscodificar de verdade.
+
+**Achadas 58 aulas** com `mime_type = 'video/x-ms-wmv'` (curso "Eletrocardiograma - InCor",
+duplicado como duas entradas de curso — 29 aulas em cada). ffmpeg foi instalado neste ambiente
+(`apt-get install ffmpeg`, tem decoders wmv1/2/3 e vc1) e usado para transcodificar cada aula pra
+mp4 (h264/aac, `-crf 28 -maxrate 250k -bufsize 500k -b:a 64k`, tunado pro conteúdo de baixa
+resolução — câmera + slides).
+
+**Bloqueio real: a conta do Google Drive conectada está acima da cota de armazenamento** (18,9GB
+usados de 15GB). Confirmado com um teste isolado: PATCH de metadado no arquivo (sem trocar
+conteúdo) → 200 OK; PATCH com o conteúdo do vídeo mp4 (mesmo sendo menor que o wmv original) →
+`403 Forbidden`. O Google recusa qualquer upload de mídia nova na conta, independente do arquivo
+final ficar menor. Sem espaço liberado na conta, os arquivos corrigidos não podem voltar pro Drive.
+
+**Solução: bucket próprio no Supabase Storage** (`lesson-media`, privado) em vez do Drive pra essas
+58 aulas especificamente. Nova coluna `lessons.storage_path` (migration
+`20260730230000_lesson_storage_path.sql`) — quando preenchida, `member-lesson-token` assina uma URL
+do Storage em vez de gerar o link pro Worker/Drive (zero mudança no frontend, `LessonPlayer` só
+consome a URL que vier). Também precisou subir o limite de tamanho de arquivo do Storage — o padrão
+do projeto era 50MB (tanto a config global do projeto quanto o bucket têm esse limite
+independentemente), baixo demais pros vídeos de aula (~50-150MB); subido pra 500MB via Management
+API (`PATCH /v1/projects/{ref}/config/storage` + `PUT /storage/v1/bucket/lesson-media`).
+
+**Processamento em lote:** rodado neste ambiente (baixa do Drive com o `access_token` já salvo em
+`drive_config`, transcodifica, sobe pro Storage, atualiza `lessons.mime_type`/`storage_path`) — 58
+arquivos, ~5,72GB originais → ~3,00GB finais (~47% menor, cabe folgado mesmo se algum dia migrar de
+volta). Durante o lote, duas quedas transitórias breves (~1-2s) da API de management do Supabase
+causaram 9 falhas em cascata (`get_access_token()`/atualização do banco batendo 502 no meio da
+volta) — identificadas e corrigidas manualmente uma a uma (alguns já tinham o upload feito, só
+faltava o UPDATE; outros foram reprocessados do zero). Resultado final: 58/58 aulas com
+`mime_type='video/mp4'` e `storage_path` preenchido, zero `.wmv` restante, verificado por amostragem
+(`ffprobe` confirma stream h264/aac no arquivo final).
+
+`drive_file_id` continua salvo nas 58 linhas (não usado mais, só histórico) — o arquivo `.wmv`
+original permanece intocado no Drive da conta (nunca foi tocado, só lido).
+
+---
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
