@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Play, Info, FileText, File, Music, Image as ImageIcon, Loader2, FileSpreadsheet, FileType, Megaphone, Star } from 'lucide-react';
+import { Play, Info, FileText, File, Music, Image as ImageIcon, Loader2, FileSpreadsheet, FileType, Megaphone, Star, Highlighter } from 'lucide-react';
 import { useAnnouncementSettings } from '@/hooks/useAnnouncementSettings';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
@@ -13,6 +13,17 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { CATEGORY_ORDER } from '@/lib/courseCategories';
 import { formatDuration, matchesSearch, stripYearFromTitle, withTimeout, withRetry, describeLoadError } from '@/lib/utils';
 import type { Database } from '@/integrations/supabase/types';
+
+interface AnnotatedLesson {
+  lesson_id: string;
+  lesson_title: string;
+  course_title: string;
+  course_slug: string;
+  stroke_count: number;
+  updated_at: string;
+}
+
+const ANNOTATIONS_TAB = 'Minhas anotações';
 
 type Course = Database['public']['Tables']['courses']['Row'];
 type Lesson = Database['public']['Tables']['lessons']['Row'];
@@ -46,6 +57,8 @@ export default function MemberDashboardPage() {
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [favoriteLessons, setFavoriteLessons] = useState<FavoriteLesson[]>([]);
   const [favoriteLessonsLoading, setFavoriteLessonsLoading] = useState(false);
+  const [annotated, setAnnotated] = useState<AnnotatedLesson[]>([]);
+  const [annotatedLoading, setAnnotatedLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [loadErrorMessage, setLoadErrorMessage] = useState('');
@@ -186,6 +199,20 @@ export default function MemberDashboardPage() {
     return () => { alive = false; };
   }, [activeCategory, userId]);
 
+  // Mesma ideia da aba Favoritos: só busca as anotações quando o aluno abre a
+  // aba. A RPC já devolve ordenado pela anotação mais recente.
+  useEffect(() => {
+    if (activeCategory !== ANNOTATIONS_TAB || !userId) return;
+    let alive = true;
+    setAnnotatedLoading(true);
+    supabase.rpc('my_annotated_lessons' as never).then(({ data }) => {
+      if (!alive) return;
+      setAnnotated(((data || []) as unknown as AnnotatedLesson[]));
+      setAnnotatedLoading(false);
+    });
+    return () => { alive = false; };
+  }, [activeCategory, userId]);
+
   const handleUnfavoriteLesson = async (lessonId: string) => {
     if (!userId) return;
     setFavoriteLessons(prev => prev.filter(l => l.lesson_id !== lessonId));
@@ -253,15 +280,19 @@ export default function MemberDashboardPage() {
     // Favoritos sempre aparece, mesmo sem nada marcado ainda — o cliente
     // precisa ver que a opção existe, não só depois de favoritar algo.
     cats.unshift({ name: 'Favoritos', count: favorites.size });
+    // Sempre visível, como Favoritos: o aluno precisa descobrir que pode
+    // anotar, não só encontrar a aba depois de já ter anotado.
+    cats.unshift({ name: ANNOTATIONS_TAB, count: annotated.length });
 
     return cats;
-  }, [courses, favorites.size]);
+  }, [courses, favorites.size, annotated.length]);
 
   const categoryCourses = useMemo(() => {
     if (!activeCategory) return [];
     if (activeCategory === 'Favoritos') {
       return courses.filter(c => favorites.has(c.id));
     }
+    if (activeCategory === ANNOTATIONS_TAB) return [];
     return courses.filter(c => c.category === activeCategory);
   }, [courses, activeCategory, favorites]);
 
@@ -485,6 +516,50 @@ export default function MemberDashboardPage() {
                         })}
                       </div>
                     )}
+                  </div>
+                )}
+              </section>
+            ) : activeCategory === ANNOTATIONS_TAB ? (
+              <section className="space-y-4">
+                <div>
+                  <h2 className="font-secondary text-lg font-bold text-foreground mb-1">Minhas anotações</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Tudo que você grifou ou escreveu por cima dos PDFs, do mais recente para o mais antigo.
+                  </p>
+                </div>
+
+                {annotatedLoading ? (
+                  <div className="flex justify-center py-10">
+                    <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                  </div>
+                ) : annotated.length > 0 ? (
+                  <div className="rounded-xl border border-border overflow-hidden divide-y divide-border">
+                    {annotated.map(a => (
+                      <button
+                        key={a.lesson_id}
+                        onClick={() => navigate(`/membros/curso/${a.course_slug}?lesson=${a.lesson_id}`)}
+                        className="w-full flex items-center gap-3.5 px-4 py-3.5 bg-card hover:bg-secondary transition-colors group text-left"
+                      >
+                        <div className="w-9 h-9 rounded-full bg-secondary group-hover:bg-primary/15 flex items-center justify-center shrink-0 transition-colors">
+                          <Highlighter className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-foreground truncate">{a.lesson_title}</p>
+                          <p className="text-xs text-muted-foreground truncate">{stripYearFromTitle(a.course_title)}</p>
+                        </div>
+                        <span className="text-xs text-muted-foreground tabular-nums shrink-0">
+                          {a.stroke_count} {a.stroke_count === 1 ? 'marcação' : 'marcações'}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-border bg-card px-4 py-8 text-center">
+                    <Highlighter className="w-6 h-6 text-muted-foreground/50 mx-auto mb-2" />
+                    <p className="text-sm text-muted-foreground">
+                      Você ainda não anotou nada. Abra qualquer PDF e use a caneta ou o marca-texto
+                      na barra do topo — fica salvo aqui e sincroniza entre seus aparelhos.
+                    </p>
                   </div>
                 )}
               </section>

@@ -884,6 +884,53 @@ conferir `OPTIONS` — 500 ali é BOOT_ERROR, não erro de aplicação.
 
 ---
 
+### 2026-07-31 (sessão remota) — anotação nos PDFs, conclusão manual, curtidas
+
+**Anotação por cima dos PDFs.** Cliente relatou que os alunos baixavam a apostila e o app de
+terceiro recusava grifar. Investiguei baixando 4 amostras do Drive (Casalmed Combo Exclusive
+2026 e EstratégiaMed 2026 Apostilas): **todas criptografadas em AES-256 com senha de
+proprietário e `P=2580`** — imprimir e copiar permitidos, **anotar e modificar bloqueados**. A
+restrição está no arquivo original, aplicada pelas editoras; a plataforma só entrega os bytes.
+Remover isso seria quebrar medida técnica de proteção em obra de terceiros, então a saída foi
+o aluno anotar dentro da plataforma.
+
+| Arquivo | Mudança |
+|---------|---------|
+| `supabase/migrations/20260731140000_lesson_annotations.sql` | Tabela `lesson_annotations` (traços por aluno/aula) + RPC `my_annotated_lessons()`. RLS: só o próprio aluno lê e escreve — nem admin |
+| `src/lib/annotations.ts` | Motor de desenho: caneta, marca-texto (composição `multiply`, grifa sem cobrir a palavra), borracha e simplificação de traço |
+| `src/components/member/PdfViewer.tsx` | Canvas de anotação por cima de cada página, barra de ferramentas, autosave (1,2s + `pagehide`) |
+| `src/pages/MemberDashboardPage.tsx` | Aba **"Minhas anotações"** na barra lateral, do lado de Favoritos |
+| `src/test/annotations.test.ts` | 7 testes do motor |
+
+**Pontos gravados NORMALIZADOS (0..1 sobre a página), nunca em pixels** — é o que faz o grifo
+cair sobre a mesma palavra no celular, no desktop e em qualquer zoom. Sem ferramenta ativa o
+overlay não captura ponteiro, então rolagem e seleção de texto seguem normais.
+
+**Não foi feito de propósito:** exportar um PDF novo com os traços embutidos. Isso exigiria
+descriptografar a apostila da editora e gerar arquivo sem as restrições — a mesma quebra de
+proteção recusada acima.
+
+**Caixa de "concluída"** (`CourseDetailPage` + `LessonPlayer`): o check verde na lista já
+existia, mas só vídeo chegava nele (inferido de 92% de reprodução). PDF, apostila, imagem e
+planilha não tinham como ser marcados. Agora há caixa na lista e no cabeçalho do player, para
+qualquer tipo. Desmarcar zera o progresso junto.
+
+**Curtidas na comunidade** (`20260731170000_community_likes.sql`): tabela `community_likes` com
+PK (user_id, comment_id) — a chave já impede curtir duas vezes. `toggle_comment_like()` curte/
+descurte numa ida só; `community_feed`, `community_replies` e `course_comments_feed` passaram a
+devolver `like_count` e `liked_by_me`. Contagem pública, **quem curtiu é privado**. A ordenação
+"Mais relevantes" passou a somar curtidas com respostas. `<LikeButton>` compartilhado entre o
+feed geral, a aba do curso e as respostas aninhadas.
+
+**Download com a extensão certa** (`downloadFilenameFor` em `src/lib/utils.ts`): o `.colpkg` do
+Anki baixava sem extensão utilizável, mesmo problema já visto no `.apkg`. O Drive reporta esses
+baralhos ora como `application/octetstream`, ora como `application/x-zip` — nenhuma tabela de
+mime cobre todos. Agora o nome do download é o título verbatim (que é o nome do arquivo no
+Drive) e a extensão derivada do mime é só rede de segurança para os 1.268 arquivos sem extensão
+no nome. 7 testes cobrindo os casos reais da biblioteca.
+
+---
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
