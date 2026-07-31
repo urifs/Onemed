@@ -75,7 +75,39 @@ export function LessonPlayer({
   // navegador do aluno está acessando. Sem retry aqui, isso vira um erro de
   // CORS/403 visível bem na cara do aluno em vez de só demorar 1-2s a mais.
   const RETRY_DELAYS_MS = [2000, 3000, 5000, 8000, 13000];
+
+  /**
+   * Descobre POR QUE o <video> falhou.
+   *
+   * O elemento de mídia não conta: o evento `error` é o mesmo para 403, 502
+   * e conexão caída. Refazendo a requisição dá pra ler o status que o worker
+   * devolveu — em especial o 429, que ele usa só para a cota diária de
+   * download do arquivo no Drive.
+   *
+   * Precisa ser `Range: bytes=0-` (aberto), igual ao que o navegador pede: o
+   * Google só recusa quando o pedido é do arquivo todo, um range pequeno
+   * passa mesmo com a cota estourada e daria um falso "está tudo bem". O
+   * corpo é abortado assim que os cabeçalhos chegam, então nada é baixado.
+   */
+  const quotaMessage = async (url: string): Promise<string | null> => {
+    const ctrl = new AbortController();
+    try {
+      const res = await fetch(url, { headers: { Range: 'bytes=0-' }, signal: ctrl.signal });
+      if (res.status !== 429) return null;
+      return (await res.text()).slice(0, 300);
+    } catch {
+      return null; // rede caiu no meio: trata como falha comum e tenta de novo
+    } finally {
+      ctrl.abort();
+    }
+  };
+
   const handleMediaError = () => {
+    // Cota estourada não melhora tentando de novo — some com o "carregando"
+    // e explica, em vez de insistir cinco vezes e mostrar um erro genérico.
+    if (src) {
+      void quotaMessage(src).then(msg => { if (msg) { mediaRetries.current = RETRY_DELAYS_MS.length; setError(msg); } });
+    }
     if (mediaRetries.current >= RETRY_DELAYS_MS.length) {
       setError('Não foi possível carregar este arquivo. Tente novamente em instantes.');
       return;

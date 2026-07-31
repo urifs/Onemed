@@ -105,6 +105,19 @@ export default {
     }
 
     if (!driveRes.ok && driveRes.status !== 206) {
+      // O Drive limita quantos bytes de UM MESMO arquivo podem ser baixados
+      // por dia. Quando estoura, responde 403 `downloadQuotaExceeded` — e o
+      // aluno via só "não foi possível carregar", que parece defeito da
+      // plataforma e vira chamado no suporte. É por arquivo e reseta sozinho,
+      // então a informação útil é "essa aula volta em algumas horas".
+      const body = await driveRes.text().catch(() => '');
+      if (driveRes.status === 403 && body.includes('downloadQuotaExceeded')) {
+        return new Response(
+          'Esta aula atingiu o limite diário de acessos do Google Drive. '
+          + 'Ela volta a abrir automaticamente em algumas horas — as outras aulas seguem normais.',
+          { status: 429, headers: cors },
+        );
+      }
       return new Response('Não foi possível carregar o arquivo', { status: 502, headers: cors });
     }
 
