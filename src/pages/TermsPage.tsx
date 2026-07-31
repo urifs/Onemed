@@ -1,12 +1,18 @@
 import { Link } from 'react-router-dom';
 import { ArrowLeft, FileText } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { Seo } from '@/seo/Seo';
 
 export default function TermsPage() {
   return (
     <div className="min-h-screen bg-background text-foreground py-16 px-4">
+      <Seo
+        title="Termos de Uso | OneMed"
+        description="Termos de uso da plataforma OneMed: condições de acesso, planos, pagamentos e política de reembolso."
+        path="/termos"
+      />
       <ThemeToggle className="fixed top-4 right-4 z-50" />
-      <div className="max-w-3xl mx-auto">
+      <main className="max-w-3xl mx-auto">
         <Link to="/" className="flex items-center gap-2 text-muted-foreground hover:text-foreground mb-8 text-sm">
           <ArrowLeft className="w-4 h-4" /> Voltar
         </Link>
@@ -28,7 +34,7 @@ export default function TermsPage() {
             </div>
           ))}
         </div>
-      </div>
+      </main>
     </div>
   );
 }

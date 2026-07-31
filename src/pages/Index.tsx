@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
-import { supabase } from '@/integrations/supabase/client';
 import { trackLead } from '@/lib/pixel';
 import {
   LandingHeader,
@@ -9,8 +8,13 @@ import {
   CoursesSection,
   BooksSection,
   FaqSection,
-  LandingFooter
+  LandingFooter,
+  LANDING_FAQS,
 } from '@/components/landing';
+import { Seo } from '@/seo/Seo';
+import { BOOK_COUNT, COURSE_COUNT } from '@/seo/siteConfig';
+import { educationalOrganization, faqPage, website } from '@/seo/structuredData';
+import { PillarLinks } from '@/components/seo/InternalLinks';
 
 const DEFAULT_COUNTRY = { code: '+55', country: 'Brasil', flag: 'BR' };
 
@@ -77,6 +81,12 @@ export default function Index() {
         throw new Error('Não foi possível iniciar a sessão. Tente novamente.');
       }
 
+      // Import dinâmico de propósito: criar o cliente do Supabase exige as
+      // variáveis de ambiente já no import do módulo, e o prerender do build
+      // roda em Node sem elas. Como a sessão só é usada aqui, depois do
+      // envio do formulário, carregar sob demanda mantém a landing
+      // renderizável no servidor (e tira o cliente do bundle inicial).
+      const { supabase } = await import('@/integrations/supabase/client');
       const { error: sessionErr } = await supabase.auth.setSession({
         access_token: data.access_token,
         refresh_token: data.refresh_token,
@@ -104,7 +114,16 @@ export default function Index() {
 
   return (
     <div className="min-h-screen bg-background">
+      <Seo
+        title="OneMed | O Maior Acervo de Cursos Médicos do Brasil"
+        description={`Mais de ${COURSE_COUNT} cursos médicos e ${BOOK_COUNT} livros para residência, Revalida e graduação. Teste grátis, sem cartão.`}
+        path="/"
+        jsonLd={[website(), educationalOrganization(), faqPage(LANDING_FAQS)]}
+      />
       <LandingHeader />
+      {/* <main> delimita o conteúdo principal: é o que leitor de tela e
+          crawler usam para separar conteúdo de navegação e rodapé. */}
+      <main>
       <HeroSection
         email={email}
         setEmail={setEmail}
@@ -120,6 +139,13 @@ export default function Index() {
       <CoursesSection />
       <BooksSection />
       <FaqSection />
+      {/* Porta de entrada do silo: leva a home para os hubs de maior
+          intenção de busca, distribuindo autoridade a partir da página
+          mais forte do domínio. */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <PillarLinks />
+      </div>
+      </main>
       <LandingFooter />
     </div>
   );

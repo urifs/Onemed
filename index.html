@@ -8,6 +8,17 @@
     <meta name="keywords" content="medicina, cursos médicos, livros médicos, residência médica, revalida, OneMed" />
     <meta name="author" content="OneMed" />
 
+    <!-- Fontes: descobertas já no primeiro byte do HTML, em vez de depois do
+         CSS (ver comentário em src/index.css). O preconnect abre a conexão
+         com o host dos arquivos .woff2 em paralelo, poupando DNS + TLS do
+         caminho crítico do texto, que é o elemento de LCP destas páginas. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
+    />
+
     <!-- Facebook Domain Verification -->
     <meta name="facebook-domain-verification" content="58u9bw0z32gxy5zigwlhep31lj0yf3" />
     <meta name="facebook-domain-verification" content="iwf6am4msdrru5kjckgc9qmzwv07j6" />
@@ -24,30 +35,68 @@
     <meta name="twitter:description" content="O maior acervo de conteúdos médicos da América Latina." />
     <meta name="twitter:image" content="https://storage.googleapis.com/gpt-engineer-file-uploads/OnBiQ3FMCMcJfw1TwEusK1LzDSl1/social-images/social-1774301887126-Captura_de_tela_de_2026-03-23_18-37-48.webp" />
 
-    <!-- Google tag (gtag.js) -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=AW-18165731833"></script>
+    <!--
+      Analytics e pixels: os STUBS são criados de forma síncrona, o
+      DOWNLOAD dos scripts é adiado.
+
+      Essa separação é o ponto todo. O stub (`gtag` empilhando em dataLayer,
+      `fbq` empilhando em fbq.queue) é o que garante que nenhum evento se
+      perca: uma chamada feita antes de o script real chegar fica na fila e é
+      reproduzida quando ele carrega. Já o download e a execução dos scripts
+      de terceiros — que é o que realmente disputa a thread principal e piora
+      INP/LCP — sai do carregamento inicial e vai para o primeiro momento
+      ocioso depois do `load`.
+
+      Não dá para simplesmente atrasar tudo: sem o stub, o `fbq('track',...)`
+      disparado por um usuário que sai rápido da página não seria enfileirado
+      e o evento sumiria. Foi o cuidado que essa mudança precisou ter, já que
+      a atribuição de campanha depende desses eventos.
+    -->
     <script>
       window.dataLayer = window.dataLayer || [];
       function gtag(){dataLayer.push(arguments);}
       gtag('js', new Date());
       gtag('config', 'AW-18165731833');
-    </script>
 
-    <!-- Meta Pixel Code (Pixel 1: 797374160058274 + Pixel 2: 2400702203708115) -->
-    <script>
-      !function(f,b,e,v,n,t,s)
-      {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+      !function(f,b,e,v,n){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
       n.callMethod.apply(n,arguments):n.queue.push(arguments)};
-      if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
-      n.queue=[];t=b.createElement(e);t.async=!0;
-      t.src=v;s=b.getElementsByTagName(e)[0];
-      s.parentNode.insertBefore(t,s)}(window, document,'script',
-      'https://connect.facebook.net/en_US/fbevents.js');
+      if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[]}(window);
       fbq('init', '797374160058274');
       fbq('init', '2400702203708115');
       fbq('track', 'PageView');
+
+      (function () {
+        var loaded = false;
+        function loadThirdParty() {
+          if (loaded) return;
+          loaded = true;
+          [
+            'https://www.googletagmanager.com/gtag/js?id=AW-18165731833',
+            'https://connect.facebook.net/en_US/fbevents.js'
+          ].forEach(function (src) {
+            var s = document.createElement('script');
+            s.async = true;
+            s.src = src;
+            document.head.appendChild(s);
+          });
+        }
+        // requestIdleCallback espera a thread principal desocupar; o timeout
+        // é o teto para que uma página que nunca fica ociosa ainda carregue
+        // os scripts. O fallback cobre Safari, que só passou a ter
+        // requestIdleCallback recentemente.
+        function schedule() {
+          if ('requestIdleCallback' in window) requestIdleCallback(loadThirdParty, { timeout: 3000 });
+          else setTimeout(loadThirdParty, 1200);
+        }
+        if (document.readyState === 'complete') schedule();
+        else window.addEventListener('load', schedule);
+        // Se o usuário interagir antes disso, carrega na hora: a partir daí
+        // ele pode disparar um evento de conversão a qualquer momento.
+        ['pointerdown', 'keydown', 'touchstart'].forEach(function (evt) {
+          window.addEventListener(evt, loadThirdParty, { once: true, passive: true });
+        });
+      })();
     </script>
-    <!-- End Meta Pixel Code -->
   </head>
 
   <body>

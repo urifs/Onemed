@@ -64,9 +64,9 @@ export const HeroSection = ({
           </div>
 
           <h1 className="font-secondary text-[2.75rem] leading-[1.05] sm:text-6xl xl:text-[5rem] font-bold tracking-tight text-foreground mb-6">
-            O maior acervo
+            O maior acervo de
             <br />
-            médico <span className="text-primary">do Brasil</span>
+            cursos médicos <span className="text-primary">do Brasil</span>
           </h1>
 
           <p className="text-lg text-muted-foreground leading-relaxed mb-8 max-w-lg">

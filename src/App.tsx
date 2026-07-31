@@ -37,10 +37,35 @@ import EmailCampaignPage from "./pages/EmailCampaignPage";
 import SMSPage from "./pages/SMSPage";
 import WhatsAppPage from "./pages/WhatsAppPage";
 import NotFound from "./pages/NotFound";
+import CoursesIndexPage from "./pages/public/CoursesIndexPage";
+import CategoryPage from "./pages/public/CategoryPage";
+import PillarHubPage from "./pages/public/PillarHubPage";
+import PlansPage from "./pages/public/PlansPage";
+import { PILLAR_HUBS, isNoIndexPath } from "@/seo/siteConfig";
+import { Seo } from "@/seo/Seo";
 import WhatsAppButton from "./components/WhatsAppButton";
 import { KickedOutModal } from "./components/member/KickedOutModal";
 
 const queryClient = new QueryClient();
+
+// Área do aluno, painel admin e páginas de funil nunca podem ser indexadas:
+// a primeira é conteúdo pago, a segunda é administrativa e a terceira encheria
+// a busca de páginas de checkout sem conteúdo. O robots.txt já bloqueia o
+// rastreamento, mas `noindex` é o que REMOVE do índice uma URL que já entrou —
+// bloquear no robots sozinho não remove nada, só impede o Google de reler a
+// página (e de ver o noindex).
+const PrivateRouteSeo = () => {
+  const location = useLocation();
+  if (!isNoIndexPath(location.pathname)) return null;
+  return (
+    <Seo
+      title="OneMed"
+      description="Área restrita da plataforma OneMed."
+      path={location.pathname}
+      noindex
+    />
+  );
+};
 
 const FbclidCapture = () => {
   useEffect(() => {
@@ -100,9 +125,22 @@ const App = () => (
           <BrowserRouter>
             <FbclidCapture />
             <PixelPageViews />
+            <PrivateRouteSeo />
             <Routes>
             {/* Public routes */}
             <Route path="/" element={<Index />} />
+
+            {/* Silo de SEO: hubs de pilar + índice e páginas de categoria.
+                Os hubs são registrados um a um a partir de PILLAR_HUBS em vez
+                de uma rota `/:hub` — uma rota de parâmetro na raiz casaria com
+                QUALQUER caminho e engoliria o 404, fazendo toda URL errada
+                responder 200 (soft 404, que o Google penaliza). */}
+            <Route path="/cursos" element={<CoursesIndexPage />} />
+            <Route path="/cursos/:categoria" element={<CategoryPage />} />
+            <Route path="/planos" element={<PlansPage />} />
+            {PILLAR_HUBS.map(hub => (
+              <Route key={hub.slug} path={`/${hub.slug}`} element={<PillarHubPage slug={hub.slug} />} />
+            ))}
             <Route path="/admin/login" element={<LoginPage />} />
             <Route path="/admin/register" element={<RegisterPage />} />
 

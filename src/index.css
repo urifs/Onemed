@@ -1,4 +1,10 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+/* As fontes NÃO são carregadas por @import aqui de propósito.
+   @import dentro do CSS só é descoberto depois que o navegador baixa e
+   analisa este arquivo, criando uma cadeia (html → css → css da fonte →
+   arquivo da fonte) inteiramente no caminho crítico do LCP. Como o elemento
+   de LCP das páginas públicas é o <h1> (não há nenhuma imagem nelas), essa
+   cadeia era o gargalo. O carregamento foi para o <head> do index.html, com
+   preconnect, onde é descoberto no primeiro byte do HTML. */
 
 @tailwind base;
 @tailwind components;

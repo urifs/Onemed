@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ChevronDown, ChevronUp, LayoutGrid, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { supabase } from '@/integrations/supabase/client';
 import { CATEGORY_ORDER, CATEGORY_ICON } from '@/lib/courseCategories';
 import { stripYearFromTitle, matchesSearch } from '@/lib/utils';
 
@@ -21,11 +20,20 @@ export const CoursesSection = () => {
   // Mesma fonte que a área de membros usa (courses.category) — RPC pública
   // porque courses só é legível por membro/admin via RLS, e a landing page
   // não exige login.
+  // Import dinâmico: o cliente do Supabase exige as variáveis de ambiente já
+  // no import do módulo, e o prerender do build renderiza a landing em Node,
+  // sem elas. Carregar dentro do efeito (que não roda no servidor) mantém a
+  // página renderizável no build sem mudar nada no navegador.
   useEffect(() => {
-    supabase.rpc('public_course_catalog').then(({ data, error }) => {
-      if (error) { console.error('Failed to load course catalog', error); return; }
-      setCourses((data || []) as CatalogCourse[]);
-    });
+    let alive = true;
+    import('@/integrations/supabase/client').then(({ supabase }) =>
+      supabase.rpc('public_course_catalog').then(({ data, error }) => {
+        if (!alive) return;
+        if (error) { console.error('Failed to load course catalog', error); return; }
+        setCourses((data || []) as CatalogCourse[]);
+      }),
+    );
+    return () => { alive = false; };
   }, []);
 
   const byCategory = useMemo(() => {

@@ -2,7 +2,11 @@ import { useState } from 'react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Plus } from 'lucide-react';
 
-const faqs = [
+// Exportado para o JSON-LD (FAQPage) usar exatamente este texto. O Google só
+// valida a marcação de FAQ se pergunta e resposta estiverem VISÍVEIS na
+// página — manter duas cópias do texto é como elas divergem e a marcação
+// passa a descrever algo que não está na tela.
+export const LANDING_FAQS = [
   {
     question: 'Como funciona o acesso?',
     answer: 'O acesso é feito direto pela nossa plataforma própria, pelo site ou celular — sem precisar instalar nenhum app externo. Você recebe seu login por e-mail e já pode assistir às aulas, ler os livros e apostilas direto na tela.'
@@ -46,7 +50,7 @@ export const FaqSection = () => {
           </div>
 
           <div className="divide-y divide-border border-t border-b border-border">
-            {faqs.map((faq, index) => (
+            {LANDING_FAQS.map((faq, index) => (
               <Collapsible
                 key={index}
                 open={openFaq === index}

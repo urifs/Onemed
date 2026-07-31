@@ -1,12 +1,18 @@
 import { Link } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { Seo } from '@/seo/Seo';
 
 export default function PrivacyPage() {
   return (
     <div className="min-h-screen bg-background text-foreground py-16 px-4">
+      <Seo
+        title="Política de Privacidade | OneMed"
+        description="Como a OneMed coleta, usa e protege os dados pessoais dos alunos da plataforma."
+        path="/privacidade"
+      />
       <ThemeToggle className="fixed top-4 right-4 z-50" />
-      <div className="max-w-3xl mx-auto">
+      <main className="max-w-3xl mx-auto">
         <Link to="/" className="flex items-center gap-2 text-muted-foreground hover:text-foreground mb-8 text-sm">
           <ArrowLeft className="w-4 h-4" /> Voltar
         </Link>
@@ -27,7 +33,7 @@ export default function PrivacyPage() {
             </div>
           ))}
         </div>
-      </div>
+      </main>
     </div>
   );
 }

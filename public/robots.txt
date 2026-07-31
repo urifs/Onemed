@@ -1,14 +1,31 @@
-User-agent: Googlebot
-Allow: /
-
-User-agent: Bingbot
-Allow: /
-
-User-agent: Twitterbot
-Allow: /
-
-User-agent: facebookexternalhit
-Allow: /
+# OneMed — https://onemedcursos.com.br
+#
+# A área do aluno (/membros) é conteúdo PAGO e o painel (/admin) é
+# administrativo: nenhum dos dois pode entrar no índice. As rotas de
+# pagamento e login são funil, sem conteúdo que valha ranquear.
+#
+# Cada uma dessas rotas também devolve <meta name="robots" content="noindex">
+# pelo app. Os dois mecanismos são complementares, não redundantes: o
+# Disallow impede o rastreamento, o noindex é o que REMOVE do índice uma URL
+# que já entrou. Bloquear só no robots deixaria uma página já indexada lá
+# para sempre, porque o Google nunca mais leria a página para ver o noindex.
 
 User-agent: *
 Allow: /
+
+Disallow: /admin
+Disallow: /admin/
+Disallow: /membros
+Disallow: /membros/
+Disallow: /payment/
+Disallow: /claim-access
+Disallow: /checkout
+Disallow: /login
+
+# Parâmetros de campanha geram infinitas variantes da mesma URL. A canonical
+# já resolve a duplicidade, isto só evita gastar orçamento de rastreamento.
+Disallow: /*?fbclid=
+Disallow: /*?gclid=
+Disallow: /*?utm_
+
+Sitemap: https://onemedcursos.com.br/sitemap.xml
