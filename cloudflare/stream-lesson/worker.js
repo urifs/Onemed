@@ -105,16 +105,21 @@ export default {
     }
 
     if (!driveRes.ok && driveRes.status !== 206) {
-      // O Drive limita quantos bytes de UM MESMO arquivo podem ser baixados
-      // por dia. Quando estoura, responde 403 `downloadQuotaExceeded` — e o
-      // aluno via só "não foi possível carregar", que parece defeito da
-      // plataforma e vira chamado no suporte. É por arquivo e reseta sozinho,
-      // então a informação útil é "essa aula volta em algumas horas".
+      // O armazenamento de origem limita quantos bytes de UM MESMO arquivo
+      // podem ser baixados por dia. Quando estoura, responde 403
+      // `downloadQuotaExceeded` — e o aluno via só "não foi possível
+      // carregar", que parece defeito da plataforma e vira chamado no
+      // suporte. É por arquivo e reseta sozinho, então a informação útil é
+      // "essa aula volta em algumas horas".
+      //
+      // A mensagem NÃO cita o Google Drive: para o aluno a OneMed é a
+      // plataforma inteira, e onde o arquivo está guardado por trás é
+      // detalhe de infraestrutura nosso.
       const body = await driveRes.text().catch(() => '');
       if (driveRes.status === 403 && body.includes('downloadQuotaExceeded')) {
         return new Response(
-          'Esta aula atingiu o limite diário de acessos do Google Drive. '
-          + 'Ela volta a abrir automaticamente em algumas horas — as outras aulas seguem normais.',
+          'Esta aula atingiu o limite de acessos de hoje. '
+          + 'Ela volta a abrir automaticamente em algumas horas — as demais aulas seguem normais.',
           { status: 429, headers: cors },
         );
       }

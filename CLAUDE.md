@@ -1025,6 +1025,13 @@ o motivo** em vez de um 502 genérico, e o `LessonPlayer` refaz a requisição a
 esse status (o evento `error` do `<video>` é igual para qualquer causa) — nesse caso para de
 tentar de novo, porque insistir não resolve.
 
+> ⚠️ **Nenhuma mensagem exibida ao ALUNO pode citar o Google Drive.** Para quem assina, a OneMed
+> é a plataforma inteira; onde o arquivo está guardado por trás é infraestrutura nossa. O texto
+> em produção é "Esta aula atingiu o limite de acessos de hoje. Ela volta a abrir
+> automaticamente em algumas horas — as demais aulas seguem normais." As mensagens de
+> `member-sync-library` continuam podendo citar o Drive: são do painel admin, onde o Drive é o
+> assunto da tela.
+
 Conferido em produção com uma conta de teste temporária (criada e apagada na mesma sessão):
 aula normal devolve `206` com bytes de MP4 de verdade (streaming intacto), aula bloqueada
 devolve a mensagem nova. Detalhe: a bloqueada responde `206` normalmente para um range pequeno
