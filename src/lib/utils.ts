@@ -260,6 +260,20 @@ export function sanitizeFilename(title: string): string {
   return title.replace(/[\\/:*?"<>|]/g, '').trim() || 'arquivo';
 }
 
+// O título da aula é o nome do arquivo no Drive, extensão inclusa. Anexar uma
+// extensão derivada por cima disso corrompia o download: um baralho do Anki
+// `Imunização.apkg` virava `Imunização.apkg.bin` (o mime que o Drive dá para
+// .apkg — `application/vnd.anki` ou `application/octetstream` — não estava na
+// tabela, e o tipo 'other' também não, então caía no 'bin'), e o Anki recusa
+// importar o arquivo com esse nome. Até PDF saía como `Apostila.pdf.pdf`.
+// Se o nome já termina em extensão, ela é a fonte da verdade — só arquivo sem
+// extensão nenhuma precisa que a gente adivinhe a partir do mime/tipo.
+export function downloadFilenameFor(lesson: { title: string; type: string; mime_type?: string | null }): string {
+  const name = sanitizeFilename(lesson.title);
+  if (/\.[A-Za-z0-9]{1,8}$/.test(name)) return name;
+  return `${name}.${fileExtensionFor(lesson)}`;
+}
+
 // "Online há X" no quadro de presença do admin — diferente do timeAgo curto
 // de MembersPage (só minutos), aqui a janela pode ser de dias.
 export function formatLastSeen(iso: string): string {

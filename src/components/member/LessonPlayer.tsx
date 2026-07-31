@@ -6,7 +6,7 @@ import { PdfViewer } from './PdfViewer';
 import { OfficeViewer } from './OfficeViewer';
 import { TxtViewer } from './TxtViewer';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { fileExtensionFor, sanitizeFilename } from '@/lib/utils';
+import { downloadFilenameFor } from '@/lib/utils';
 import type { Database } from '@/integrations/supabase/types';
 
 type Lesson = Database['public']['Tables']['lessons']['Row'];
@@ -19,7 +19,10 @@ const PLAYBACK_RATE_STORAGE_KEY = 'onemed_playback_rate';
 // impressão, então ganham download/impressão de verdade. (Vitalício Pro tem
 // um caminho de download separado — o seletor em massa da CourseDetailPage —
 // que libera vídeo/áudio também; isso aqui só rege o player avulso.)
-const DOWNLOADABLE_TYPES = ['pdf', 'image', 'doc', 'sheet', 'txt'];
+// 'other' entra na lista porque é onde caem os materiais que não dá pra
+// consumir dentro do navegador de jeito nenhum — baralho do Anki (.apkg),
+// .epub, .zip: sem download eles são inúteis pro aluno.
+const DOWNLOADABLE_TYPES = ['pdf', 'image', 'doc', 'sheet', 'txt', 'other'];
 
 interface LessonPlayerProps {
   lesson: Lesson;
@@ -206,7 +209,7 @@ export function LessonPlayer({
       const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = blobUrl;
-      a.download = `${sanitizeFilename(lesson.title)}.${fileExtensionFor(lesson)}`;
+      a.download = downloadFilenameFor(lesson);
       document.body.appendChild(a);
       a.click();
       a.remove();

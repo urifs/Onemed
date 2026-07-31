@@ -15,8 +15,9 @@ import { CommunityTab } from '@/components/member/CommunityTab';
 import { CATEGORY_ICON } from '@/lib/courseCategories';
 import {
   formatDuration, formatFileSize, matchesSearch, stripYearFromTitle, withTimeout, withRetry, describeLoadError,
-  fileExtensionFor, sanitizeFilename,
+  downloadFilenameFor,
 } from '@/lib/utils';
+import { CourseTree } from '@/components/member/CourseTree';
 import type { Database } from '@/integrations/supabase/types';
 
 type Course = Database['public']['Tables']['courses']['Row'];
@@ -94,7 +95,6 @@ export default function CourseDetailPage() {
   const [loadErrorMessage, setLoadErrorMessage] = useState('');
   const [retryTick, setRetryTick] = useState(0);
   const [query, setQuery] = useState('');
-  const [pendingScrollId, setPendingScrollId] = useState<string | null>(null);
   const autoOpenId = searchParams.get('lesson');
 
   // Download em massa (aulas + arquivos) é um perk exclusivo do Vitalício
@@ -225,42 +225,23 @@ export default function CourseDetailPage() {
   // Sumário: sempre reflete a estrutura completa do curso (nunca filtrado
   // por busca/tipo), pra servir de índice confiável — cada bloco é um
   // módulo (ou o "Conteúdo geral" pra aulas soltas sem módulo).
-  const summaryBlocks = useMemo(() => {
-    const byModule = new Map<string | null, { video: number; file: number }>();
-    for (const l of lessons) {
-      const entry = byModule.get(l.module_id) || { video: 0, file: 0 };
-      if (l.type === 'video') entry.video++; else entry.file++;
-      byModule.set(l.module_id, entry);
-    }
-    const blocks: { id: string; title: string; videoCount: number; fileCount: number }[] = [];
-    const root = byModule.get(null);
-    if (root) blocks.push({ id: moduleBlockId(null), title: 'Conteúdo geral', videoCount: root.video, fileCount: root.file });
-    for (const mod of modules) {
-      const entry = byModule.get(mod.id);
-      if (entry) blocks.push({ id: moduleBlockId(mod.id), title: moduleLabel(mod), videoCount: entry.video, fileCount: entry.file });
-    }
-    return blocks;
-  }, [lessons, modules]);
+  // A árvore marca as aulas já concluídas com um check, do mesmo jeito que a
+  // lista principal.
+  const completedLessonIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const [lessonId, p] of Object.entries(progressMap)) if (p.completed) ids.add(lessonId);
+    return ids;
+  }, [progressMap]);
 
-  // Depois de trocar de aba (pra onde o bloco realmente mora), espera o
-  // conteúdo daquela aba renderizar e só então rola até ele — reagir a
-  // videoGroups/fileGroups garante que o elemento já existe no DOM.
-  useEffect(() => {
-    if (!pendingScrollId) return;
-    const el = document.getElementById(pendingScrollId);
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      setPendingScrollId(null);
-    }
-  }, [pendingScrollId, tab, videoGroups, fileGroups]);
 
-  const handleSummarySelect = (block: { id: string; videoCount: number; fileCount: number }) => {
-    // Limpa busca/filtro — senão o bloco pode ficar de fora da lista
-    // filtrada e a rolagem não encontra nada pra ir.
+  // Clicar num arquivo da árvore abre o player direto. Limpa busca/filtro e
+  // põe a aba certa por baixo, pra que fechar o player caia numa lista que de
+  // fato contém aquele item em vez de numa tela vazia.
+  const handleTreeSelect = (lesson: Lesson) => {
     setQuery('');
     setContentTypeFilter('all');
-    setTab(block.videoCount > 0 ? 'aulas' : 'arquivos');
-    setPendingScrollId(block.id);
+    setTab(lesson.type === 'video' ? 'aulas' : 'arquivos');
+    setActiveLesson(lesson);
   };
 
   const handleProgress = async (lessonId: string, watchedSeconds: number, completed: boolean) => {
@@ -330,7 +311,7 @@ export default function CourseDetailPage() {
         const blobUrl = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = blobUrl;
-        a.download = `${sanitizeFilename(lesson.title)}.${fileExtensionFor(lesson)}`;
+        a.download = downloadFilenameFor(lesson);
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -433,7 +414,13 @@ export default function CourseDetailPage() {
 
       <main className={`max-w-[1280px] mx-auto px-4 md:px-8 ${selectMode && selectedIds.size > 0 ? 'pb-24' : 'pb-16'}`}>
         <div className="md:flex md:items-start md:gap-8">
-          <CourseSummarySidebar blocks={summaryBlocks} onSelect={handleSummarySelect} />
+          <CourseSummarySidebar
+            modules={modules}
+            lessons={lessons}
+            activeLessonId={activeLesson?.id}
+            completedIds={completedLessonIds}
+            onSelectLesson={handleTreeSelect}
+          />
 
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between gap-2 border-b border-border mb-6">
@@ -556,53 +543,41 @@ export default function CourseDetailPage() {
   );
 }
 
-interface SummaryBlock { id: string; title: string; videoCount: number; fileCount: number }
 
 // Mesma receita do CategorySidebar: coluna fixa (sticky) no desktop, gaveta
 // por hambúrguer no mobile — o sumário precisa ficar visível junto do
 // conteúdo (não substituindo ele numa aba), pra servir de índice de
 // verdade enquanto o aluno navega pelo curso.
-function CourseSummarySidebar({ blocks, onSelect }: { blocks: SummaryBlock[]; onSelect: (block: SummaryBlock) => void }) {
+function CourseSummarySidebar({
+  modules, lessons, activeLessonId, completedIds, onSelectLesson,
+}: {
+  modules: CourseModule[];
+  lessons: Lesson[];
+  activeLessonId?: string | null;
+  completedIds: Set<string>;
+  onSelectLesson: (lesson: Lesson) => void;
+}) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  if (blocks.length === 0) return null;
-
-  const handleSelect = (block: SummaryBlock) => {
-    onSelect(block);
-    setMobileOpen(false);
-  };
+  if (modules.length === 0 && lessons.length === 0) return null;
 
   const list = (
-    <div className="space-y-0.5">
-      {blocks.map((block, i) => (
-        <button
-          key={block.id}
-          onClick={() => handleSelect(block)}
-          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-        >
-          <span className="w-5 h-5 rounded-full bg-secondary flex items-center justify-center shrink-0 text-[10px] font-bold tabular-nums">
-            {i + 1}
-          </span>
-          <span className="flex-1 min-w-0">
-            <span className="block text-[13.5px] truncate">{block.title}</span>
-            <span className="block text-[11px] opacity-70 mt-0.5">
-              {block.videoCount > 0 && `${block.videoCount} aula${block.videoCount !== 1 ? 's' : ''}`}
-              {block.videoCount > 0 && block.fileCount > 0 && ' · '}
-              {block.fileCount > 0 && `${block.fileCount} arquivo${block.fileCount !== 1 ? 's' : ''}`}
-            </span>
-          </span>
-        </button>
-      ))}
-    </div>
+    <CourseTree
+      modules={modules}
+      lessons={lessons}
+      activeLessonId={activeLessonId}
+      completedIds={completedIds}
+      onSelectLesson={(lesson) => { onSelectLesson(lesson); setMobileOpen(false); }}
+    />
   );
 
   return (
     <>
       {/* Desktop: coluna fixa à esquerda, acompanha o scroll da página. */}
-      <aside className="hidden md:block w-[240px] shrink-0">
+      <aside className="hidden md:block w-[280px] shrink-0">
         <div className="sticky top-[84px] max-h-[calc(100vh-104px)] overflow-y-auto pr-1">
           <p className="px-3 pb-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-            Sumário
+            Mapa do curso
           </p>
           {list}
         </div>
@@ -615,7 +590,7 @@ function CourseSummarySidebar({ blocks, onSelect }: { blocks: SummaryBlock[]; on
           className="inline-flex items-center gap-2 max-w-full px-3.5 py-2 rounded-lg bg-secondary border border-border text-sm font-medium text-foreground"
         >
           <ListOrdered className="w-4 h-4 shrink-0" />
-          <span className="truncate">Sumário</span>
+          <span className="truncate">Mapa do curso</span>
         </button>
       </div>
 
@@ -624,7 +599,7 @@ function CourseSummarySidebar({ blocks, onSelect }: { blocks: SummaryBlock[]; on
           <div className="absolute inset-0 bg-black/60" onClick={() => setMobileOpen(false)} />
           <div className="relative w-[80vw] max-w-xs h-full bg-background border-r border-border overflow-y-auto p-5 animate-fade-in">
             <div className="flex items-center justify-between mb-4">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Sumário</p>
+              <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Mapa do curso</p>
               <button
                 onClick={() => setMobileOpen(false)}
                 aria-label="Fechar"
