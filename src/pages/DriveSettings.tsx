@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Progress } from '@/components/ui/progress';
 import { Checkbox } from '@/components/ui/checkbox';
+import { StorageAccountsCard, STORAGE_OAUTH_STATE } from '@/components/admin/StorageAccountsCard';
 
 const GOOGLE_CLIENT_ID = '110017470335-2l6er8r451vj5hf3ob05rvolc2p4v9ku.apps.googleusercontent.com';
 
@@ -41,27 +42,52 @@ export default function DriveSettings() {
     }
   };
 
-  // Handle OAuth callback code
+  // Retorno do OAuth do Google.
+  //
+  // Duas conexões diferentes voltam para esta MESMA URL: a do Drive de
+  // conteúdo (que serve as aulas) e a de uma conta extra só de armazenamento.
+  // O `state` é o que as separa — sem essa checagem, conectar uma conta de
+  // armazenamento sobrescreveria o Drive de conteúdo e derrubaria o acervo
+  // inteiro para os alunos.
+  const [storageReloadKey, setStorageReloadKey] = useState(0);
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const code = params.get('code');
-    if (code) {
+    const state = params.get('state');
+
+    if (!code) { fetchStatus(); return; }
+
+    if (state === STORAGE_OAUTH_STATE) {
       setConnecting(true);
-      supabase.functions.invoke('drive-oauth-callback', {
-        body: { code, redirect_uri: REDIRECT_URI },
+      supabase.functions.invoke('drive-storage-accounts', {
+        body: { action: 'connect', code, redirect_uri: REDIRECT_URI },
       }).then(({ data, error }) => {
         setConnecting(false);
         navigate('/admin/drive', { replace: true });
         if (error || data?.error) {
-          toast.error(data?.error || 'Erro ao conectar Drive');
+          toast.error(data?.error || 'Erro ao conectar a conta de armazenamento');
         } else {
-          toast.success('Google Drive conectado com sucesso!');
-          fetchStatus();
+          toast.success(`Conta ${data.email} conectada como armazenamento`);
+          setStorageReloadKey(k => k + 1);
         }
+        fetchStatus();
       });
-    } else {
-      fetchStatus();
+      return;
     }
+
+    setConnecting(true);
+    supabase.functions.invoke('drive-oauth-callback', {
+      body: { code, redirect_uri: REDIRECT_URI },
+    }).then(({ data, error }) => {
+      setConnecting(false);
+      navigate('/admin/drive', { replace: true });
+      if (error || data?.error) {
+        toast.error(data?.error || 'Erro ao conectar Drive');
+      } else {
+        toast.success('Google Drive conectado com sucesso!');
+        fetchStatus();
+      }
+    });
   }, []);
 
   const connectDrive = () => {
@@ -103,6 +129,8 @@ export default function DriveSettings() {
             </CardContent>
           </Card>
         )}
+
+        <StorageAccountsCard key={storageReloadKey} />
 
         {/* Status Card */}
         <Card className="bg-background-paper border-border">
