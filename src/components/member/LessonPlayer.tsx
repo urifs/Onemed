@@ -49,6 +49,12 @@ export function LessonPlayer({
   // preserva a explicação até o aluno trocar de aula.
   const quotaBlocked = useRef(false);
   const [imgRetryCount, setImgRetryCount] = useState(0);
+  // Quando a aula está sem franquia no armazenamento de origem, o player
+  // nativo não consegue tocar — mas o player oficial do Google, embutido,
+  // consegue: ele usa o pipeline de PRÉ-VISUALIZAÇÃO, que é outro caminho e
+  // não gasta a franquia de download. É o mesmo player que abre ao clicar no
+  // arquivo no Drive.
+  const [usarEmbed, setUsarEmbed] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(() => {
     const stored = Number(localStorage.getItem(PLAYBACK_RATE_STORAGE_KEY));
@@ -62,6 +68,7 @@ export function LessonPlayer({
     lastReported.current = 0;
     mediaRetries.current = 0;
     quotaBlocked.current = false;
+    setUsarEmbed(false);
     setImgRetryCount(0);
     getUrl(lesson.id)
       .then(url => { if (alive) setSrc(url); })
@@ -114,7 +121,12 @@ export function LessonPlayer({
       void quotaMessage(src).then(msg => {
         if (!msg) return;
         quotaBlocked.current = true;
-        setError(msg);
+        // Só há para onde cair se o arquivo ainda estiver no Drive de
+        // origem. Aula já migrada para o nosso armazenamento não tem
+        // drive_file_id útil — nesse caso a mensagem continua sendo a
+        // resposta certa.
+        if (lesson.drive_file_id && !lesson.storage_path) setUsarEmbed(true);
+        else setError(msg);
       });
     }
 
@@ -389,7 +401,18 @@ export function LessonPlayer({
       </div>
 
       <div className="flex-1 flex items-center justify-center p-3 md:p-6 min-h-0">
-        {error ? (
+        {usarEmbed && lesson.drive_file_id ? (
+          // `rm=minimal` tira a barra de ferramentas do Drive e deixa só o
+          // vídeo. O arquivo já é compartilhado por link, então o embed abre
+          // sem pedir login — não estamos afrouxando nada aqui.
+          <iframe
+            src={`https://drive.google.com/file/d/${lesson.drive_file_id}/preview?rm=minimal`}
+            title={lesson.title}
+            allow="autoplay; fullscreen"
+            allowFullScreen
+            className="w-full h-full rounded-lg border-0 bg-black"
+          />
+        ) : error ? (
           <p className="text-white/70 text-sm max-w-sm text-center">{error}</p>
         ) : !src ? (
           <Loader2 className="w-8 h-8 text-primary animate-spin" />
