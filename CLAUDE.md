@@ -1060,6 +1060,59 @@ aula normal devolve `206` com bytes de MP4 de verdade (streaming intacto), aula 
 devolve a mensagem nova. Detalhe: a bloqueada responde `206` normalmente para um range pequeno
 — só o `bytes=0-` que o navegador manda é recusado.
 
+### RESOLVIDO — aula sem franquia cai no player oficial do Google
+
+Depois de medir de verdade, o modelo anterior estava errado em dois pontos.
+
+**1. O limite não é do tamanho nem da conta — é POR ARQUIVO**, e depende de quanto aquele
+arquivo específico foi baixado nas últimas ~24h. Medido na MESMA conta (`medbrasil31`) e nos
+MESMOS cursos:
+
+| tamanho | resultado |
+|---|---|
+| 2173 MB | 206 abre |
+| 1580 MB | 206 abre |
+| 682 MB | 206 abre |
+| 2573 MB | 403 |
+| 1473 MB | 403 |
+| 487 MB | 403 |
+
+Um de 2,1 GB abre e um de 487 MB não. Amostra de 20 vídeos >200 MB do acervo inteiro: 20/20
+abriram — **o problema é concentrado, não sistêmico**.
+
+**2. Existem DUAS vias no Google, e só uma tem teto.** `alt=media` (download) tem a cota; o
+pipeline de PRÉ-VISUALIZAÇÃO não. É por isso que o vídeo toca ao abrir no Drive e falhava na
+plataforma — não é contradição, são caminhos diferentes.
+
+**A solução:** quando o worker responde 429, o `LessonPlayer` embute
+`drive.google.com/file/d/<id>/preview?rm=minimal`. É o embed OFICIAL do Google, não raspagem de
+endpoint interno. Os arquivos já são compartilhados como "qualquer pessoa com o link" na origem
+(conferido nas permissões), então o embed abre sem login e nada foi afrouxado. Quando a franquia
+volta, o player normal assume sozinho.
+
+> Custo assumido: no player do Google não há registro de progresso, velocidade nem download.
+> É pior que o player próprio e melhor que a aula não abrir.
+
+**Correção adicional no worker:** o Drive recusa o pedido ABERTO (`bytes=0-`) que o navegador
+manda, mesmo havendo franquia — `bytes=0-` dava 403 e `bytes=0-100MB` dava 206 no MESMO arquivo,
+no MESMO instante. O worker passou a pôr um teto de 24 MB quando o pedido vem aberto.
+
+> ⚠️ **NÃO baixe esses arquivos para "verificar" se destravaram.** Cada download completo renova
+> o bloqueio daquele arquivo. Boa parte das 46 ficou bloqueada exatamente assim, por tentativas
+> de diagnóstico. A verificação barata é rodar o lote: arquivo bloqueado responde 403 em 295
+> bytes, sem consumir nada.
+
+**Tentativas que NÃO funcionam** (todas medidas, não supostas): download fatiado (consome a mesma
+franquia e trava no meio); `files.copy` para conta própria (mesmo teto, reportado como
+`userRateLimitExceeded`, inclusive a partir da conta de conteúdo no projeto antigo); trocar de
+conta ou de projeto Google.
+
+**Saída definitiva, se a cota voltar a incomodar:** o dono não tem cota no próprio arquivo —
+comprovado, cópia nossa baixa com 200 sem limite. Exige transferência de propriedade a partir de
+`medbrasil31@gmail.com`, ou Google Workspace com Drive Compartilhado.
+
+---
+
 **Retomar quando a cota resetar** (idempotente, filtra por `storage_path IS NULL`):
 
 ```bash
