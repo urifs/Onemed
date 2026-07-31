@@ -60,14 +60,8 @@ const EXPORT_MIME_MAP = {
   'application/vnd.google-apps.spreadsheet': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 };
 
-// Mensagem única para os dois caminhos (cache e resposta do Drive). Não cita
-// o Google Drive: para o aluno, a OneMed é a plataforma inteira.
-const QUOTA_MESSAGE =
-  'Esta aula atingiu o limite de acessos de hoje. '
-  + 'Ela volta a abrir automaticamente em algumas horas — as demais aulas seguem normais.';
-
 export default {
-  async fetch(request, env, ctx) {
+  async fetch(request, env) {
     const cors = corsHeaders(request);
     if (request.method === 'OPTIONS') return new Response(null, { headers: cors });
 
@@ -85,22 +79,6 @@ export default {
 
     const expected = await hmacHex(env.LESSON_STREAM_SECRET, `${fileId}.${exp}.${mimeType}`);
     if (!timingSafeEqual(expected, sig)) return new Response('Assinatura inválida', { status: 403, headers: cors });
-
-    // ── memória curta de arquivo bloqueado ───────────────────────────────
-    // Quando o Drive recusa um arquivo por cota, TODA tentativa seguinte de
-    // qualquer aluno faz outra requisição de arquivo inteiro ao Drive — e o
-    // player ainda tenta de novo algumas vezes sozinho. Isso multiplica a
-    // carga justamente no arquivo que já estourou o limite, atrasando a
-    // recuperação dele.
-    //
-    // Guardar o bloqueio por alguns minutos corta esse ciclo: as tentativas
-    // seguintes são respondidas na hora, na borda, sem tocar no Drive.
-    // O prazo é curto de propósito — a cota volta sozinha e não queremos
-    // manter uma aula bloqueada depois que ela já liberou.
-    const quotaKey = new Request(`https://quota.onemed.internal/${fileId}`);
-    const cache = caches.default;
-    const blockedEarlier = await cache.match(quotaKey);
-    if (blockedEarlier) return new Response(QUOTA_MESSAGE, { status: 429, headers: cors });
 
     const tokenRes = await fetch(`${env.SUPABASE_URL}/functions/v1/drive-access-token`, {
       headers: { Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}` },
@@ -139,12 +117,11 @@ export default {
       // detalhe de infraestrutura nosso.
       const body = await driveRes.text().catch(() => '');
       if (driveRes.status === 403 && body.includes('downloadQuotaExceeded')) {
-        // Registra o bloqueio para as próximas tentativas nem chegarem ao
-        // Drive (ver "memória curta de arquivo bloqueado" acima).
-        ctx.waitUntil(
-          cache.put(quotaKey, new Response('1', { headers: { 'cache-control': 'max-age=600' } })),
+        return new Response(
+          'Esta aula atingiu o limite de acessos de hoje. '
+          + 'Ela volta a abrir automaticamente em algumas horas — as demais aulas seguem normais.',
+          { status: 429, headers: cors },
         );
-        return new Response(QUOTA_MESSAGE, { status: 429, headers: cors });
       }
       return new Response('Não foi possível carregar o arquivo', { status: 502, headers: cors });
     }
