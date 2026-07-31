@@ -177,6 +177,8 @@ export default function DriveSettings() {
         {/* Course Library Sync */}
         {driveStatus?.connected && <SyncCoursesCard />}
 
+        {driveStatus?.connected && <LibraryAuditCard />}
+
         {/* Backfill missing lesson durations */}
         {driveStatus?.connected && <DurationBackfillCard />}
 
@@ -207,6 +209,9 @@ interface SyncProgress {
   coursesResynced: number;
   lessonsImported: number;
   batches: number;
+  // Quantas pastas ainda faltam varrer. Vem da fila durável no banco, então é
+  // um número real de trabalho restante — não uma estimativa.
+  foldersRemaining?: number;
 }
 
 interface SyncDetail {
@@ -233,6 +238,133 @@ function sleep(ms: number) {
 // curso específico, mesmo com a sincronização de verdade continuando por
 // trás sem problema. Mantém só as entradas mais recentes.
 const MAX_DISPLAYED_LOGS = 60;
+
+// ─── Conferência da biblioteca ───────────────────────────────────────────────
+// A sincronização registra cada pasta varrida e o tamanho de cada arquivo, o
+// que permite responder com números a pergunta que importa: "faltou alguma
+// coisa?". Um curso só conta como confiável quando não sobrou nenhuma pasta
+// pendente nem nenhuma pasta que o Drive recusou a listar.
+type LibraryTotals = {
+  courses: number; courses_complete: number; courses_incomplete: number;
+  courses_crawling: number; courses_pending: number;
+  modules: number; folders_done: number; folders_pending: number; folders_error: number;
+  lessons: number; lessons_missing: number; total_size_bytes: number;
+};
+
+type CourseAudit = {
+  course_id: string; title: string; sync_status: string;
+  folders_done: number; folders_pending: number; folders_error: number;
+  lessons: number; lessons_missing: number; total_size_bytes: number; deep_synced_at: string | null;
+};
+
+function formatTB(bytes: number | null | undefined): string {
+  const b = Number(bytes || 0);
+  if (b >= 1e12) return `${(b / 1e12).toFixed(2)} TB`;
+  if (b >= 1e9) return `${(b / 1e9).toFixed(1)} GB`;
+  return `${(b / 1e6).toFixed(0)} MB`;
+}
+
+function LibraryAuditCard() {
+  const [totals, setTotals] = useState<LibraryTotals | null>(null);
+  const [problems, setProblems] = useState<CourseAudit[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [totalsRes, reportRes] = await Promise.all([
+        supabase.rpc('get_library_totals' as never),
+        supabase.rpc('get_library_sync_report' as never),
+      ]);
+      if (totalsRes.error) throw totalsRes.error;
+      setTotals(totalsRes.data as unknown as LibraryTotals);
+      const rows = ((reportRes.data || []) as unknown as CourseAudit[])
+        .filter(r => r.sync_status !== 'complete' || r.folders_error > 0);
+      setProblems(rows);
+    } catch {
+      toast.error('Erro ao carregar a conferência da biblioteca');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const allGood = !!totals && totals.folders_pending === 0 && totals.folders_error === 0 && problems.length === 0;
+
+  return (
+    <Card className="bg-background-paper border-border">
+      <CardHeader>
+        <CardTitle className="text-base font-medium text-foreground flex items-center gap-2">
+          <CheckCircle className={`w-5 h-5 ${allGood ? 'text-green-500' : 'text-yellow-500'}`} />
+          Conferência da Biblioteca
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          Prova de que nada ficou de fora: a varredura registra cada pasta visitada e o tamanho de cada arquivo.
+          Compare os números abaixo com os do Google Drive — precisam bater.
+        </p>
+
+        {totals && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[
+              { label: 'Cursos', value: `${totals.courses}`, sub: `${totals.courses_complete} conferidos` },
+              { label: 'Pastas varridas', value: totals.folders_done.toLocaleString('pt-BR'), sub: totals.folders_pending ? `${totals.folders_pending} na fila` : 'nenhuma pendente' },
+              { label: 'Arquivos', value: totals.lessons.toLocaleString('pt-BR'), sub: totals.lessons_missing ? `${totals.lessons_missing} sumiram do Drive` : 'todos presentes' },
+              { label: 'Tamanho total', value: formatTB(totals.total_size_bytes), sub: `${totals.modules.toLocaleString('pt-BR')} módulos` },
+            ].map(s => (
+              <div key={s.label} className="bg-secondary border border-border rounded-md p-3">
+                <div className="text-xs text-muted-foreground">{s.label}</div>
+                <div className="text-lg font-semibold text-foreground">{s.value}</div>
+                <div className="text-[11px] text-muted-foreground mt-0.5">{s.sub}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {totals && (
+          allGood ? (
+            <div className="flex items-start gap-2 text-sm text-green-600 dark:text-green-500 bg-green-500/10 border border-green-500/25 rounded-md p-3">
+              <CheckCircle className="w-4 h-4 mt-0.5 shrink-0" />
+              <span>Nenhuma pasta ficou pendente ou com erro — todos os {totals.courses} cursos foram varridos até o último nível.</span>
+            </div>
+          ) : (
+            <div className="flex items-start gap-2 text-sm text-yellow-700 dark:text-yellow-500 bg-yellow-500/10 border border-yellow-500/25 rounded-md p-3">
+              <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+              <span>
+                {totals.folders_pending > 0 && `${totals.folders_pending} pasta(s) ainda na fila de varredura. `}
+                {totals.folders_error > 0 && `${totals.folders_error} pasta(s) que o Drive recusou a listar. `}
+                Rode a sincronização com "Reimportar tudo" para fechar o que falta.
+              </span>
+            </div>
+          )
+        )}
+
+        {problems.length > 0 && (
+          <div className="bg-secondary border border-border rounded-md p-3 max-h-72 overflow-y-auto space-y-2 text-xs font-mono">
+            {problems.map(p => (
+              <div key={p.course_id} className="border-b border-border/20 pb-2 last:border-0 last:pb-0">
+                <div className="text-foreground font-medium truncate" title={p.title}>{p.title}</div>
+                <div className="text-muted-foreground">
+                  {p.lessons.toLocaleString('pt-BR')} arquivos · {p.folders_done.toLocaleString('pt-BR')} pastas
+                  {p.folders_pending > 0 && ` · ${p.folders_pending} na fila`}
+                  {p.folders_error > 0 && ` · ${p.folders_error} com erro`}
+                  {p.lessons_missing > 0 && ` · ${p.lessons_missing} sumiram do Drive`}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <Button onClick={load} disabled={loading} variant="outline" className="gap-2">
+          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+          Atualizar conferência
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
 
 function SyncCoursesCard() {
   const [activeJob, setActiveJob] = useState<any>(null);
@@ -333,7 +465,7 @@ function SyncCoursesCard() {
         const RETRY_DELAYS_MS = [2000, 5000, 10000];
         for (let attempt = 0; ; attempt++) {
           ({ data, error } = await withTimeout(supabase.functions.invoke('member-sync-library', {
-            body: { cursor, batchSize: 1, forceResync: doForceResync },
+            body: { cursor, batchSize: 25, forceResync: doForceResync },
           }), 300000, 'Tempo limite de sincronização excedido (5 minutos)'));
           if (!error && !data?.error) break;
           if (attempt >= RETRY_DELAYS_MS.length || cancelRef.current) break;
@@ -357,6 +489,7 @@ function SyncCoursesCard() {
         currentProgress.coursesCreated += data.coursesCreated || 0;
         currentProgress.coursesResynced += data.coursesResynced || 0;
         currentProgress.lessonsImported += data.lessonsImported || 0;
+        currentProgress.foldersRemaining = data.foldersRemaining;
         cursor = data.cursor || undefined;
 
         if (data.details && Array.isArray(data.details)) {
@@ -528,7 +661,9 @@ function SyncCoursesCard() {
                  isInterrupted ? 'Sincronização Interrompida' :
                  'Sincronizando...'} 
                 {' '}
-                {progress ? `(${progress.coursesCreated || 0} novos · ${progress.coursesResynced || 0} atualizados · ${progress.lessonsImported || 0} aulas)` : ''}
+                {progress ? `(${progress.coursesCreated || 0} novos · ${progress.coursesResynced || 0} atualizados · ${progress.lessonsImported || 0} aulas${
+                  progress.foldersRemaining ? ` · ${progress.foldersRemaining.toLocaleString('pt-BR')} pastas na fila` : ''
+                })` : ''}
                 {activeJob.force_resync && (isRunning || isInterrupted) && (
                   <span className="ml-2 text-[11px] font-semibold text-primary bg-primary/10 border border-primary/25 rounded-full px-2 py-0.5">
                     Reimportação completa

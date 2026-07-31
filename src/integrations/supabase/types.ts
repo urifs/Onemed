@@ -264,17 +264,22 @@ export type Database = {
           cover_image_url: string | null
           cover_source: string
           created_at: string
+          deep_synced_at: string | null
           description: string | null
           drive_folder_id: string
+          folder_count: number
           id: string
           is_featured: boolean
           lesson_count: number
           material_count: number
           slug: string
           sort_order: number
+          sync_error: string | null
+          sync_status: string
           synced_at: string | null
           title: string
           total_duration_seconds: number
+          total_size_bytes: number
           updated_at: string
         }
         Insert: {
@@ -283,17 +288,22 @@ export type Database = {
           cover_image_url?: string | null
           cover_source?: string
           created_at?: string
+          deep_synced_at?: string | null
           description?: string | null
           drive_folder_id: string
+          folder_count?: number
           id?: string
           is_featured?: boolean
           lesson_count?: number
           material_count?: number
           slug: string
           sort_order?: number
+          sync_error?: string | null
+          sync_status?: string
           synced_at?: string | null
           title: string
           total_duration_seconds?: number
+          total_size_bytes?: number
           updated_at?: string
         }
         Update: {
@@ -302,17 +312,22 @@ export type Database = {
           cover_image_url?: string | null
           cover_source?: string
           created_at?: string
+          deep_synced_at?: string | null
           description?: string | null
           drive_folder_id?: string
+          folder_count?: number
           id?: string
           is_featured?: boolean
           lesson_count?: number
           material_count?: number
           slug?: string
           sort_order?: number
+          sync_error?: string | null
+          sync_status?: string
           synced_at?: string | null
           title?: string
           total_duration_seconds?: number
+          total_size_bytes?: number
           updated_at?: string
         }
         Relationships: []
@@ -321,24 +336,33 @@ export type Database = {
         Row: {
           course_id: string
           created_at: string
+          depth: number
           drive_folder_id: string
           id: string
+          parent_module_id: string | null
+          path: string | null
           sort_order: number
           title: string
         }
         Insert: {
           course_id: string
           created_at?: string
+          depth?: number
           drive_folder_id: string
           id?: string
+          parent_module_id?: string | null
+          path?: string | null
           sort_order?: number
           title: string
         }
         Update: {
           course_id?: string
           created_at?: string
+          depth?: number
           drive_folder_id?: string
           id?: string
+          parent_module_id?: string | null
+          path?: string | null
           sort_order?: number
           title?: string
         }
@@ -357,8 +381,11 @@ export type Database = {
           course_id: string
           created_at: string
           drive_file_id: string
+          drive_path: string | null
           duration_seconds: number | null
           id: string
+          last_seen_at: string | null
+          missing_since: string | null
           mime_type: string | null
           module_id: string | null
           size_bytes: number | null
@@ -370,8 +397,11 @@ export type Database = {
           course_id: string
           created_at?: string
           drive_file_id: string
+          drive_path?: string | null
           duration_seconds?: number | null
           id?: string
+          last_seen_at?: string | null
+          missing_since?: string | null
           mime_type?: string | null
           module_id?: string | null
           size_bytes?: number | null
@@ -383,8 +413,11 @@ export type Database = {
           course_id?: string
           created_at?: string
           drive_file_id?: string
+          drive_path?: string | null
           duration_seconds?: number | null
           id?: string
+          last_seen_at?: string | null
+          missing_since?: string | null
           mime_type?: string | null
           module_id?: string | null
           size_bytes?: number | null

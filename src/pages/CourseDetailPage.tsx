@@ -35,6 +35,17 @@ function moduleBlockId(moduleId: string | null): string {
   return moduleId ? `module-${moduleId}` : 'module-root';
 }
 
+// A biblioteca do Drive tem pasta dentro de pasta em vários níveis, e a
+// varredura agora importa TODOS eles (antes só dois níveis viravam módulo, o
+// resto era achatado). Com isso, dois módulos distintos podem se chamar igual
+// ("Aula 1" dentro de "Módulo 2" e dentro de "Módulo 3"), então o título
+// exibido é o caminho completo dentro do curso — sem isso o aluno não teria
+// como saber a qual parte do curso cada bloco pertence.
+function moduleLabel(mod: CourseModule): string {
+  const path = (mod as CourseModule & { path?: string | null }).path;
+  return path ? path.split('/').join(' › ') : mod.title;
+}
+
 function groupLessonsByModule(items: Lesson[], modules: CourseModule[]): { id: string; title: string; lessons: Lesson[] }[] {
   const byModule = new Map<string | null, Lesson[]>();
   for (const l of items) {
@@ -47,7 +58,7 @@ function groupLessonsByModule(items: Lesson[], modules: CourseModule[]): { id: s
   if (root?.length) result.push({ id: moduleBlockId(null), title: 'Conteúdo geral', lessons: root });
   for (const mod of modules) {
     const modItems = byModule.get(mod.id);
-    if (modItems?.length) result.push({ id: moduleBlockId(mod.id), title: mod.title, lessons: modItems });
+    if (modItems?.length) result.push({ id: moduleBlockId(mod.id), title: moduleLabel(mod), lessons: modItems });
   }
   return result;
 }
@@ -226,7 +237,7 @@ export default function CourseDetailPage() {
     if (root) blocks.push({ id: moduleBlockId(null), title: 'Conteúdo geral', videoCount: root.video, fileCount: root.file });
     for (const mod of modules) {
       const entry = byModule.get(mod.id);
-      if (entry) blocks.push({ id: moduleBlockId(mod.id), title: mod.title, videoCount: entry.video, fileCount: entry.file });
+      if (entry) blocks.push({ id: moduleBlockId(mod.id), title: moduleLabel(mod), videoCount: entry.video, fileCount: entry.file });
     }
     return blocks;
   }, [lessons, modules]);
