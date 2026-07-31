@@ -39,20 +39,53 @@ async function sha256hex(value: string): Promise<string> {
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
-async function sendMetaCAPIEvent(opts: {
-  email: string
-  name?: string | null
-  phone?: string | null
-  fbp?: string | null
-  fbc?: string | null
-  fbclid?: string | null
-  value: number
-  plan: string
-  paymentId: string
-}): Promise<void> {
+// Envia o Purchase pela Conversions API e DEIXA RASTRO em `capi_events`.
+//
+// Antes, o resultado só ia pra console.log/console.error — e como a retenção
+// de log deste projeto é de minutos, quando a auditoria do pixel encontrou
+// ~11 Purchase para 44 vendas reais não havia nada pra consultar. O motivo
+// (token vencido em 14/07/2026, erro 190) só apareceu testando a Graph API
+// direto. Com a tabela, uma falha dessas fica visível no mesmo dia.
+async function logCapi(
+  supabase: ReturnType<typeof createClient>,
+  row: Record<string, unknown>,
+): Promise<void> {
+  // O registro é diagnóstico: se ele próprio falhar, não pode derrubar o
+  // processamento do pagamento.
+  try {
+    await supabase.from('capi_events').insert({ event_name: 'Purchase', ...row })
+  } catch (err) {
+    console.error('failed to log capi_event:', (err as Error).message)
+  }
+}
+
+async function sendMetaCAPIEvent(
+  supabase: ReturnType<typeof createClient>,
+  opts: {
+    email: string
+    name?: string | null
+    phone?: string | null
+    fbp?: string | null
+    fbc?: string | null
+    fbclid?: string | null
+    clientIp?: string | null
+    clientUserAgent?: string | null
+    value: number
+    plan: string
+    paymentId: string
+    buyerId?: string | null
+  },
+): Promise<void> {
+  const eventId = `purchase_${opts.paymentId}`
   const accessToken = Deno.env.get('META_CAPI_ACCESS_TOKEN')
+
   if (!accessToken) {
     console.warn('META_CAPI_ACCESS_TOKEN not set — skipping CAPI')
+    await logCapi(supabase, {
+      event_id: eventId, pixel_id: 'all', buyer_id: opts.buyerId ?? null,
+      email: opts.email, value: opts.value, success: false,
+      error: 'META_CAPI_ACCESS_TOKEN ausente nos secrets',
+    })
     return
   }
 
@@ -71,17 +104,26 @@ async function sendMetaCAPIEvent(opts: {
     if (parts.length > 1) userData.ln = await sha256hex(parts[parts.length - 1])
   }
 
-  // fbp/fbc são passados sem hash — já são identificadores do navegador
-  // fbc pode ter se perdido no redirect; reconstrói do fbclid raw se necessário
+  // fbp/fbc são passados sem hash — já são identificadores do navegador.
+  // fbc pode ter se perdido no redirect; reconstrói do fbclid raw se necessário.
   const fbc = opts.fbc || (opts.fbclid ? `fb.1.${Math.floor(Date.now() / 1000)}.${opts.fbclid}` : undefined)
   if (opts.fbp) userData.fbp = opts.fbp
   if (fbc) userData.fbc = fbc
+
+  // IP e user-agent do COMPRADOR, capturados no checkout (mp-create-payment).
+  // Não dá pra pegar aqui: esta requisição vem de um servidor do Mercado Pago,
+  // então o IP desta chamada seria o do MP. Sem essas duas chaves a
+  // correspondência do Purchase fica bem abaixo da do Lead (EMQ 6.1 vs 8.7).
+  if (opts.clientIp) userData.client_ip_address = opts.clientIp
+  if (opts.clientUserAgent) userData.client_user_agent = opts.clientUserAgent
+
+  const matchKeys = Object.keys(userData)
 
   const payload = {
     data: [{
       event_name: 'Purchase',
       event_time: Math.floor(Date.now() / 1000),
-      event_id: `purchase_${opts.paymentId}`, // deduplicação com o pixel client-side
+      event_id: eventId, // deduplicação com o pixel client-side
       action_source: 'website',
       event_source_url: 'https://onemedcursos.com.br/payment/success',
       user_data: userData,
@@ -99,19 +141,56 @@ async function sendMetaCAPIEvent(opts: {
   }
 
   for (const pixelId of CAPI_PIXEL_IDS) {
-    try {
-      const res = await fetch(
-        `https://graph.facebook.com/v19.0/${pixelId}/events?access_token=${accessToken}`,
-        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }
-      )
-      const json = await res.json()
-      if (!res.ok) {
+    // Falha passageira de rede não pode custar a atribuição de uma venda.
+    // Erro de credencial (190) não se resolve tentando de novo — sai na hora.
+    const MAX_ATTEMPTS = 3
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        const res = await fetch(
+          `https://graph.facebook.com/v19.0/${pixelId}/events?access_token=${accessToken}`,
+          { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) },
+        )
+        const json = await res.json().catch(() => ({}))
+
+        if (res.ok) {
+          console.log(`CAPI Purchase OK pixel ${pixelId}, events_received:`, json?.events_received)
+          await logCapi(supabase, {
+            event_id: eventId, pixel_id: pixelId, buyer_id: opts.buyerId ?? null,
+            email: opts.email, value: opts.value, success: true,
+            http_status: res.status, events_received: json?.events_received ?? null,
+            match_keys: matchKeys, attempt,
+          })
+          break
+        }
+
+        const code = json?.error?.code
+        const errorMsg = `${json?.error?.message ?? 'erro desconhecido'} (code ${code ?? '?'})`
         console.error(`CAPI error pixel ${pixelId}:`, JSON.stringify(json))
-      } else {
-        console.log(`CAPI Purchase OK pixel ${pixelId}, events_received:`, json.events_received)
+
+        const permanent = code === 190 || code === 200 || code === 10 ||
+          (res.status >= 400 && res.status < 500 && res.status !== 429)
+        if (permanent || attempt === MAX_ATTEMPTS) {
+          await logCapi(supabase, {
+            event_id: eventId, pixel_id: pixelId, buyer_id: opts.buyerId ?? null,
+            email: opts.email, value: opts.value, success: false,
+            http_status: res.status, error: errorMsg.slice(0, 500),
+            match_keys: matchKeys, attempt,
+          })
+          break
+        }
+      } catch (err) {
+        const errorMsg = `rede: ${(err as Error).message}`
+        console.error(`CAPI network error pixel ${pixelId}:`, errorMsg)
+        if (attempt === MAX_ATTEMPTS) {
+          await logCapi(supabase, {
+            event_id: eventId, pixel_id: pixelId, buyer_id: opts.buyerId ?? null,
+            email: opts.email, value: opts.value, success: false,
+            error: errorMsg.slice(0, 500), match_keys: matchKeys, attempt,
+          })
+          break
+        }
       }
-    } catch (err: any) {
-      console.error(`CAPI network error pixel ${pixelId}:`, err.message)
+      await new Promise(r => setTimeout(r, 500 * 2 ** (attempt - 1)))
     }
   }
 }
@@ -375,16 +454,19 @@ serve(async (req) => {
 
       // Send Meta CAPI Purchase event (server-side — independente de cookies do browser)
       try {
-        await sendMetaCAPIEvent({
+        await sendMetaCAPIEvent(supabase, {
           email: buyer.email,
           name: buyer.name,
           phone: buyer.whatsapp,
           fbp: buyer.fbp ?? null,
           fbc: buyer.fbc ?? null,
           fbclid: buyer.fbclid ?? null,
+          clientIp: buyer.client_ip ?? null,
+          clientUserAgent: buyer.client_user_agent ?? null,
           value: payment.transaction_amount ?? buyer.amount ?? 0,
           plan: buyer.plan,
           paymentId: String(paymentId),
+          buyerId: buyer.id,
         })
       } catch (capiErr: any) {
         console.error('CAPI error:', capiErr.message)

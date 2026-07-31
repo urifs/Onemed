@@ -832,6 +832,58 @@ tocaria de novo. O script trata essas linhas à parte.
 
 ---
 
+### 2026-07-31 (sessão remota) — auditoria do pixel: CAPI fora do ar há 17 dias
+
+**Pedido:** verificar se o pixel `797374160058274` está funcionando e totalmente configurado.
+
+**Achado principal — apagão silencioso da Conversions API.** O `META_CAPI_ACCESS_TOKEN`
+**venceu em 14/07/2026 13:16 PDT** (erro 190, `Session has expired`). O `mp-webhook` seguiu
+chamando a Graph API a cada compra e tomando recusa, mas o resultado só ia pra `console.error`
+e a retenção de log deste projeto é de minutos — ninguém viu. Resultado em 7 dias:
+
+| | |
+|---|---|
+| Vendas aprovadas no Mercado Pago | **44** |
+| Eventos `Purchase` que chegaram ao pixel | **~11** (só os do navegador, de quem voltou pro `/payment/success`) |
+| EMQ do Purchase | 6.1, **sem email nem telefone** (só ip/user-agent/fbp) |
+| EMQ do Lead (comparação) | 8.7, email 100% |
+
+O Purchase sem email é a assinatura do problema: o webhook manda email com hash, então se a
+CAPI estivesse entregando, a cobertura apareceria. Não aparecia.
+
+> ⚠️ **Renovar o token é ação manual** (precisa do client secret do app Meta, que não fica em
+> nenhum secret do projeto). Enquanto não renovar, todo o resto abaixo está pronto mas o envio
+> server-side continua parado. Procedimento no fim deste arquivo.
+
+**Corrigido nesta sessão:**
+
+| Arquivo | Mudança |
+|---------|---------|
+| `supabase/migrations/20260731060000_capi_observability.sql` | Tabela `capi_events` (rastro de toda chamada à CAPI: pixel, status, erro, chaves enviadas); `buyers.client_ip` / `client_user_agent`; RPC `get_capi_health()` |
+| `supabase/functions/admin-capi-health/index.ts` (novo) | Valida o token contra `/debug_token` e o acesso a cada pixel. Responde "o token venceu em X" em vez de deixar adivinhar. Só leitura, não injeta evento |
+| `supabase/functions/admin-capi-backfill/index.ts` (novo) | Reenvia compras que a Meta nunca recebeu. Recusa rodar com token inválido; `event_time` = hora real da aprovação (senão a venda seria atribuída ao dia do reenvio). Simulação por padrão, grava só com `{"apply": true}`. **Janela de 7 dias** — é o limite da Meta, compra mais antiga é perda definitiva |
+| `supabase/functions/mp-webhook/index.ts` | CAPI passa a gravar em `capi_events`, tentar 3× em falha passageira (e sair na hora em erro 190/200/10), e enviar `client_ip_address` + `client_user_agent` |
+| `supabase/functions/mp-create-payment/index.ts` | Captura IP e user-agent do comprador. **No webhook não dá** — a requisição vem de um servidor do Mercado Pago, o IP de lá é do MP |
+| `src/lib/pixel.ts` | `trackPageView`, `trackViewContent`, `trackAddToCart`, `setPixelUserData` (correspondência avançada manual); `trackInitiateCheckout`/`trackPurchase` aceitam dados do usuário |
+| `src/App.tsx` | `<PixelPageViews>` dispara PageView a cada troca de rota (o do `index.html` roda uma vez só; numa SPA, `/` → `/checkout` não contava nada) |
+| `src/pages/CheckoutPage.tsx` | Ao abrir vira `ViewContent`; escolher plano vira `AddToCart`; `InitiateCheckout` foi pro clique de pagar, com email/telefone/nome preenchidos |
+| `src/pages/PaymentSuccessPage.tsx` | Purchase leva o email do comprador |
+| `src/components/admin/MetaPixelHealthCard.tsx` (novo) | Card no `/admin`: vendas × enviadas à Meta, último erro, cobertura das chaves, botão de reenvio |
+
+**Por que o InitiateCheckout estava errado:** disparava ao abrir `/checkout`. Eram ~565 eventos
+para 203 checkouts reais, com email em 1% (o formulário só é preenchido três passos depois) —
+a campanha otimizava para quem *abre a página*, não para quem quer comprar.
+
+**Incidente nesta sessão (4 min de webhook fora do ar):** ao reescrever a função da CAPI eu
+substituí um trecho grande demais do `mp-webhook` e apaguei junto `shareBackupFolder`,
+`getCorsHeaders` e `verifyMPSignature` — a função parou de subir (`OPTIONS` respondendo 500).
+Restaurada via `git checkout` + redeploy, depois refeita substituindo apenas as linhas da
+função alvo. **Lição:** antes de publicar qualquer Edge Function, rodar
+`npx esbuild <arquivo> --outfile=/dev/null` (pega erro de sintaxe) e, depois de publicar,
+conferir `OPTIONS` — 500 ali é BOOT_ERROR, não erro de aplicação.
+
+---
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management

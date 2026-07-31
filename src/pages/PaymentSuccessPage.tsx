@@ -26,11 +26,15 @@ export default function PaymentSuccessPage() {
         const info = JSON.parse(pending);
         setPurchaseInfo(info);
         if (status === 'approved') {
+          // O email vai junto pra correspondência avançada: nesta página não
+          // existe formulário, então sem isso o Purchase chegava só com IP,
+          // user-agent e fbp (EMQ 6.1, contra 8.7 do Lead).
           trackPurchase(
             info.plan,
             info.amount ?? PLAN_PRICES[info.plan] ?? 0,
             'redirect',
-            paymentId ? `purchase_${paymentId}` : undefined
+            paymentId ? `purchase_${paymentId}` : undefined,
+            { email: info.email ?? null }
           );
         }
         localStorage.removeItem('pending_purchase');

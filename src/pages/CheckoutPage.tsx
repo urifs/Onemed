@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { trackInitiateCheckout } from '@/lib/pixel';
+import { trackInitiateCheckout, trackViewContent, trackAddToCart } from '@/lib/pixel';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -166,12 +166,17 @@ export default function CheckoutPage() {
   const [couponLoading, setCouponLoading] = useState(false);
   const [discountPercent, setDiscountPercent] = useState(0);
 
-  // Auto-apply coupon from URL + track InitiateCheckout
+  // Auto-apply coupon from URL + ViewContent
+  //
+  // Aqui o evento certo é ViewContent: abrir a página de planos não é iniciar
+  // um checkout. Enquanto o InitiateCheckout disparava neste ponto, a Meta
+  // recebia ~565 "inícios de checkout" para 203 checkouts reais, todos sem
+  // email (o formulário só é preenchido três passos adiante) — ou seja, a
+  // campanha otimizava para quem abre a página, não para quem quer comprar.
   useEffect(() => {
     if (initialCoupon) handleApplyCoupon(initialCoupon);
-    // Track InitiateCheckout when page loads
     const plan = PLANS[selectedPlan];
-    if (plan) trackInitiateCheckout(selectedPlan, plan.price);
+    if (plan) trackViewContent(selectedPlan, plan.price);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -213,6 +218,14 @@ export default function CheckoutPage() {
       toast.error(`O cupom ${couponApplied.code} é válido apenas para o ${planName}`);
       return;
     }
+    // Plano escolhido = item no carrinho. Junto com o ViewContent da abertura
+    // e o InitiateCheckout do clique de pagar, isso fecha o funil que a Meta
+    // usa pra montar público e otimizar.
+    const extras: string[] = [];
+    if (upsellSelected) extras.push('upsell');
+    if (upsell2Selected) extras.push('upsell2');
+    trackAddToCart(selectedPlan, getTotalPrice(), extras);
+
     setStep(2);
   };
 
@@ -262,6 +275,16 @@ export default function CheckoutPage() {
       toast.error(`O cupom ${couponApplied.code} é válido apenas para o ${planName}`);
       return;
     }
+    // InitiateCheckout de verdade: o usuário mandou ir pro pagamento e o
+    // formulário já está preenchido, então email/telefone/nome vão junto na
+    // correspondência avançada (antes esse evento saía com email em 1%).
+    trackInitiateCheckout(selectedPlan, getTotalPrice(), {
+      email: customerEmail,
+      phone: `${selectedCountry.code}${customerWhatsapp.replace(/\D/g, '')}`,
+      name: customerName,
+      country: selectedCountry.flag || undefined,  // 'BR', 'AR'… é o ISO de 2 letras que a Meta espera
+    });
+
     setLoading(true);
     try {
       const ref = `onemed_${Date.now()}_${Math.random().toString(36).slice(2)}`;

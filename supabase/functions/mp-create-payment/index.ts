@@ -283,10 +283,22 @@ serve(async (req) => {
 
     console.log('MP preference created:', mpData.id)
 
-    // Atualizar buyer com payment_id e valor calculado server-side
+    // Atualizar buyer com payment_id e valor calculado server-side.
+    //
+    // Guarda também o IP e o user-agent do COMPRADOR: são duas chaves de
+    // correspondência da Meta CAPI que só existem aqui. No mp-webhook a
+    // requisição vem de um servidor do Mercado Pago, então o IP de lá é do
+    // MP — usá-lo pioraria a correspondência em vez de melhorar.
+    const clientIp = (req.headers.get('x-forwarded-for') || '').split(',')[0].trim()
+      || req.headers.get('x-real-ip')
+      || null
+    const clientUserAgent = req.headers.get('user-agent') || null
+
     await supabase.from('buyers').update({
       payment_id: mpData.id,
       amount: totalAmount,
+      client_ip: clientIp,
+      client_user_agent: clientUserAgent,
     }).eq('external_reference', externalReference)
 
     // Incrementar uso do cupom se aplicado

@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import AdminLayout from '@/components/AdminLayout';
 import { OnlineMembersCard } from '@/components/admin/OnlineMembersCard';
 import { MemberLocationsMap } from '@/components/admin/MemberLocationsMap';
+import { MetaPixelHealthCard } from '@/components/admin/MetaPixelHealthCard';
 import { MemberLocationsList } from '@/components/admin/MemberLocationsList';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -141,6 +142,8 @@ export default function Dashboard() {
             (online inclui testes, offline só assinantes) lado a lado */}
         <div className="grid lg:grid-cols-2 gap-6 items-start">
           <OnlineMembersCard />
+          <MetaPixelHealthCard />
+
           <MemberLocationsMap />
         </div>
         <MemberLocationsList />

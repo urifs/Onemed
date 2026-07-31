@@ -1,11 +1,12 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { ThemeProvider } from "next-themes";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
+import { BrowserRouter, Route, Routes, Navigate, useLocation } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
+import { trackPageView } from "@/lib/pixel";
 
 // Pages
 import Index from "./pages/Index";
@@ -49,6 +50,24 @@ const FbclidCapture = () => {
   return null
 }
 
+// O `fbq('track','PageView')` do index.html roda uma vez só, no carregamento
+// do HTML. Como isto é uma SPA, ir de / para /checkout nunca contava
+// visualização — a Meta enxergava uma fração do funil. Aqui cada troca de rota
+// dispara o PageView seguinte (o primeiro continua sendo o do index.html, por
+// isso o primeiro pathname é ignorado: senão a home contaria em dobro).
+const PixelPageViews = () => {
+  const location = useLocation()
+  const firstPath = useRef(location.pathname + location.search)
+
+  useEffect(() => {
+    const current = location.pathname + location.search
+    if (current === firstPath.current) return
+    trackPageView()
+  }, [location.pathname, location.search])
+
+  return null
+}
+
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading, isAdmin } = useAuth();
   if (loading) return (
@@ -80,6 +99,7 @@ const App = () => (
           <Sonner />
           <BrowserRouter>
             <FbclidCapture />
+            <PixelPageViews />
             <Routes>
             {/* Public routes */}
             <Route path="/" element={<Index />} />
