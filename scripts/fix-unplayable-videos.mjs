@@ -82,9 +82,16 @@ const esc = s => String(s).replace(/'/g, "''");
 
 // Token do Drive: a mesma Edge Function que o resto do projeto usa, então o
 // client secret do Google não precisa sair do Supabase.
+// Cache curto de propósito. O token do Drive vale 1 hora, mas quem o entrega é
+// o `drive_config` compartilhado — quando pegamos, ele já pode estar com 55
+// minutos de vida. Cachear por 40 minutos pelo NOSSO relógio fez uma corrida
+// longa de .mov perder 46 arquivos seguidos com 403: o ffmpeg recebia um token
+// que morria no meio da conversão de um arquivo de 5 GB, e todos os seguintes
+// herdavam o mesmo token morto. 5 minutos custa uma chamada barata por arquivo
+// e elimina a classe inteira de falha.
 let token = null, tokenAt = 0;
 async function driveToken(force = false) {
-  if (!force && token && Date.now() - tokenAt < 40 * 60 * 1000) return token;
+  if (!force && token && Date.now() - tokenAt < 5 * 60 * 1000) return token;
   for (let a = 0; a < 5; a++) {
     try {
       const r = await fetch(`${FN}/drive-access-token`, { method: 'POST', headers: { Authorization: `Bearer ${SECRET_KEY}` } });
@@ -96,11 +103,53 @@ async function driveToken(force = false) {
   throw new Error('não foi possível obter access token do Drive');
 }
 
-/** Codecs reais, lidos por HTTP com Range — não baixa o arquivo inteiro. */
-async function probe(url, at) {
+/**
+ * Baixa o arquivo do Drive para disco antes de converter.
+ *
+ * Ler direto por HTTP no ffmpeg parecia mais elegante (não gasta disco), mas
+ * baixar primeiro deixa o erro do Google legível: com o ffmpeg no meio, tudo
+ * o que sobra é "Server returned 403", sem o corpo da resposta que diz o
+ * motivo — foi o que me fez perseguir a causa errada por duas rodadas.
+ *
+ * Aqui o corpo é sempre lido. O 403 dos `.mov` era `downloadQuotaExceeded`:
+ * COTA DE DOWNLOAD DO PRÓPRIO ARQUIVO no Drive, não autenticação. Vale por
+ * arquivo (o resto do acervo continua baixando normalmente) e o Google
+ * reseta sozinho em ~24h. Não há o que consertar no código: é esperar e
+ * rodar de novo, e o script é idempotente justamente pra isso.
+ */
+class QuotaError extends Error {}
+
+async function download(url, at, dest) {
+  // `-w %{http_code}` em vez de `--fail`: precisamos do corpo do erro, e
+  // `--fail` descarta exatamente ele.
+  const { stdout } = await exec('curl', [
+    '-sSL', '--retry', '3', '--retry-delay', '2',
+    '-H', `Authorization: Bearer ${at}`,
+    '-w', '%{http_code}',
+    url, '-o', dest,
+  ], { maxBuffer: 1 << 22, timeout: 2 * 3600 * 1000 });
+
+  const code = Number(String(stdout).trim().slice(-3));
+  if (code !== 200 && code !== 206) {
+    // Em erro o Drive escreve o JSON no arquivo de saída.
+    let body = '';
+    try { body = fs.readFileSync(dest, 'utf8').slice(0, 400); } catch { /* sem corpo */ }
+    if (body.includes('downloadQuotaExceeded')) {
+      throw new QuotaError('cota de download DESTE arquivo esgotada no Google Drive — reseta sozinha em ~24h');
+    }
+    throw new Error(`download HTTP ${code}: ${body.replace(/\s+/g, ' ').slice(0, 160)}`);
+  }
+
+  const size = fs.statSync(dest).size;
+  if (size < 1024) throw new Error('download vazio');
+  return size;
+}
+
+/** Codecs reais do arquivo já baixado. */
+async function probe(localPath) {
   const { stdout } = await exec('ffprobe', [
-    '-v', 'error', '-headers', `Authorization: Bearer ${at}\r\n`,
-    '-show_entries', 'stream=codec_type,codec_name', '-of', 'json', url,
+    '-v', 'error',
+    '-show_entries', 'stream=codec_type,codec_name', '-of', 'json', localPath,
   ], { maxBuffer: 1 << 24, timeout: 240000 });
   const streams = JSON.parse(stdout).streams || [];
   return {
@@ -129,11 +178,10 @@ function planFor({ video, audio }) {
   };
 }
 
-async function convert(url, at, plan, outPath) {
+async function convert(srcPath, plan, outPath) {
   await exec('ffmpeg', [
     '-y', '-loglevel', 'error',
-    '-headers', `Authorization: Bearer ${at}\r\n`,
-    '-i', url,
+    '-i', srcPath,
     ...plan.args,
     // faststart põe o índice no começo: sem isso o navegador precisa baixar o
     // arquivo inteiro antes de começar a tocar.
@@ -179,7 +227,7 @@ if (DRY) {
 }
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'onemed-vid-'));
-let ok = 0, failed = 0, done = 0;
+let ok = 0, failed = 0, quotaHit = 0, done = 0;
 const stats = { remux: 0, audio: 0, transcode: 0 };
 const errors = [];
 
@@ -188,13 +236,15 @@ async function worker() {
     const row = rows.shift();
     if (!row) return;
     const url = `https://www.googleapis.com/drive/v3/files/${row.drive_file_id}?alt=media`;
+    const src = path.join(tmpDir, `${row.id}.src`);
     const out = path.join(tmpDir, `${row.id}.mp4`);
     const label = row.title.slice(0, 48);
     try {
       const at = await driveToken();
-      const codecs = await probe(url, at);
+      await download(url, at, src);
+      const codecs = await probe(src);
       const plan = planFor(codecs);
-      await convert(url, at, plan, out);
+      await convert(src, plan, out);
 
       const bytes = fs.statSync(out).size;
       if (bytes < 1024) throw new Error('saída vazia');
@@ -210,15 +260,24 @@ async function worker() {
       ok++;
       console.log(`  ✓ [${plan.kind}] ${codecs.video}/${codecs.audio} · ${(bytes / 1e6).toFixed(0)}MB · ${label}`);
     } catch (err) {
-      failed++;
       const msg = String(err.stderr || err.message).slice(0, 160).replace(/\s+/g, ' ');
-      errors.push(`${label}: ${msg}`);
-      console.log(`  ✗ ${label} → ${msg}`);
+      if (err instanceof QuotaError) {
+        // Não é falha nossa e não adianta tentar de novo agora: separado na
+        // contagem pra não poluir o número de erros de verdade.
+        quotaHit++;
+        console.log(`  ⏳ ${label} → ${msg}`);
+      } else {
+        failed++;
+        errors.push(`${label}: ${msg}`);
+        console.log(`  ✗ ${label} → ${msg}`);
+      }
     } finally {
       // Apaga sempre: o disco desta máquina é pequeno perto do acervo.
-      try { fs.unlinkSync(out); } catch { /* já não existe */ }
+      // O acervo é maior que o disco desta máquina: apaga origem e saída
+      // sempre, mesmo em falha.
+      for (const f of [src, out]) { try { fs.unlinkSync(f); } catch { /* já não existe */ } }
       done++;
-      if (done % 10 === 0) console.log(`     … ${done} processadas (${ok} ok, ${failed} falhas)`);
+      if (done % 10 === 0) console.log(`     … ${done} processadas (${ok} ok, ${failed} falhas, ${quotaHit} em cota)`);
     }
   }
 }
@@ -228,10 +287,15 @@ await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
 fs.rmSync(tmpDir, { recursive: true, force: true });
 
 console.log(`\nconcluído em ${((Date.now() - t0) / 60000).toFixed(1)} min`);
-console.log(`ok: ${ok} · falhas: ${failed}`);
+console.log(`ok: ${ok} · falhas: ${failed} · bloqueadas por cota do Drive: ${quotaHit}`);
 console.log(`por operação → remux: ${stats.remux} · só áudio: ${stats.audio} · transcodificado: ${stats.transcode}`);
 if (errors.length) {
   console.log('\nerros:');
   for (const e of errors.slice(0, 20)) console.log('  ' + e);
+}
+if (quotaHit) {
+  console.log(`\n${quotaHit} aula(s) ficaram de fora só porque o Google esgotou a cota de`);
+  console.log('download daqueles arquivos. Nada a corrigir aqui: rodar o mesmo comando');
+  console.log('depois de ~24h retoma exatamente essas (o filtro é storage_path IS NULL).');
 }
 process.exit(failed > 0 && ok === 0 ? 1 : 0);
