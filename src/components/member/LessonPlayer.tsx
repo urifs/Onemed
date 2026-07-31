@@ -48,6 +48,9 @@ export function LessonPlayer({
   const videoRef = useRef<HTMLVideoElement | HTMLAudioElement>(null);
   const lastReported = useRef(0);
   const mediaRetries = useRef(0);
+  // Aula bloqueada pela cota diária do Drive: para de tentar de novo e
+  // preserva a explicação até o aluno trocar de aula.
+  const quotaBlocked = useRef(false);
   const [imgRetryCount, setImgRetryCount] = useState(0);
   const [downloading, setDownloading] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(() => {
@@ -61,6 +64,7 @@ export function LessonPlayer({
     setError(null);
     lastReported.current = 0;
     mediaRetries.current = 0;
+    quotaBlocked.current = false;
     setImgRetryCount(0);
     getUrl(lesson.id)
       .then(url => { if (alive) setSrc(url); })
@@ -103,11 +107,20 @@ export function LessonPlayer({
   };
 
   const handleMediaError = () => {
-    // Cota estourada não melhora tentando de novo — some com o "carregando"
-    // e explica, em vez de insistir cinco vezes e mostrar um erro genérico.
-    if (src) {
-      void quotaMessage(src).then(msg => { if (msg) { mediaRetries.current = RETRY_DELAYS_MS.length; setError(msg); } });
+    // Uma vez identificada a cota, nenhuma tentativa pendente pode voltar e
+    // sobrescrever a explicação com a mensagem genérica.
+    if (quotaBlocked.current) return;
+
+    // Sonda só no primeiro erro: se for a propagação de permissão do Drive
+    // (o caso comum), a resposta não é 429 e as tentativas seguem normais.
+    if (src && mediaRetries.current === 0) {
+      void quotaMessage(src).then(msg => {
+        if (!msg) return;
+        quotaBlocked.current = true;
+        setError(msg);
+      });
     }
+
     if (mediaRetries.current >= RETRY_DELAYS_MS.length) {
       setError('Não foi possível carregar este arquivo. Tente novamente em instantes.');
       return;
@@ -115,6 +128,7 @@ export function LessonPlayer({
     const delay = RETRY_DELAYS_MS[mediaRetries.current];
     mediaRetries.current += 1;
     setTimeout(() => {
+      if (quotaBlocked.current) return;
       if (mpegtsPlayerRef.current) {
         mpegtsPlayerRef.current.unload();
         mpegtsPlayerRef.current.load();
