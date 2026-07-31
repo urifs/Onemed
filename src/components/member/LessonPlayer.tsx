@@ -95,7 +95,15 @@ export function LessonPlayer({
   // reprocessar o arquivo no servidor. Carregado sob demanda (import
   // dinâmico) — a grande maioria das aulas não é .ts e não deveria pagar
   // pelo peso dessa biblioteca no carregamento inicial do app.
-  const isTsVideo = lesson.type === 'video' && lesson.mime_type === 'video/mp2t';
+  //
+  // Detectar por `mime_type` sozinho não bastava: o mime que vem do Drive é o
+  // que o Google adivinhou no upload, e ele erra em parte dos .ts — 134 aulas
+  // (27 GB) da biblioteca estão gravadas como `text/texmacs`, não `video/mp2t`.
+  // Essas caíam no <video> nativo e não tocavam, exatamente o sintoma que os
+  // .ts já tinham antes da correção. A extensão do arquivo é o sinal confiável
+  // aqui, então vale para os dois lados.
+  const isTsVideo = lesson.type === 'video' &&
+    (lesson.mime_type === 'video/mp2t' || /\.ts$/i.test(lesson.title || ''));
   const [mpegtsLib, setMpegtsLib] = useState<typeof Mpegts | null>(null);
   const mpegtsPlayerRef = useRef<Mpegts.Player | null>(null);
 
