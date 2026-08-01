@@ -385,10 +385,10 @@ const S8: React.FC<{ t: number }> = ({ t }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const op = sceneOpacity(t, SCENES.s8);
-  if (op <= 0) return null;
   const base = Math.round(SCENES.s8[0] * FPS);
   const cursos = useCountUp(530, base + 4, 40);
   const livros = useCountUp(9000, base + 16, 44);
+  if (op <= 0) return null;
   const s1 = spring({ frame: frame - base - 2, fps, config: { damping: 14, stiffness: 70 }, from: 0.8, to: 1 });
   const s2 = spring({ frame: frame - base - 14, fps, config: { damping: 14, stiffness: 70 }, from: 0.8, to: 1 });
   const o1 = interpolate(frame - base, [2, 14], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
