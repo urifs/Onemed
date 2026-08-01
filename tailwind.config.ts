@@ -91,6 +91,10 @@ export default {
           "0%, 100%": { boxShadow: "0 0 18px rgba(239, 68, 68, 0.45)" },
           "50%": { boxShadow: "0 0 36px rgba(239, 68, 68, 0.8)" },
         },
+        "admin-ring-pulse": {
+          "0%, 100%": { boxShadow: "0 0 0 4px rgba(239, 68, 68, 0.9)" },
+          "50%": { boxShadow: "0 0 0 4px rgba(239, 68, 68, 0.35)" },
+        },
         "fade-in": {
           from: { opacity: "0", transform: "translateY(10px)" },
           to: { opacity: "1", transform: "translateY(0)" },
@@ -102,6 +106,8 @@ export default {
         "pulse-glow": "pulse-glow 2s infinite",
         "pulse-slow": "pulse-slow 2s ease-in-out infinite",
         "fade-in": "fade-in 0.4s ease-out",
+        "spin-slow": "spin 3s linear infinite",
+        "admin-ring-pulse": "admin-ring-pulse 1.6s ease-in-out infinite",
       },
     },
   },

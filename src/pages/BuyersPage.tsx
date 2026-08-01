@@ -8,14 +8,19 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { formatDateTimeSP, todayStartISO, fetchAllRows } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { DollarSign, Users, Clock, TrendingUp, Mail, Calendar, Phone, Trash2, UserPlus, Loader2, RefreshCw, CheckCircle, XCircle, X, Download } from 'lucide-react';
+import { DollarSign, Users, Clock, TrendingUp, Mail, Calendar, Phone, Trash2, UserPlus, Loader2, RefreshCw, CheckCircle, XCircle, X, Download, AlertTriangle } from 'lucide-react';
 import { WhatsAppLink } from '@/components/WhatsAppLink';
+
+const PLAN_LABELS: Record<string, string> = {
+  monthly: 'Mensal', annual: 'Anual', lifetime: 'Vitalício', lifetime_plus: 'Vitalício Plus', lifetime_pro: 'Vitalício Pro',
+};
 
 export default function BuyersPage() {
   const { session } = useAuth();
   const [buyers, setBuyers] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [newEmail, setNewEmail] = useState('');
   const [newPlan, setNewPlan] = useState('annual');
@@ -25,6 +30,7 @@ export default function BuyersPage() {
 
   const fetchData = useCallback(async () => {
     setLoading(true);
+    setLoadError(false);
     try {
       const buyersData = await fetchAllRows((f, t) =>
         supabase.from('buyers').select('*').eq('status', 'approved').order('created_at', { ascending: false }).range(f, t)
@@ -33,14 +39,20 @@ export default function BuyersPage() {
       const all = buyersData;
       const todayISO = todayStartISO();
       const today = all.filter(b => b.created_at >= todayISO);
+      const byPlan: Record<string, number> = {};
+      for (const plan of Object.keys(PLAN_LABELS)) {
+        byPlan[plan] = today.filter(b => b.plan === plan).length;
+      }
       setStats({
         total: today.length,
         approved: today.filter(b => b.status === 'approved').length,
         revenue: today.filter(b => b.status === 'approved').reduce((s: number, b: any) => s + (b.amount || 0), 0),
-        lifetime: today.filter(b => b.plan === 'lifetime').length,
-        annual: today.filter(b => b.plan === 'annual').length,
+        byPlan,
       });
-    } catch { toast.error('Erro ao carregar compradores'); }
+    } catch {
+      toast.error('Erro ao carregar compradores');
+      setLoadError(true);
+    }
     finally { setLoading(false); }
   }, []);
 
@@ -132,7 +144,6 @@ export default function BuyersPage() {
             { label: 'Compradores', value: loading ? '—' : buyers.length, icon: Users, color: 'text-primary' },
             { label: 'Receita Hoje', value: stats ? `R$ ${stats.revenue.toFixed(2)}` : '—', icon: DollarSign, color: 'text-accent-warning' },
             { label: 'Aprovados Hoje', value: stats?.approved ?? '—', icon: CheckCircle, color: 'text-accent-success' },
-            { label: 'Vitalícios Hoje', value: stats?.lifetime ?? '—', icon: TrendingUp, color: 'text-accent-info' },
           ].map((s, i) => (
             <Card key={i} className="bg-background-paper border-border">
               <CardContent className="p-5">
@@ -144,6 +155,22 @@ export default function BuyersPage() {
               </CardContent>
             </Card>
           ))}
+          <Card className="bg-background-paper border-border col-span-2 lg:col-span-3">
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-sm text-muted-foreground">Vendas Hoje por Plano</p>
+                <TrendingUp className="w-4 h-4 text-accent-info" />
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                {Object.entries(PLAN_LABELS).map(([plan, label]) => (
+                  <div key={plan} className="rounded-lg bg-secondary/50 border border-border px-3 py-2">
+                    <p className="text-xs text-muted-foreground truncate">{label}</p>
+                    <p className="font-secondary text-lg font-bold text-foreground">{loading ? '—' : stats?.byPlan?.[plan] ?? 0}</p>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Search */}
@@ -171,7 +198,7 @@ export default function BuyersPage() {
                         ) : '—'}
                       </td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">{buyer.name || '—'}</td>
-                      <td className="px-4 py-3 text-sm text-muted-foreground capitalize">{buyer.plan}</td>
+                      <td className="px-4 py-3 text-sm text-muted-foreground">{PLAN_LABELS[buyer.plan] || buyer.plan}</td>
                       <td className="px-4 py-3 text-sm text-foreground">{buyer.amount ? `R$ ${Number(buyer.amount).toFixed(2)}` : '—'}</td>
                       <td className="px-4 py-3">{statusBadge(buyer.status)}</td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">{formatDateTimeSP(buyer.created_at)}</td>
@@ -184,7 +211,16 @@ export default function BuyersPage() {
                   ))}
                 </tbody>
               </table>
-              {filtered.length === 0 && !loading && (
+              {loadError && !loading && (
+                <div className="flex flex-col items-center gap-3 py-12 text-center px-4">
+                  <AlertTriangle className="w-6 h-6 text-accent-warning" />
+                  <p className="text-foreground text-sm font-medium">Não foi possível carregar os compradores</p>
+                  <Button onClick={fetchData} size="sm" variant="outline" className="border-border text-muted-foreground hover:text-foreground gap-2">
+                    <RefreshCw className="w-3.5 h-3.5" /> Tentar novamente
+                  </Button>
+                </div>
+              )}
+              {!loadError && filtered.length === 0 && !loading && (
                 <p className="text-muted-foreground text-center py-12">Nenhum comprador encontrado</p>
               )}
             </div>
@@ -195,7 +231,7 @@ export default function BuyersPage() {
       {/* Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-          <div className="glass-strong rounded-2xl p-6 w-full max-w-md border border-border">
+          <div className="bg-background-paper rounded-2xl p-6 w-full max-w-md border border-border">
             <div className="flex items-center justify-between mb-6">
               <h2 className="font-secondary text-xl font-bold text-foreground">Novo Comprador</h2>
               <button onClick={() => setShowModal(false)} className="text-muted-foreground hover:text-foreground">
@@ -212,8 +248,11 @@ export default function BuyersPage() {
                 <Select value={newPlan} onValueChange={setNewPlan}>
                   <SelectTrigger className="bg-secondary border-border text-foreground"><SelectValue /></SelectTrigger>
                   <SelectContent className="bg-background-paper border-border">
+                    <SelectItem value="monthly">Mensal</SelectItem>
                     <SelectItem value="annual">Anual</SelectItem>
                     <SelectItem value="lifetime">Vitalício</SelectItem>
+                    <SelectItem value="lifetime_plus">Vitalício Plus</SelectItem>
+                    <SelectItem value="lifetime_pro">Vitalício Pro</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

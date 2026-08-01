@@ -430,8 +430,9 @@ export default function SMSPage() {
                   </span>
                 )}
                 {activeJob.status === 'completed' && (
-                  <span className="text-xs text-green-400 font-medium">
-                    ✓ {activeJob.sent} enviados · {activeJob.failed} falhas
+                  <span className="inline-flex items-center gap-1 text-xs text-green-400 font-medium">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    {activeJob.sent} enviados · {activeJob.failed} falhas
                   </span>
                 )}
               </div>

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { trackInitiateCheckout } from '@/lib/pixel';
+import { trackInitiateCheckout, trackViewContent, trackAddToCart } from '@/lib/pixel';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -25,27 +25,65 @@ import {
   User,
   Infinity,
   ChevronDown,
+  Calendar,
+  HardDrive,
+  Crown,
 } from 'lucide-react';
-import { formatWhatsApp } from '@/lib/utils';
+import { formatWhatsApp, extractFunctionErrorMessage } from '@/lib/utils';
+import { ThemeToggle } from '@/components/ThemeToggle';
+
+const MEDUF_URL = 'https://meduf.com.br/about';
+
+// Deixa clicável só o trecho "Meduf" dentro do texto da feature, sem
+// interromper o clique no card inteiro (que seleciona o plano).
+function renderFeatureText(feature: string) {
+  const idx = feature.indexOf('Meduf');
+  if (idx === -1) return feature;
+  return (
+    <>
+      {feature.slice(0, idx)}
+      <a
+        href={MEDUF_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={e => e.stopPropagation()}
+        className="underline decoration-dotted underline-offset-2 hover:text-foreground"
+      >
+        Meduf
+      </a>
+      {feature.slice(idx + 'Meduf'.length)}
+    </>
+  );
+}
 
 const COUNTRIES = [
-  { code: '+55', country: 'Brasil', flag: '🇧🇷' },
-  { code: '+54', country: 'Argentina', flag: '🇦🇷' },
-  { code: '+595', country: 'Paraguai', flag: '🇵🇾' },
-  { code: '+598', country: 'Uruguai', flag: '🇺🇾' },
-  { code: '+591', country: 'Bolívia', flag: '🇧🇴' },
-  { code: '+56', country: 'Chile', flag: '🇨🇱' },
-  { code: '+51', country: 'Peru', flag: '🇵🇪' },
-  { code: '+57', country: 'Colômbia', flag: '🇨🇴' },
+  { code: '+55', country: 'Brasil', flag: 'BR' },
+  { code: '+54', country: 'Argentina', flag: 'AR' },
+  { code: '+595', country: 'Paraguai', flag: 'PY' },
+  { code: '+598', country: 'Uruguai', flag: 'UY' },
+  { code: '+591', country: 'Bolívia', flag: 'BO' },
+  { code: '+56', country: 'Chile', flag: 'CL' },
+  { code: '+51', country: 'Peru', flag: 'PE' },
+  { code: '+57', country: 'Colômbia', flag: 'CO' },
 ];
 
 const UPSELL_PRICE = 19.90;
 const UPSELL2_PRICE = 9.90;
 
 const PLANS: Record<string, {
-  name: string; originalPrice: number; price: number; period: string;
-  icon: React.ElementType; features: string[]; highlight: boolean;
+  name: string; originalPrice?: number; price: number; period: string;
+  icon: React.ElementType; features: string[]; badge?: string;
 }> = {
+  monthly: {
+    name: 'Plano Mensal',
+    price: 49.00,
+    period: '/mês',
+    icon: Calendar,
+    features: [
+      'Acesso por 1 mês',
+      '1 tela simultânea',
+    ],
+  },
   annual: {
     name: 'Plano Anual',
     originalPrice: 399,
@@ -53,14 +91,10 @@ const PLANS: Record<string, {
     period: '/ano',
     icon: Clock,
     features: [
-      'Acesso por 12 meses',
-      '+530 cursos completos',
-      '+9.000 livros médicos',
+      'Acesso por 1 ano',
+      '2 telas simultâneas',
       'Atualizações mensais',
-      'Garantia 2026/2027',
-      'Suporte 24/7',
     ],
-    highlight: false,
   },
   lifetime: {
     name: 'Plano Vitalício',
@@ -69,14 +103,40 @@ const PLANS: Record<string, {
     period: ' único',
     icon: Infinity,
     features: [
-      'Acesso para sempre',
-      '+530 cursos completos',
-      '+9.000 livros médicos',
-      'Todas as atualizações futuras',
-      'Apps Whitebook e WeMeds',
-      'Suporte 24/7 vitalício',
+      'Acesso vitalício',
+      '2 telas simultâneas',
+      'Atualizações mensais',
     ],
-    highlight: true,
+    badge: 'MAIS POPULAR',
+  },
+  lifetime_plus: {
+    name: 'Plano Vitalício Plus',
+    price: 599.00,
+    period: ' único',
+    icon: HardDrive,
+    features: [
+      'Acesso vitalício',
+      '4 telas simultâneas',
+      'Atualizações mensais',
+      'Backup de tudo da plataforma no seu próprio Google Drive',
+      'Downloads liberados',
+    ],
+  },
+  lifetime_pro: {
+    name: 'Plano Vitalício Pro',
+    price: 997.00,
+    period: ' único',
+    icon: Crown,
+    features: [
+      'Acesso vitalício',
+      '6 telas simultâneas',
+      'Atualizações mensais + semanais',
+      'Backup de tudo da plataforma no seu próprio Google Drive',
+      'Downloads liberados em massa',
+      'Acesso a todas as atualizações sem precisar de nenhuma colaboração',
+      'Acesso à IA de diagnósticos Meduf (meduf.com.br)',
+    ],
+    badge: 'MAIS COMPLETO',
   },
 };
 
@@ -106,12 +166,17 @@ export default function CheckoutPage() {
   const [couponLoading, setCouponLoading] = useState(false);
   const [discountPercent, setDiscountPercent] = useState(0);
 
-  // Auto-apply coupon from URL + track InitiateCheckout
+  // Auto-apply coupon from URL + ViewContent
+  //
+  // Aqui o evento certo é ViewContent: abrir a página de planos não é iniciar
+  // um checkout. Enquanto o InitiateCheckout disparava neste ponto, a Meta
+  // recebia ~565 "inícios de checkout" para 203 checkouts reais, todos sem
+  // email (o formulário só é preenchido três passos adiante) — ou seja, a
+  // campanha otimizava para quem abre a página, não para quem quer comprar.
   useEffect(() => {
     if (initialCoupon) handleApplyCoupon(initialCoupon);
-    // Track InitiateCheckout when page loads
     const plan = PLANS[selectedPlan];
-    if (plan) trackInitiateCheckout(selectedPlan, plan.price);
+    if (plan) trackViewContent(selectedPlan, plan.price);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -129,6 +194,10 @@ export default function CheckoutPage() {
       if (data) {
         setCouponApplied(data);
         setDiscountPercent(data.discount_percent);
+        const allowedPlans = data.allowed_plans || 'all';
+        if (allowedPlans !== 'all' && allowedPlans !== selectedPlan) {
+          setSelectedPlan(allowedPlans);
+        }
         toast.success(`Cupom aplicado! ${data.discount_percent}% de desconto`);
       } else {
         setCouponApplied(null);
@@ -140,6 +209,24 @@ export default function CheckoutPage() {
     } finally {
       setCouponLoading(false);
     }
+  };
+
+  const handleContinueFromPlan = () => {
+    const allowedPlans = couponApplied?.allowed_plans;
+    if (allowedPlans && allowedPlans !== 'all' && allowedPlans !== selectedPlan) {
+      const planName = PLANS[allowedPlans]?.name || allowedPlans;
+      toast.error(`O cupom ${couponApplied.code} é válido apenas para o ${planName}`);
+      return;
+    }
+    // Plano escolhido = item no carrinho. Junto com o ViewContent da abertura
+    // e o InitiateCheckout do clique de pagar, isso fecha o funil que a Meta
+    // usa pra montar público e otimizar.
+    const extras: string[] = [];
+    if (upsellSelected) extras.push('upsell');
+    if (upsell2Selected) extras.push('upsell2');
+    trackAddToCart(selectedPlan, getTotalPrice(), extras);
+
+    setStep(2);
   };
 
   const handleRemoveCoupon = () => {
@@ -180,6 +267,24 @@ export default function CheckoutPage() {
 
   const handleMercadoPagoCheckout = async () => {
     if (!validateCustomerData()) return;
+    // Segunda checagem, além da trava na tela de seleção de plano — evita
+    // seguir com uma combinação que o servidor vai rejeitar de qualquer forma.
+    const allowedPlans = couponApplied?.allowed_plans;
+    if (allowedPlans && allowedPlans !== 'all' && allowedPlans !== selectedPlan) {
+      const planName = PLANS[allowedPlans]?.name || allowedPlans;
+      toast.error(`O cupom ${couponApplied.code} é válido apenas para o ${planName}`);
+      return;
+    }
+    // InitiateCheckout de verdade: o usuário mandou ir pro pagamento e o
+    // formulário já está preenchido, então email/telefone/nome vão junto na
+    // correspondência avançada (antes esse evento saía com email em 1%).
+    trackInitiateCheckout(selectedPlan, getTotalPrice(), {
+      email: customerEmail,
+      phone: `${selectedCountry.code}${customerWhatsapp.replace(/\D/g, '')}`,
+      name: customerName,
+      country: selectedCountry.flag || undefined,  // 'BR', 'AR'… é o ISO de 2 letras que a Meta espera
+    });
+
     setLoading(true);
     try {
       const ref = `onemed_${Date.now()}_${Math.random().toString(36).slice(2)}`;
@@ -219,7 +324,9 @@ export default function CheckoutPage() {
         },
       });
 
-      if (fnErr || result?.error) throw new Error(result?.error || fnErr?.message);
+      if (fnErr || result?.error) {
+        throw new Error(result?.error || await extractFunctionErrorMessage(fnErr, 'Erro ao processar pagamento'));
+      }
 
       localStorage.setItem('pending_purchase', JSON.stringify({
         external_reference: ref,
@@ -242,10 +349,9 @@ export default function CheckoutPage() {
   const renderPlanSelection = () => (
     <div className="space-y-6">
       <div className="flex justify-center">
-        <div className="bg-accent-warning/20 border border-accent-warning/40 rounded-full px-6 py-2 flex items-center gap-2 animate-pulse">
-          <Clock className="w-4 h-4 text-accent-warning" />
-          <span className="text-accent-warning font-semibold text-sm">OFERTA POR TEMPO LIMITADO</span>
-          <Clock className="w-4 h-4 text-accent-warning" />
+        <div className="inline-flex items-center gap-2 border border-accent-warning/30 text-accent-warning text-xs font-semibold uppercase tracking-wide rounded-full px-4 py-1.5">
+          <Clock className="w-3.5 h-3.5" />
+          Oferta por tempo limitado
         </div>
       </div>
 
@@ -254,38 +360,53 @@ export default function CheckoutPage() {
         <p className="text-muted-foreground">Acesso ilimitado a todo o conteúdo médico</p>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-6">
-        {Object.entries(PLANS).map(([key, plan]) => (
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        {Object.entries(PLANS).map(([key, plan]) => {
+          const lockedByCoupon = Boolean(
+            couponApplied?.allowed_plans && couponApplied.allowed_plans !== 'all' && couponApplied.allowed_plans !== key
+          );
+          return (
           <div
             key={key}
-            onClick={() => setSelectedPlan(key)}
-            className={`relative p-6 rounded-2xl cursor-pointer transition-all duration-300 border-2 ${
+            onClick={() => !lockedByCoupon && setSelectedPlan(key)}
+            className={`relative p-6 rounded-2xl border-2 transition-all duration-300 ${
+              lockedByCoupon ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'
+            } ${
               selectedPlan === key ? 'bg-primary/10 border-primary' : 'bg-secondary/30 border-border hover:border-border'
-            } ${plan.highlight ? 'ring-2 ring-primary/20' : ''}`}
+            } ${plan.badge ? 'ring-2 ring-primary/20' : ''}`}
           >
-            {plan.highlight && (
+            {lockedByCoupon && (
+              <div className="absolute -top-3 right-4">
+                <span className="bg-secondary border border-border text-muted-foreground text-xs font-semibold px-3 py-1 rounded-full">
+                  Indisponível com esse cupom
+                </span>
+              </div>
+            )}
+            {plan.badge && !lockedByCoupon && (
               <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                <span className="bg-primary text-primary-foreground text-xs font-bold px-3 py-1 rounded-full">MAIS POPULAR</span>
+                <span className="bg-primary text-primary-foreground text-xs font-bold px-3 py-1 rounded-full whitespace-nowrap">{plan.badge}</span>
               </div>
             )}
             <div className="flex items-center gap-3 mb-4">
-              <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${selectedPlan === key ? 'bg-primary' : 'bg-secondary'}`}>
+              <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${selectedPlan === key ? 'bg-primary' : 'bg-secondary'}`}>
                 <plan.icon className={`w-6 h-6 ${selectedPlan === key ? 'text-primary-foreground' : 'text-muted-foreground'}`} />
               </div>
-              <h3 className="font-secondary text-xl font-bold text-foreground">{plan.name}</h3>
+              <h3 className="font-secondary text-lg font-bold text-foreground">{plan.name}</h3>
             </div>
             <div className="mb-6">
               <div className="flex items-baseline gap-2">
-                <span className="text-lg text-muted-foreground line-through">R${plan.originalPrice}</span>
+                {plan.originalPrice && (
+                  <span className="text-lg text-muted-foreground line-through">R${plan.originalPrice}</span>
+                )}
                 <span className="text-4xl font-bold text-foreground">R${plan.price.toFixed(2).replace('.', ',')}</span>
               </div>
               <span className="text-muted-foreground text-sm">{plan.period}</span>
             </div>
             <ul className="space-y-2">
               {plan.features.map((feature, i) => (
-                <li key={i} className="flex items-center gap-2 text-sm">
-                  <Check className={`w-4 h-4 flex-shrink-0 ${selectedPlan === key ? 'text-primary' : 'text-accent-success'}`} />
-                  <span className="text-muted-foreground">{feature}</span>
+                <li key={i} className="flex items-start gap-2 text-sm">
+                  <Check className={`w-4 h-4 flex-shrink-0 mt-0.5 ${selectedPlan === key ? 'text-primary' : 'text-accent-success'}`} />
+                  <span className="text-muted-foreground">{renderFeatureText(feature)}</span>
                 </li>
               ))}
             </ul>
@@ -293,11 +414,12 @@ export default function CheckoutPage() {
               {selectedPlan === key && <Check className="w-4 h-4 text-primary-foreground" />}
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Coupon */}
-      <div className="glass rounded-xl p-6">
+      <div className="bg-card border border-border rounded-xl p-6">
         <div className="flex items-center gap-2 mb-4">
           <Ticket className="w-5 h-5 text-accent-success" />
           <h3 className="text-foreground font-semibold">Tem um cupom de desconto?</h3>
@@ -349,7 +471,7 @@ export default function CheckoutPage() {
         )}
       </div>
 
-      <Button onClick={() => setStep(2)} className="w-full h-14 bg-primary hover:bg-primary-hover text-primary-foreground font-semibold text-lg">
+      <Button onClick={handleContinueFromPlan} className="w-full h-14 bg-primary hover:bg-primary-hover text-primary-foreground font-semibold text-lg">
         Continuar <ArrowRight className="w-5 h-5 ml-2" />
       </Button>
     </div>
@@ -464,7 +586,7 @@ export default function CheckoutPage() {
       </div>
 
       {/* Plan summary */}
-      <div className="glass rounded-xl p-4">
+      <div className="bg-card border border-border rounded-xl p-4">
         <div className="flex justify-between items-center">
           <div>
             <p className="text-muted-foreground text-sm">Plano selecionado</p>
@@ -495,7 +617,7 @@ export default function CheckoutPage() {
                 onClick={() => setShowCountryDropdown(!showCountryDropdown)}
                 className="flex items-center gap-1.5 h-12 px-3 bg-secondary border border-border rounded-lg text-sm text-foreground hover:border-border"
               >
-                <span>{selectedCountry.flag}</span>
+                <span className="text-xs font-mono text-muted-foreground">{selectedCountry.flag}</span>
                 <span>{selectedCountry.code}</span>
                 <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
               </button>
@@ -508,7 +630,7 @@ export default function CheckoutPage() {
                       onClick={() => { setSelectedCountry(c); setShowCountryDropdown(false); setCustomerWhatsapp(''); }}
                       className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-secondary text-left"
                     >
-                      <span>{c.flag}</span>
+                      <span className="text-xs font-mono text-muted-foreground w-6">{c.flag}</span>
                       <span>{c.country}</span>
                       <span className="ml-auto text-muted-foreground">{c.code}</span>
                     </button>
@@ -563,7 +685,7 @@ export default function CheckoutPage() {
       </div>
 
       {/* Order summary */}
-      <div className="glass rounded-xl p-4">
+      <div className="bg-card border border-border rounded-xl p-4">
         <h4 className="text-foreground font-semibold mb-3">Resumo do Pedido</h4>
         <div className="space-y-2 text-sm">
           <div className="flex justify-between">
@@ -596,7 +718,7 @@ export default function CheckoutPage() {
       </div>
 
       {/* Available payment methods info */}
-      <div className="glass rounded-xl p-4">
+      <div className="bg-card border border-border rounded-xl p-4">
         <p className="text-muted-foreground text-sm text-center mb-3 font-medium">Métodos de pagamento disponíveis</p>
         <div className="flex items-center justify-center gap-6">
           <div className="flex flex-col items-center gap-1">
@@ -645,7 +767,7 @@ export default function CheckoutPage() {
 
   // ─── Layout ───────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-hero-gradient">
+    <div className="min-h-screen bg-background">
       {/* Header */}
       <header className="px-6 py-6 border-b border-border/50">
         <nav className="max-w-4xl mx-auto flex items-center justify-between">
@@ -658,9 +780,12 @@ export default function CheckoutPage() {
               <span className="text-muted-foreground text-xs block">Comunidade Médica</span>
             </div>
           </Link>
-          <div className="flex items-center gap-2 text-muted-foreground text-sm">
-            <Shield className="w-4 h-4" />
-            <span className="hidden sm:inline">Compra Segura</span>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 text-muted-foreground text-sm">
+              <Shield className="w-4 h-4" />
+              <span className="hidden sm:inline">Compra Segura</span>
+            </div>
+            <ThemeToggle />
           </div>
         </nav>
       </header>
@@ -689,7 +814,7 @@ export default function CheckoutPage() {
 
       {/* Content */}
       <main className="px-6 py-12">
-        <div className="max-w-2xl mx-auto">
+        <div className={step === 1 ? 'max-w-5xl mx-auto' : 'max-w-2xl mx-auto'}>
           {step === 1 && renderPlanSelection()}
           {step === 2 && renderUpsellStep()}
           {step === 3 && renderCustomerDataForm()}

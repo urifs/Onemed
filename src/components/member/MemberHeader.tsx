@@ -1,16 +1,48 @@
+import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, Stethoscope } from 'lucide-react';
+import { Stethoscope, MessageCircle } from 'lucide-react';
 import { AccountMenu } from './AccountMenu';
+import { NotificationsBell } from './NotificationsBell';
 import { TrialCountdownBar } from './TrialCountdownBar';
 import { MemberPWAHead } from './MemberPWAHead';
+import { ThemeToggle } from '@/components/ThemeToggle';
+import { useAuth } from '@/context/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
 
-interface MemberHeaderProps {
-  query: string;
-  onQueryChange: (value: string) => void;
-  searchPlaceholder?: string;
+// Presença em tempo real pro quadro "Quem está online" do admin — sem PII
+// no payload (só a chave anônima da conexão, o user_id), o admin resolve
+// email a partir do roster (RPC admin-only), nunca lendo direto do canal.
+// Monta uma vez por sessão (MemberHeader está em toda página de membro).
+function useMemberPresence() {
+  const { user } = useAuth();
+  useEffect(() => {
+    if (!user?.id) return;
+    const channel = supabase.channel('online-members', { config: { presence: { key: user.id } } });
+    channel.subscribe(async (status) => {
+      if (status === 'SUBSCRIBED') await channel.track({ online_at: new Date().toISOString() });
+    });
+    return () => { supabase.removeChannel(channel); };
+  }, [user?.id]);
 }
 
-export function MemberHeader({ query, onQueryChange, searchPlaceholder = 'Buscar curso…' }: MemberHeaderProps) {
+// Geolocaliza por IP pro mapa de usuários do dashboard admin. Roda uma vez
+// por aba/sessão (não em todo login) — cobre também quem já estava logado
+// antes dessa feature existir e cujo token de sessão nunca mais passa por
+// member-auth-request/create-trial-access.
+function useLocationCapture() {
+  const { user } = useAuth();
+  useEffect(() => {
+    if (!user?.id) return;
+    const flagKey = `om_loc_captured_${user.id}`;
+    if (sessionStorage.getItem(flagKey)) return;
+    sessionStorage.setItem(flagKey, '1');
+    supabase.functions.invoke('member-capture-location').catch(() => {});
+  }, [user?.id]);
+}
+
+export function MemberHeader() {
+  useMemberPresence();
+  useLocationCapture();
   return (
     <>
       <MemberPWAHead />
@@ -31,16 +63,15 @@ export function MemberHeader({ query, onQueryChange, searchPlaceholder = 'Buscar
 
           <div className="flex-1" />
 
-          <div className="relative w-full max-w-[150px] sm:max-w-xs">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <input
-              value={query}
-              onChange={e => onQueryChange(e.target.value)}
-              placeholder={searchPlaceholder}
-              className="w-full h-9 pl-9 pr-3 rounded-full bg-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors"
-            />
-          </div>
-
+          <Link
+            to="/membros/comunidade"
+            className="w-9 h-9 shrink-0 rounded-full bg-secondary border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors"
+            title="Comunidade"
+          >
+            <MessageCircle className="w-4 h-4" />
+          </Link>
+          <NotificationsBell />
+          <ThemeToggle />
           <AccountMenu />
         </div>
       </header>

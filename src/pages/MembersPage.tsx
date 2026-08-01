@@ -8,28 +8,21 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { formatDateTimeSP, fetchAllRows } from '@/lib/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import {
   UserPlus, Search, XCircle, Loader2, GraduationCap, ExternalLink,
-  Users, BookOpen, FolderOpen, RefreshCw, Upload, CheckCircle2, UserCheck, AlertTriangle, Circle,
+  Users, BookOpen, FolderOpen, RefreshCw, Upload, CheckCircle2, UserCheck, AlertTriangle,
 } from 'lucide-react';
-
-const ONLINE_WINDOW_MINUTES = 10;
-const ONLINE_POLL_MS = 20000;
-
-function timeAgo(iso: string): string {
-  const diffMs = Date.now() - new Date(iso).getTime();
-  const mins = Math.max(0, Math.floor(diffMs / 60000));
-  if (mins < 1) return 'agora mesmo';
-  if (mins === 1) return 'há 1 min';
-  return `há ${mins} min`;
-}
 import { Link } from 'react-router-dom';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const BULK_CHUNK_SIZE = 300;
+const PLAN_DURATION_DAYS: Record<string, number> = { annual: 365, monthly: 30 };
+function planExpiresAt(plan: string): string | null {
+  const days = PLAN_DURATION_DAYS[plan];
+  return days ? new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString() : null;
+}
 
 function extractEmails(raw: string): string[] {
   // Accepts one-per-line, comma/semicolon-separated, or a messy paste with
@@ -55,52 +48,281 @@ interface MemberRow {
   accessId?: string;
 }
 
+const PLAN_SELECT_ITEMS = (
+  <>
+    <SelectItem value="lifetime">Vitalício</SelectItem>
+    <SelectItem value="lifetime_plus">Vitalício Plus</SelectItem>
+    <SelectItem value="lifetime_pro">Vitalício Pro</SelectItem>
+    <SelectItem value="annual">Anual (365 dias)</SelectItem>
+    <SelectItem value="monthly">Mensal (30 dias)</SelectItem>
+  </>
+);
+
+// Estado do formulário (email/plano digitados) isolado num componente
+// próprio — antes vivia direto em MembersPage, então cada tecla digitada
+// no email (ou troca de plano) re-renderizava a página inteira, incluindo
+// a tabela de membros (centenas/milhares de linhas), travando a digitação.
+function GrantAccessDialog({ open, onOpenChange, onGranted }: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onGranted: () => void;
+}) {
+  const [newEmail, setNewEmail] = useState('');
+  const [newPlan, setNewPlan] = useState('lifetime');
+  const [adding, setAdding] = useState(false);
+
+  const grantAccess = async () => {
+    if (!newEmail) { toast.error('Informe um email'); return; }
+    setAdding(true);
+    try {
+      const email = newEmail.toLowerCase();
+      const expiresAt = planExpiresAt(newPlan);
+
+      // Atualiza a linha ativa já existente em vez de sempre inserir uma
+      // nova — sem isso, conceder/trocar o plano de quem já tinha acesso
+      // deixava duas linhas "active" pro mesmo email (uma antiga e uma
+      // nova), e as telas que leem "o acesso ativo" podiam pegar a errada
+      // (plano errado no perfil, limite de telas errado).
+      const { data: existing } = await supabase
+        .from('accesses')
+        .select('id')
+        .eq('email', email)
+        .eq('status', 'active')
+        .neq('access_type', 'trial')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const { error } = existing
+        ? await supabase.from('accesses').update({ access_type: newPlan, status: 'active', expires_at: expiresAt }).eq('id', existing.id)
+        : await supabase.from('accesses').insert({ email, access_type: newPlan, status: 'active', expires_at: expiresAt });
+      if (error) throw error;
+      toast.success(existing ? 'Plano do membro atualizado' : 'Acesso à área de membros concedido');
+      onOpenChange(false);
+      setNewEmail('');
+      onGranted();
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao conceder acesso');
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogTrigger asChild>
+        <Button className="bg-primary hover:bg-primary-hover text-primary-foreground gap-2">
+          <UserPlus className="w-4 h-4" /> Conceder Acesso
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="bg-background-paper border-border">
+        <DialogHeader>
+          <DialogTitle className="text-foreground">Conceder Acesso à Área de Membros</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 pt-2">
+          <div className="space-y-2">
+            <Label className="text-foreground">Email</Label>
+            <Input value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="email@exemplo.com" className="bg-secondary border-border text-foreground" />
+          </div>
+          <div className="space-y-2">
+            <Label className="text-foreground">Plano</Label>
+            <Select value={newPlan} onValueChange={setNewPlan}>
+              <SelectTrigger className="bg-secondary border-border text-foreground"><SelectValue /></SelectTrigger>
+              <SelectContent className="bg-background-paper border-border">
+                {PLAN_SELECT_ITEMS}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button onClick={grantAccess} disabled={adding} className="w-full bg-primary hover:bg-primary-hover text-primary-foreground gap-2">
+            {adding ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+            {adding ? 'Concedendo...' : 'Conceder Acesso'}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Mesmo motivo do GrantAccessDialog acima — bulkText é um texto grande
+// (potencialmente milhares de emails colados), então cada tecla digitada
+// no textarea não pode re-renderizar a tabela de membros da página.
+function BulkImportDialog({ open, onOpenChange, onImported }: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onImported: () => void;
+}) {
+  const [bulkText, setBulkText] = useState('');
+  const [bulkPlan, setBulkPlan] = useState('lifetime');
+  const [bulkImporting, setBulkImporting] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
+  const [bulkResult, setBulkResult] = useState<{ granted: number; replaced: number; invalid: number } | null>(null);
+
+  const handleBulkFile = async (file: File) => {
+    const text = await file.text();
+    setBulkText(prev => (prev ? `${prev}\n${text}` : text));
+  };
+
+  const bulkImport = async () => {
+    const candidates = extractEmails(bulkText);
+    const invalidCount = (bulkText.split(/\r?\n/).map(l => l.trim()).filter(Boolean).length) - candidates.length;
+    if (candidates.length === 0) { toast.error('Nenhum email válido encontrado no texto'); return; }
+
+    setBulkImporting(true);
+    setBulkResult(null);
+    setBulkProgress({ done: 0, total: candidates.length });
+    try {
+      // Quem já tem uma linha de acesso ativa (não-trial) tem ela SUBSTITUÍDA
+      // pelo plano selecionado aqui, em vez de pular ou duplicar — mesmo
+      // comportamento do "Conceder Acesso" individual. fetchAllRows já
+      // devolve o array pronto (não {data: [...]}).
+      const existingAccesses = await fetchAllRows<{ email: string }>((f, t) =>
+        supabase.from('accesses').select('email').eq('status', 'active').neq('access_type', 'trial').range(f, t)
+      );
+      const hasAccessRow = new Set(existingAccesses.map(a => a.email.toLowerCase()));
+
+      const toReplace = candidates.filter(e => hasAccessRow.has(e));
+      const toInsert = candidates.filter(e => !hasAccessRow.has(e));
+      const expiresAt = planExpiresAt(bulkPlan);
+
+      let replaced = 0;
+      for (let i = 0; i < toReplace.length; i += BULK_CHUNK_SIZE) {
+        const chunk = toReplace.slice(i, i + BULK_CHUNK_SIZE);
+        const { error } = await supabase.from('accesses')
+          .update({ access_type: bulkPlan, status: 'active', expires_at: expiresAt })
+          .in('email', chunk)
+          .eq('status', 'active')
+          .neq('access_type', 'trial');
+        if (error) throw error;
+        replaced += chunk.length;
+        setBulkProgress({ done: Math.min(i + BULK_CHUNK_SIZE, toReplace.length), total: candidates.length });
+      }
+
+      let granted = 0;
+      for (let i = 0; i < toInsert.length; i += BULK_CHUNK_SIZE) {
+        const chunk = toInsert.slice(i, i + BULK_CHUNK_SIZE);
+        const { error } = await supabase.from('accesses').insert(
+          chunk.map(email => ({ email, access_type: bulkPlan, status: 'active', expires_at: expiresAt }))
+        );
+        if (error) throw error;
+        granted += chunk.length;
+        setBulkProgress({ done: toReplace.length + Math.min(i + BULK_CHUNK_SIZE, toInsert.length), total: candidates.length });
+      }
+
+      setBulkResult({ granted, replaced, invalid: Math.max(invalidCount, 0) });
+      toast.success(`${granted + replaced} acesso(s) processado(s)`);
+      onImported();
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao importar');
+    } finally {
+      setBulkImporting(false);
+      setBulkProgress(null);
+    }
+  };
+
+  const handleOpenChange = (next: boolean) => {
+    onOpenChange(next);
+    if (!next) { setBulkText(''); setBulkResult(null); }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogTrigger asChild>
+        <Button variant="outline" className="gap-2 border-border text-foreground hover:bg-secondary">
+          <Upload className="w-4 h-4" /> Importar em Massa
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="bg-background-paper border-border max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="text-foreground">Importar Acessos em Massa</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 pt-2">
+          <div className="space-y-2">
+            <Label className="text-foreground">Emails (um por linha, ou cole uma lista/TXT)</Label>
+            <Textarea
+              value={bulkText}
+              onChange={e => setBulkText(e.target.value)}
+              placeholder={'aluno1@email.com\naluno2@email.com\naluno3@email.com'}
+              rows={8}
+              className="bg-secondary border-border text-foreground font-mono text-xs"
+            />
+            <label className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline cursor-pointer">
+              <Upload className="w-3 h-3" /> ou selecione um arquivo .txt
+              <input
+                type="file"
+                accept=".txt,text/plain"
+                className="hidden"
+                onChange={e => { const f = e.target.files?.[0]; if (f) handleBulkFile(f); e.target.value = ''; }}
+              />
+            </label>
+          </div>
+          <div className="space-y-2">
+            <Label className="text-foreground">Plano</Label>
+            <Select value={bulkPlan} onValueChange={setBulkPlan}>
+              <SelectTrigger className="bg-secondary border-border text-foreground"><SelectValue /></SelectTrigger>
+              <SelectContent className="bg-background-paper border-border">
+                {PLAN_SELECT_ITEMS}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {bulkResult && (
+            <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 space-y-2.5">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Resultado da importação</p>
+              <div className="flex items-center gap-2.5">
+                <CheckCircle2 className="w-5 h-5 text-accent-success shrink-0" />
+                <span className="text-sm text-foreground">
+                  <span className="font-bold text-accent-success text-base">{bulkResult.granted}</span> acesso(s) concedido(s)
+                </span>
+              </div>
+              {bulkResult.replaced > 0 && (
+                <div className="flex items-center gap-2.5">
+                  <UserCheck className="w-5 h-5 text-blue-400 shrink-0" />
+                  <span className="text-sm text-foreground">
+                    <span className="font-bold text-blue-400 text-base">{bulkResult.replaced}</span> já tinham acesso — plano substituído pelo novo
+                  </span>
+                </div>
+              )}
+              {bulkResult.invalid > 0 && (
+                <div className="flex items-center gap-2.5">
+                  <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
+                  <span className="text-sm text-foreground">
+                    <span className="font-bold text-amber-400 text-base">{bulkResult.invalid}</span> linha(s) inválida(s) ignorada(s)
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
+          <Button onClick={bulkImport} disabled={bulkImporting || !bulkText.trim()} className="w-full bg-primary hover:bg-primary-hover text-primary-foreground gap-2">
+            {bulkImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+            {bulkImporting
+              ? `Importando... ${bulkProgress ? `${bulkProgress.done}/${bulkProgress.total}` : ''}`
+              : 'Importar e Conceder Acesso'}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function MembersPage() {
   const [members, setMembers] = useState<MemberRow[]>([]);
   const [filtered, setFiltered] = useState<MemberRow[]>([]);
   const [courseStats, setCourseStats] = useState<{ active: number; categories: number } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [search, setSearch] = useState('');
   const [isAddOpen, setIsAddOpen] = useState(false);
-  const [newEmail, setNewEmail] = useState('');
-  const [newPlan, setNewPlan] = useState('lifetime');
-  const [adding, setAdding] = useState(false);
-
-  const [onlineMembers, setOnlineMembers] = useState<{ email: string; last_active: string }[]>([]);
-  const [onlineLoading, setOnlineLoading] = useState(true);
-
-  const fetchOnline = useCallback(async () => {
-    try {
-      const { data, error } = await supabase.rpc('get_online_members', { _minutes: ONLINE_WINDOW_MINUTES });
-      if (error) throw error;
-      setOnlineMembers((data || []) as { email: string; last_active: string }[]);
-    } catch (err) {
-      console.error('Erro ao buscar membros online', err);
-    } finally {
-      setOnlineLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchOnline();
-    const interval = setInterval(fetchOnline, ONLINE_POLL_MS);
-    return () => clearInterval(interval);
-  }, [fetchOnline]);
-
   const [isBulkOpen, setIsBulkOpen] = useState(false);
-  const [bulkText, setBulkText] = useState('');
-  const [bulkPlan, setBulkPlan] = useState('lifetime');
-  const [bulkImporting, setBulkImporting] = useState(false);
-  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
-  const [bulkResult, setBulkResult] = useState<{ granted: number; skipped: number; invalid: number } | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
+    setLoadError(false);
     try {
       const [manualAccesses, buyers, courses] = await Promise.all([
         fetchAllRows((f, t) =>
           supabase.from('accesses').select('id, email, access_type, status, granted_at')
-            .eq('status', 'active').in('access_type', ['paid', 'lifetime', 'annual']).range(f, t)
+            .eq('status', 'active').in('access_type', ['paid', 'lifetime', 'lifetime_plus', 'lifetime_pro', 'annual', 'monthly']).range(f, t)
         ),
         fetchAllRows((f, t) =>
           supabase.from('buyers').select('email, plan, created_at').eq('access_granted', true).range(f, t)
@@ -128,6 +350,7 @@ export default function MembersPage() {
       });
     } catch {
       toast.error('Erro ao carregar membros');
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -140,89 +363,6 @@ export default function MembersPage() {
     setFiltered(term ? members.filter(m => m.email.toLowerCase().includes(term)) : members);
   }, [members, search]);
 
-  const grantAccess = async () => {
-    if (!newEmail) { toast.error('Informe um email'); return; }
-    setAdding(true);
-    try {
-      const expiresAt = newPlan === 'annual'
-        ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
-        : null;
-      const { error } = await supabase.from('accesses').insert({
-        email: newEmail.toLowerCase(),
-        access_type: newPlan,
-        status: 'active',
-        expires_at: expiresAt,
-      });
-      if (error) throw error;
-      toast.success('Acesso à área de membros concedido');
-      setIsAddOpen(false);
-      setNewEmail('');
-      fetchData();
-    } catch (err: any) {
-      toast.error(err.message || 'Erro ao conceder acesso');
-    } finally {
-      setAdding(false);
-    }
-  };
-
-  const handleBulkFile = async (file: File) => {
-    const text = await file.text();
-    setBulkText(prev => (prev ? `${prev}\n${text}` : text));
-  };
-
-  const bulkImport = async () => {
-    const candidates = extractEmails(bulkText);
-    const invalidCount = (bulkText.split(/\r?\n/).map(l => l.trim()).filter(Boolean).length) - candidates.length;
-    if (candidates.length === 0) { toast.error('Nenhum email válido encontrado no texto'); return; }
-
-    setBulkImporting(true);
-    setBulkResult(null);
-    setBulkProgress({ done: 0, total: candidates.length });
-    try {
-      // Anyone who already has active access (any grant type, or a purchase)
-      // gets skipped instead of a redundant second row.
-      const [{ data: existingAccesses }, { data: existingBuyers }] = await Promise.all([
-        fetchAllRows((f, t) => supabase.from('accesses').select('email').eq('status', 'active').range(f, t)),
-        fetchAllRows((f, t) => supabase.from('buyers').select('email').eq('access_granted', true).range(f, t)),
-      ]);
-      const covered = new Set([
-        ...(existingAccesses || []).map((a: any) => a.email.toLowerCase()),
-        ...(existingBuyers || []).map((b: any) => b.email.toLowerCase()),
-      ]);
-
-      const toInsert = candidates.filter(e => !covered.has(e));
-      const skipped = candidates.length - toInsert.length;
-      const expiresAt = bulkPlan === 'annual'
-        ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
-        : null;
-
-      let granted = 0;
-      for (let i = 0; i < toInsert.length; i += BULK_CHUNK_SIZE) {
-        const chunk = toInsert.slice(i, i + BULK_CHUNK_SIZE);
-        const { error } = await supabase.from('accesses').insert(
-          chunk.map(email => ({ email, access_type: bulkPlan, status: 'active', expires_at: expiresAt }))
-        );
-        if (error) throw error;
-        granted += chunk.length;
-        setBulkProgress({ done: Math.min(i + BULK_CHUNK_SIZE, toInsert.length), total: toInsert.length });
-      }
-
-      setBulkResult({ granted, skipped, invalid: Math.max(invalidCount, 0) });
-      toast.success(`${granted} acesso(s) concedido(s)`);
-      fetchData();
-    } catch (err: any) {
-      toast.error(err.message || 'Erro ao importar');
-    } finally {
-      setBulkImporting(false);
-      setBulkProgress(null);
-    }
-  };
-
-  const closeBulkDialog = (open: boolean) => {
-    setIsBulkOpen(open);
-    if (!open) { setBulkText(''); setBulkResult(null); }
-  };
-
   const revokeAccess = async (accessId: string) => {
     try {
       const { error } = await supabase.from('accesses').update({ status: 'revoked' }).eq('id', accessId);
@@ -234,7 +374,10 @@ export default function MembersPage() {
     }
   };
 
-  const planLabel = (plan: string) => ({ lifetime: 'Vitalício', annual: 'Anual', paid: 'Pago' }[plan] || plan);
+  const planLabel = (plan: string) => ({
+    lifetime: 'Vitalício', lifetime_plus: 'Vitalício Plus', lifetime_pro: 'Vitalício Pro',
+    annual: 'Anual', monthly: 'Mensal', paid: 'Pago',
+  }[plan] || plan);
 
   return (
     <AdminLayout>
@@ -250,158 +393,13 @@ export default function MembersPage() {
                 <ExternalLink className="w-4 h-4" /> Abrir Área de Membros
               </Button>
             </a>
-            <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-              <DialogTrigger asChild>
-                <Button className="bg-primary hover:bg-primary-hover text-primary-foreground gap-2">
-                  <UserPlus className="w-4 h-4" /> Conceder Acesso
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="bg-background-paper border-border">
-                <DialogHeader>
-                  <DialogTitle className="text-foreground">Conceder Acesso à Área de Membros</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4 pt-2">
-                  <div className="space-y-2">
-                    <Label className="text-foreground">Email</Label>
-                    <Input value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="email@exemplo.com" className="bg-secondary border-border text-foreground" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-foreground">Plano</Label>
-                    <Select value={newPlan} onValueChange={setNewPlan}>
-                      <SelectTrigger className="bg-secondary border-border text-foreground"><SelectValue /></SelectTrigger>
-                      <SelectContent className="bg-background-paper border-border">
-                        <SelectItem value="lifetime">Vitalício</SelectItem>
-                        <SelectItem value="annual">Anual (365 dias)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <Button onClick={grantAccess} disabled={adding} className="w-full bg-primary hover:bg-primary-hover text-primary-foreground gap-2">
-                    {adding ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                    {adding ? 'Concedendo...' : 'Conceder Acesso'}
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
-
-            <Dialog open={isBulkOpen} onOpenChange={closeBulkDialog}>
-              <DialogTrigger asChild>
-                <Button variant="outline" className="gap-2 border-border text-foreground hover:bg-secondary">
-                  <Upload className="w-4 h-4" /> Importar em Massa
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="bg-background-paper border-border max-w-lg">
-                <DialogHeader>
-                  <DialogTitle className="text-foreground">Importar Acessos em Massa</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4 pt-2">
-                  <div className="space-y-2">
-                    <Label className="text-foreground">Emails (um por linha, ou cole uma lista/TXT)</Label>
-                    <Textarea
-                      value={bulkText}
-                      onChange={e => setBulkText(e.target.value)}
-                      placeholder={'aluno1@email.com\naluno2@email.com\naluno3@email.com'}
-                      rows={8}
-                      className="bg-secondary border-border text-foreground font-mono text-xs"
-                    />
-                    <label className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline cursor-pointer">
-                      <Upload className="w-3 h-3" /> ou selecione um arquivo .txt
-                      <input
-                        type="file"
-                        accept=".txt,text/plain"
-                        className="hidden"
-                        onChange={e => { const f = e.target.files?.[0]; if (f) handleBulkFile(f); e.target.value = ''; }}
-                      />
-                    </label>
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-foreground">Plano</Label>
-                    <Select value={bulkPlan} onValueChange={setBulkPlan}>
-                      <SelectTrigger className="bg-secondary border-border text-foreground"><SelectValue /></SelectTrigger>
-                      <SelectContent className="bg-background-paper border-border">
-                        <SelectItem value="lifetime">Vitalício</SelectItem>
-                        <SelectItem value="annual">Anual (365 dias)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {bulkResult && (
-                    <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 space-y-2.5">
-                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Resultado da importação</p>
-                      <div className="flex items-center gap-2.5">
-                        <CheckCircle2 className="w-5 h-5 text-accent-success shrink-0" />
-                        <span className="text-sm text-foreground">
-                          <span className="font-bold text-accent-success text-base">{bulkResult.granted}</span> acesso(s) concedido(s)
-                        </span>
-                      </div>
-                      {bulkResult.skipped > 0 && (
-                        <div className="flex items-center gap-2.5">
-                          <UserCheck className="w-5 h-5 text-blue-400 shrink-0" />
-                          <span className="text-sm text-foreground">
-                            <span className="font-bold text-blue-400 text-base">{bulkResult.skipped}</span> já tinham acesso à área de membros — não foram duplicados
-                          </span>
-                        </div>
-                      )}
-                      {bulkResult.invalid > 0 && (
-                        <div className="flex items-center gap-2.5">
-                          <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
-                          <span className="text-sm text-foreground">
-                            <span className="font-bold text-amber-400 text-base">{bulkResult.invalid}</span> linha(s) inválida(s) ignorada(s)
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  <Button onClick={bulkImport} disabled={bulkImporting || !bulkText.trim()} className="w-full bg-primary hover:bg-primary-hover text-primary-foreground gap-2">
-                    {bulkImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                    {bulkImporting
-                      ? `Importando... ${bulkProgress ? `${bulkProgress.done}/${bulkProgress.total}` : ''}`
-                      : 'Importar e Conceder Acesso'}
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
+            <GrantAccessDialog open={isAddOpen} onOpenChange={setIsAddOpen} onGranted={fetchData} />
+            <BulkImportDialog open={isBulkOpen} onOpenChange={setIsBulkOpen} onImported={fetchData} />
           </div>
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <Popover>
-            <PopoverTrigger asChild>
-              <Card className="bg-background-paper border-border cursor-pointer hover:border-primary/40 transition-colors text-left">
-                <CardContent className="p-5">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-sm text-muted-foreground">Online agora</p>
-                    <Circle className="w-3 h-3 text-accent-success fill-accent-success animate-pulse" />
-                  </div>
-                  <p className="font-secondary text-2xl font-bold text-foreground">
-                    {onlineLoading ? '—' : onlineMembers.length}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">últimos {ONLINE_WINDOW_MINUTES} min · toque pra ver</p>
-                </CardContent>
-              </Card>
-            </PopoverTrigger>
-            <PopoverContent align="start" className="w-80 bg-background-paper border-border p-0 overflow-hidden">
-              <div className="p-3 border-b border-border flex items-center justify-between">
-                <p className="text-sm font-semibold text-foreground">Membros online</p>
-                <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={fetchOnline}>
-                  <RefreshCw className="w-3.5 h-3.5" />
-                </Button>
-              </div>
-              <div className="max-h-80 overflow-y-auto divide-y divide-border">
-                {onlineMembers.length === 0 ? (
-                  <p className="text-sm text-muted-foreground p-4 text-center">Ninguém online no momento</p>
-                ) : (
-                  onlineMembers.map(m => (
-                    <div key={m.email} className="flex items-center justify-between px-3 py-2.5 text-sm">
-                      <span className="text-foreground truncate">{m.email}</span>
-                      <span className="text-xs text-muted-foreground shrink-0 ml-2">{timeAgo(m.last_active)}</span>
-                    </div>
-                  ))
-                )}
-              </div>
-            </PopoverContent>
-          </Popover>
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
           <Card className="bg-background-paper border-border">
             <CardContent className="p-5">
               <div className="flex items-center justify-between mb-2">
@@ -481,7 +479,16 @@ export default function MembersPage() {
                   ))}
                 </tbody>
               </table>
-              {filtered.length === 0 && !loading && (
+              {loadError && !loading && (
+                <div className="flex flex-col items-center gap-3 py-12 text-center px-4">
+                  <AlertTriangle className="w-6 h-6 text-accent-warning" />
+                  <p className="text-foreground text-sm font-medium">Não foi possível carregar os membros</p>
+                  <Button onClick={fetchData} size="sm" variant="outline" className="border-border text-muted-foreground hover:text-foreground gap-2">
+                    <RefreshCw className="w-3.5 h-3.5" /> Tentar novamente
+                  </Button>
+                </div>
+              )}
+              {!loadError && filtered.length === 0 && !loading && (
                 <p className="text-muted-foreground text-center py-12">Nenhum membro encontrado</p>
               )}
             </div>

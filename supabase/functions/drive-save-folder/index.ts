@@ -37,8 +37,11 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabase = createClient(supabaseUrl, supabaseKey)
 
-    const { folder_id } = await req.json()
+    const { folder_id, target } = await req.json()
     const trimmedId = folder_id?.trim()
+    // 'backup' salva a pasta de backup exclusivo (planos Vitalício Plus/Pro)
+    // em vez da pasta principal de streaming das aulas.
+    const isBackup = target === 'backup'
 
     if (!trimmedId) {
       return new Response(JSON.stringify({ error: 'folder_id é obrigatório' }), {
@@ -76,16 +79,17 @@ serve(async (req) => {
     }
 
     if (existing) {
-      await supabase.from('drive_config').update({
-        folder_id: trimmedId,
-        folder_name: folderName,
-      }).eq('id', existing.id)
+      await supabase.from('drive_config').update(
+        isBackup
+          ? { backup_folder_id: trimmedId, backup_folder_name: folderName }
+          : { folder_id: trimmedId, folder_name: folderName }
+      ).eq('id', existing.id)
     } else {
-      await supabase.from('drive_config').insert({
-        folder_id: trimmedId,
-        folder_name: folderName,
-        connected: false,
-      })
+      await supabase.from('drive_config').insert(
+        isBackup
+          ? { backup_folder_id: trimmedId, backup_folder_name: folderName, connected: false }
+          : { folder_id: trimmedId, folder_name: folderName, connected: false }
+      )
     }
 
     return new Response(JSON.stringify({ success: true, folder_name: folderName }), {

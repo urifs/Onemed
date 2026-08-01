@@ -1,13 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import AdminLayout from '@/components/AdminLayout';
+import { OnlineMembersCard } from '@/components/admin/OnlineMembersCard';
+import { MemberLocationsMap } from '@/components/admin/MemberLocationsMap';
+import { MetaPixelHealthCard } from '@/components/admin/MetaPixelHealthCard';
+import { MemberLocationsList } from '@/components/admin/MemberLocationsList';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { formatDateTimeSP, todayStartISO } from '@/lib/utils';
-import { Users, Clock, XCircle, AlertTriangle, ArrowRight, FolderOpen, Eye, Calendar } from 'lucide-react';
+import { Users, Clock, XCircle, AlertTriangle, ArrowRight, FolderOpen, Eye, Calendar, RefreshCw } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { Link as RouterLink } from 'react-router-dom';
 
 export default function Dashboard() {
@@ -18,49 +23,55 @@ export default function Dashboard() {
   const [driveConnected, setDriveConnected] = useState(false);
   const [visitCount, setVisitCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        // Início do dia atual no fuso horário de São Paulo (America/Sao_Paulo)
-        const todayISO = todayStartISO();
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setLoadError(false);
+    try {
+      // Início do dia atual no fuso horário de São Paulo (America/Sao_Paulo)
+      const todayISO = todayStartISO();
 
-        const [accessStats, recent, drive, visits] = await Promise.all([
-          supabase.from('accesses').select('status, access_type').gte('created_at', todayISO),
-          supabase.from('accesses').select('*').order('created_at', { ascending: false }).limit(5),
-          supabase.from('drive_config').select('connected').single(),
-          supabase.from('visits').select('id', { count: 'exact', head: true }).gte('created_at', todayISO),
-        ]);
+      const [accessStats, recent, drive, visits] = await Promise.all([
+        supabase.from('accesses').select('status, access_type').gte('created_at', todayISO),
+        supabase.from('accesses').select('*').order('created_at', { ascending: false }).limit(5),
+        supabase.from('drive_config').select('connected').single(),
+        supabase.from('visits').select('id', { count: 'exact', head: true }).gte('created_at', todayISO),
+      ]);
 
-        const accesses = accessStats.data || [];
-        setStats({
-          total: accesses.length,
-          active: accesses.filter(a => a.status === 'active').length,
-          expired: accesses.filter(a => a.status === 'expired').length,
-          revoked: accesses.filter(a => a.status === 'revoked').length,
-          trial: accesses.filter(a => a.access_type === 'trial').length,
-          paid: accesses.filter(a => a.access_type !== 'trial').length,
-        });
-
-        // Deduplica por email, mantendo apenas o mais recente
-        const seen = new Set<string>();
-        const deduped = (recent.data || []).filter((a: any) => {
-          if (seen.has(a.email)) return false;
-          seen.add(a.email);
-          return true;
-        });
-        setRecentAccesses(deduped);
-        setDriveConnected(drive.data?.connected || false);
-        setVisitCount(visits.count || 0);
-      } catch (err) {
-        toast.error('Erro ao carregar dados');
-      } finally {
-        setLoading(false);
+      if (accessStats.error || recent.error || visits.error) {
+        throw accessStats.error || recent.error || visits.error;
       }
-    };
 
-    fetchData();
-  }, [location]);
+      const accesses = accessStats.data || [];
+      setStats({
+        total: accesses.length,
+        active: accesses.filter(a => a.status === 'active').length,
+        expired: accesses.filter(a => a.status === 'expired').length,
+        revoked: accesses.filter(a => a.status === 'revoked').length,
+        trial: accesses.filter(a => a.access_type === 'trial').length,
+        paid: accesses.filter(a => a.access_type !== 'trial').length,
+      });
+
+      // Deduplica por email, mantendo apenas o mais recente
+      const seen = new Set<string>();
+      const deduped = (recent.data || []).filter((a: any) => {
+        if (seen.has(a.email)) return false;
+        seen.add(a.email);
+        return true;
+      });
+      setRecentAccesses(deduped);
+      setDriveConnected(drive.data?.connected || false);
+      setVisitCount(visits.count || 0);
+    } catch {
+      toast.error('Erro ao carregar dados');
+      setLoadError(true);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchData(); }, [fetchData, location]);
 
   const statusBadge = (status: string) => {
     const classes: Record<string, string> = {
@@ -83,8 +94,19 @@ export default function Dashboard() {
           <p className="text-muted-foreground mt-1">Visão geral do sistema OneMed</p>
         </div>
 
+        {/* Load error */}
+        {loadError && !loading && (
+          <div className="flex items-center gap-3 bg-destructive/10 border border-destructive/20 text-destructive rounded-xl px-4 py-3">
+            <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+            <span className="text-sm">Não foi possível carregar os dados do dashboard.</span>
+            <Button onClick={fetchData} size="sm" variant="outline" className="ml-auto border-border text-foreground hover:bg-secondary gap-2">
+              <RefreshCw className="w-3.5 h-3.5" /> Tentar novamente
+            </Button>
+          </div>
+        )}
+
         {/* Drive Alert */}
-        {!driveConnected && !loading && (
+        {!driveConnected && !loading && !loadError && (
           <div className="flex items-center gap-3 bg-accent-warning/10 border border-accent-warning/20 text-accent-warning rounded-xl px-4 py-3">
             <AlertTriangle className="w-4 h-4 flex-shrink-0" />
             <span className="text-sm">Google Drive desconectado.</span>
@@ -115,6 +137,19 @@ export default function Dashboard() {
             </Card>
           ))}
         </div>
+
+        {/* Quem está online (tempo real) + mapa de localização aproximada
+            (online inclui testes, offline só assinantes) lado a lado */}
+        <div className="grid lg:grid-cols-2 gap-6 items-start">
+          <OnlineMembersCard />
+          <MemberLocationsMap />
+        </div>
+        <MemberLocationsList />
+
+        {/* Rastreamento Meta ocupa a largura toda, abaixo do mapa: são números
+            de campanha, não de presença — e no meio da dupla acima ele empurrava
+            o mapa pra linha de baixo. */}
+        <MetaPixelHealthCard />
 
         {/* Trial vs Paid */}
         {stats && (

@@ -5,7 +5,8 @@ import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Stethoscope, Mail, Lock, ArrowRight } from 'lucide-react';
+import { Stethoscope, Mail, Lock, ArrowRight, ArrowLeft } from 'lucide-react';
+import { ThemeToggle } from '@/components/ThemeToggle';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -30,14 +31,9 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-hero-gradient flex items-center justify-center p-4">
-      {/* Background effects */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/3 left-1/3 w-96 h-96 bg-primary/8 rounded-full blur-[120px]" />
-      </div>
-
-      <div className="relative z-10 w-full max-w-md">
-        {/* Logo */}
+    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <ThemeToggle className="fixed top-4 right-4 z-50" />
+      <div className="w-full max-w-md">
         <Link to="/" className="flex items-center justify-center gap-3 mb-8">
           <div className="w-10 h-10 bg-primary/15 rounded-xl flex items-center justify-center">
             <Stethoscope className="w-6 h-6 text-primary" />
@@ -45,8 +41,7 @@ export default function LoginPage() {
           <span className="font-secondary font-bold text-2xl text-foreground">OneMed</span>
         </Link>
 
-        {/* Card */}
-        <div className="glass-strong rounded-2xl p-8 border border-border">
+        <div className="bg-card rounded-2xl p-8 border border-border">
           <div className="text-center mb-8">
             <h1 className="font-secondary text-2xl font-bold text-foreground mb-2">Bem-vindo de volta</h1>
             <p className="text-muted-foreground text-sm">Acesse o painel administrativo</p>
@@ -87,7 +82,7 @@ export default function LoginPage() {
               className="w-full h-12 bg-primary hover:bg-primary-hover text-primary-foreground font-semibold gap-2"
             >
               {loading ? (
-                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <div className="w-5 h-5 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
               ) : (
                 <>Entrar <ArrowRight className="w-4 h-4" /></>
               )}
@@ -96,8 +91,8 @@ export default function LoginPage() {
         </div>
 
         <p className="text-center mt-6">
-          <Link to="/" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-            ← Voltar para a página inicial
+          <Link to="/" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+            <ArrowLeft className="w-3.5 h-3.5" /> Voltar para a página inicial
           </Link>
         </p>
       </div>

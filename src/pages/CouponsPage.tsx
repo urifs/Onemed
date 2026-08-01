@@ -9,26 +9,39 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { formatDateSP } from '@/lib/utils';
-import { Tag, Plus, Pencil, Trash2, X } from 'lucide-react';
+import { Tag, Plus, Pencil, Trash2, X, AlertTriangle, RefreshCw } from 'lucide-react';
 
 const PLAN_LABELS: Record<string, string> = {
-  all:      'Ambos',
-  annual:   'Só Anual',
-  lifetime: 'Só Vitalício',
+  all:           'Todos os planos',
+  monthly:       'Só Mensal',
+  annual:        'Só Anual',
+  lifetime:      'Só Vitalício',
+  lifetime_plus: 'Só Vitalício Plus',
+  lifetime_pro:  'Só Vitalício Pro',
 };
 
 export default function CouponsPage() {
   const [coupons, setCoupons] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [form, setForm] = useState({ code: '', discount_percent: '', description: '', active: true, max_uses: '', allowed_plans: 'all' });
   const [submitting, setSubmitting] = useState(false);
 
   const fetchCoupons = useCallback(async () => {
-    const { data } = await supabase.from('coupons').select('*').order('created_at', { ascending: false });
-    setCoupons(data || []);
-    setLoading(false);
+    setLoading(true);
+    setLoadError(false);
+    try {
+      const { data, error } = await supabase.from('coupons').select('*').order('created_at', { ascending: false });
+      if (error) throw error;
+      setCoupons(data || []);
+    } catch {
+      toast.error('Erro ao carregar cupons');
+      setLoadError(true);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { fetchCoupons(); }, [fetchCoupons]);
@@ -136,7 +149,16 @@ export default function CouponsPage() {
                   ))}
                 </tbody>
               </table>
-              {coupons.length === 0 && !loading && <p className="text-muted-foreground text-center py-12">Nenhum cupom criado</p>}
+              {loadError && !loading && (
+                <div className="flex flex-col items-center gap-3 py-12 text-center px-4">
+                  <AlertTriangle className="w-6 h-6 text-accent-warning" />
+                  <p className="text-foreground text-sm font-medium">Não foi possível carregar os cupons</p>
+                  <Button onClick={fetchCoupons} size="sm" variant="outline" className="border-border text-muted-foreground hover:text-foreground gap-2">
+                    <RefreshCw className="w-3.5 h-3.5" /> Tentar novamente
+                  </Button>
+                </div>
+              )}
+              {!loadError && coupons.length === 0 && !loading && <p className="text-muted-foreground text-center py-12">Nenhum cupom criado</p>}
             </div>
           </CardContent>
         </Card>
@@ -144,7 +166,7 @@ export default function CouponsPage() {
 
       {showModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-          <div className="glass-strong rounded-2xl p-6 w-full max-w-md border border-border">
+          <div className="bg-background-paper rounded-2xl p-6 w-full max-w-md border border-border">
             <div className="flex items-center justify-between mb-6">
               <h2 className="font-secondary text-xl font-bold text-foreground">{editing ? 'Editar' : 'Novo'} Cupom</h2>
               <button onClick={() => setShowModal(false)} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
@@ -165,9 +187,12 @@ export default function CouponsPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="bg-background-paper border-border">
-                    <SelectItem value="all">Ambos os planos</SelectItem>
+                    <SelectItem value="all">Todos os planos</SelectItem>
+                    <SelectItem value="monthly">Só Plano Mensal (R$ 49)</SelectItem>
                     <SelectItem value="annual">Só Plano Anual (R$ 199)</SelectItem>
                     <SelectItem value="lifetime">Só Plano Vitalício (R$ 299,90)</SelectItem>
+                    <SelectItem value="lifetime_plus">Só Plano Vitalício Plus (R$ 599)</SelectItem>
+                    <SelectItem value="lifetime_pro">Só Plano Vitalício Pro (R$ 997)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

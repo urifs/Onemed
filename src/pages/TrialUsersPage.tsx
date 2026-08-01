@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { formatDateTimeSP, todayStartISO, fetchAllRows } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Users, Phone, Mail, Clock, Search, Filter, RefreshCw, MessageCircle, UserCheck, CheckCircle2, XCircle, Send } from 'lucide-react';
+import { Users, Phone, Mail, Clock, Search, Filter, RefreshCw, MessageCircle, UserCheck, CheckCircle2, XCircle, Send, AlertTriangle } from 'lucide-react';
 import { WhatsAppLink } from '@/components/WhatsAppLink';
 
 export default function TrialUsersPage() {
@@ -17,6 +17,7 @@ export default function TrialUsersPage() {
   const [filtered, setFiltered] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncingManychat, setSyncingManychat] = useState(false);
   const [search, setSearch] = useState('');
@@ -26,6 +27,7 @@ export default function TrialUsersPage() {
 
   const fetchData = useCallback(async () => {
     setLoading(true);
+    setLoadError(false);
     try {
       const [trialsData, buyersData, waSends] = await Promise.all([
         fetchAllRows((f, t) => supabase.from('accesses').select('*').eq('access_type', 'trial').order('created_at', { ascending: false }).range(f, t)),
@@ -55,7 +57,10 @@ export default function TrialUsersPage() {
         expired: today.filter(t => t.status === 'expired').length,
         withWhatsapp: today.filter(t => t.whatsapp).length,
       });
-    } catch { toast.error('Erro ao carregar trials'); }
+    } catch {
+      toast.error('Erro ao carregar trials');
+      setLoadError(true);
+    }
     finally { setLoading(false); }
   }, []);
 
@@ -250,7 +255,16 @@ export default function TrialUsersPage() {
                   ))}
                 </tbody>
               </table>
-              {filtered.length === 0 && !loading && (
+              {loadError && !loading && (
+                <div className="flex flex-col items-center gap-3 py-12 text-center px-4">
+                  <AlertTriangle className="w-6 h-6 text-accent-warning" />
+                  <p className="text-foreground text-sm font-medium">Não foi possível carregar os trials</p>
+                  <Button onClick={fetchData} size="sm" variant="outline" className="border-border text-muted-foreground hover:text-foreground gap-2">
+                    <RefreshCw className="w-3.5 h-3.5" /> Tentar novamente
+                  </Button>
+                </div>
+              )}
+              {!loadError && filtered.length === 0 && !loading && (
                 <p className="text-muted-foreground text-center py-12">Nenhum usuário trial encontrado</p>
               )}
             </div>

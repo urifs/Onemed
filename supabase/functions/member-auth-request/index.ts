@@ -13,6 +13,9 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const ALLOWED_ORIGINS = ['https://onemedcursos.com.br', 'http://localhost:5173', 'http://localhost:3000']
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
+// Vitalício Plus libera 4 telas simultâneas e Pro libera 6, em vez das 2 padrão.
+const PLAN_DEVICE_LIMITS: Record<string, number> = { lifetime_plus: 4, lifetime_pro: 6 }
+const DEFAULT_DEVICE_LIMIT = 2
 
 function getCorsHeaders(req: Request) {
   const origin = req.headers.get('origin') || ''
@@ -27,6 +30,32 @@ function jsonResponse(req: Request, body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
   })
+}
+
+// Geolocaliza o IP do login e grava/atualiza member_locations — melhor
+// esforço, nunca derruba o login se a API de geolocalização falhar.
+async function captureMemberLocation(supabase: ReturnType<typeof createClient>, ip: string, userId: string, email: string) {
+  try {
+    if (!ip || ip === 'unknown') return
+    const geoRes = await fetch(`https://ipwho.is/${ip}`, { signal: AbortSignal.timeout(3000) })
+    if (!geoRes.ok) return
+    const geo = await geoRes.json()
+    if (!geo.success || geo.latitude == null || geo.longitude == null) return
+    await supabase.from('member_locations').upsert({
+      user_id: userId,
+      email,
+      ip,
+      city: geo.city || null,
+      region: geo.region || null,
+      country: geo.country || null,
+      country_code: geo.country_code || null,
+      latitude: geo.latitude,
+      longitude: geo.longitude,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'user_id' })
+  } catch (err) {
+    console.warn('captureMemberLocation falhou', err)
+  }
 }
 
 async function checkRateLimit(supabase: ReturnType<typeof createClient>, identifier: string) {
@@ -63,9 +92,15 @@ serve(async (req) => {
 
     if (!EMAIL_REGEX.test(email)) return jsonResponse(req, { error: 'Email inválido' }, 400)
 
-    const [{ data: activeAccess }, { data: buyer }, { data: isAdminEmail }] = await Promise.all([
-      supabase.from('accesses').select('id').eq('email', email).eq('status', 'active').limit(1).maybeSingle(),
-      supabase.from('buyers').select('id').eq('email', email).eq('access_granted', true).limit(1).maybeSingle(),
+    const ip = (req.headers.get('x-forwarded-for') || '').split(',')[0].trim() || req.headers.get('x-real-ip') || 'unknown'
+
+    // Sem .limit(1).maybeSingle() de propósito: uma conta pode ter mais de
+    // uma linha "active" em accesses (ex: grant manual antigo nunca
+    // desativado ao fazer upgrade) — pegar só uma arbitrária já causou o
+    // limite de telas cair pro plano errado. Busca todas e decide com .some().
+    const [{ data: activeAccesses }, { data: buyerRows }, { data: isAdminEmail }] = await Promise.all([
+      supabase.from('accesses').select('id, access_type').eq('email', email).eq('status', 'active'),
+      supabase.from('buyers').select('id, plan').eq('email', email).eq('access_granted', true),
       supabase.rpc('is_admin_email', { _email: email }),
     ])
 
@@ -73,14 +108,13 @@ serve(async (req) => {
     // platform itself — rate limiting them out of their own site is a
     // self-inflicted lockout, not abuse prevention.
     if (!isAdminEmail) {
-      const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() || 'unknown'
       const rate = await checkRateLimit(supabase, ip)
       if (!rate.allowed) {
         return jsonResponse(req, { error: 'Muitas tentativas. Tente novamente em alguns minutos.', retryAfterSeconds: rate.retryAfterSeconds }, 429)
       }
     }
 
-    if (!activeAccess && !buyer && !isAdminEmail) {
+    if (!activeAccesses?.length && !buyerRows?.length && !isAdminEmail) {
       return jsonResponse(req, { error: 'Nenhum acesso ativo encontrado para este email. Faça um trial gratuito ou verifique sua compra.' }, 404)
     }
 
@@ -119,12 +153,32 @@ serve(async (req) => {
       return jsonResponse(req, { error: 'Não foi possível concluir o login. Tente novamente.' }, 500)
     }
 
-    // Limite de 2 dispositivos simultâneos por conta: mantém só as sessões
-    // mais recentes (a que acabou de ser criada entra nessa contagem), o que
+    // Limite de dispositivos simultâneos por conta (2 no padrão, 4 pra
+    // Vitalício Plus, 6 pra Vitalício Pro): mantém só as sessões mais
+    // recentes (a que acabou de ser criada entra nessa contagem), o que
     // derruba o refresh token do dispositivo mais antigo no próximo refresh.
     if (linkData.user?.id) {
-      const { error: limitErr } = await supabase.rpc('enforce_session_limit', { _user_id: linkData.user.id, _max_sessions: 2 })
+      const planLimits = [
+        ...(activeAccesses || []).map(a => PLAN_DEVICE_LIMITS[a.access_type]),
+        ...(buyerRows || []).map(b => PLAN_DEVICE_LIMITS[b.plan]),
+      ].filter((n): n is number => !!n)
+      const maxSessions = planLimits.length > 0 ? Math.max(...planLimits) : DEFAULT_DEVICE_LIMIT
+      const { error: limitErr } = await supabase.rpc('enforce_session_limit', { _user_id: linkData.user.id, _max_sessions: maxSessions })
       if (limitErr) console.error('enforce_session_limit error', limitErr)
+
+      // Geolocalização não pode ficar no caminho crítico do login — uma
+      // resposta lenta do ipwho.is já deixou o login inteiro estourar o
+      // timeout do fetch no frontend ("Failed to send a request to the
+      // Edge Function"). waitUntil mantém o isolate vivo até terminar, sem
+      // segurar a resposta pro cliente.
+      const locationPromise = captureMemberLocation(supabase, ip, linkData.user.id, email)
+      // @ts-ignore EdgeRuntime é um global específico do runtime da Supabase
+      if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime.waitUntil) {
+        // @ts-ignore
+        EdgeRuntime.waitUntil(locationPromise)
+      } else {
+        await locationPromise
+      }
     }
 
     return jsonResponse(req, { success: true, access_token, refresh_token })

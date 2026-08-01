@@ -73,13 +73,17 @@ serve(async (req) => {
       })
     }
 
-    const { email, accessId } = await req.json()
+    const { email, accessId, folderType } = await req.json()
 
     if (!email || typeof email !== 'string' || !email.includes('@')) {
       return new Response(JSON.stringify({ error: 'Email inválido' }), {
         status: 400, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
       })
     }
+
+    // 'backup' é a pasta de backup exclusivo (planos Vitalício Plus/Pro),
+    // separada da pasta de streaming das aulas usada por padrão.
+    const isBackup = folderType === 'backup'
 
     // Get drive config
     const { data: config, error } = await supabase.from('drive_config').select('*').single()
@@ -106,9 +110,9 @@ serve(async (req) => {
       }).eq('id', config.id)
     }
 
-    const folderId = config.folder_id
+    const folderId = isBackup ? config.backup_folder_id : config.folder_id
     if (!folderId) {
-      return new Response(JSON.stringify({ error: 'Nenhuma pasta configurada' }), {
+      return new Response(JSON.stringify({ error: isBackup ? 'Nenhuma pasta de backup configurada' : 'Nenhuma pasta configurada' }), {
         status: 400, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
       })
     }
@@ -140,12 +144,11 @@ serve(async (req) => {
 
     // Update access record with permission ID for later revocation
     if (accessId) {
-      await supabase.from('accesses').update({
-        drive_folder_id: folderId,
-        drive_folder_name: config.folder_name,
-        drive_permission_id: perm.id,
-        status: 'active',
-      }).eq('id', accessId)
+      await supabase.from('accesses').update(
+        isBackup
+          ? { drive_backup_permission_id: perm.id }
+          : { drive_folder_id: folderId, drive_folder_name: config.folder_name, drive_permission_id: perm.id, status: 'active' }
+      ).eq('id', accessId)
     }
 
     return new Response(JSON.stringify({ success: true, permissionId: perm.id }), {

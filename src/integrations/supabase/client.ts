@@ -9,10 +9,22 @@ const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 // import { supabase } from "@/integrations/supabase/client";
 
 const FETCH_TIMEOUT_MS = 10000;
+// Login/signup/token-refresh (/auth/v1/*) is the single most disruptive place
+// for a fetch to fail early — a bit of extra latency there (slow mobile
+// network, a cold GoTrue instance) shouldn't hard-abort a login that would've
+// completed fine at 12-15s. Still bounded, just more generous than a normal
+// data query.
+const AUTH_TIMEOUT_MS = 25000;
 // A few admin-triggered batch jobs legitimately run longer than a normal
 // query (member-sync-library crawls large courses; run-email-campaign has
-// its own 6-minute per-batch allowance) — exempt them from the blanket timeout.
-const TIMEOUT_EXEMPT = /\/functions\/v1\/(member-sync-library|run-email-campaign)/;
+// its own 6-minute per-batch allowance; admin-backfill-lesson-durations reads
+// real bytes from Drive per lesson — a batch of 8 measured at ~30s) — exempt
+// them from the blanket timeout.
+const TIMEOUT_EXEMPT = /\/functions\/v1\/(member-sync-library|run-email-campaign|admin-backfill-lesson-durations|admin-capi-health|admin-capi-backfill)/;
+// member-auth-request/create-trial-access are the login/trial entry points —
+// same reasoning as /auth/v1/ below, just implemented as our own Edge
+// Functions instead of GoTrue's built-in endpoints.
+const AUTH_PATH = /\/auth\/v1\/|\/functions\/v1\/(member-auth-request|create-trial-access)/;
 
 // Without this, a request that never settles (dropped connection, a stuck
 // proxy, a backgrounded tab resuming mid-request) leaves its promise pending
@@ -22,8 +34,9 @@ function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}): Pro
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
   if (TIMEOUT_EXEMPT.test(url)) return fetch(input, init);
 
+  const timeoutMs = AUTH_PATH.test(url) ? AUTH_TIMEOUT_MS : FETCH_TIMEOUT_MS;
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   if (init.signal) {
     if (init.signal.aborted) controller.abort();
     else init.signal.addEventListener('abort', () => controller.abort(), { once: true });

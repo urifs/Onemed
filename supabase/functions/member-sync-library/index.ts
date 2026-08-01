@@ -1,3 +1,28 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// OneMed · member-sync-library
+//
+// Espelha a pasta compartilhada do Google Drive na área de membros varrendo a
+// árvore INTEIRA: pasta dentro de pasta dentro de pasta, sem limite de nível,
+// sem pular nada.
+//
+// A versão anterior perdia conteúdo em três pontos:
+//   1. só criava módulos até 2 níveis e descartava de vez qualquer pasta abaixo
+//      do nível 10 — o conteúdo lá dentro simplesmente nunca era importado;
+//   2. quando a listagem de uma pasta falhava no Drive (429/5xx/token expirado),
+//      o `catch` engolia o erro, a subárvore inteira ficava de fora e o curso
+//      ainda era reportado como "Concluído";
+//   3. o estado da varredura vivia dentro do cursor HTTP — qualquer queda da
+//      aba/rede no meio perdia a posição e o que faltava não era recuperado.
+//
+// Agora a varredura é uma FILA DURÁVEL no Postgres (`sync_folder_queue`): cada
+// pasta encontrada vira uma linha, esta função consome pendências e enfileira
+// as filhas. A profundidade deixa de existir como conceito (a fila é plana),
+// atalho em ciclo é barrado pela PK (course_id, drive_folder_id), a retomada é
+// exata de qualquer dispositivo, e um curso só é marcado 'complete' com ZERO
+// pastas pendentes e ZERO pastas com erro. O tamanho de cada arquivo é gravado
+// em `lessons.size_bytes` para permitir conferir contagem e bytes contra o
+// Drive (RPCs `get_library_totals` / `get_library_sync_report`).
+// ─────────────────────────────────────────────────────────────────────────────
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -14,11 +39,19 @@ function getCorsHeaders(req: Request) {
 }
 
 const GOOGLE_CLIENT_ID = '110017470335-2l6er8r451vj5hf3ob05rvolc2p4v9ku.apps.googleusercontent.com'
-const ROOT_FOLDER_ID = '1w3J0LxztajJuD8r9BzR1os97vTyQfnT-'
-const MAX_MODULE_DEPTH = 2 // course > module > (deeper folders flatten into nearest module)
-const MAX_LESSONS_PER_COURSE = 1200 // safety cap so a "5000 livros" style dump doesn't blow up the UI
 
-// ─── constant-time compare for x-cron-secret ───────────────────────────────
+const FOLDER_MIME = 'application/vnd.google-apps.folder'
+const SHORTCUT_MIME = 'application/vnd.google-apps.shortcut'
+
+// Orçamento de tempo por invocação. O cliente faz o loop chamando de novo com
+// o cursor devolvido, então parar cedo nunca perde trabalho — tudo que já foi
+// varrido está gravado na fila do banco.
+const TIME_LIMIT_MS = 40_000
+// Quantas pastas listar em paralelo dentro de uma invocação.
+const FOLDER_CONCURRENCY = 6
+// Tentativas por pasta antes de marcar 'error' (fica visível no relatório).
+const MAX_FOLDER_ATTEMPTS = 5
+
 async function secureCompare(a: string, b: string): Promise<boolean> {
   const encoder = new TextEncoder()
   const key = await crypto.subtle.importKey('raw', encoder.encode('timing-safe-compare'), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
@@ -49,28 +82,41 @@ async function refreshAccessToken(refreshToken: string, clientSecret: string): P
   return data.access_token as string
 }
 
+// Listagem de uma página de uma pasta. Diferente da versão antiga, o erro
+// SOBE — quem chama decide reenfileirar ou marcar a pasta como falha. Nunca
+// engolir: uma pasta que falha em silêncio é conteúdo que some do curso.
 async function driveList(accessToken: string, folderId: string, pageToken?: string): Promise<any> {
   const params = new URLSearchParams({
     q: `'${folderId}' in parents and trashed=false`,
     fields: 'nextPageToken, files(id,name,mimeType,size,videoMediaMetadata(durationMillis),shortcutDetails)',
-    pageSize: '200',
+    pageSize: '1000',
     orderBy: 'folder,name_natural',
+    supportsAllDrives: 'true',
+    includeItemsFromAllDrives: 'true',
   })
   if (pageToken) params.set('pageToken', pageToken)
 
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const res = await fetch(`https://www.googleapis.com/drive/v3/files?${params}`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    })
-    if (res.ok) return res.json()
-    if (res.status === 429 || res.status >= 500) {
-      await new Promise(r => setTimeout(r, 400 * (attempt + 1)))
+  let lastErr = 'erro desconhecido'
+  for (let attempt = 0; attempt < 4; attempt++) {
+    let res: Response
+    try {
+      res = await fetch(`https://www.googleapis.com/drive/v3/files?${params}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      })
+    } catch (e) {
+      lastErr = `rede: ${(e as Error).message}`
+      await new Promise(r => setTimeout(r, 400 * 2 ** attempt))
       continue
     }
-    const err = await res.json().catch(() => ({}))
-    throw new Error(`Drive list failed (${res.status}): ${err.error?.message || 'unknown'}`)
+    if (res.ok) return res.json()
+    const body = await res.text().catch(() => '')
+    lastErr = `HTTP ${res.status}: ${body.slice(0, 200)}`
+    // 403 de cota também é transitório — o Drive devolve isso sob rajada.
+    const transient = res.status === 429 || res.status >= 500 || (res.status === 403 && /rateLimit|userRateLimit|quota/i.test(body))
+    if (!transient) break
+    await new Promise(r => setTimeout(r, 500 * 2 ** attempt))
   }
-  throw new Error('Drive list failed after retries')
+  throw new Error(lastErr)
 }
 
 function slugify(text: string): string {
@@ -82,73 +128,54 @@ function slugify(text: string): string {
     .slice(0, 80) || 'curso'
 }
 
-function lessonType(mimeType: string): string {
-  if (mimeType?.startsWith('video/')) return 'video'
-  if (mimeType === 'application/pdf') return 'pdf'
-  if (mimeType?.includes('word') || mimeType === 'application/vnd.google-apps.document') return 'doc'
-  if (mimeType?.startsWith('audio/')) return 'audio'
-  if (mimeType?.startsWith('image/')) return 'image'
+function lessonType(mimeType: string, name = ''): string {
+  const n = name.toLowerCase()
+  if (mimeType?.startsWith('video/') || n.endsWith('.mp4') || n.endsWith('.mkv') || n.endsWith('.avi') || n.endsWith('.mov') || n.endsWith('.ts') || n.endsWith('.wmv')) return 'video'
+  if (mimeType === 'application/pdf' || n.endsWith('.pdf')) return 'pdf'
+  if (mimeType?.includes('word') || mimeType === 'application/vnd.google-apps.document' || n.endsWith('.doc') || n.endsWith('.docx')) return 'doc'
+  if (mimeType?.includes('spreadsheet') || mimeType === 'application/vnd.ms-excel' || n.endsWith('.xls') || n.endsWith('.xlsx')) return 'sheet'
+  if (mimeType === 'text/plain' || n.endsWith('.txt')) return 'txt'
+  if (mimeType?.startsWith('audio/') || n.endsWith('.mp3') || n.endsWith('.wav') || n.endsWith('.ogg')) return 'audio'
+  if (mimeType?.startsWith('image/') || n.endsWith('.jpg') || n.endsWith('.jpeg') || n.endsWith('.png') || n.endsWith('.gif') || n.endsWith('.webp')) return 'image'
   return 'other'
 }
 
-const SHORTCUT_MIME = 'application/vnd.google-apps.shortcut'
-const FOLDER_MIME = 'application/vnd.google-apps.folder'
-
-// Drive shortcuts (e.g. a course folder mirrored via "Add shortcut to Drive")
-// never carry mimeType='...folder' themselves — the real folder/file lives at
-// shortcutDetails.targetId. Resolve here so shortcuts sync exactly like real
-// folders/files instead of silently vanishing from every listing.
 function resolveShortcut(f: any): { id: string; mimeType: string } | null {
-  if (f.mimeType !== SHORTCUT_MIME) return { id: f.id, mimeType: f.mimeType }
-  const targetId = f.shortcutDetails?.targetId
-  const targetMimeType = f.shortcutDetails?.targetMimeType
-  if (!targetId || !targetMimeType) return null // broken/inaccessible shortcut
-  return { id: targetId, mimeType: targetMimeType }
+  if (f.mimeType === SHORTCUT_MIME) {
+    if (!f.shortcutDetails?.targetId || !f.shortcutDetails?.targetMimeType) return null
+    return { id: f.shortcutDetails.targetId, mimeType: f.shortcutDetails.targetMimeType }
+  }
+  return { id: f.id, mimeType: f.mimeType }
 }
 
-// Order matters: earlier entries win when a title matches more than one
-// category (e.g. "RadioPosts - Tomografia na Emergência" must hit Radiologia
-// before the generic Emergência bucket). Specific/narrow categories are
-// checked before broad catch-alls like "Extensivo & Intensivo".
-const CATS: [string, string[]][] = [
-  ['Pediatria', ['pediatr', 'sbp -', 'emergência pediátrica', 'emergencia pediatrica', 'atendimento pediátrico', 'atendimento pediatrico', 'aep -']],
-  ['Cardiologia & ECG', ['cardio', 'ecg', 'eletrocardiogra', 'medeletro', 'medneif', 'med neif', 'incor', 'dislipidem', 'ausculta', 'littman', 'infarto', 'metas', 'facilitando eletro']],
-  ['Radiologia & Imagem', ['radiolog', 'radiop', 'você radiolog', 'voce radiolog', 'usg', 'ultrassonog', 'tomografia', 'imagem', 'medimagem']],
-  ['Prescrições & Plantão', ['prescriç', 'prescric', 'medicações no ps', 'medicacoes', 'anamnese', 'plantão', 'plantao', 'antibiotico', 'antibiótico', 'atb']],
-  ['Revalida', ['revalida', 'hardwork', 'hardtopics', 'alphamed', 'redbook', 'revalideii', 'foco no crm', 'exclusive']],
-  ['Intercâmbio & Carreira Internacional', ['usmle', 'reino unido', 'estágio', 'estagio', ' eua', 'exterior', 'inglês', 'ingles', 'idiomas', 'mundo afora', 'cv premium', 'cv medical', 'rd medicine', 'english pronunciation']],
-  ['Emergência, PS & Trauma', ['emergênc', 'emergenc', 'herlon', 'meustaff', 'raciocínio', 'raciocinio', 'ps zerado', 'pszerado', 'ps medway', 'ps med', 'sala de parada', 'sutura', 'intubaç', 'ventilaç', 'trauma', 'escola de emerg', 'treinamento em emerg', 'sangramento', 'pronto atendimento', 'bora salvar', ' cdt', 'medway - pronto', 'uti ', 'terapia intensiva', 'acls', 'intubaclass', 'ventilamed', 'emerg.simm']],
-  ['Cirurgia & GO', ['cirurg', 'ginecolog', 'obstetr', 'go papers', 'r4 go', 'r+ go']],
-  ['Semiologia & Clínica', ['semiolog', 'exame clínico', 'exame clinico', 'clínica médica', 'clinica medica', 'celmo', 'aps101', 'clinica medico']],
-  ['Farmacologia & Bioquímica', ['farmacolog', 'bioquím', 'bioquim']],
-  ['Especialidades', ['dermato', 'endocrino', 'anestesi', 'anestreview', 'psiquiatr', 'psicopat', 'neuro', 'pneumolog', 'nefro', 'gasometria', 'esporte', 'laboratorial', 'diabetes', 'ortopedia', 'ortoacademy', 'infectoflix', 'infecto', 'clube de revistas', 'diretrizes', 'paulo muzy']],
-  ['Anatomia & Ciclo Básico', ['anatom', 'ciclo básico', 'ciclo basico', 'internato', 'muscleflix']],
-  ['Resumos, Cards & Livros', ['resumo', 'mapas mentais', 'medcards', 'flashcard', 'memorex', 'memorimed', 'livros', 'medlivros', 'apostila', 'planner', 'planilha', 'fichas', 'medrout']],
-  ['Banco de Questões & Simulados', ['banco de quest', 'banco quest', 'quest', 'simulad', 'provas', 'compilad', 'osce', 'medfoco', 'caderno']],
-  ['Extensivo & Intensivo · Residência', ['medcof', 'medcurso', 'medway', 'extensivo', 'semiextensivo', 'sanarflix', 'sanar', 'afya', 'eu médico residente', 'eu medico residente', 'intensiv', 'medcel', 'aristo', 'jj mentoria', 'estratégia med', 'casal med', 'cpmed', 'med grupo', 'descomplicando a medicina']],
-  ['Carreira, Gestão & Marketing', ['marketing', 'instagram', 'empreendedor', 'ia para', 'direito médico', 'ética', 'etica', 'perícia', 'pericia', 'legista', 'escolha de espec', 'caminho das espec', 'praxys', 'progeb', 'saúde da família', 'saude da familia', 'medicina intuitiva', 'como se preparar', 'produtividade', 'características', 'atitudes', 'hospitais públicos', 'blindar', 'erros que impedem', 'sexto ano', 'programa ppa', 'renda na faculdade']],
-]
-function categoryOf(name: string): string {
-  // Strip known false-positive substrings before matching (e.g. "Distúrbios
-  // Hidroeletrolíticos" contains "eletro" but has nothing to do with ECG).
-  const s = name.toLowerCase().replace(/hidroeletrol[íi]tic\w*/g, '')
-  for (const [label, keys] of CATS) if (keys.some(k => s.includes(k))) return label
-  return 'Outros cursos'
+function categoryOf(name: string) {
+  const n = name.toLowerCase()
+  if (n.includes('apostila') || n.includes('livro')) return 'LIVRO'
+  if (n.includes('quest') || n.includes('simulado')) return 'QUESTAO'
+  if (n.includes('resumo') || n.includes('mapa mental')) return 'RESUMO'
+  return 'CURSO'
 }
+
+type SyncDetail = { course: string; action: 'created' | 'updated' | 'skipped' | 'error'; message?: string; files?: string[] }
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response(null, { headers: getCorsHeaders(req) })
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: getCorsHeaders(req) })
+  }
+
+  const json = (payload: unknown, status = 200) =>
+    new Response(JSON.stringify(payload), { status, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } })
 
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    const supabase = createClient(supabaseUrl, supabaseKey)
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    )
 
-    // Two ways in: the x-cron-secret used by the automated backfill, or a
-    // logged-in admin session (the "Sincronizar Cursos" button in /admin/drive).
+    // ── autenticação: cron secret ou admin logado ────────────────────────────
     const SYNC_SECRET = Deno.env.get('MEMBER_SYNC_SECRET')
-    const provided = req.headers.get('x-cron-secret') || ''
-    const cronOk = !!SYNC_SECRET && (await secureCompare(provided, SYNC_SECRET))
+    const providedSecret = req.headers.get('x-cron-secret') || ''
+    const cronOk = !!SYNC_SECRET && SYNC_SECRET !== 'NOT_SET' && (await secureCompare(providedSecret, SYNC_SECRET))
 
     let adminOk = false
     if (!cronOk) {
@@ -161,240 +188,362 @@ serve(async (req) => {
         }
       }
     }
+    if (!cronOk && !adminOk) return json({ error: 'Unauthorized' }, 401)
 
-    if (!cronOk && !adminOk) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
-      })
-    }
-
-    const GOOGLE_CLIENT_SECRET = Deno.env.get('GOOGLE_CLIENT_SECRET')!
+    const START_TIME = Date.now()
+    const outOfTime = () => Date.now() - START_TIME > TIME_LIMIT_MS
 
     const body = await req.json().catch(() => ({}))
-    const cursor: string | undefined = body.cursor || undefined
-    const batchSize: number = Math.min(Math.max(Number(body.batchSize) || 6, 1), 20)
-    // Admin-triggered syncs re-crawl courses we've already imported too, so
-    // lessons/materials added to Drive after the first import get picked up.
-    const forceResync: boolean = !!body.forceResync && adminOk
+    const forceResync: boolean = !!body.forceResync
+    const topPageSize: number = Math.min(Math.max(Number(body.batchSize) || 20, 1), 100)
 
-    const { data: config, error: cfgErr } = await supabase.from('drive_config').select('*').single()
-    if (cfgErr || !config?.connected) {
-      return new Response(JSON.stringify({ error: 'Google Drive não conectado' }), {
-        status: 400, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
-      })
+    // Cursor: minúsculo de propósito. Todo o estado pesado da varredura mora
+    // na tabela `sync_folder_queue`, não no cursor que trafega a cada chamada.
+    let stage: 'discover' | 'crawl' = 'discover'
+    let topPageToken: string | undefined
+    const rawCursor = body.cursor
+    if (rawCursor && typeof rawCursor === 'object') {
+      stage = rawCursor.stage === 'crawl' ? 'crawl' : 'discover'
+      topPageToken = rawCursor.topPageToken || undefined
+    } else if (typeof rawCursor === 'string' && rawCursor.startsWith('{')) {
+      try {
+        const p = JSON.parse(rawCursor)
+        stage = p.stage === 'crawl' ? 'crawl' : 'discover'
+        topPageToken = p.topPageToken || undefined
+      } catch { /* cursor de formato antigo: recomeça a descoberta, a fila preserva o progresso */ }
     }
 
-    let accessToken = config.access_token
+    // ── Google Drive: token válido ───────────────────────────────────────────
+    const GOOGLE_CLIENT_SECRET = Deno.env.get('GOOGLE_CLIENT_SECRET')!
+    const { data: config, error: cfgErr } = await supabase.from('drive_config').select('*').single()
+    if (cfgErr || !config?.connected) {
+      return json({ error: 'Configuração do Google Drive não encontrada no banco.' }, 400)
+    }
+
+    let accessToken = config.access_token as string
     const expiry = config.token_expiry ? new Date(config.token_expiry) : null
-    if (!expiry || expiry < new Date()) {
-      if (!config.refresh_token) {
-        return new Response(JSON.stringify({ error: 'Token expirado. Reconecte o Google Drive.' }), {
-          status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
-        })
-      }
+    // Renova com folga: um token que vence no meio da varredura derrubaria
+    // dezenas de listagens de uma vez.
+    if (!expiry || expiry.getTime() < Date.now() + 5 * 60 * 1000) {
+      if (!config.refresh_token) return json({ error: 'Token expirado. Reconecte o Google Drive.' }, 401)
       accessToken = await refreshAccessToken(config.refresh_token, GOOGLE_CLIENT_SECRET)
       await supabase.from('drive_config').update({
         access_token: accessToken,
         token_expiry: new Date(Date.now() + 3600 * 1000).toISOString(),
       }).eq('id', config.id)
     }
+    const ROOT_FOLDER_ID = config.folder_id || '1w3J0LxztajJuD8r9BzR1os97vTyQfnT-'
 
-    // Known slugs (across all previous batches) so we skip duplicate folders
-    // that mirror the same course from a different backup Google account.
-    const { data: existingCourses } = await supabase.from('courses').select('id, slug, drive_folder_id')
-    const knownSlugs = new Set((existingCourses || []).map(c => c.slug))
-    const knownFolderIds = new Set((existingCourses || []).map(c => c.drive_folder_id))
-    const courseIdByFolderId = new Map((existingCourses || []).map(c => [c.drive_folder_id, c.id]))
-
-    // Top-level page of course folders. Includes shortcut-type entries too —
-    // several courses (e.g. "MEDCURSO 2026", "MEDCOF 2026") live in the root
-    // as "Add shortcut to Drive" links rather than real folders, and Drive
-    // never reports a shortcut's mimeType as '...folder' — resolved below.
-    const params = new URLSearchParams({
-      q: `'${ROOT_FOLDER_ID}' in parents and (mimeType='${FOLDER_MIME}' or mimeType='${SHORTCUT_MIME}') and trashed=false`,
-      fields: 'nextPageToken, files(id,name,mimeType,shortcutDetails)',
-      pageSize: String(batchSize),
-      orderBy: 'name_natural',
-    })
-    if (cursor) params.set('pageToken', cursor)
-    const topRes = await fetch(`https://www.googleapis.com/drive/v3/files?${params}`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    })
-    if (!topRes.ok) {
-      const err = await topRes.json().catch(() => ({}))
-      throw new Error(`Drive top-level list failed: ${err.error?.message || topRes.status}`)
-    }
-    const topData = await topRes.json()
-    const courseFolders: { id: string; name: string }[] = (topData.files || [])
-      .map((f: any) => {
-        const resolved = resolveShortcut(f)
-        if (!resolved || resolved.mimeType !== FOLDER_MIME) return null // broken shortcut or points at a file, not a course
-        return { id: resolved.id, name: f.name }
-      })
-      .filter((f: any): f is { id: string; name: string } => !!f)
-
+    const details: SyncDetail[] = []
     let coursesCreated = 0
     let coursesResynced = 0
-    let coursesSkippedDuplicate = 0
     let lessonsImported = 0
     let modulesImported = 0
+    let foldersCrawled = 0
+    const touchedCourses = new Set<string>()
 
-    for (const folder of courseFolders) {
-      let courseRow: { id: string } | null = null
+    // ═══ ETAPA 1 · DESCOBERTA ════════════════════════════════════════════════
+    // Percorre as pastas de topo (= cursos) e garante uma linha em `courses` +
+    // a semente da fila de varredura para cada curso que ainda precisa varrer.
+    if (stage === 'discover') {
+      const params = new URLSearchParams({
+        q: `'${ROOT_FOLDER_ID}' in parents and trashed=false`,
+        fields: 'nextPageToken, files(id,name,mimeType,size,videoMediaMetadata(durationMillis),shortcutDetails)',
+        pageSize: String(topPageSize),
+        orderBy: 'folder,name_natural',
+        supportsAllDrives: 'true',
+        includeItemsFromAllDrives: 'true',
+      })
+      if (topPageToken) params.set('pageToken', topPageToken)
 
-      if (knownFolderIds.has(folder.id)) {
-        if (!forceResync) continue // already synced this exact folder before
-        const existingId = courseIdByFolderId.get(folder.id)
-        if (!existingId) continue
-        courseRow = { id: existingId }
-        coursesResynced++
-      } else {
-        const baseSlug = slugify(folder.name)
-        const slug = baseSlug
-        if (knownSlugs.has(slug)) {
-          coursesSkippedDuplicate++
-          continue // same course already mirrored from another Drive account — keep the canonical one
-        }
-        knownSlugs.add(slug)
-        knownFolderIds.add(folder.id)
+      const topRes = await fetch(`https://www.googleapis.com/drive/v3/files?${params}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      })
+      if (!topRes.ok) throw new Error(`Falha ao listar a pasta raiz: ${await topRes.text()}`)
+      const topData = await topRes.json()
+      const entries: any[] = topData.files || []
 
-        const { data: newCourseRow, error: courseErr } = await supabase.from('courses').insert({
-          drive_folder_id: folder.id,
-          title: folder.name.trim(),
-          slug,
-          category: categoryOf(folder.name),
-          synced_at: new Date().toISOString(),
-        }).select('id').single()
+      const { data: existingCourses } = await supabase
+        .from('courses')
+        .select('id, slug, drive_folder_id, sync_status, deep_synced_at')
+      const bySlug = new Set((existingCourses || []).map((c: any) => c.slug))
+      const byFolder = new Map((existingCourses || []).map((c: any) => [c.drive_folder_id, c]))
 
-        if (courseErr || !newCourseRow) {
-          console.error('course insert failed', folder.name, courseErr)
+      for (const f of entries) {
+        const resolved = resolveShortcut(f)
+        if (!resolved) {
+          details.push({ course: f.name, action: 'error', message: 'Atalho quebrado no Drive (aponta para item inexistente).' })
           continue
         }
-        courseRow = newCourseRow
-        coursesCreated++
-      }
+        // Arquivo solto na raiz não tem curso a que pertencer. Antes era
+        // ignorado sem aviso nenhum; agora pelo menos aparece no relatório.
+        if (resolved.mimeType !== FOLDER_MIME) {
+          details.push({ course: f.name, action: 'skipped', message: 'Arquivo solto na raiz da biblioteca (fora de qualquer curso) — mova para dentro de uma pasta de curso para importar.' })
+          continue
+        }
 
-      if (!courseRow) continue
-      const course = courseRow
+        const existing = byFolder.get(resolved.id) as any
+        let courseId: string
 
-      // Recursive crawl: course folder -> modules (subfolders) -> lessons (files).
-      // Files are only collected here (module folders are still created
-      // immediately) — turning them into lesson rows is deferred until the
-      // whole course has been walked, so videos can be sorted ahead of every
-      // other file type instead of just following Drive's listing order.
-      let moduleSortCounter = 0
-      const collected: { f: any; resolved: { id: string; mimeType: string }; moduleId: string | null }[] = []
-
-      async function crawl(folderId: string, moduleId: string | null, depth: number) {
-        let pageToken: string | undefined = undefined
-        do {
-          const page = await driveList(accessToken, folderId, pageToken)
-          const files: any[] = page.files || []
-          for (const f of files) {
-            if (collected.length >= MAX_LESSONS_PER_COURSE) break
-
-            const resolved = resolveShortcut(f)
-            if (!resolved) continue // broken/inaccessible shortcut
-
-            if (resolved.mimeType === FOLDER_MIME) {
-              if (depth < MAX_MODULE_DEPTH) {
-                const { data: modRow } = await supabase.from('course_modules').upsert({
-                  course_id: course.id,
-                  drive_folder_id: resolved.id,
-                  title: f.name.trim(),
-                  sort_order: moduleSortCounter++,
-                }, { onConflict: 'course_id,drive_folder_id' }).select('id').single()
-                modulesImported++
-                await crawl(resolved.id, modRow?.id ?? moduleId, depth + 1)
-              } else {
-                // deep nesting flattens into the nearest module
-                await crawl(resolved.id, moduleId, depth + 1)
-              }
-            } else if (resolved.mimeType === 'text/html') {
-              // Stray .html exports (e.g. a Google Doc downloaded as "Web
-              // Page") aren't real course material — skip so they don't show
-              // up as a broken/unplayable "arquivo" in the member area.
-              continue
-            } else {
-              collected.push({ f, resolved, moduleId })
-            }
+        if (existing) {
+          // Só pula quem já foi varrido A FUNDO e fechou completo. Curso que
+          // veio da sincronização antiga (rasa) tem deep_synced_at nulo e é
+          // revarrido automaticamente — é isso que recupera o que faltava.
+          const alreadyComplete = existing.sync_status === 'complete' && !!existing.deep_synced_at
+          if (alreadyComplete && !forceResync) {
+            details.push({ course: f.name, action: 'skipped', message: 'Já varrido por completo (marque "Reimportar tudo" para conferir de novo).' })
+            continue
           }
-          pageToken = page.nextPageToken
-        } while (pageToken && collected.length < MAX_LESSONS_PER_COURSE)
+          courseId = existing.id
+          coursesResynced++
+        } else {
+          const baseSlug = slugify(f.name)
+          // Duas pastas de topo podem ter exatamente o mesmo nome (ex: duas
+          // turmas "Medcof 2024"): isso não faz delas o mesmo curso. Desambigua
+          // pelo fim do ID da pasta em vez de descartar a segunda.
+          const slug = bySlug.has(baseSlug) ? `${baseSlug}-${resolved.id.slice(-6).toLowerCase()}` : baseSlug
+          bySlug.add(slug)
+
+          const { data: newCourse, error: courseErr } = await supabase.from('courses').insert({
+            drive_folder_id: resolved.id,
+            title: f.name.trim(),
+            slug,
+            category: categoryOf(f.name),
+            sync_status: 'crawling',
+            synced_at: new Date().toISOString(),
+          }).select('id').single()
+
+          if (courseErr || !newCourse) {
+            details.push({ course: f.name, action: 'error', message: `Erro ao inserir curso: ${courseErr?.message}` })
+            continue
+          }
+          courseId = newCourse.id
+          coursesCreated++
+        }
+
+        // (Re)semeia a fila. Numa reimportação, tudo que já estava marcado como
+        // varrido volta para 'pending' — inclusive as pastas que tinham falhado.
+        if (forceResync) {
+          await supabase.from('sync_folder_queue')
+            .update({ state: 'pending', page_token: null, attempts: 0, error: null, updated_at: new Date().toISOString() })
+            .eq('course_id', courseId)
+            .neq('state', 'pending')
+        } else {
+          // Sem reimportação, ainda assim as pastas que o Drive recusou a
+          // listar voltam para a fila: senão um curso 'incomplete' nunca se
+          // recuperaria sozinho de um 429 passageiro, e o conteúdo daquela
+          // subárvore ficaria faltando para sempre.
+          await supabase.from('sync_folder_queue')
+            .update({ state: 'pending', attempts: 0, error: null, updated_at: new Date().toISOString() })
+            .eq('course_id', courseId)
+            .eq('state', 'error')
+        }
+        await supabase.from('sync_folder_queue')
+          .upsert({ course_id: courseId, drive_folder_id: resolved.id, module_id: null, path: '', depth: 0 },
+                  { onConflict: 'course_id,drive_folder_id', ignoreDuplicates: true })
+
+        await supabase.from('courses').update({ sync_status: 'crawling', title: f.name.trim(), synced_at: new Date().toISOString() }).eq('id', courseId)
+        details.push({ course: f.name, action: existing ? 'updated' : 'created', message: 'Na fila de varredura profunda.' })
       }
 
-      await crawl(folder.id, null, 0)
+      const nextCursor = topData.nextPageToken
+        ? { stage: 'discover', topPageToken: topData.nextPageToken }
+        : { stage: 'crawl' }
 
-      // Video media always comes first, every other file type after — stable
-      // within each bucket so files otherwise keep Drive's original order.
-      const ordered = [
-        ...collected.filter(c => lessonType(c.resolved.mimeType) === 'video'),
-        ...collected.filter(c => lessonType(c.resolved.mimeType) !== 'video'),
-      ]
-
-      let materialCount = 0
-      let totalDuration = 0
-      let lessonSortCounter = 0
-      const pendingLessons: any[] = []
-      const LESSON_FLUSH_SIZE = 250
-
-      async function flushLessons(force = false) {
-        if (pendingLessons.length === 0) return
-        if (!force && pendingLessons.length < LESSON_FLUSH_SIZE) return
-        const batch = pendingLessons.splice(0, pendingLessons.length)
-        const { error } = await supabase.from('lessons').upsert(batch, { onConflict: 'course_id,drive_file_id' })
-        if (error) console.error('lesson batch upsert failed', folder.name, error)
-      }
-
-      for (const { f, resolved, moduleId } of ordered) {
-        const type = lessonType(resolved.mimeType)
-        // Shortcut targets don't carry videoMediaMetadata/size on the
-        // shortcut item itself — only real files do.
-        const duration = f.mimeType !== SHORTCUT_MIME && f.videoMediaMetadata?.durationMillis
-          ? Math.round(Number(f.videoMediaMetadata.durationMillis) / 1000)
-          : null
-        pendingLessons.push({
-          course_id: course.id,
-          module_id: moduleId,
-          drive_file_id: resolved.id,
-          title: f.name.trim(),
-          type,
-          mime_type: resolved.mimeType,
-          duration_seconds: duration,
-          size_bytes: f.mimeType !== SHORTCUT_MIME && f.size ? Number(f.size) : null,
-          sort_order: lessonSortCounter++,
-        })
-        await flushLessons()
-        if (type !== 'video') materialCount++
-        if (duration) totalDuration += duration
-      }
-      await flushLessons(true)
-      const lessonCount = ordered.length
-      lessonsImported += lessonCount
-
-      await supabase.from('courses').update({
-        lesson_count: lessonCount,
-        material_count: materialCount,
-        total_duration_seconds: totalDuration,
-      }).eq('id', course.id)
+      return json({
+        done: false,
+        stage: 'discover',
+        cursor: nextCursor,
+        coursesCreated, coursesResynced, modulesImported, lessonsImported, foldersCrawled,
+        details,
+      })
     }
 
-    const nextCursor = topData.nextPageToken || null
+    // ═══ ETAPA 2 · VARREDURA PROFUNDA ════════════════════════════════════════
+    // Consome a fila de pastas pendentes até acabar o orçamento de tempo.
+    // Cada pasta processada enfileira as filhas — profundidade ilimitada.
+    const perCourseFiles = new Map<string, string[]>()
 
-    return new Response(JSON.stringify({
-      done: !nextCursor,
-      cursor: nextCursor,
-      coursesInBatch: courseFolders.length,
-      coursesCreated,
-      coursesResynced,
-      coursesSkippedDuplicate,
-      modulesImported,
-      lessonsImported,
-    }), { headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } })
+    while (!outOfTime()) {
+      const { data: pending, error: qErr } = await supabase
+        .from('sync_folder_queue')
+        .select('course_id, drive_folder_id, module_id, path, depth, page_token, attempts')
+        .eq('state', 'pending')
+        .order('course_id')
+        .order('depth')
+        .limit(FOLDER_CONCURRENCY)
+
+      if (qErr) throw new Error(`Erro ao ler a fila de varredura: ${qErr.message}`)
+      if (!pending || pending.length === 0) break
+
+      await Promise.all(pending.map(async (row: any) => {
+        touchedCourses.add(row.course_id)
+
+        let page: any
+        try {
+          page = await driveList(accessToken, row.drive_folder_id, row.page_token || undefined)
+        } catch (e) {
+          const attempts = (row.attempts || 0) + 1
+          const failed = attempts >= MAX_FOLDER_ATTEMPTS
+          // Marcar 'error' aqui é o ponto central da correção: a pasta que o
+          // Drive recusou fica REGISTRADA. O curso não fecha como completo e o
+          // relatório aponta exatamente o que ficou de fora.
+          await supabase.from('sync_folder_queue').update({
+            attempts,
+            state: failed ? 'error' : 'pending',
+            error: String((e as Error).message).slice(0, 500),
+            updated_at: new Date().toISOString(),
+          }).eq('course_id', row.course_id).eq('drive_folder_id', row.drive_folder_id)
+          return
+        }
+
+        const files: any[] = page.files || []
+        const childFolders: any[] = []
+        const lessons: any[] = []
+        const now = new Date().toISOString()
+
+        for (const f of files) {
+          const resolved = resolveShortcut(f)
+          if (!resolved) continue // atalho quebrado: não há alvo para importar
+          if (resolved.mimeType === FOLDER_MIME) {
+            childFolders.push({ id: resolved.id, name: f.name })
+          } else if (resolved.mimeType === 'text/html') {
+            continue // páginas .html soltas do Drive não são aula
+          } else {
+            let type = lessonType(resolved.mimeType, f.name)
+            if (f.videoMediaMetadata) type = 'video'
+            lessons.push({
+              course_id: row.course_id,
+              module_id: row.module_id,
+              drive_file_id: resolved.id,
+              title: f.name.trim(),
+              type,
+              mime_type: resolved.mimeType,
+              duration_seconds: f.mimeType !== SHORTCUT_MIME && f.videoMediaMetadata?.durationMillis
+                ? Math.round(Number(f.videoMediaMetadata.durationMillis) / 1000) : null,
+              // O tamanho de cada arquivo é gravado justamente para permitir
+              // conferir a soma contra o Drive e provar que não faltou nada.
+              size_bytes: f.mimeType !== SHORTCUT_MIME && f.size ? Number(f.size) : null,
+              drive_path: row.path || null,
+              last_seen_at: now,
+            })
+          }
+        }
+
+        // 1) Aulas desta pasta.
+        if (lessons.length) {
+          for (let i = 0; i < lessons.length; i += 200) {
+            const chunk = lessons.slice(i, i + 200)
+            const { error } = await supabase.from('lessons').upsert(chunk, { onConflict: 'course_id,drive_file_id' })
+            if (error) {
+              // Falha de gravação também não pode passar batido: devolve a
+              // pasta para a fila em vez de dar o conteúdo como importado.
+              await supabase.from('sync_folder_queue').update({
+                attempts: (row.attempts || 0) + 1,
+                error: `Falha ao gravar aulas: ${error.message}`.slice(0, 500),
+                updated_at: new Date().toISOString(),
+              }).eq('course_id', row.course_id).eq('drive_folder_id', row.drive_folder_id)
+              return
+            }
+          }
+          lessonsImported += lessons.length
+          const acc = perCourseFiles.get(row.course_id) || []
+          if (acc.length < 40) acc.push(...lessons.slice(0, 40 - acc.length).map(l => l.title))
+          perCourseFiles.set(row.course_id, acc)
+        }
+
+        // 2) Subpastas viram módulos (em qualquer nível) e entram na fila.
+        for (const child of childFolders) {
+          const childPath = row.path ? `${row.path}/${child.name.trim()}` : child.name.trim()
+          const { data: modRow, error: modErr } = await supabase.from('course_modules').upsert({
+            course_id: row.course_id,
+            drive_folder_id: child.id,
+            title: child.name.trim(),
+            parent_module_id: row.module_id,
+            depth: (row.depth || 0) + 1,
+            path: childPath,
+          }, { onConflict: 'course_id,drive_folder_id' }).select('id').single()
+
+          if (modErr || !modRow) continue
+          modulesImported++
+
+          // ignoreDuplicates faz o trabalho de "já visitei essa pasta": atalho
+          // que aponta para uma pasta já vista não vira laço infinito.
+          await supabase.from('sync_folder_queue').upsert({
+            course_id: row.course_id,
+            drive_folder_id: child.id,
+            module_id: modRow.id,
+            path: childPath,
+            depth: (row.depth || 0) + 1,
+          }, { onConflict: 'course_id,drive_folder_id', ignoreDuplicates: true })
+        }
+
+        // 3) Fecha (ou avança a paginação) desta pasta.
+        if (page.nextPageToken) {
+          await supabase.from('sync_folder_queue').update({
+            page_token: page.nextPageToken, attempts: 0, error: null, updated_at: new Date().toISOString(),
+          }).eq('course_id', row.course_id).eq('drive_folder_id', row.drive_folder_id)
+        } else {
+          await supabase.from('sync_folder_queue').update({
+            state: 'done', page_token: null, error: null, updated_at: new Date().toISOString(),
+          }).eq('course_id', row.course_id).eq('drive_folder_id', row.drive_folder_id)
+          foldersCrawled++
+        }
+      }))
+    }
+
+    // ── fecha os cursos que não têm mais pendências ──────────────────────────
+    for (const courseId of touchedCourses) {
+      const { count: stillPending } = await supabase.from('sync_folder_queue')
+        .select('*', { count: 'exact', head: true }).eq('course_id', courseId).eq('state', 'pending')
+      await supabase.rpc('recalc_course_totals', { _course_id: courseId })
+      if ((stillPending || 0) === 0) {
+        const { data: c } = await supabase.from('courses')
+          .select('title, lesson_count, total_size_bytes, folder_count, sync_status, sync_error').eq('id', courseId).single()
+        if (c) {
+          details.push({
+            course: c.title,
+            action: c.sync_status === 'complete' ? 'updated' : 'error',
+            message: c.sync_status === 'complete'
+              ? `Varredura completa: ${c.folder_count} pastas, ${c.lesson_count} arquivos, ${(Number(c.total_size_bytes) / 1e9).toFixed(1)} GB.`
+              : `ATENÇÃO — varredura incompleta: ${c.sync_error}. Rode "Reimportar tudo" para tentar de novo.`,
+            files: perCourseFiles.get(courseId),
+          })
+        }
+      }
+    }
+
+    const { count: remaining } = await supabase.from('sync_folder_queue')
+      .select('*', { count: 'exact', head: true }).eq('state', 'pending')
+
+    const isDone = (remaining || 0) === 0
+    let totals: any = null
+    if (isDone) {
+      // Relatório final: os números que se compara com o Drive.
+      const { data } = await supabase.rpc('get_library_totals')
+      totals = data
+      if (totals) {
+        details.push({
+          course: 'Verificação final',
+          action: totals.folders_error > 0 || totals.courses_incomplete > 0 ? 'error' : 'updated',
+          message: `${totals.courses} cursos · ${totals.folders_done} pastas varridas · ${totals.lessons} arquivos · ` +
+            `${(Number(totals.total_size_bytes) / 1e12).toFixed(2)} TB` +
+            (totals.folders_error > 0 ? ` · ${totals.folders_error} pasta(s) com erro em ${totals.courses_incomplete} curso(s)` : ' · nenhuma pasta ficou de fora'),
+        })
+      }
+    }
+
+    return json({
+      done: isDone,
+      stage: 'crawl',
+      cursor: isDone ? null : { stage: 'crawl' },
+      foldersRemaining: remaining || 0,
+      coursesCreated, coursesResynced, modulesImported, lessonsImported, foldersCrawled,
+      totals,
+      details,
+    })
   } catch (err: any) {
     console.error(err)
-    return new Response(JSON.stringify({ error: err.message }), {
-      status: 500, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
-    })
+    return json({ error: err.message }, 500)
   }
 })

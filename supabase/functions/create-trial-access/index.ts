@@ -3,7 +3,7 @@
 // Fluxo enxuto:
 //   1. Validar email + WhatsApp
 //   2. Bloquear quem já é comprador aprovado ou já fez trial
-//   3. Inserir access com expires_at = now + 30min (dá acesso à área de
+//   3. Inserir access com expires_at = now + 10min (dá acesso à área de
 //      membros/membros — não compartilha mais pasta do Google Drive)
 //   4. Gerar sessão instantânea (mesmo truque do member-auth-request) pra
 //      já devolver o usuário logado direto em /membros, sem precisar de link
@@ -15,7 +15,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const ALLOWED_ORIGINS = ['https://onemedcursos.com.br', 'http://localhost:5173', 'http://localhost:3000']
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
-const TRIAL_DURATION_MINUTES = 30
+const TRIAL_DURATION_MINUTES = 10
 
 function getCorsHeaders(req: Request) {
   const origin = req.headers.get('origin') || ''
@@ -72,12 +72,93 @@ async function checkRateLimit(
   return { allowed: true }
 }
 
+// Limite de 2 trials REAIS por IP a cada 24h — diferente do checkRateLimit
+// acima (que barra rajadas de tentativas), este conta só trials de fato
+// criados, mesmo com emails diferentes a cada vez, pra travar quem tenta
+// burlar o limite por email trocando de endereço.
+async function checkIpTrialLimit(
+  supabase: ReturnType<typeof createClient>,
+  identifier: string,
+): Promise<{ allowed: boolean; retryAfterSeconds?: number }> {
+  const maxTrials = 2
+  const windowMs = 24 * 60 * 60 * 1000
+  const now = new Date()
+
+  const { data: existing } = await supabase
+    .from('rate_limits')
+    .select('attempts, window_start')
+    .eq('identifier', identifier)
+    .eq('action', 'trial_per_ip')
+    .maybeSingle()
+
+  if (!existing || (now.getTime() - new Date(existing.window_start).getTime()) > windowMs) {
+    return { allowed: true }
+  }
+
+  if (existing.attempts >= maxTrials) {
+    const retryAfterSeconds = Math.ceil((new Date(existing.window_start).getTime() + windowMs - now.getTime()) / 1000)
+    return { allowed: false, retryAfterSeconds }
+  }
+
+  return { allowed: true }
+}
+
+async function recordIpTrial(
+  supabase: ReturnType<typeof createClient>,
+  identifier: string,
+): Promise<void> {
+  const now = new Date()
+  const { data: existing } = await supabase
+    .from('rate_limits')
+    .select('attempts, window_start')
+    .eq('identifier', identifier)
+    .eq('action', 'trial_per_ip')
+    .maybeSingle()
+
+  if (!existing || (now.getTime() - new Date(existing.window_start).getTime()) > 24 * 60 * 60 * 1000) {
+    await supabase.from('rate_limits').upsert(
+      { identifier, action: 'trial_per_ip', attempts: 1, window_start: now.toISOString() },
+      { onConflict: 'identifier,action' },
+    )
+    return
+  }
+
+  await supabase.from('rate_limits').update({ attempts: existing.attempts + 1 })
+    .eq('identifier', identifier).eq('action', 'trial_per_ip')
+}
+
+// Geolocaliza o IP do login e grava/atualiza member_locations — melhor
+// esforço, nunca derruba o login se a API de geolocalização falhar.
+async function captureMemberLocation(supabase: ReturnType<typeof createClient>, ip: string, userId: string, email: string) {
+  try {
+    if (!ip || ip === 'unknown') return
+    const geoRes = await fetch(`https://ipwho.is/${ip}`, { signal: AbortSignal.timeout(3000) })
+    if (!geoRes.ok) return
+    const geo = await geoRes.json()
+    if (!geo.success || geo.latitude == null || geo.longitude == null) return
+    await supabase.from('member_locations').upsert({
+      user_id: userId,
+      email,
+      ip,
+      city: geo.city || null,
+      region: geo.region || null,
+      country: geo.country || null,
+      country_code: geo.country_code || null,
+      latitude: geo.latitude,
+      longitude: geo.longitude,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'user_id' })
+  } catch (err) {
+    console.warn('captureMemberLocation falhou', err)
+  }
+}
+
 // Redeems a fresh magic link server-side instead of emailing it, so the
 // caller gets a ready-to-use session back in the same response — same
 // technique as member-auth-request. A first-ever login has no confirmed
 // auth.users row yet, so GoTrue files the token as a "signup" confirmation
 // instead of a "magiclink" one; try both.
-async function issueSession(supabase: ReturnType<typeof createClient>, supabaseUrl: string, email: string) {
+async function issueSession(supabase: ReturnType<typeof createClient>, supabaseUrl: string, email: string, clientIp: string) {
   const { data: linkData, error: linkErr } = await supabase.auth.admin.generateLink({ type: 'magiclink', email })
   if (linkErr || !linkData?.properties?.hashed_token) {
     console.error('generateLink error', linkErr)
@@ -98,6 +179,19 @@ async function issueSession(supabase: ReturnType<typeof createClient>, supabaseU
       if (linkData.user?.id) {
         const { error: limitErr } = await supabase.rpc('enforce_session_limit', { _user_id: linkData.user.id, _max_sessions: 2 })
         if (limitErr) console.error('enforce_session_limit error', limitErr)
+
+        // Geolocalização não pode ficar no caminho crítico do login — uma
+        // resposta lenta do ipwho.is já deixou o login inteiro estourar o
+        // timeout do fetch no frontend. waitUntil mantém o isolate vivo até
+        // terminar, sem segurar a resposta pro cliente.
+        const locationPromise = captureMemberLocation(supabase, clientIp, linkData.user.id, email)
+        // @ts-ignore EdgeRuntime é um global específico do runtime da Supabase
+        if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime.waitUntil) {
+          // @ts-ignore
+          EdgeRuntime.waitUntil(locationPromise)
+        } else {
+          await locationPromise
+        }
       }
       return { access_token, refresh_token }
     }
@@ -158,7 +252,7 @@ serve(async (req) => {
       if (existing.status === 'active' && existing.expires_at) {
         const diffMs = new Date(existing.expires_at).getTime() - Date.now()
         if (diffMs > 0) {
-          const session = await issueSession(supabase, supabaseUrl, normalizedEmail)
+          const session = await issueSession(supabase, supabaseUrl, normalizedEmail, clientIp)
           return jsonResponse(req, {
             alreadyActive: true,
             email: normalizedEmail,
@@ -171,6 +265,19 @@ serve(async (req) => {
       return jsonResponse(req, {
         error: 'Este email já utilizou o período de teste gratuito. Para continuar com acesso ilimitado, adquira um plano.',
       }, 409)
+    }
+
+    // ── Limite de 2 trials por IP a cada 24h, mesmo com emails diferentes ──
+    try {
+      const ipLimit = await checkIpTrialLimit(supabase, clientIp)
+      if (!ipLimit.allowed) {
+        return jsonResponse(req, {
+          error: 'Este endereço já atingiu o limite de 2 testes gratuitos por dia. Tente novamente amanhã ou adquira um plano.',
+          retryAfterSeconds: ipLimit.retryAfterSeconds,
+        }, 409, { 'Retry-After': String(ipLimit.retryAfterSeconds ?? 60) })
+      }
+    } catch (ipErr: any) {
+      console.warn('Limite de trial por IP indisponível:', ipErr.message)
     }
 
     // ── Criar registro de acesso ──
@@ -188,7 +295,17 @@ serve(async (req) => {
 
     if (insertError) throw insertError
 
-    const session = await issueSession(supabase, supabaseUrl, normalizedEmail)
+    // Precisa ser aguardado (não fire-and-forget): a function pode encerrar
+    // o isolate assim que a resposta é enviada, e sem await a escrita do
+    // contador às vezes nunca chegava a acontecer — o limite por IP nunca
+    // incrementava de verdade.
+    try {
+      await recordIpTrial(supabase, clientIp)
+    } catch (recErr: any) {
+      console.warn('Falha ao registrar trial por IP:', recErr.message)
+    }
+
+    const session = await issueSession(supabase, supabaseUrl, normalizedEmail, clientIp)
     if (!session) {
       return jsonResponse(req, { error: 'Acesso criado, mas não foi possível iniciar a sessão. Tente entrar em /login.' }, 500)
     }

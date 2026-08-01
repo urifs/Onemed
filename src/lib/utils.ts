@@ -21,6 +21,55 @@ export function withTimeout<T>(promise: Promise<T>, ms: number, label: string): 
   });
 }
 
+// Uma falha isolada (blip de rede, query lenta sob carga, um 500 passageiro)
+// não deveria virar tela de erro pro aluno — a maioria se resolve sozinha
+// numa segunda tentativa. Só mostra o erro depois de esgotar as tentativas.
+export async function withRetry<T>(fn: () => Promise<T>, attempts = 2, delayMs = 1200): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i <= attempts; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (i < attempts) await new Promise(r => setTimeout(r, delayMs * (i + 1)));
+    }
+  }
+  throw lastErr;
+}
+
+// "Verifique sua conexão" só é uma mensagem honesta quando o erro realmente
+// veio de uma falha de rede no navegador (TypeError: Failed to fetch) — um
+// timeout da nossa própria função withTimeout ou um erro do Postgrest/RLS não
+// tem nada a ver com a internet do aluno, e dizer isso só confunde quem
+// reporta o problema achando que é culpa da própria conexão.
+export function describeLoadError(err: unknown, subject: string): string {
+  const message = err instanceof Error ? err.message : String(err ?? '');
+  if (message.startsWith('Tempo esgotado')) {
+    return `A busca de ${subject} demorou mais que o esperado. Tente novamente.`;
+  }
+  if (/failed to fetch|networkerror|network request failed/i.test(message)) {
+    return 'Não foi possível conectar. Verifique sua conexão e tente novamente.';
+  }
+  return `Não foi possível carregar ${subject} agora. Tente novamente.`;
+}
+
+// signInWithPassword/signUp propagate a raw DOMException ("The operation was
+// aborted") when our own fetch timeout wrapper (client.ts) fires — technical,
+// scary, and useless to whoever's trying to log in. Map it (and the generic
+// network-failure case) to something actionable; anything else passes through
+// untouched since GoTrue's own messages ("Invalid login credentials", etc.)
+// are already clear.
+export function describeAuthError(err: unknown): Error {
+  const message = err instanceof Error ? err.message : String(err ?? '');
+  if (/aborted/i.test(message)) {
+    return new Error('Conexão lenta ou instável. Tente novamente.');
+  }
+  if (/failed to fetch|networkerror|network request failed/i.test(message)) {
+    return new Error('Não foi possível conectar. Verifique sua conexão e tente novamente.');
+  }
+  return err instanceof Error ? err : new Error(message || 'Erro inesperado. Tente novamente.');
+}
+
 const SAO_PAULO_TIMEZONE = 'America/Sao_Paulo';
 
 export function formatDateSP(dateStr: string | number | null, options: Intl.DateTimeFormatOptions = {}): string {
@@ -176,4 +225,124 @@ export function formatWhatsApp(value: string, countryCode: string): string {
     return `(${nums.slice(0, 2)}) ${nums.slice(2, 7)}-${nums.slice(7, 11)}`;
   }
   return nums;
+}
+
+// Compartilhado entre o botão de download dentro do player e o ícone de
+// download de cada linha da lista de aulas/arquivos.
+const EXTENSION_BY_MIME: Record<string, string> = {
+  'application/pdf': 'pdf',
+  'application/msword': 'doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.ms-excel': 'xls',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'text/plain': 'txt',
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+  'image/svg+xml': 'svg',
+  'video/mp4': 'mp4',
+  'video/webm': 'webm',
+  'video/quicktime': 'mov',
+  'audio/mpeg': 'mp3',
+  'audio/mp4': 'm4a',
+};
+
+const EXTENSION_BY_TYPE: Record<string, string> = {
+  pdf: 'pdf', doc: 'docx', sheet: 'xlsx', txt: 'txt', image: 'jpg', video: 'mp4', audio: 'mp3',
+};
+
+export function fileExtensionFor(lesson: { type: string; mime_type?: string | null }): string {
+  return (lesson.mime_type && EXTENSION_BY_MIME[lesson.mime_type]) || EXTENSION_BY_TYPE[lesson.type] || 'bin';
+}
+
+export function sanitizeFilename(title: string): string {
+  return title.replace(/[\\/:*?"<>|]/g, '').trim() || 'arquivo';
+}
+
+// REGRA: o arquivo baixado tem que sair com exatamente a mesma extensão que
+// aparece na plataforma. O título da aula É o nome do arquivo no Drive,
+// extensão inclusa, e é ele que a lista e a árvore mostram — então o nome do
+// download é o título, ponto. Anexar uma extensão derivada por cima corrompia
+// tudo que não fosse formato de escritório: um baralho `Imunização.apkg` saía
+// como `Imunização.apkg.bin` e o Anki recusava importar; `.colpkg` idem; até
+// PDF saía como `Apostila.pdf.pdf`. Os mimes que o Drive dá pra esses casos
+// (`application/vnd.anki`, `application/octetstream`, `application/x-zip`)
+// nunca vão estar todos numa tabela nossa — o nome do arquivo já sabe.
+//
+// A extensão derivada do mime/tipo é só a rede de segurança para os arquivos
+// que não têm extensão nenhuma no nome (1.268 na biblioteca).
+function extensionInName(name: string): string | null {
+  const match = /\.([A-Za-z0-9_-]{1,12})$/.exec(name);
+  if (!match) return null;
+  // Precisa ter pelo menos uma letra: `Aula 1.2` não termina em extensão,
+  // termina em número de capítulo — baixar como "Aula 1.2" não abriria nada.
+  return /[A-Za-z]/.test(match[1]) ? match[1] : null;
+}
+
+// Exceção à regra acima: as aulas em formato que nenhum navegador toca
+// (.wmv, .mkv, .mpg, .mov, .avi) foram RECONVERTIDAS para MP4 e vivem no
+// Storage — o título continua com a extensão antiga (é o nome do arquivo no
+// Drive), mas os bytes são MP4. Baixar "AULA.MOV" com conteúdo MP4 faz o
+// player do computador recusar o arquivo. `storage_path` preenchido é o sinal
+// confiável de que a conversão é nossa; o mime do Drive, sozinho, não serve
+// (ele erra o palpite em parte da biblioteca).
+const CONVERTED_VIDEO_EXT = /\.(wmv|mkv|mpg|mpeg|mov|avi|flv|ts)$/i;
+
+export function downloadFilenameFor(lesson: {
+  title: string;
+  type: string;
+  mime_type?: string | null;
+  storage_path?: string | null;
+}): string {
+  const name = sanitizeFilename(lesson.title);
+
+  if (lesson.storage_path && lesson.mime_type === 'video/mp4' && CONVERTED_VIDEO_EXT.test(name)) {
+    return name.replace(CONVERTED_VIDEO_EXT, '.mp4');
+  }
+
+  const existing = extensionInName(name);
+  if (existing) return name;
+  return `${name}.${fileExtensionFor(lesson)}`;
+}
+
+/**
+ * Transforma a URL de streaming numa URL de DOWNLOAD com o nome certo.
+ *
+ * Não dá para usar o atributo `download` do <a>: ele é ignorado quando o
+ * arquivo vem de outra origem (o Worker da Cloudflare e o Storage do Supabase
+ * são as duas), e o arquivo cairia com um nome aleatório — exatamente o
+ * problema que os alunos relataram com os baralhos `.colpkg`. Quem manda o
+ * nome, nesse caso, é o cabeçalho `Content-Disposition` do servidor.
+ *
+ * E não dá para baixar via `fetch` + blob (como era antes): isso segura o
+ * arquivo INTEIRO na memória da aba antes de salvar. Para PDF de 10 MB passa;
+ * para uma aula em vídeo de 1,5 GB trava ou derruba a aba, ainda mais no
+ * celular. Com o cabeçalho, o navegador escreve direto no disco.
+ *
+ * Cada serviço tem seu jeito de pedir isso:
+ *   - Storage do Supabase: `?download=<nome>` (recurso nativo dele)
+ *   - Worker da Cloudflare: `&dl=<nome>`, tratado no nosso worker.js
+ */
+export function downloadUrlFor(streamUrl: string, filename: string): string {
+  try {
+    const url = new URL(streamUrl);
+    url.searchParams.set(url.hostname.includes('supabase') ? 'download' : 'dl', filename);
+    return url.toString();
+  } catch {
+    return streamUrl;
+  }
+}
+
+// "Online há X" no quadro de presença do admin — diferente do timeAgo curto
+// de MembersPage (só minutos), aqui a janela pode ser de dias.
+export function formatLastSeen(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const mins = Math.max(0, Math.floor(diffMs / 60000));
+  if (mins < 1) return 'agora mesmo';
+  if (mins < 60) return `há ${mins} min`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `há ${hours}h`;
+  const days = Math.floor(hours / 24);
+  return `há ${days} dia${days !== 1 ? 's' : ''}`;
 }

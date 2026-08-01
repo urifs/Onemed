@@ -56,23 +56,39 @@ async function checkRateLimit(
 
 // ─── Preços canônicos definidos SERVER-SIDE ───────────────────────────────────
 const PLAN_PRICES: Record<string, number> = {
-  lifetime: 299.90,
-  annual:   199.00,
+  monthly:       49.00,
+  annual:        199.00,
+  lifetime:      299.90,
+  lifetime_plus: 599.00,
+  lifetime_pro:  997.00,
 }
 
 const UPSELL_PRICE  = 19.90
 const UPSELL2_PRICE = 9.90
 
 const PLAN_LABELS: Record<string, string> = {
-  lifetime: 'OneMed Vitalicio - Acesso Permanente',
-  annual:   'OneMed Anual - 12 Meses de Acesso',
+  monthly:       'OneMed Mensal - 30 Dias de Acesso',
+  annual:        'OneMed Anual - 12 Meses de Acesso',
+  lifetime:      'OneMed Vitalicio - Acesso Permanente',
+  lifetime_plus: 'OneMed Vitalicio Plus - Backup Drive + 4 Telas',
+  lifetime_pro:  'OneMed Vitalicio Pro - IA Meduf + Backup Exclusivo + 6 Telas',
+}
+
+// Nome curto pra mensagens de erro (restrição de cupom) — PLAN_LABELS é o
+// título completo do item no Mercado Pago, verboso demais pra essa frase.
+const PLAN_DISPLAY_NAMES: Record<string, string> = {
+  monthly:       'Plano Mensal',
+  annual:        'Plano Anual',
+  lifetime:      'Plano Vitalício',
+  lifetime_plus: 'Plano Vitalício Plus',
+  lifetime_pro:  'Plano Vitalício Pro',
 }
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: getCorsHeaders(req) })
 
   try {
-    const { plan, email, name, whatsapp, externalReference, couponCode, upsell, upsell2 } = await req.json()
+    const { plan, email, name, whatsapp, externalReference, couponCode, upsell, upsell2, isUpgrade } = await req.json()
 
     // ── 1. Validar plano contra allowlist ─────────────────────────────────────
     if (!PLAN_PRICES[plan]) {
@@ -118,6 +134,60 @@ serve(async (req) => {
     let discountPercent = 0
     let appliedCoupon: string | null = null
 
+    // ── 3b. Upgrade de plano: cobra só a diferença do que a pessoa já pagou.
+    // Nunca confia num "valor já pago" vindo do cliente — recalcula aqui, e só
+    // libera depois de confirmar (via JWT da sessão) que quem pede o upgrade
+    // é dono desse email. Sem isso, qualquer um poderia pedir um upgrade pro
+    // e-mail de outra pessoa e descobrir/manipular quanto ela pagou.
+    if (isUpgrade) {
+      const authHeader = req.headers.get('Authorization') || ''
+      const jwt = authHeader.replace(/^Bearer\s+/i, '')
+      if (!jwt) {
+        return new Response(JSON.stringify({ error: 'Faça login para fazer upgrade do seu plano' }), {
+          status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
+        })
+      }
+      const { data: { user: callerUser }, error: authErr } = await supabase.auth.getUser(jwt)
+      if (authErr || !callerUser || (callerUser.email || '').toLowerCase() !== String(email).toLowerCase().trim()) {
+        return new Response(JSON.stringify({ error: 'Sessão inválida para este email' }), {
+          status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
+        })
+      }
+
+      const normalizedEmail = String(email).toLowerCase().trim()
+      const LIFETIME_TIER_RANK: Record<string, number> = { lifetime: 1, lifetime_plus: 2, lifetime_pro: 3 }
+
+      const [{ data: previousBuyer }, { data: activeAccesses }] = await Promise.all([
+        supabase.from('buyers').select('plan, amount')
+          .eq('email', normalizedEmail).eq('access_granted', true)
+          .order('created_at', { ascending: false }).limit(1).maybeSingle(),
+        supabase.from('accesses').select('access_type')
+          .eq('email', normalizedEmail).eq('status', 'active').neq('access_type', 'trial'),
+      ])
+
+      // Mesma resolução de "plano atual" do member-account-info: prefere o
+      // maior tier vitalício entre buyer/accesses, nunca "o primeiro que
+      // aparecer" (uma conta pode ter mais de uma linha ativa em accesses).
+      const bestAccessTier = (activeAccesses || [])
+        .filter(a => LIFETIME_TIER_RANK[a.access_type])
+        .sort((a, b) => LIFETIME_TIER_RANK[b.access_type] - LIFETIME_TIER_RANK[a.access_type])[0]?.access_type
+      const buyerTier = previousBuyer?.plan && LIFETIME_TIER_RANK[previousBuyer.plan] ? previousBuyer.plan : undefined
+      const currentPlan = [buyerTier, bestAccessTier].filter((p): p is string => !!p)
+        .sort((a, b) => LIFETIME_TIER_RANK[b] - LIFETIME_TIER_RANK[a])[0]
+        || previousBuyer?.plan
+        || (activeAccesses || [])[0]?.access_type
+
+      // Se não há valor real pago (acesso concedido manualmente, sem linha
+      // em buyers ou amount zerado), conta como se já tivesse pago o preço
+      // de tabela do plano atual — upgrade nunca cobra o preço cheio, seja
+      // a conta de um comprador de verdade ou de um grant manual do admin.
+      const realAmountPaid = previousBuyer?.amount ? Number(previousBuyer.amount) : 0
+      const alreadyPaid = realAmountPaid > 0 ? realAmountPaid : (currentPlan ? (PLAN_PRICES[currentPlan] ?? 0) : 0)
+
+      const MIN_UPGRADE_PRICE = 1.00
+      basePrice = Math.max(basePrice - alreadyPaid, MIN_UPGRADE_PRICE)
+    }
+
     // ── 4. Validar cupom no banco (nunca confiar no desconto do cliente) ──────
     if (couponCode) {
       const { data: coupon } = await supabase
@@ -143,7 +213,7 @@ serve(async (req) => {
         // Verificar restrição de plano
         const allowedPlans = coupon.allowed_plans || 'all'
         if (allowedPlans !== 'all' && allowedPlans !== plan) {
-          const planName = allowedPlans === 'annual' ? 'Plano Anual' : 'Plano Vitalício'
+          const planName = PLAN_DISPLAY_NAMES[allowedPlans] || allowedPlans
           return new Response(JSON.stringify({ error: `Este cupom é válido apenas para o ${planName}` }), {
             status: 400, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
           })
@@ -172,8 +242,8 @@ serve(async (req) => {
       items: [
         {
           id: plan,
-          title: PLAN_LABELS[plan] || 'OneMed - Acesso Completo',
-          description: 'Acesso completo a plataforma OneMed',
+          title: (isUpgrade ? 'Upgrade - ' : '') + (PLAN_LABELS[plan] || 'OneMed - Acesso Completo'),
+          description: isUpgrade ? 'Upgrade de plano na plataforma OneMed' : 'Acesso completo a plataforma OneMed',
           category_id: 'learningtools',
           quantity: 1,
           currency_id: 'BRL',
@@ -182,7 +252,7 @@ serve(async (req) => {
       ],
       external_reference: externalReference,
       notification_url: webhookUrl,
-      metadata: { plan, email, name, whatsapp, coupon: appliedCoupon },
+      metadata: { plan, email, name, whatsapp, coupon: appliedCoupon, isUpgrade: !!isUpgrade },
       back_urls: {
         success: 'https://onemedcursos.com.br/payment/success',
         failure: 'https://onemedcursos.com.br/payment/error',
@@ -213,10 +283,22 @@ serve(async (req) => {
 
     console.log('MP preference created:', mpData.id)
 
-    // Atualizar buyer com payment_id e valor calculado server-side
+    // Atualizar buyer com payment_id e valor calculado server-side.
+    //
+    // Guarda também o IP e o user-agent do COMPRADOR: são duas chaves de
+    // correspondência da Meta CAPI que só existem aqui. No mp-webhook a
+    // requisição vem de um servidor do Mercado Pago, então o IP de lá é do
+    // MP — usá-lo pioraria a correspondência em vez de melhorar.
+    const clientIp = (req.headers.get('x-forwarded-for') || '').split(',')[0].trim()
+      || req.headers.get('x-real-ip')
+      || null
+    const clientUserAgent = req.headers.get('user-agent') || null
+
     await supabase.from('buyers').update({
       payment_id: mpData.id,
       amount: totalAmount,
+      client_ip: clientIp,
+      client_user_agent: clientUserAgent,
     }).eq('external_reference', externalReference)
 
     // Incrementar uso do cupom se aplicado

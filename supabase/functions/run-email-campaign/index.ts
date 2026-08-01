@@ -29,42 +29,39 @@ function getBaseTemplate(content: string, title: string): string {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${title}</title>
 </head>
-<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0A0A0A;">
+<body style="margin: 0; padding: 0; font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; background-color: #0A0A0A;">
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #0A0A0A;">
     <tr>
       <td align="center" style="padding: 40px 20px;">
-        <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="max-width: 600px; background-color: #111111; border-radius: 16px; border: 1px solid rgba(239, 68, 68, 0.2);">
+        <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="max-width: 600px; background-color: #111111; border-radius: 12px; border: 1px solid #262626;">
           <tr>
-            <td style="padding: 40px 40px 20px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.1);">
-              <table role="presentation" cellspacing="0" cellpadding="0" style="margin: 0 auto;">
-                <tr>
-                  <td style="background: linear-gradient(135deg, #DC2626 0%, #991B1B 100%); width: 50px; height: 50px; border-radius: 12px; text-align: center; vertical-align: middle;">
-                    <span style="color: white; font-size: 24px; font-weight: bold;">+</span>
-                  </td>
-                  <td style="padding-left: 12px;">
-                    <span style="color: white; font-size: 28px; font-weight: bold;">One</span><span style="color: #EF4444; font-size: 28px; font-weight: bold;">Med</span>
-                  </td>
-                </tr>
-              </table>
+            <td style="padding: 32px 40px; text-align: center; border-bottom: 1px solid #262626;">
+              <span style="color: white; font-size: 22px; font-weight: 700; letter-spacing: -0.3px;">One</span><span style="color: #EF4444; font-size: 22px; font-weight: 700; letter-spacing: -0.3px;">Med</span>
             </td>
           </tr>
-          <tr><td style="padding: 40px;">${content}</td></tr>
           <tr>
-            <td style="padding: 0 40px 30px; text-align: center;">
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: rgba(34, 197, 94, 0.1); border-radius: 12px; border: 1px solid rgba(34, 197, 94, 0.3);">
+            <td style="padding: 40px;">
+              ${content}
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 0 40px 32px; text-align: center;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #161616; border-radius: 10px; border: 1px solid #262626;">
                 <tr>
                   <td style="padding: 20px; text-align: center;">
-                    <p style="color: #94A3B8; font-size: 14px; margin: 0 0 12px;">Precisa de ajuda? Fale com nosso suporte!</p>
-                    <a href="${WHATSAPP_URL}" style="display: inline-block; background-color: #22C55E; color: white; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-size: 14px; font-weight: bold;">Suporte via WhatsApp</a>
+                    <p style="color: #94A3B8; font-size: 14px; margin: 0 0 12px;">Precisa de ajuda? Fale com nosso suporte</p>
+                    <a href="${WHATSAPP_URL}" style="display: inline-block; background-color: #16A34A; color: white; text-decoration: none; padding: 11px 22px; border-radius: 6px; font-size: 14px; font-weight: 600;">
+                      Falar no WhatsApp
+                    </a>
                   </td>
                 </tr>
               </table>
             </td>
           </tr>
           <tr>
-            <td style="padding: 30px 40px; background-color: #0A0A0A; border-radius: 0 0 16px 16px; border-top: 1px solid rgba(255,255,255,0.1);">
-              <p style="color: #64748B; font-size: 14px; text-align: center; margin: 0 0 10px;">O maior acervo de conteúdos médicos da América Latina</p>
-              <p style="color: #475569; font-size: 12px; text-align: center; margin: 0;">&copy; 2026 OneMed. Todos os direitos reservados.</p>
+            <td style="padding: 24px 40px 32px; border-top: 1px solid #262626;">
+              <p style="color: #64748B; font-size: 13px; margin: 0 0 6px; text-align: center;">O maior acervo de conteúdos médicos da América Latina</p>
+              <p style="color: #475569; font-size: 12px; margin: 0; text-align: center;">&copy; ${new Date().getFullYear()} OneMed. Todos os direitos reservados.</p>
             </td>
           </tr>
         </table>
@@ -87,56 +84,60 @@ interface FollowupData {
 
 function buildFollowupHtml(email: string, cfg: FollowupData): string {
   const content = `
-    <h1 style="color: white; font-size: 28px; margin: 0 0 20px; text-align: center;">${cfg.subjectText}</h1>
-    <p style="color: #94A3B8; font-size: 16px; line-height: 1.6; margin: 0 0 20px;">Olá!</p>
-    <p style="color: #94A3B8; font-size: 16px; line-height: 1.6; margin: 0 0 20px;">${cfg.message}</p>
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background: linear-gradient(135deg, rgba(34,197,94,0.15) 0%, rgba(21,128,61,0.15) 100%); border-radius: 12px; border: 2px dashed rgba(34,197,94,0.5); margin: 20px 0;">
-      <tr><td style="padding: 24px; text-align: center;">
-        <p style="color: #22C55E; font-size: 14px; font-weight: bold; margin: 0 0 8px; text-transform: uppercase;">Cupom Exclusivo</p>
-        <p style="color: white; font-size: 32px; font-weight: bold; margin: 0 0 8px; letter-spacing: 4px;">${cfg.couponCode}</p>
-        <p style="color: #22C55E; font-size: 20px; font-weight: bold; margin: 0;">${cfg.discount}% DE DESCONTO</p>
-      </td></tr>
+    <h1 style="color: white; font-size: 24px; font-weight: 700; margin: 0 0 16px;">${cfg.subjectText}</h1>
+
+    <p style="color: #94A3B8; font-size: 15px; line-height: 1.6; margin: 0 0 24px;">${cfg.message} ${cfg.urgency}</p>
+
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #161616; border-radius: 10px; border: 1px solid #262626; margin: 0 0 28px;">
+      <tr>
+        <td style="padding: 24px; text-align: center;">
+          <p style="color: #4ADE80; font-size: 12px; font-weight: 700; margin: 0 0 8px; text-transform: uppercase; letter-spacing: 0.5px;">Cupom exclusivo — ${cfg.discount}% de desconto</p>
+          <p style="color: white; font-size: 28px; font-weight: 700; margin: 0; letter-spacing: 3px;">${cfg.couponCode}</p>
+        </td>
+      </tr>
     </table>
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background: linear-gradient(135deg, rgba(239,68,68,0.1) 0%, rgba(153,27,27,0.1) 100%); border-radius: 12px; border: 1px solid rgba(239,68,68,0.3); margin: 20px 0;">
-      <tr><td style="padding: 24px; text-align: center;"><p style="color: white; font-size: 18px; font-weight: bold; margin: 0;">${cfg.urgency}</p></td></tr>
+
+    <h2 style="color: white; font-size: 16px; font-weight: 700; margin: 0 0 12px;">O que você está perdendo</h2>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin: 0 0 28px;">
+      <tr><td style="padding: 6px 0; color: #CBD5E1; font-size: 14px;">+530 cursos de medicina</td></tr>
+      <tr><td style="padding: 6px 0; color: #CBD5E1; font-size: 14px;">+9.000 livros médicos atualizados</td></tr>
+      <tr><td style="padding: 6px 0; color: #CBD5E1; font-size: 14px;">Material completo para Residência e Revalida</td></tr>
     </table>
-    <h2 style="color: white; font-size: 20px; margin: 30px 0 15px;">O que você está perdendo:</h2>
+
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #161616; border-radius: 10px; border: 1px solid #262626; margin: 0 0 24px;">
+      <tr>
+        <td style="padding: 20px;">
+          <p style="color: #64748B; font-size: 12px; text-align: center; margin: 0 0 14px; text-transform: uppercase; letter-spacing: 0.5px;">Preço com o cupom</p>
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+            <tr>
+              <td style="width: 50%; padding: 8px; text-align: center; border-right: 1px solid #262626;">
+                <p style="color: #64748B; font-size: 11px; margin: 0; text-transform: uppercase;">Plano anual</p>
+                <p style="color: #64748B; font-size: 13px; margin: 4px 0; text-decoration: line-through;">R$ 199,00</p>
+                <p style="color: #4ADE80; font-size: 22px; font-weight: 700; margin: 0;">${cfg.annualPrice}</p>
+              </td>
+              <td style="width: 50%; padding: 8px; text-align: center;">
+                <p style="color: #64748B; font-size: 11px; margin: 0; text-transform: uppercase;">Plano vitalício</p>
+                <p style="color: #64748B; font-size: 13px; margin: 4px 0; text-decoration: line-through;">R$ 299,90</p>
+                <p style="color: #4ADE80; font-size: 22px; font-weight: 700; margin: 0;">${cfg.lifetimePrice}</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
-      <tr><td style="padding: 10px 0;"><span style="color: #EF4444;">•</span><span style="color: #CBD5E1; font-size: 15px; margin-left: 10px;">+530 cursos de medicina</span></td></tr>
-      <tr><td style="padding: 10px 0;"><span style="color: #EF4444;">•</span><span style="color: #CBD5E1; font-size: 15px; margin-left: 10px;">+9.000 livros médicos atualizados</span></td></tr>
-      <tr><td style="padding: 10px 0;"><span style="color: #EF4444;">•</span><span style="color: #CBD5E1; font-size: 15px; margin-left: 10px;">Material completo para Residência e Revalida</span></td></tr>
+      <tr>
+        <td align="center" style="padding-bottom: 8px;">
+          <a href="${SITE_URL}/checkout?plan=lifetime&coupon=${cfg.couponCode}" style="display: inline-block; background-color: #DC2626; color: white; text-decoration: none; padding: 14px 36px; border-radius: 8px; font-size: 15px; font-weight: 600;">
+            Usar cupom e garantir acesso
+          </a>
+        </td>
+      </tr>
     </table>
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin: 30px 0;">
-      <tr><td style="background-color: #1a1a1a; border-radius: 12px; padding: 20px;">
-        <p style="color: #22C55E; font-size: 14px; text-align: center; margin: 0 0 15px;">Preços com ${cfg.discount}% de desconto:</p>
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
-          <tr>
-            <td style="width: 50%; padding: 10px; text-align: center; border-right: 1px solid #333;">
-              <p style="color: #64748B; font-size: 12px; margin: 0;">PLANO ANUAL</p>
-              <p style="color: #64748B; font-size: 14px; margin: 5px 0; text-decoration: line-through;">R$ 199,00</p>
-              <p style="color: #22C55E; font-size: 24px; font-weight: bold; margin: 0;">${cfg.annualPrice}</p>
-            </td>
-            <td style="width: 50%; padding: 10px; text-align: center;">
-              <p style="color: #64748B; font-size: 12px; margin: 0;">PLANO VITALÍCIO</p>
-              <p style="color: #64748B; font-size: 14px; margin: 5px 0; text-decoration: line-through;">R$ 299,90</p>
-              <p style="color: #22C55E; font-size: 24px; font-weight: bold; margin: 0;">${cfg.lifetimePrice}</p>
-            </td>
-          </tr>
-        </table>
-      </td></tr>
-    </table>
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
-      <tr><td align="center" style="padding: 10px 0 20px;">
-        <a href="${SITE_URL}/checkout?plan=lifetime&coupon=${cfg.couponCode}" style="display: inline-block; background: linear-gradient(135deg, #DC2626 0%, #991B1B 100%); color: white; text-decoration: none; padding: 16px 40px; border-radius: 8px; font-size: 16px; font-weight: bold;">
-          Usar Cupom e Garantir Acesso
-        </a>
-      </td></tr>
-    </table>
-    <p style="color: #64748B; font-size: 12px; text-align: center; margin: 10px 0 0;">
-      Use o codigo <strong style="color: #22C55E;">${cfg.couponCode}</strong> no checkout para aplicar o desconto
-    </p>
-    <p style="color: #475569; font-size: 12px; text-align: center; margin: 16px 0 0;">
-      Este email foi enviado para <strong style="color: #94A3B8;">${email}</strong> pois você experimentou o OneMed gratuitamente.
+
+    <p style="color: #475569; font-size: 12px; text-align: center; margin: 20px 0 0;">
+      Enviado para ${email} — você experimentou o OneMed gratuitamente.
     </p>`
   return getBaseTemplate(content, `${cfg.subjectText} - ${SITE_NAME}`)
 }
@@ -149,34 +150,39 @@ interface FreeTrialData {
 
 function buildFreeTrialHtml(email: string, cfg: FreeTrialData): string {
   const content = `
-    <h1 style="color: white; font-size: 28px; margin: 0 0 20px; text-align: center;">${cfg.subjectText}</h1>
-    <p style="color: #94A3B8; font-size: 16px; line-height: 1.6; margin: 0 0 20px;">Olá!</p>
-    <p style="color: #94A3B8; font-size: 16px; line-height: 1.6; margin: 0 0 20px;">${cfg.message}</p>
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background: linear-gradient(135deg, rgba(34,197,94,0.15) 0%, rgba(21,128,61,0.15) 100%); border-radius: 12px; border: 1px solid rgba(34,197,94,0.3); margin: 20px 0;">
-      <tr><td style="padding: 24px; text-align: center;">
-        <p style="color: #22C55E; font-size: 14px; font-weight: bold; margin: 0 0 8px; text-transform: uppercase;">Acesso Gratuito</p>
-        <p style="color: white; font-size: 24px; font-weight: bold; margin: 0 0 8px;">30 minutos</p>
-        <p style="color: #94A3B8; font-size: 14px; margin: 0;">para explorar todo o conteúdo sem compromisso</p>
-      </td></tr>
+    <h1 style="color: white; font-size: 24px; font-weight: 700; margin: 0 0 16px;">${cfg.subjectText}</h1>
+
+    <p style="color: #94A3B8; font-size: 15px; line-height: 1.6; margin: 0 0 24px;">${cfg.message} ${cfg.urgency}</p>
+
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #161616; border-radius: 10px; border-left: 3px solid #16A34A; margin: 0 0 28px;">
+      <tr>
+        <td style="padding: 20px 24px; text-align: center;">
+          <p style="color: #4ADE80; font-size: 12px; font-weight: 700; margin: 0 0 6px; text-transform: uppercase; letter-spacing: 0.5px;">Acesso gratuito</p>
+          <p style="color: white; font-size: 22px; font-weight: 700; margin: 0;">10 minutos para explorar todo o conteúdo</p>
+        </td>
+      </tr>
     </table>
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background: linear-gradient(135deg, rgba(239,68,68,0.1) 0%, rgba(153,27,27,0.1) 100%); border-radius: 12px; border: 1px solid rgba(239,68,68,0.3); margin: 20px 0;">
-      <tr><td style="padding: 24px; text-align: center;"><p style="color: white; font-size: 18px; font-weight: bold; margin: 0;">${cfg.urgency}</p></td></tr>
+
+    <h2 style="color: white; font-size: 16px; font-weight: 700; margin: 0 0 12px;">O que você vai encontrar</h2>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin: 0 0 28px;">
+      <tr><td style="padding: 6px 0; color: #CBD5E1; font-size: 14px;">+530 cursos de medicina</td></tr>
+      <tr><td style="padding: 6px 0; color: #CBD5E1; font-size: 14px;">+9.000 livros médicos atualizados</td></tr>
+      <tr><td style="padding: 6px 0; color: #CBD5E1; font-size: 14px;">Material completo para Residência e Revalida</td></tr>
     </table>
-    <h2 style="color: white; font-size: 20px; margin: 30px 0 15px;">O que você vai encontrar:</h2>
+
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
-      <tr><td style="padding: 10px 0;"><span style="color: #EF4444;">•</span><span style="color: #CBD5E1; font-size: 15px; margin-left: 10px;">+530 cursos de medicina</span></td></tr>
-      <tr><td style="padding: 10px 0;"><span style="color: #EF4444;">•</span><span style="color: #CBD5E1; font-size: 15px; margin-left: 10px;">+9.000 livros médicos atualizados</span></td></tr>
-      <tr><td style="padding: 10px 0;"><span style="color: #EF4444;">•</span><span style="color: #CBD5E1; font-size: 15px; margin-left: 10px;">Material completo para Residência e Revalida</span></td></tr>
+      <tr>
+        <td align="center" style="padding-bottom: 8px;">
+          <a href="${SITE_URL}" style="display: inline-block; background-color: #DC2626; color: white; text-decoration: none; padding: 14px 36px; border-radius: 8px; font-size: 15px; font-weight: 600;">
+            Testar grátis agora
+          </a>
+        </td>
+      </tr>
     </table>
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin: 30px 0;">
-      <tr><td align="center" style="padding: 10px 0 20px;">
-        <a href="${SITE_URL}" style="display: inline-block; background: linear-gradient(135deg, #DC2626 0%, #991B1B 100%); color: white; text-decoration: none; padding: 18px 48px; border-radius: 8px; font-size: 18px; font-weight: bold;">
-          Quero Testar Grátis
-        </a>
-      </td></tr>
-    </table>
-    <p style="color: #64748B; font-size: 12px; text-align: center; margin: 10px 0 0;">Clique no botão acima para acessar o teste gratuito de 30 minutos</p>
-    <p style="color: #475569; font-size: 12px; text-align: center; margin: 16px 0 0;">Este email foi enviado para <strong style="color: #94A3B8;">${email}</strong>.</p>`
+
+    <p style="color: #475569; font-size: 12px; text-align: center; margin: 20px 0 0;">
+      Enviado para ${email}.
+    </p>`
   return getBaseTemplate(content, `${cfg.subjectText} - ${SITE_NAME}`)
 }
 
@@ -184,15 +190,19 @@ function buildCustomHtml(body: string, subject: string): string {
   const paragraphs = body
     .split('\n\n')
     .filter(p => p.trim())
-    .map(p => `<p style="color: #94A3B8; font-size: 16px; line-height: 1.8; margin: 0 0 16px;">${p.replace(/\n/g, '<br>')}</p>`)
+    .map(p => `<p style="color: #94A3B8; font-size: 15px; line-height: 1.7; margin: 0 0 16px;">${p.replace(/\n/g, '<br>')}</p>`)
     .join('')
   const content = `
-    <h1 style="color: white; font-size: 26px; margin: 0 0 24px; text-align: center;">${subject}</h1>
+    <h1 style="color: white; font-size: 22px; font-weight: 700; margin: 0 0 20px;">${subject}</h1>
     ${paragraphs}
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top: 30px;">
-      <tr><td align="center">
-        <a href="${SITE_URL}" style="display: inline-block; background: linear-gradient(135deg, #DC2626 0%, #991B1B 100%); color: white; text-decoration: none; padding: 14px 36px; border-radius: 8px; font-size: 15px; font-weight: bold;">Acessar OneMed</a>
-      </td></tr>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top: 24px;">
+      <tr>
+        <td align="center">
+          <a href="${SITE_URL}" style="display: inline-block; background-color: #DC2626; color: white; text-decoration: none; padding: 14px 36px; border-radius: 8px; font-size: 15px; font-weight: 600;">
+            Acessar OneMed
+          </a>
+        </td>
+      </tr>
     </table>`
   return getBaseTemplate(content, subject)
 }
@@ -222,7 +232,7 @@ serve(async (req) => {
       authed = true
     } else if (jwt) {
       // Um JWT válido só prova que é um usuário logado — inclusive um trial
-      // de 30min descartável. Sem checar a role, qualquer membro conseguia
+      // de 10min descartável. Sem checar a role, qualquer membro conseguia
       // disparar um envio de campanha de email em massa.
       const { data: { user } } = await supabase.auth.getUser(jwt)
       if (user) {

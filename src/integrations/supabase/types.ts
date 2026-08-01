@@ -264,16 +264,22 @@ export type Database = {
           cover_image_url: string | null
           cover_source: string
           created_at: string
+          deep_synced_at: string | null
           description: string | null
           drive_folder_id: string
+          folder_count: number
           id: string
+          is_featured: boolean
           lesson_count: number
           material_count: number
           slug: string
           sort_order: number
+          sync_error: string | null
+          sync_status: string
           synced_at: string | null
           title: string
           total_duration_seconds: number
+          total_size_bytes: number
           updated_at: string
         }
         Insert: {
@@ -282,16 +288,22 @@ export type Database = {
           cover_image_url?: string | null
           cover_source?: string
           created_at?: string
+          deep_synced_at?: string | null
           description?: string | null
           drive_folder_id: string
+          folder_count?: number
           id?: string
+          is_featured?: boolean
           lesson_count?: number
           material_count?: number
           slug: string
           sort_order?: number
+          sync_error?: string | null
+          sync_status?: string
           synced_at?: string | null
           title: string
           total_duration_seconds?: number
+          total_size_bytes?: number
           updated_at?: string
         }
         Update: {
@@ -300,16 +312,22 @@ export type Database = {
           cover_image_url?: string | null
           cover_source?: string
           created_at?: string
+          deep_synced_at?: string | null
           description?: string | null
           drive_folder_id?: string
+          folder_count?: number
           id?: string
+          is_featured?: boolean
           lesson_count?: number
           material_count?: number
           slug?: string
           sort_order?: number
+          sync_error?: string | null
+          sync_status?: string
           synced_at?: string | null
           title?: string
           total_duration_seconds?: number
+          total_size_bytes?: number
           updated_at?: string
         }
         Relationships: []
@@ -318,24 +336,33 @@ export type Database = {
         Row: {
           course_id: string
           created_at: string
+          depth: number
           drive_folder_id: string
           id: string
+          parent_module_id: string | null
+          path: string | null
           sort_order: number
           title: string
         }
         Insert: {
           course_id: string
           created_at?: string
+          depth?: number
           drive_folder_id: string
           id?: string
+          parent_module_id?: string | null
+          path?: string | null
           sort_order?: number
           title: string
         }
         Update: {
           course_id?: string
           created_at?: string
+          depth?: number
           drive_folder_id?: string
           id?: string
+          parent_module_id?: string | null
+          path?: string | null
           sort_order?: number
           title?: string
         }
@@ -354,8 +381,11 @@ export type Database = {
           course_id: string
           created_at: string
           drive_file_id: string
+          drive_path: string | null
           duration_seconds: number | null
           id: string
+          last_seen_at: string | null
+          missing_since: string | null
           mime_type: string | null
           module_id: string | null
           size_bytes: number | null
@@ -367,8 +397,11 @@ export type Database = {
           course_id: string
           created_at?: string
           drive_file_id: string
+          drive_path?: string | null
           duration_seconds?: number | null
           id?: string
+          last_seen_at?: string | null
+          missing_since?: string | null
           mime_type?: string | null
           module_id?: string | null
           size_bytes?: number | null
@@ -380,8 +413,11 @@ export type Database = {
           course_id?: string
           created_at?: string
           drive_file_id?: string
+          drive_path?: string | null
           duration_seconds?: number | null
           id?: string
+          last_seen_at?: string | null
+          missing_since?: string | null
           mime_type?: string | null
           module_id?: string | null
           size_bytes?: number | null
@@ -402,6 +438,38 @@ export type Database = {
             columns: ["module_id"]
             isOneToOne: false
             referencedRelation: "course_modules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lesson_annotations: {
+        Row: {
+          created_at: string
+          lesson_id: string
+          strokes: Json
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          lesson_id: string
+          strokes?: Json
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          lesson_id?: string
+          strokes?: Json
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lesson_annotations_lesson_id_fkey"
+            columns: ["lesson_id"]
+            isOneToOne: false
+            referencedRelation: "lessons"
             referencedColumns: ["id"]
           },
         ]
@@ -454,28 +522,37 @@ export type Database = {
       course_comments: {
         Row: {
           body: string
-          course_id: string
+          category: string | null
+          course_id: string | null
           created_at: string
           id: string
+          lesson_id: string | null
           parent_id: string | null
+          title: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
           body: string
-          course_id: string
+          category?: string | null
+          course_id?: string | null
           created_at?: string
           id?: string
+          lesson_id?: string | null
           parent_id?: string | null
+          title?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
           body?: string
-          course_id?: string
+          category?: string | null
+          course_id?: string | null
           created_at?: string
           id?: string
+          lesson_id?: string | null
           parent_id?: string | null
+          title?: string | null
           updated_at?: string
           user_id?: string
         }
@@ -485,6 +562,13 @@ export type Database = {
             columns: ["course_id"]
             isOneToOne: false
             referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "course_comments_lesson_id_fkey"
+            columns: ["lesson_id"]
+            isOneToOne: false
+            referencedRelation: "lessons"
             referencedColumns: ["id"]
           },
           {
@@ -526,6 +610,71 @@ export type Database = {
           user_agent?: string | null
         }
         Relationships: []
+      }
+      sync_jobs: {
+        Row: {
+          cancel_requested: boolean | null
+          completed_at: string | null
+          created_at: string
+          id: string
+          logs: Json | null
+          progress: Json | null
+          started_by: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          cancel_requested?: boolean | null
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          logs?: Json | null
+          progress?: Json | null
+          started_by?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          cancel_requested?: boolean | null
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          logs?: Json | null
+          progress?: Json | null
+          started_by?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      user_favorites: {
+        Row: {
+          course_id: string
+          created_at: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          course_id: string
+          created_at?: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          course_id?: string
+          created_at?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_favorites_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          }
+        ]
       }
     }
     Views: {

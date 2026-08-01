@@ -1,16 +1,44 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // OneMed · member-lesson-token
-// Issues a short-lived signed token scoped to ONE lesson for the requesting
-// member, after verifying they hold active access to that lesson's course.
-// The token is consumed by member-stream-file, which proxies the Drive bytes
-// (video/PDF/etc) without ever exposing the underlying Drive file id or the
-// Drive UI to the student.
+// Verifica que o usuário tem acesso ativo à aula pedida e devolve uma URL
+// assinada (HMAC, curta duração) apontando pro Worker de streaming na
+// Cloudflare (cloudflare/stream-lesson/worker.js) — o navegador nunca fala
+// com o Google Drive diretamente.
+//
+// Reescrito em 2026-07-21 (três vezes):
+// 1ª vez: trocou o proxy de bytes via member-stream-file (que gerava ~100%
+//   do egress cobrado pela Supabase, >1TB num único dia) por um link direto
+//   do Google Drive (drive.usercontent.google.com), liberado por permissão
+//   temporária "qualquer um com o link".
+// 2ª vez: o link direto do Drive nunca funcionou de verdade no navegador do
+//   aluno — o Google manda `Cross-Origin-Resource-Policy: same-site` em toda
+//   resposta desse endpoint, e o navegador bloqueia qualquer carregamento
+//   cross-site independente de CORS estar correto (curl sempre funcionava
+//   porque CORP só existe no navegador). Não tem como contornar isso do
+//   nosso lado — quem define o cabeçalho é o Google. Voltamos a um proxy
+//   same-origin na Vercel (api/stream-lesson).
+// 3ª vez (esta): o projeto está no plano Hobby da Vercel, sem banda de sobra
+//   pro volume de vídeo do site (~1TB/dia visto no pico). Movido pra um
+//   Cloudflare Worker, que não cobra por tráfego de saída — mesma lógica de
+//   proxy, só muda o destino da URL assinada.
+//
+// 2026-07-30 — lessons.storage_path (opcional): algumas aulas têm o arquivo
+// original num codec sem suporte nativo em nenhum navegador (ex: .wmv/VC-1 —
+// diferente do .ts/mpegts, não existe truque de remux, precisa
+// retranscodificar de verdade). O destino óbvio seria devolver o arquivo
+// corrigido pro Google Drive, mas a conta conectada está acima da cota de
+// armazenamento e o Google recusa (403) QUALQUER upload de conteúdo novo,
+// mesmo substituindo por um arquivo menor. Pra essas aulas, o arquivo
+// corrigido fica no bucket `lesson-media` do Supabase Storage em vez do
+// Drive — quando `storage_path` está preenchido, devolve uma signed URL do
+// Storage e pula o fluxo do Worker/Drive inteiro (drive_file_id continua
+// salvo, só não é mais usado, fica de referência histórica).
 // ─────────────────────────────────────────────────────────────────────────────
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const ALLOWED_ORIGINS = ['https://onemedcursos.com.br', 'http://localhost:5173', 'http://localhost:3000']
-const TOKEN_TTL_SECONDS = 4 * 60 * 60 // 4h — enough for a long study session
+const STREAM_TTL_SECONDS = 60 * 60 * 2 // 2h — cobre uma aula longa com folga
 
 function getCorsHeaders(req: Request) {
   const origin = req.headers.get('origin') || ''
@@ -27,53 +55,11 @@ function jsonResponse(req: Request, body: unknown, status = 200) {
   })
 }
 
-function b64urlEncode(str: string): string {
-  return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-}
-
-// Caps how many *different* lessons one account can open in a window — a
-// real student opens one lesson at a time; a script scraping the library
-// requests hundreds/thousands of distinct lessonIds in minutes. This is the
-// actual choke point: it doesn't touch the Range-request volume a single
-// video naturally generates while seeking/buffering (that's rate-limited
-// nowhere, on purpose — it would break normal playback).
-async function checkTokenRateLimit(
-  supabase: ReturnType<typeof createClient>,
-  userId: string,
-): Promise<{ allowed: boolean; retryAfterSeconds?: number }> {
-  const maxAttempts = 20
-  const windowMs = 10 * 60 * 1000
-  const now = new Date()
-
-  const { data: existing } = await supabase
-    .from('rate_limits')
-    .select('attempts, window_start')
-    .eq('identifier', userId)
-    .eq('action', 'lesson_token')
-    .maybeSingle()
-
-  if (!existing || (now.getTime() - new Date(existing.window_start).getTime()) > windowMs) {
-    await supabase.from('rate_limits').upsert(
-      { identifier: userId, action: 'lesson_token', attempts: 1, window_start: now.toISOString() },
-      { onConflict: 'identifier,action' },
-    )
-    return { allowed: true }
-  }
-
-  if (existing.attempts >= maxAttempts) {
-    const retryAfterSeconds = Math.ceil((new Date(existing.window_start).getTime() + windowMs - now.getTime()) / 1000)
-    return { allowed: false, retryAfterSeconds }
-  }
-
-  await supabase.from('rate_limits').update({ attempts: existing.attempts + 1 })
-    .eq('identifier', userId).eq('action', 'lesson_token')
-  return { allowed: true }
-}
-
 async function hmacHex(secret: string, message: string): Promise<string> {
-  const enc = new TextEncoder()
-  const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
-  const sig = await crypto.subtle.sign('HMAC', key, enc.encode(message))
+  const key = await crypto.subtle.importKey(
+    'raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
+  )
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(message))
   return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
@@ -81,7 +67,6 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: getCorsHeaders(req) })
 
   try {
-    const SECRET = Deno.env.get('MEMBER_STREAM_SECRET')!
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabase = createClient(supabaseUrl, serviceKey)
@@ -98,8 +83,9 @@ serve(async (req) => {
     if (!lessonId) return jsonResponse(req, { error: 'lessonId obrigatório' }, 400)
 
     const { data: lesson, error: lessonErr } = await supabase.from('lessons')
-      .select('id, course_id').eq('id', lessonId).maybeSingle()
+      .select('id, course_id, drive_file_id, mime_type, storage_path').eq('id', lessonId).maybeSingle()
     if (lessonErr || !lesson) return jsonResponse(req, { error: 'Aula não encontrada' }, 404)
+    if (!lesson.drive_file_id && !lesson.storage_path) return jsonResponse(req, { error: 'Arquivo não configurado' }, 404)
 
     const email = (user.email || '').toLowerCase()
     const [{ data: activeAccess }, { data: buyer }, { data: isAdmin }] = await Promise.all([
@@ -109,22 +95,30 @@ serve(async (req) => {
     ])
     if (!activeAccess && !buyer && !isAdmin) return jsonResponse(req, { error: 'Sem acesso ativo' }, 403)
 
-    if (!isAdmin) {
-      const rl = await checkTokenRateLimit(supabase, user.id)
-      if (!rl.allowed) {
-        return jsonResponse(req, {
-          error: 'Muitas aulas abertas em pouco tempo. Aguarde alguns minutos.',
-          retryAfterSeconds: rl.retryAfterSeconds,
-        }, 429)
-      }
+    if (lesson.storage_path) {
+      const { data: signed, error: signErr } = await supabase.storage
+        .from('lesson-media')
+        .createSignedUrl(lesson.storage_path, STREAM_TTL_SECONDS)
+      if (signErr || !signed?.signedUrl) return jsonResponse(req, { error: 'Não foi possível gerar o link do arquivo' }, 502)
+      return jsonResponse(req, { url: signed.signedUrl, expiresAt: Math.floor(Date.now() / 1000) + STREAM_TTL_SECONDS })
     }
 
-    const exp = Math.floor(Date.now() / 1000) + TOKEN_TTL_SECONDS
-    const payload = b64urlEncode(JSON.stringify({ lid: lesson.id, uid: user.id, exp }))
-    const sig = await hmacHex(SECRET, payload)
-    const token = `${payload}.${sig}`
+    const streamSecret = Deno.env.get('LESSON_STREAM_SECRET')!
+    // Cloudflare Workers não cobra por tráfego de saída (diferente de
+    // Supabase/Vercel) — o proxy roda lá em vez de na Vercel.
+    const streamBaseUrl = Deno.env.get('STREAM_PROXY_URL') || 'https://onemed-stream-lesson.onemed-stream.workers.dev'
+    const fileId = lesson.drive_file_id
+    // mime_type original do Drive vai assinado junto — Google Docs/Sheets
+    // nativos (application/vnd.google-apps.*) não têm bytes "crus" pra baixar
+    // (alt=media falha), precisam ser exportados num formato concreto; o
+    // Worker usa esse campo pra decidir isso sem precisar de outra chamada à
+    // API do Drive só pra descobrir o mimeType.
+    const mimeType = lesson.mime_type || ''
+    const expiresAt = Math.floor(Date.now() / 1000) + STREAM_TTL_SECONDS
+    const sig = await hmacHex(streamSecret, `${fileId}.${expiresAt}.${mimeType}`)
+    const url = `${streamBaseUrl}/?id=${encodeURIComponent(fileId)}&exp=${expiresAt}&sig=${sig}&mime=${encodeURIComponent(mimeType)}`
 
-    return jsonResponse(req, { token, expiresAt: exp })
+    return jsonResponse(req, { url, expiresAt })
   } catch (err: any) {
     console.error(err)
     return jsonResponse(req, { error: err.message }, 500)

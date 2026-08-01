@@ -1,10 +1,12 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
+import { ThemeProvider } from "next-themes";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
+import { BrowserRouter, Route, Routes, Navigate, useLocation } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
+import { trackPageView } from "@/lib/pixel";
 
 // Pages
 import Index from "./pages/Index";
@@ -13,6 +15,7 @@ import RegisterPage from "./pages/RegisterPage";
 import MemberLoginPage from "./pages/MemberLoginPage";
 import MemberDashboardPage from "./pages/MemberDashboardPage";
 import CourseDetailPage from "./pages/CourseDetailPage";
+import CommunityPage from "./pages/CommunityPage";
 import Dashboard from "./pages/Dashboard";
 import AccessManagement from "./pages/AccessManagement";
 import MembersPage from "./pages/MembersPage";
@@ -25,6 +28,8 @@ import ClaimAccessPage from "./pages/ClaimAccessPage";
 import BuyersPage from "./pages/BuyersPage";
 import TrialUsersPage from "./pages/TrialUsersPage";
 import CouponsPage from "./pages/CouponsPage";
+import AdminCommunityPage from "./pages/AdminCommunityPage";
+import AnnouncementsPage from "./pages/AnnouncementsPage";
 import TermsPage from "./pages/TermsPage";
 import PrivacyPage from "./pages/PrivacyPage";
 import DatabasePage from "./pages/DatabasePage";
@@ -32,16 +37,59 @@ import EmailCampaignPage from "./pages/EmailCampaignPage";
 import SMSPage from "./pages/SMSPage";
 import WhatsAppPage from "./pages/WhatsAppPage";
 import NotFound from "./pages/NotFound";
+import CoursesIndexPage from "./pages/public/CoursesIndexPage";
+import CategoryPage from "./pages/public/CategoryPage";
+import PillarHubPage from "./pages/public/PillarHubPage";
+import PlansPage from "./pages/public/PlansPage";
+import { PILLAR_HUBS, isNoIndexPath } from "@/seo/siteConfig";
+import { Seo } from "@/seo/Seo";
 import WhatsAppButton from "./components/WhatsAppButton";
 import { KickedOutModal } from "./components/member/KickedOutModal";
 
 const queryClient = new QueryClient();
+
+// Área do aluno, painel admin e páginas de funil nunca podem ser indexadas:
+// a primeira é conteúdo pago, a segunda é administrativa e a terceira encheria
+// a busca de páginas de checkout sem conteúdo. O robots.txt já bloqueia o
+// rastreamento, mas `noindex` é o que REMOVE do índice uma URL que já entrou —
+// bloquear no robots sozinho não remove nada, só impede o Google de reler a
+// página (e de ver o noindex).
+const PrivateRouteSeo = () => {
+  const location = useLocation();
+  if (!isNoIndexPath(location.pathname)) return null;
+  return (
+    <Seo
+      title="OneMed"
+      description="Área restrita da plataforma OneMed."
+      path={location.pathname}
+      noindex
+    />
+  );
+};
 
 const FbclidCapture = () => {
   useEffect(() => {
     const fbclid = new URLSearchParams(window.location.search).get('fbclid')
     if (fbclid) localStorage.setItem('om_fbclid', fbclid)
   }, [])
+  return null
+}
+
+// O `fbq('track','PageView')` do index.html roda uma vez só, no carregamento
+// do HTML. Como isto é uma SPA, ir de / para /checkout nunca contava
+// visualização — a Meta enxergava uma fração do funil. Aqui cada troca de rota
+// dispara o PageView seguinte (o primeiro continua sendo o do index.html, por
+// isso o primeiro pathname é ignorado: senão a home contaria em dobro).
+const PixelPageViews = () => {
+  const location = useLocation()
+  const firstPath = useRef(location.pathname + location.search)
+
+  useEffect(() => {
+    const current = location.pathname + location.search
+    if (current === firstPath.current) return
+    trackPageView()
+  }, [location.pathname, location.search])
+
   return null
 }
 
@@ -68,16 +116,31 @@ const MemberProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 };
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <AuthProvider>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <FbclidCapture />
-          <Routes>
+  <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false} disableTransitionOnChange>
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <FbclidCapture />
+            <PixelPageViews />
+            <PrivateRouteSeo />
+            <Routes>
             {/* Public routes */}
             <Route path="/" element={<Index />} />
+
+            {/* Silo de SEO: hubs de pilar + índice e páginas de categoria.
+                Os hubs são registrados um a um a partir de PILLAR_HUBS em vez
+                de uma rota `/:hub` — uma rota de parâmetro na raiz casaria com
+                QUALQUER caminho e engoliria o 404, fazendo toda URL errada
+                responder 200 (soft 404, que o Google penaliza). */}
+            <Route path="/cursos" element={<CoursesIndexPage />} />
+            <Route path="/cursos/:categoria" element={<CategoryPage />} />
+            <Route path="/planos" element={<PlansPage />} />
+            {PILLAR_HUBS.map(hub => (
+              <Route key={hub.slug} path={`/${hub.slug}`} element={<PillarHubPage slug={hub.slug} />} />
+            ))}
             <Route path="/admin/login" element={<LoginPage />} />
             <Route path="/admin/register" element={<RegisterPage />} />
 
@@ -85,6 +148,7 @@ const App = () => (
             <Route path="/login" element={<MemberLoginPage />} />
             <Route path="/membros" element={<MemberProtectedRoute><MemberDashboardPage /></MemberProtectedRoute>} />
             <Route path="/membros/curso/:slug" element={<MemberProtectedRoute><CourseDetailPage /></MemberProtectedRoute>} />
+            <Route path="/membros/comunidade" element={<MemberProtectedRoute><CommunityPage /></MemberProtectedRoute>} />
 
             {/* Protected admin routes */}
             <Route path="/admin" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
@@ -94,6 +158,8 @@ const App = () => (
             <Route path="/admin/buyers" element={<ProtectedRoute><BuyersPage /></ProtectedRoute>} />
             <Route path="/admin/trials" element={<ProtectedRoute><TrialUsersPage /></ProtectedRoute>} />
             <Route path="/admin/coupons" element={<ProtectedRoute><CouponsPage /></ProtectedRoute>} />
+            <Route path="/admin/comunidade" element={<ProtectedRoute><AdminCommunityPage /></ProtectedRoute>} />
+            <Route path="/admin/avisos" element={<ProtectedRoute><AnnouncementsPage /></ProtectedRoute>} />
             <Route path="/admin/database" element={<ProtectedRoute><DatabasePage /></ProtectedRoute>} />
             <Route path="/admin/email-campaign" element={<ProtectedRoute><EmailCampaignPage /></ProtectedRoute>} />
             <Route path="/admin/sms" element={<ProtectedRoute><SMSPage /></ProtectedRoute>} />
@@ -117,7 +183,8 @@ const App = () => (
         </BrowserRouter>
       </TooltipProvider>
     </AuthProvider>
-  </QueryClientProvider>
+    </QueryClientProvider>
+  </ThemeProvider>
 );
 
 export default App;

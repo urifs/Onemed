@@ -17,7 +17,11 @@ interface CategorySidebarProps {
 
 export function CategorySidebar({ categories, active, onSelect, totalCount }: CategorySidebarProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const sorted = [...categories].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  const sorted = [...categories].sort((a, b) => {
+    if (a.name === 'Favoritos') return -1;
+    if (b.name === 'Favoritos') return 1;
+    return a.name.localeCompare(b.name, 'pt-BR');
+  });
 
   const handleSelect = (category: string | null) => {
     onSelect(category);
@@ -47,6 +51,7 @@ export function CategorySidebar({ categories, active, onSelect, totalCount }: Ca
               count={cat.count}
               icon={CATEGORY_ICON[cat.name] || LayoutGrid}
               isActive={active === cat.name}
+              highlight={cat.name === 'Favoritos'}
               onClick={() => handleSelect(cat.name)}
             />
           ))}
@@ -96,6 +101,7 @@ export function CategorySidebar({ categories, active, onSelect, totalCount }: Ca
                   count={cat.count}
                   icon={CATEGORY_ICON[cat.name] || LayoutGrid}
                   isActive={active === cat.name}
+                  highlight={cat.name === 'Favoritos'}
                   onClick={() => handleSelect(cat.name)}
                 />
               ))}
@@ -108,17 +114,19 @@ export function CategorySidebar({ categories, active, onSelect, totalCount }: Ca
 }
 
 function SidebarItem({
-  label, count, icon: Icon, isActive, onClick,
-}: { label: string; count: number; icon: LucideIcon; isActive: boolean; onClick: () => void }) {
+  label, count, icon: Icon, isActive, highlight, onClick,
+}: { label: string; count: number; icon: LucideIcon; isActive: boolean; highlight?: boolean; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
       className={cn(
         'w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13.5px] text-left transition-colors',
         isActive ? 'bg-primary/15 text-foreground font-semibold' : 'text-muted-foreground hover:text-foreground hover:bg-secondary',
+        highlight && !isActive && 'text-foreground font-bold',
+        highlight && isActive && 'font-bold',
       )}
     >
-      <Icon className={cn('w-4 h-4 shrink-0', isActive && 'text-primary')} />
+      <Icon className={cn('w-4 h-4 shrink-0', isActive ? 'text-primary' : highlight && 'text-primary')} />
       <span className="flex-1 truncate">{label}</span>
       <span className="text-[11px] tabular-nums opacity-70">{count}</span>
     </button>

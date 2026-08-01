@@ -14,7 +14,11 @@ interface CourseCoverProps {
   titleClassName?: string;
 }
 
-/** Brand red-gradient tile with the course name set in bold, impactful type. */
+/**
+ * Brand red-gradient tile with the course name set in bold, impactful type.
+ * Colors here are a per-course hashed hsl(), always dark, by design —
+ * independent of the platform's light/dark theme (like an album cover).
+ */
 export function CourseCover({ title, className, showTitle = true, titleClassName }: CourseCoverProps) {
   const h = hashStr(title);
   const angle = 115 + (h % 50);

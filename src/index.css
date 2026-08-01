@@ -1,11 +1,75 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+/* As fontes NÃO são carregadas por @import aqui de propósito.
+   @import dentro do CSS só é descoberto depois que o navegador baixa e
+   analisa este arquivo, criando uma cadeia (html → css → css da fonte →
+   arquivo da fonte) inteiramente no caminho crítico do LCP. Como o elemento
+   de LCP das páginas públicas é o <h1> (não há nenhuma imagem nelas), essa
+   cadeia era o gargalo. O carregamento foi para o <head> do index.html, com
+   preconnect, onde é descoberto no primeiro byte do HTML. */
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
+  /* Modo claro (padrão do seletor :root — ativo quando a classe .dark NÃO
+     está no <html>). Não é um reaproveitamento direto dos tons do modo
+     escuro: primary/success/warning/info precisam ser mais escuros/
+     saturados aqui pra baterem contraste mínimo (~4.5:1) como texto sobre
+     fundo branco — no modo escuro os mesmos tons funcionam bem mais claros
+     porque o fundo é quase preto. */
   :root {
+    --background: 0 0% 98%;
+    --background-paper: 0 0% 100%;
+    --background-subtle: 0 0% 95%;
+    --foreground: 0 0% 9%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 9%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 9%;
+
+    --primary: 0 74% 46%;
+    --primary-foreground: 0 0% 100%;
+    --primary-hover: 0 74% 38%;
+    --primary-glow: 0 0 20px rgba(220, 38, 38, 0.35);
+
+    --secondary: 0 0% 95%;
+    --secondary-foreground: 0 0% 15%;
+
+    --muted: 0 0% 95%;
+    --muted-foreground: 215 14% 40%;
+
+    --accent: 0 74% 46%;
+    --accent-foreground: 0 0% 100%;
+
+    --success: 160 84% 30%;
+    --warning: 38 92% 38%;
+    --info: 199 89% 38%;
+    --destructive: 0 74% 46%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 0 0% 88%;
+    --border-active: 0 74% 46% / 0.3;
+    --input: 0 0% 100%;
+    --ring: 0 74% 46%;
+
+    --radius: 0.75rem;
+
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 215 14% 30%;
+    --sidebar-primary: 0 74% 46%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 0 0% 95%;
+    --sidebar-accent-foreground: 0 0% 15%;
+    --sidebar-border: 0 0% 90%;
+    --sidebar-ring: 0 74% 46%;
+  }
+
+  /* Modo escuro (aparência original da plataforma, agora atrás da classe
+     .dark que o ThemeToggle liga/desliga em <html> via next-themes) —
+     valores idênticos aos que já estavam em :root antes desta mudança. */
+  .dark {
     --background: 0 0% 2%;
     --background-paper: 0 0% 4%;
     --background-subtle: 0 0% 7%;
@@ -42,8 +106,6 @@
     --input: 0 0% 10%;
     --ring: 0 84% 60%;
 
-    --radius: 0.75rem;
-
     --sidebar-background: 0 0% 4%;
     --sidebar-foreground: 215 20% 70%;
     --sidebar-primary: 0 84% 60%;
@@ -58,6 +120,17 @@
 @layer base {
   * {
     @apply border-border;
+  }
+
+  html, body {
+    /* Se qualquer elemento vazar horizontalmente, o mobile alarga o
+       viewport de layout além da tela visível — aí todo position:fixed
+       (modais, o player de aula) passa a se posicionar/centralizar
+       relativo a esse viewport mais largo, aparecendo deslocado pra
+       direita e cortado. Trava aqui pra nenhum vazamento conseguir
+       alargar a página. */
+    overflow-x: hidden;
+    max-width: 100vw;
   }
 
   body {
@@ -109,18 +182,27 @@
 .animate-slide-in { animation: slideIn 0.3s ease-out; }
 .animate-countdown { animation: countdown-pulse 1s infinite; }
 
-/* Glass effect */
+/* Glass effect — tinta escura sutil por padrão (modo claro, fundo branco);
+   .dark inverte pro tingimento branco original sobre fundo quase-preto. */
 .glass {
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(0, 0, 0, 0.03);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+.dark .glass {
+  background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .glass-strong {
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(255, 255, 255, 0.7);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+.dark .glass-strong {
+  background: rgba(0, 0, 0, 0.5);
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
@@ -147,26 +229,48 @@
   box-shadow: 0 0 30px rgba(239, 68, 68, 0.4);
 }
 
-/* Status badges */
+/* Status badges — texto mais escuro por padrão (modo claro, precisa de
+   contraste contra fundo branco); .dark volta pro texto claro original,
+   pensado pra um fundo quase-preto. */
 .badge-active {
+  background: rgba(16, 185, 129, 0.12);
+  color: hsl(160, 84%, 28%);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+.dark .badge-active {
   background: rgba(16, 185, 129, 0.1);
   color: hsl(160, 84%, 60%);
   border: 1px solid rgba(16, 185, 129, 0.2);
 }
 
 .badge-expired {
+  background: rgba(239, 68, 68, 0.12);
+  color: hsl(0, 74%, 42%);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+.dark .badge-expired {
   background: rgba(239, 68, 68, 0.1);
   color: hsl(0, 84%, 70%);
   border: 1px solid rgba(239, 68, 68, 0.2);
 }
 
 .badge-pending {
+  background: rgba(245, 158, 11, 0.14);
+  color: hsl(38, 92%, 32%);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+}
+.dark .badge-pending {
   background: rgba(245, 158, 11, 0.1);
   color: hsl(38, 95%, 65%);
   border: 1px solid rgba(245, 158, 11, 0.2);
 }
 
 .badge-revoked {
+  background: rgba(100, 116, 139, 0.14);
+  color: hsl(215, 20%, 35%);
+  border: 1px solid rgba(100, 116, 139, 0.25);
+}
+.dark .badge-revoked {
   background: rgba(100, 116, 139, 0.1);
   color: hsl(215, 20%, 65%);
   border: 1px solid rgba(100, 116, 139, 0.2);

@@ -9,6 +9,17 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const ALLOWED_ORIGINS = ['https://onemedcursos.com.br', 'http://localhost:5173', 'http://localhost:3000']
 
+// Pra calcular o desconto do upgrade quando não há compra registrada (ex:
+// acesso concedido manualmente pelo admin, sem linha em buyers) — conta
+// como se já tivesse "pago" o preço de tabela do plano atual, não zero.
+const PLAN_PRICES: Record<string, number> = {
+  monthly: 49.00,
+  annual: 199.00,
+  lifetime: 299.90,
+  lifetime_plus: 599.00,
+  lifetime_pro: 997.00,
+}
+
 function getCorsHeaders(req: Request) {
   const origin = req.headers.get('origin') || ''
   const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0]
@@ -41,37 +52,63 @@ serve(async (req) => {
 
     const [{ data: isAdmin }, { data: buyer }, { data: accessRows }] = await Promise.all([
       supabase.rpc('has_role', { _user_id: user.id, _role: 'admin' }),
-      supabase.from('buyers').select('plan, created_at')
+      supabase.from('buyers').select('plan, amount, whatsapp, created_at')
         .eq('email', email).eq('access_granted', true)
         .order('created_at', { ascending: false }).limit(1).maybeSingle(),
-      supabase.from('accesses').select('access_type, expires_at, granted_at')
+      supabase.from('accesses').select('access_type, whatsapp, expires_at, granted_at')
         .eq('email', email).eq('status', 'active'),
     ])
 
     const nonTrialRows = (accessRows || []).filter(a => a.access_type !== 'trial')
     const trialRows = (accessRows || []).filter(a => a.access_type === 'trial')
 
-    const isLifetime = !!isAdmin || buyer?.plan === 'lifetime' || nonTrialRows.some(a => a.access_type === 'lifetime')
+    // lifetime/lifetime_plus/lifetime_pro contam igual pra "nunca expira" —
+    // Plus/Pro só adicionam perks (backup no Drive, mais telas), não mudam
+    // a duração do acesso à plataforma.
+    const LIFETIME_TIER_RANK: Record<string, number> = { lifetime: 1, lifetime_plus: 2, lifetime_pro: 3 }
+    const LIFETIME_PLANS = new Set(Object.keys(LIFETIME_TIER_RANK))
+    const isLifetime = !!isAdmin || LIFETIME_PLANS.has(buyer?.plan || '') || nonTrialRows.some(a => LIFETIME_PLANS.has(a.access_type))
 
     let expiresAt: string | null = null
     let plan: string | null = null
+    let grantedAt: string | null = null
 
     if (isAdmin) {
       plan = 'admin'
     } else if (isLifetime) {
-      plan = 'lifetime'
+      // Uma conta pode ter mais de uma linha "active" em accesses (ex: grant
+      // manual antigo nunca desativado ao fazer upgrade) — sempre usa a de
+      // maior tier, nunca "a primeira que aparecer" nem só o buyer mais
+      // recente, senão um upgrade pode continuar mostrando o plano antigo.
+      const bestAccessRow = nonTrialRows
+        .filter(a => LIFETIME_PLANS.has(a.access_type))
+        .sort((a, b) => LIFETIME_TIER_RANK[b.access_type] - LIFETIME_TIER_RANK[a.access_type])[0]
+      const buyerTier = buyer?.plan && LIFETIME_PLANS.has(buyer.plan) ? buyer.plan : undefined
+      plan = [buyerTier, bestAccessRow?.access_type].filter((p): p is string => !!p)
+        .sort((a, b) => LIFETIME_TIER_RANK[b] - LIFETIME_TIER_RANK[a])[0] || 'lifetime'
+      grantedAt = buyer?.created_at || bestAccessRow?.granted_at || null
     } else if (nonTrialRows.length > 0 || buyer) {
       // Comprador (pago/anual) tem prioridade sobre um trial antigo que ainda esteja ativo
       plan = buyer?.plan || nonTrialRows[0]?.access_type || null
       const expiries = nonTrialRows.map(a => a.expires_at).filter((d): d is string => !!d)
       if (expiries.length > 0) expiresAt = expiries.sort().at(-1)!
+      grantedAt = buyer?.created_at || nonTrialRows[0]?.granted_at || null
     } else if (trialRows.length > 0) {
       plan = 'trial'
       const expiries = trialRows.map(a => a.expires_at).filter((d): d is string => !!d)
       if (expiries.length > 0) expiresAt = expiries.sort().at(-1)!
+      grantedAt = trialRows[0]?.granted_at || null
     }
 
-    return jsonResponse(req, { email, plan, isLifetime, isAdmin: !!isAdmin, expiresAt })
+    // Se não há valor real pago (compra de verdade), usa o preço de tabela
+    // do plano atual como "já investido" — concedido manualmente ou não,
+    // o upgrade sempre mostra só a diferença, nunca o preço cheio.
+    const realAmountPaid = buyer?.amount ? Number(buyer.amount) : 0
+    const amountPaid = realAmountPaid > 0 ? realAmountPaid : (plan ? (PLAN_PRICES[plan] ?? 0) : 0)
+
+    const whatsapp = buyer?.whatsapp || nonTrialRows.find(a => a.whatsapp)?.whatsapp || null
+
+    return jsonResponse(req, { email, plan, isLifetime, isAdmin: !!isAdmin, expiresAt, amountPaid, whatsapp, grantedAt })
   } catch (err: any) {
     console.error(err)
     return jsonResponse(req, { error: err.message }, 500)

@@ -1,11 +1,15 @@
 import { useState } from 'react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { HelpCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus } from 'lucide-react';
 
-const faqs = [
+// Exportado para o JSON-LD (FAQPage) usar exatamente este texto. O Google só
+// valida a marcação de FAQ se pergunta e resposta estiverem VISÍVEIS na
+// página — manter duas cópias do texto é como elas divergem e a marcação
+// passa a descrever algo que não está na tela.
+export const LANDING_FAQS = [
   {
     question: 'Como funciona o acesso?',
-    answer: 'O acesso é feito diretamente via Google Drive (app mobile) ou site (computador). Você recebe o acesso no seu e-mail cadastrado, sem necessidade de login e senha adicionais.'
+    answer: 'O acesso é feito direto pela nossa plataforma própria, pelo site ou celular — sem precisar instalar nenhum app externo. Você recebe seu login por e-mail e já pode assistir às aulas, ler os livros e apostilas direto na tela.'
   },
   {
     question: 'Quanto tempo dura o acesso completo?',
@@ -16,8 +20,8 @@ const faqs = [
     answer: 'Sim! Todos os cursos são do ano de 2025, com atualizações mensais e garantia de atualizações 2026 e 2027. Os livros também são constantemente atualizados e já estão traduzidos.'
   },
   {
-    question: 'Posso baixar o conteúdo?',
-    answer: 'Sim! O download de conteúdos está liberado para que você acesse a qualquer hora e em qualquer lugar, mesmo offline.'
+    question: 'Posso acessar o conteúdo quando quiser?',
+    answer: 'Sim! O acesso é direto pela plataforma, 24/7, de qualquer lugar — é só entrar no site ou no app do navegador com seu login e assistir/ler na hora, sem precisar baixar nada antes.'
   },
   {
     question: 'Como funciona o suporte?',
@@ -30,45 +34,40 @@ const faqs = [
 ];
 
 export const FaqSection = () => {
-  const [openFaq, setOpenFaq] = useState<number | null>(null);
+  const [openFaq, setOpenFaq] = useState<number | null>(0);
 
   return (
     <section className="py-24 bg-background">
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-16">
-          <p className="font-mono text-xs uppercase tracking-widest text-primary mb-4">FAQ</p>
-          <h2 className="font-secondary text-4xl md:text-5xl font-bold text-foreground">
-            Dúvidas Frequentes
-          </h2>
-        </div>
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="grid lg:grid-cols-[0.8fr_1.2fr] gap-12">
+          <div>
+            <h2 className="font-secondary text-3xl md:text-4xl font-bold text-foreground mb-4">
+              Dúvidas frequentes
+            </h2>
+            <p className="text-muted-foreground text-sm max-w-xs">
+              Não encontrou o que procurava? Fale com a gente pelo WhatsApp e respondemos na hora.
+            </p>
+          </div>
 
-        <div className="space-y-3">
-          {faqs.map((faq, index) => (
-            <Collapsible
-              key={index}
-              open={openFaq === index}
-              onOpenChange={(open) => setOpenFaq(open ? index : null)}
-            >
-              <CollapsibleTrigger className="w-full glass rounded-xl px-5 py-4 flex items-center justify-between hover:border-primary/20 transition-colors duration-200 text-left group">
-                <div className="flex items-center gap-3">
-                  <HelpCircle className="w-4 h-4 text-primary flex-shrink-0" />
+          <div className="divide-y divide-border border-t border-b border-border">
+            {LANDING_FAQS.map((faq, index) => (
+              <Collapsible
+                key={index}
+                open={openFaq === index}
+                onOpenChange={(open) => setOpenFaq(open ? index : null)}
+              >
+                <CollapsibleTrigger className="w-full py-5 flex items-center justify-between gap-4 text-left group">
                   <span className="font-medium text-foreground">{faq.question}</span>
-                </div>
-                {openFaq === index ? (
-                  <ChevronUp className="w-4 h-4 text-primary flex-shrink-0" />
-                ) : (
-                  <ChevronDown className="w-4 h-4 text-muted-foreground group-hover:text-primary flex-shrink-0" />
-                )}
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <div className="glass rounded-b-xl border-t-0 px-5 pb-4">
-                  <p className="text-muted-foreground text-sm leading-relaxed pt-2 pl-7">
+                  <Plus className={`w-4 h-4 text-primary shrink-0 transition-transform duration-200 ${openFaq === index ? 'rotate-45' : ''}`} />
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <p className="text-muted-foreground text-sm leading-relaxed pb-5 pr-8">
                     {faq.answer}
                   </p>
-                </div>
-              </CollapsibleContent>
-            </Collapsible>
-          ))}
+                </CollapsibleContent>
+              </Collapsible>
+            ))}
+          </div>
         </div>
       </div>
     </section>

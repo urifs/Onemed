@@ -1,6 +1,35 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
+// ─── PLANOS ───────────────────────────────────────────────────────────────────
+// Cada plano define o access_type gravado em `accesses` e por quantos dias
+// dura (null = vitalício, nunca expira). lifetime/lifetime_plus/lifetime_pro
+// formam a "família vitalícia" — rankeados pra nunca rebaixar quem já comprou
+// um nível superior, e permitir upgrade (comprar lifetime_plus tendo lifetime).
+const PLAN_ACCESS_TYPE: Record<string, string> = {
+  lifetime: 'lifetime',
+  lifetime_plus: 'lifetime_plus',
+  lifetime_pro: 'lifetime_pro',
+}
+const PLAN_DURATION_DAYS: Record<string, number> = {
+  annual: 365,
+  monthly: 30,
+}
+const LIFETIME_TIER_RANK: Record<string, number> = {
+  lifetime: 1,
+  lifetime_plus: 2,
+  lifetime_pro: 3,
+}
+const PLAN_CONTENT_NAMES: Record<string, string> = {
+  monthly: 'Plano Mensal',
+  annual: 'Plano Anual',
+  lifetime: 'Plano Vitalício',
+  lifetime_plus: 'Plano Vitalício Plus',
+  lifetime_pro: 'Plano Vitalício Pro',
+}
+// Planos que dão direito ao backup exclusivo no Google Drive do aluno.
+const BACKUP_FOLDER_PLANS = new Set(['lifetime_plus', 'lifetime_pro'])
+
 // ─── META CAPI ────────────────────────────────────────────────────────────────
 const CAPI_PIXEL_IDS = ['797374160058274', '2400702203708115']
 
@@ -10,20 +39,53 @@ async function sha256hex(value: string): Promise<string> {
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
-async function sendMetaCAPIEvent(opts: {
-  email: string
-  name?: string | null
-  phone?: string | null
-  fbp?: string | null
-  fbc?: string | null
-  fbclid?: string | null
-  value: number
-  plan: string
-  paymentId: string
-}): Promise<void> {
+// Envia o Purchase pela Conversions API e DEIXA RASTRO em `capi_events`.
+//
+// Antes, o resultado só ia pra console.log/console.error — e como a retenção
+// de log deste projeto é de minutos, quando a auditoria do pixel encontrou
+// ~11 Purchase para 44 vendas reais não havia nada pra consultar. O motivo
+// (token vencido em 14/07/2026, erro 190) só apareceu testando a Graph API
+// direto. Com a tabela, uma falha dessas fica visível no mesmo dia.
+async function logCapi(
+  supabase: ReturnType<typeof createClient>,
+  row: Record<string, unknown>,
+): Promise<void> {
+  // O registro é diagnóstico: se ele próprio falhar, não pode derrubar o
+  // processamento do pagamento.
+  try {
+    await supabase.from('capi_events').insert({ event_name: 'Purchase', ...row })
+  } catch (err) {
+    console.error('failed to log capi_event:', (err as Error).message)
+  }
+}
+
+async function sendMetaCAPIEvent(
+  supabase: ReturnType<typeof createClient>,
+  opts: {
+    email: string
+    name?: string | null
+    phone?: string | null
+    fbp?: string | null
+    fbc?: string | null
+    fbclid?: string | null
+    clientIp?: string | null
+    clientUserAgent?: string | null
+    value: number
+    plan: string
+    paymentId: string
+    buyerId?: string | null
+  },
+): Promise<void> {
+  const eventId = `purchase_${opts.paymentId}`
   const accessToken = Deno.env.get('META_CAPI_ACCESS_TOKEN')
+
   if (!accessToken) {
     console.warn('META_CAPI_ACCESS_TOKEN not set — skipping CAPI')
+    await logCapi(supabase, {
+      event_id: eventId, pixel_id: 'all', buyer_id: opts.buyerId ?? null,
+      email: opts.email, value: opts.value, success: false,
+      error: 'META_CAPI_ACCESS_TOKEN ausente nos secrets',
+    })
     return
   }
 
@@ -42,24 +104,33 @@ async function sendMetaCAPIEvent(opts: {
     if (parts.length > 1) userData.ln = await sha256hex(parts[parts.length - 1])
   }
 
-  // fbp/fbc são passados sem hash — já são identificadores do navegador
-  // fbc pode ter se perdido no redirect; reconstrói do fbclid raw se necessário
+  // fbp/fbc são passados sem hash — já são identificadores do navegador.
+  // fbc pode ter se perdido no redirect; reconstrói do fbclid raw se necessário.
   const fbc = opts.fbc || (opts.fbclid ? `fb.1.${Math.floor(Date.now() / 1000)}.${opts.fbclid}` : undefined)
   if (opts.fbp) userData.fbp = opts.fbp
   if (fbc) userData.fbc = fbc
+
+  // IP e user-agent do COMPRADOR, capturados no checkout (mp-create-payment).
+  // Não dá pra pegar aqui: esta requisição vem de um servidor do Mercado Pago,
+  // então o IP desta chamada seria o do MP. Sem essas duas chaves a
+  // correspondência do Purchase fica bem abaixo da do Lead (EMQ 6.1 vs 8.7).
+  if (opts.clientIp) userData.client_ip_address = opts.clientIp
+  if (opts.clientUserAgent) userData.client_user_agent = opts.clientUserAgent
+
+  const matchKeys = Object.keys(userData)
 
   const payload = {
     data: [{
       event_name: 'Purchase',
       event_time: Math.floor(Date.now() / 1000),
-      event_id: `purchase_${opts.paymentId}`, // deduplicação com o pixel client-side
+      event_id: eventId, // deduplicação com o pixel client-side
       action_source: 'website',
       event_source_url: 'https://onemedcursos.com.br/payment/success',
       user_data: userData,
       custom_data: {
         value: opts.value,
         currency: 'BRL',
-        content_name: opts.plan === 'lifetime' ? 'Plano Vitalício' : 'Plano Anual',
+        content_name: PLAN_CONTENT_NAMES[opts.plan] || 'Plano Anual',
         content_category: 'Subscription',
         content_ids: [opts.plan],
         content_type: 'product',
@@ -70,20 +141,73 @@ async function sendMetaCAPIEvent(opts: {
   }
 
   for (const pixelId of CAPI_PIXEL_IDS) {
-    try {
-      const res = await fetch(
-        `https://graph.facebook.com/v19.0/${pixelId}/events?access_token=${accessToken}`,
-        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }
-      )
-      const json = await res.json()
-      if (!res.ok) {
+    // Falha passageira de rede não pode custar a atribuição de uma venda.
+    // Erro de credencial (190) não se resolve tentando de novo — sai na hora.
+    const MAX_ATTEMPTS = 3
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        const res = await fetch(
+          `https://graph.facebook.com/v19.0/${pixelId}/events?access_token=${accessToken}`,
+          { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) },
+        )
+        const json = await res.json().catch(() => ({}))
+
+        if (res.ok) {
+          console.log(`CAPI Purchase OK pixel ${pixelId}, events_received:`, json?.events_received)
+          await logCapi(supabase, {
+            event_id: eventId, pixel_id: pixelId, buyer_id: opts.buyerId ?? null,
+            email: opts.email, value: opts.value, success: true,
+            http_status: res.status, events_received: json?.events_received ?? null,
+            match_keys: matchKeys, attempt,
+          })
+          break
+        }
+
+        const code = json?.error?.code
+        const errorMsg = `${json?.error?.message ?? 'erro desconhecido'} (code ${code ?? '?'})`
         console.error(`CAPI error pixel ${pixelId}:`, JSON.stringify(json))
-      } else {
-        console.log(`CAPI Purchase OK pixel ${pixelId}, events_received:`, json.events_received)
+
+        const permanent = code === 190 || code === 200 || code === 10 ||
+          (res.status >= 400 && res.status < 500 && res.status !== 429)
+        if (permanent || attempt === MAX_ATTEMPTS) {
+          await logCapi(supabase, {
+            event_id: eventId, pixel_id: pixelId, buyer_id: opts.buyerId ?? null,
+            email: opts.email, value: opts.value, success: false,
+            http_status: res.status, error: errorMsg.slice(0, 500),
+            match_keys: matchKeys, attempt,
+          })
+          break
+        }
+      } catch (err) {
+        const errorMsg = `rede: ${(err as Error).message}`
+        console.error(`CAPI network error pixel ${pixelId}:`, errorMsg)
+        if (attempt === MAX_ATTEMPTS) {
+          await logCapi(supabase, {
+            event_id: eventId, pixel_id: pixelId, buyer_id: opts.buyerId ?? null,
+            email: opts.email, value: opts.value, success: false,
+            error: errorMsg.slice(0, 500), match_keys: matchKeys, attempt,
+          })
+          break
+        }
       }
-    } catch (err: any) {
-      console.error(`CAPI network error pixel ${pixelId}:`, err.message)
+      await new Promise(r => setTimeout(r, 500 * 2 ** (attempt - 1)))
     }
+  }
+}
+
+// ─── BACKUP NO GOOGLE DRIVE (planos Vitalício Plus/Pro) ───────────────────────
+// Compartilha a pasta de backup configurada em /admin/drive com o email do
+// comprador — mesma engrenagem de drive-share-folder, só que numa pasta
+// separada da usada pro streaming das aulas (ver folderType: 'backup').
+async function shareBackupFolder(supabase: ReturnType<typeof createClient>, email: string): Promise<void> {
+  try {
+    const { error } = await supabase.functions.invoke('drive-share-folder', {
+      body: { email, folderType: 'backup' },
+    })
+    if (error) console.error('Backup folder share error:', JSON.stringify(error))
+    else console.log('Backup folder shared with:', email)
+  } catch (err: any) {
+    console.error('Backup folder share exception:', err?.message || err)
   }
 }
 
@@ -97,72 +221,6 @@ function getCorsHeaders(req: Request) {
     'Access-Control-Allow-Origin': allowedOrigin,
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   }
-}
-
-// ─── GOOGLE DRIVE (inline — evita dependência de drive-share-folder) ──────────
-const GOOGLE_CLIENT_ID = '110017470335-2l6er8r451vj5hf3ob05rvolc2p4v9ku.apps.googleusercontent.com'
-
-async function refreshGoogleToken(refreshToken: string, clientSecret: string): Promise<string> {
-  const res = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      refresh_token: refreshToken,
-      client_id: GOOGLE_CLIENT_ID,
-      client_secret: clientSecret,
-      grant_type: 'refresh_token',
-    }),
-  })
-  const data = await res.json()
-  if (!res.ok || !data.access_token) throw new Error('Falha ao renovar token do Google: ' + JSON.stringify(data))
-  return data.access_token as string
-}
-
-async function shareDriveFolderInline(
-  supabase: ReturnType<typeof createClient>,
-  email: string,
-  accessId: string,
-): Promise<void> {
-  const GOOGLE_CLIENT_SECRET = Deno.env.get('GOOGLE_CLIENT_SECRET')!
-  const { data: config } = await supabase.from('drive_config').select('*').maybeSingle()
-  if (!config?.connected || !config.folder_id) {
-    console.warn('Drive: config ausente ou não conectado')
-    return
-  }
-
-  let accessToken = config.access_token
-  const expiry = config.token_expiry ? new Date(config.token_expiry) : null
-  if (!expiry || expiry < new Date()) {
-    if (!config.refresh_token) { console.error('Drive: sem refresh_token'); return }
-    accessToken = await refreshGoogleToken(config.refresh_token, GOOGLE_CLIENT_SECRET)
-    await supabase.from('drive_config').update({
-      access_token: accessToken,
-      token_expiry: new Date(Date.now() + 3600 * 1000).toISOString(),
-    }).eq('id', config.id)
-    console.log('Drive: token renovado')
-  }
-
-  const permRes = await fetch(
-    `https://www.googleapis.com/drive/v3/files/${config.folder_id}/permissions`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
-      body: JSON.stringify({ role: 'reader', type: 'user', emailAddress: email, sendNotificationEmail: false }),
-    }
-  )
-  const perm = await permRes.json()
-  if (!permRes.ok) {
-    console.error('Drive share error para', email, ':', JSON.stringify(perm))
-    return
-  }
-
-  // Salva o permissionId para que o cron possa revogar se necessário
-  await supabase.from('accesses').update({
-    drive_permission_id: perm.id,
-    drive_folder_id: config.folder_id,
-  }).eq('id', accessId)
-
-  console.log('Drive: pasta compartilhada com', email, 'permissionId:', perm.id)
 }
 
 // ─── HMAC VERIFICATION (Mercado Pago) ─────────────────────────────────────────
@@ -341,11 +399,12 @@ serve(async (req) => {
         return new Response('ok', { headers: getCorsHeaders(req) })
       }
 
-      // Annual plans expire a year out; lifetime never does. This also backs
-      // the account panel's "Renovar Assinatura" flow — without an expiry,
-      // an annual purchase looked identical to a lifetime one.
-      const accessType = buyer.plan === 'lifetime' ? 'lifetime' : 'paid'
-      const expiresAt = buyer.plan === 'annual' ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString() : null
+      // Annual/monthly plans expire out; lifetime (e as camadas Plus/Pro)
+      // nunca expira. Isso também alimenta o "Renovar Assinatura" do painel
+      // da conta — sem expiry, uma compra anual parecia idêntica a vitalícia.
+      const accessType = PLAN_ACCESS_TYPE[buyer.plan] || 'paid'
+      const durationDays = PLAN_DURATION_DAYS[buyer.plan]
+      const expiresAt = durationDays ? new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000).toISOString() : null
 
       const { data: existingAccess } = await supabase
         .from('accesses')
@@ -357,16 +416,25 @@ serve(async (req) => {
         .limit(1)
         .maybeSingle()
 
-      if (existingAccess?.access_type === 'lifetime') {
-        console.log('Already has lifetime access for:', buyer.email, '— skipping')
+      // Nunca rebaixa quem já tem um nível vitalício igual ou superior — mas
+      // permite upgrade (ex: já tinha lifetime, comprou lifetime_plus).
+      const existingRank = existingAccess ? LIFETIME_TIER_RANK[existingAccess.access_type] : undefined
+      const newRank = LIFETIME_TIER_RANK[accessType]
+      const alreadyAtOrAboveTier = existingRank !== undefined && (newRank === undefined || existingRank >= newRank)
+
+      if (alreadyAtOrAboveTier) {
+        console.log('Already has equal-or-higher lifetime tier for:', buyer.email, '— skipping')
       } else if (existingAccess) {
-        // A renewal purchase — extend the same row instead of leaving its
-        // old (possibly already-past) expiry untouched.
+        // A renewal (ou upgrade de tier) — extend the same row instead of
+        // leaving its old (possibly already-past) expiry untouched.
         const { error: updateErr } = await supabase.from('accesses').update({
           access_type: accessType, status: 'active', expires_at: expiresAt, whatsapp: buyer.whatsapp,
         }).eq('id', existingAccess.id)
         if (updateErr) console.error('Error renewing access:', updateErr.message)
-        else console.log('Access renewed for:', buyer.email)
+        else {
+          console.log('Access renewed for:', buyer.email)
+          if (BACKUP_FOLDER_PLANS.has(accessType)) await shareBackupFolder(supabase, buyer.email)
+        }
       } else {
         const { error: accessErr } = await supabase.from('accesses').insert({
           email: buyer.email,
@@ -380,39 +448,25 @@ serve(async (req) => {
           console.error('Error inserting access:', accessErr.message)
         } else {
           console.log('Access granted for:', buyer.email)
+          if (BACKUP_FOLDER_PLANS.has(accessType)) await shareBackupFolder(supabase, buyer.email)
         }
-      }
-
-      // Share Drive folder inline (sem depender de drive-share-folder)
-      // Busca o accessId recém-criado para salvar drive_permission_id
-      const { data: newAccess } = await supabase
-        .from('accesses')
-        .select('id')
-        .eq('email', buyer.email)
-        .neq('access_type', 'trial')
-        .eq('status', 'active')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-
-      try {
-        await shareDriveFolderInline(supabase, buyer.email, newAccess?.id || '')
-      } catch (driveErr: any) {
-        console.error('Drive share error para', buyer.email, ':', driveErr?.message || driveErr)
       }
 
       // Send Meta CAPI Purchase event (server-side — independente de cookies do browser)
       try {
-        await sendMetaCAPIEvent({
+        await sendMetaCAPIEvent(supabase, {
           email: buyer.email,
           name: buyer.name,
           phone: buyer.whatsapp,
           fbp: buyer.fbp ?? null,
           fbc: buyer.fbc ?? null,
           fbclid: buyer.fbclid ?? null,
+          clientIp: buyer.client_ip ?? null,
+          clientUserAgent: buyer.client_user_agent ?? null,
           value: payment.transaction_amount ?? buyer.amount ?? 0,
           plan: buyer.plan,
           paymentId: String(paymentId),
+          buyerId: buyer.id,
         })
       } catch (capiErr: any) {
         console.error('CAPI error:', capiErr.message)

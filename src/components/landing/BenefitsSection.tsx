@@ -1,50 +1,66 @@
 import {
-  BookOpen, GraduationCap, Download, Users, Lock, Globe,
-  Smartphone, Server, RefreshCw, MessageCircle, Headphones
+  BookOpen, GraduationCap, MonitorPlay, Users, Lock, Globe,
+  Smartphone, RefreshCw, MessageCircle,
 } from 'lucide-react';
 
-const benefits = [
-  { icon: BookOpen, title: '+530 Cursos', description: 'Cursos completos das maiores plataformas médicas do Brasil' },
-  { icon: GraduationCap, title: '+9.000 Livros', description: 'Biblioteca completa com os principais títulos da medicina' },
-  { icon: Download, title: 'Download Liberado', description: 'Baixe o conteúdo para estudar offline quando quiser' },
-  { icon: Users, title: '+10.000 Membros', description: 'Comunidade ativa de médicos e estudantes' },
-  { icon: Lock, title: 'Acesso Seguro', description: 'Conteúdo protegido e acesso individual por email' },
-  { icon: Globe, title: 'Acesso Global', description: 'Estude de qualquer lugar do mundo, 24/7' },
-  { icon: Smartphone, title: 'Apps Inclusos', description: 'Whitebook e WeMeds inclusos no plano vitalício' },
-  { icon: Server, title: 'Armazenamento Cloud', description: 'Todo conteúdo no Google Drive, sem ocupar seu espaço' },
-  { icon: RefreshCw, title: 'Atualizações', description: 'Conteúdo atualizado constantemente' },
-  { icon: MessageCircle, title: 'Suporte WhatsApp', description: 'Atendimento rápido e personalizado' },
-  { icon: Headphones, title: 'Suporte 24/7', description: 'Equipe sempre disponível para ajudar' },
-  { icon: GraduationCap, title: 'Residência', description: 'Preparação completa para provas de residência' },
+// As quatro que mais pesam na decisão de compra ganham destaque visual maior;
+// o resto entra como lista de apoio — em vez de doze cartões idênticos com o
+// mesmo peso visual, sem nenhuma hierarquia entre o que importa mais ou menos.
+const featured = [
+  { icon: BookOpen, title: '530+ cursos completos', description: 'Estratégia Med, MedGrupo, Medway e outras grandes plataformas, todas em um único login.' },
+  { icon: GraduationCap, title: '9.000+ livros médicos', description: 'Biblioteca com as principais referências de cada especialidade, já traduzidas.' },
+  { icon: MonitorPlay, title: 'Direto na plataforma', description: 'Sem apps externos, sem downloads — assiste e lê pelo navegador, em qualquer aparelho.' },
+  { icon: Users, title: '10.000+ membros ativos', description: 'Uma comunidade de médicos e estudantes trocando dúvidas dentro da própria plataforma.' },
+];
+
+const supporting = [
+  { icon: Lock, text: 'Acesso individual e seguro por e-mail' },
+  { icon: Globe, text: 'Estude de qualquer lugar, 24 horas por dia' },
+  { icon: Smartphone, text: 'Whitebook e WeMeds inclusos no plano vitalício' },
+  { icon: RefreshCw, text: 'Conteúdo revisado e atualizado mensalmente' },
+  { icon: MessageCircle, text: 'Suporte por WhatsApp, todos os dias' },
+  { icon: GraduationCap, text: 'Trilha própria para provas de residência' },
 ];
 
 export const BenefitsSection = () => {
   return (
-    <section className="py-24 bg-background-paper">
+    <section className="py-24 bg-background-paper border-y border-border/60">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-16">
-          <p className="font-mono text-xs uppercase tracking-widest text-primary mb-4">Benefícios</p>
-          <h2 className="font-secondary text-4xl md:text-5xl font-bold text-foreground mb-4">
-            Por que escolher a OneMed?
+        <div className="grid md:grid-cols-[1fr_auto] gap-6 items-end mb-14">
+          <h2 className="font-secondary text-3xl md:text-4xl font-bold text-foreground max-w-xl">
+            Tudo que sua formação médica precisa, num só lugar
           </h2>
-          <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-            Tudo que você precisa para sua formação médica em um só lugar
+          <p className="text-muted-foreground text-sm max-w-sm md:text-right">
+            Chega de juntar acesso avulso em meia dúzia de plataformas diferentes.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {benefits.map((benefit, index) => (
+        <div className="grid md:grid-cols-2 gap-4 mb-4">
+          {featured.map((benefit) => (
             <div
-              key={index}
-              className="glass rounded-xl p-5 hover:border-primary/20 hover:bg-primary/3 transition-colors duration-200 group"
+              key={benefit.title}
+              className="rounded-2xl border border-border bg-card p-6 sm:p-7 flex gap-5 hover:border-primary/30 transition-colors duration-200"
             >
-              <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center mb-4 group-hover:bg-primary/15 transition-colors duration-200">
+              <div className="w-11 h-11 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
                 <benefit.icon className="w-5 h-5 text-primary" />
               </div>
-              <h4 className="font-secondary font-semibold text-foreground mb-1">{benefit.title}</h4>
-              <p className="text-xs text-muted-foreground leading-relaxed">{benefit.description}</p>
+              <div>
+                <h3 className="font-secondary font-semibold text-foreground mb-1.5">{benefit.title}</h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">{benefit.description}</p>
+              </div>
             </div>
           ))}
+        </div>
+
+        <div className="rounded-2xl border border-border bg-card/50 px-6 py-2 sm:px-8">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-x-8">
+            {supporting.map((item) => (
+              <div key={item.text} className="flex items-center gap-3 py-3.5 border-b border-border/60 last:border-0 sm:[&:nth-last-child(-n+1)]:border-0">
+                <item.icon className="w-4 h-4 text-primary shrink-0" />
+                <span className="text-sm text-muted-foreground">{item.text}</span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </section>

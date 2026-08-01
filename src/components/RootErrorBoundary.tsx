@@ -22,6 +22,9 @@ export class RootErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.hasError) {
       return (
+        // Cores fixas de propósito (não bg-background/text-foreground): esta
+        // é a rede de segurança de última instância — precisa continuar
+        // legível mesmo se o próprio sistema de temas for a causa da quebra.
         <div className="min-h-screen flex flex-col items-center justify-center gap-4 px-4 text-center bg-black text-white">
           <p className="font-semibold text-lg">Algo deu errado ao carregar a página</p>
           <p className="text-sm text-white/60 max-w-xs">

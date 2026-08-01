@@ -1,33 +1,31 @@
 import { Link } from 'react-router-dom';
-import { Stethoscope, ShoppingCart } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Stethoscope, ArrowRight } from 'lucide-react';
 
 export const LandingFooter = () => {
   return (
     <>
-      {/* CTA Section */}
-      <section className="py-24 bg-background-paper border-t border-border">
-        <div className="max-w-4xl mx-auto px-4 text-center">
-          <div className="glass rounded-2xl p-12 border border-primary/10">
-            <h2 className="font-secondary text-4xl md:text-5xl font-bold text-foreground mb-4">
-              Pronto para transformar sua carreira médica?
-            </h2>
-            <p className="text-muted-foreground text-lg mb-8 max-w-2xl mx-auto">
-              Acesse agora o maior acervo de conteúdos médicos da América Latina.
-              Mais de 530 cursos e 9.000 livros em um só lugar.
-            </p>
-            <Link to="/checkout">
-              <Button className="bg-primary hover:bg-primary-hover text-primary-foreground gap-2 h-12 px-8 text-base font-semibold glow-red-hover">
-                <ShoppingCart className="w-5 h-5" />
-                Adquirir Acesso Completo
-              </Button>
-            </Link>
-          </div>
+      {/* CTA Section — faixa cheia com o vermelho da marca, em vez de mais
+          um card de vidro flutuando dentro de uma seção escura. */}
+      <section className="bg-primary">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-20 text-center">
+          <h2 className="font-secondary text-3xl md:text-5xl font-bold text-primary-foreground mb-4">
+            Pronto para transformar sua carreira médica?
+          </h2>
+          <p className="text-primary-foreground/85 text-lg mb-8 max-w-xl mx-auto">
+            530+ cursos e 9.000+ livros médicos em um só lugar, com acesso vitalício disponível.
+          </p>
+          <Link
+            to="/checkout"
+            className="inline-flex items-center gap-2 bg-background text-foreground hover:bg-background/90 font-semibold h-12 px-8 rounded-lg transition-colors duration-150"
+          >
+            Adquirir acesso completo
+            <ArrowRight className="w-4 h-4" />
+          </Link>
         </div>
       </section>
 
       {/* Footer */}
-      <footer className="bg-background-paper border-t border-border py-12">
+      <footer className="bg-background-paper py-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col md:flex-row justify-between items-center gap-6">
             <div className="flex items-center gap-3">
