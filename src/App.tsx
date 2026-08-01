@@ -45,6 +45,8 @@ import { PILLAR_HUBS, isNoIndexPath } from "@/seo/siteConfig";
 import { Seo } from "@/seo/Seo";
 import WhatsAppButton from "./components/WhatsAppButton";
 import { KickedOutModal } from "./components/member/KickedOutModal";
+import { AccessExpiredScreen } from "./components/member/AccessExpiredScreen";
+import { useMemberStatus } from "@/hooks/useMemberStatus";
 
 const queryClient = new QueryClient();
 
@@ -106,12 +108,26 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 
 const MemberProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
-  if (loading) return (
+  const { status, lastType, expiredAt, loading: statusLoading } = useMemberStatus();
+
+  const spinner = (
     <div className="flex min-h-screen items-center justify-center bg-background">
       <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
     </div>
   );
+
+  if (loading) return spinner;
   if (!user) return <Navigate to="/login" replace />;
+  if (statusLoading) return spinner;
+
+  // A sessão do navegador sobrevive ao fim do teste grátis — sem isto, o
+  // aluno fica dentro de uma plataforma vazia, sem explicação nem caminho
+  // pra comprar. `status` nulo é consulta que falhou: deixa passar (o
+  // conteúdo continua protegido pela RLS).
+  if (status === 'expired' || status === 'none') {
+    return <AccessExpiredScreen lastType={lastType} expiredAt={expiredAt} />;
+  }
+
   return <>{children}</>;
 };
 
