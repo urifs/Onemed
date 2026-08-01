@@ -3,7 +3,7 @@ import { useNavigate, useParams, useSearchParams, Link } from 'react-router-dom'
 import { toast } from 'sonner';
 import {
   ArrowLeft, Play, FileText, File, Music, Image as ImageIcon, CheckCircle2, Clock,
-  FileSpreadsheet, FileType, Star, ListOrdered, Menu, X, Check, Download, Loader2,
+  FileSpreadsheet, FileType, Star, ListOrdered, Menu, X, Check, Download, Loader2, ExternalLink,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
@@ -17,6 +17,7 @@ import {
   formatDuration, formatFileSize, matchesSearch, stripYearFromTitle, withTimeout, withRetry, describeLoadError,
 } from '@/lib/utils';
 import { downloadLesson } from '@/lib/lessonDownload';
+import { openLessonInNewTab } from '@/lib/lessonOpen';
 import { DownloadUpsellModal } from '@/components/member/DownloadUpsellModal';
 import { useDownloadGate } from '@/hooks/useDownloadGate';
 import { CourseTree } from '@/components/member/CourseTree';
@@ -102,6 +103,7 @@ export default function CourseDetailPage() {
   // Qual aula está sendo baixada agora (spinner no ícone da linha). O
   // download é um de cada vez, por item — não existe mais seleção em massa.
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [openingId, setOpeningId] = useState<string | null>(null);
 
   // Teste grátis não baixa nada; Mensal e Anual também não — o clique abre o
   // convite pra assinar/fazer upgrade em vez de baixar.
@@ -317,6 +319,20 @@ export default function CourseDetailPage() {
     }
   };
 
+  // Abrir em outra aba: é leitura, o mesmo conteúdo que já toca no player —
+  // por isso não passa pelo porteiro do download.
+  const handleOpenLesson = async (lesson: Lesson) => {
+    if (openingId) return;
+    setOpeningId(lesson.id);
+    try {
+      await openLessonInNewTab(lesson);
+    } catch (err: any) {
+      toast.error(err?.message || `Não foi possível abrir "${lesson.title}"`);
+    } finally {
+      setOpeningId(null);
+    }
+  };
+
   const activeIndex = activeLesson ? activeOrderedLessons.findIndex(l => l.id === activeLesson.id) : -1;
 
   if (course === undefined) {
@@ -454,6 +470,7 @@ export default function CourseDetailPage() {
                   favoriteIds={favoriteLessonIds} onToggleFavorite={handleToggleLessonFavorite}
                   onToggleCompleted={handleToggleCompleted}
                   onDownload={handleDownloadLesson} downloadingId={downloadingId}
+                  onOpenExternal={handleOpenLesson} openingId={openingId}
                 />
               </>
             ) : tab === 'arquivos' ? (
@@ -472,6 +489,7 @@ export default function CourseDetailPage() {
                   favoriteIds={favoriteLessonIds} onToggleFavorite={handleToggleLessonFavorite}
                   onToggleCompleted={handleToggleCompleted}
                   onDownload={handleDownloadLesson} downloadingId={downloadingId}
+                  onOpenExternal={handleOpenLesson} openingId={openingId}
                 />
               </>
             ) : (
@@ -577,7 +595,7 @@ function CourseSummarySidebar({
 
 function LessonGroupList({
   groups, progressMap, onSelect, favoriteIds, onToggleFavorite,
-  onToggleCompleted, onDownload, downloadingId,
+  onToggleCompleted, onDownload, downloadingId, onOpenExternal, openingId,
 }: {
   groups: { id: string; title: string; lessons: Lesson[] }[];
   progressMap: Record<string, Progress>;
@@ -587,6 +605,8 @@ function LessonGroupList({
   onToggleCompleted?: (lesson: Lesson, completed: boolean) => void;
   onDownload?: (lesson: Lesson) => void;
   downloadingId?: string | null;
+  onOpenExternal?: (lesson: Lesson) => void;
+  openingId?: string | null;
 }) {
   return (
     <div className="space-y-8">
@@ -645,6 +665,19 @@ function LessonGroupList({
                     {isDownloading
                       ? <Loader2 className="w-4 h-4 animate-spin text-primary" />
                       : <Download className="w-4 h-4" />}
+                  </button>
+                  {/* Abrir numa aba nova, no visualizador do navegador —
+                      sem sair da plataforma nem perder a posição da lista. */}
+                  <button
+                    onClick={() => onOpenExternal?.(lesson)}
+                    disabled={openingId === lesson.id}
+                    className="shrink-0 p-1.5 rounded-lg text-muted-foreground/50 hover:text-primary hover:bg-primary/10 disabled:opacity-40 transition-colors"
+                    title={`Abrir "${lesson.title}" em outra aba`}
+                    aria-label={`Abrir ${lesson.title} em outra aba`}
+                  >
+                    {openingId === lesson.id
+                      ? <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                      : <ExternalLink className="w-4 h-4" />}
                   </button>
                   {/* Caixa de concluída: vale pra qualquer tipo. Antes só
                       vídeo virava "assistido" (pelos 92% de reprodução) — PDF,

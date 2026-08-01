@@ -7,6 +7,7 @@ import { OfficeViewer } from './OfficeViewer';
 import { TxtViewer } from './TxtViewer';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { downloadLesson } from '@/lib/lessonDownload';
+import { openLessonInNewTab } from '@/lib/lessonOpen';
 import { DownloadUpsellModal } from './DownloadUpsellModal';
 import { useDownloadGate } from '@/hooks/useDownloadGate';
 import { toast } from 'sonner';
@@ -58,6 +59,7 @@ export function LessonPlayer({
   // arquivo no Drive.
   const [usarEmbed, setUsarEmbed] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [opening, setOpening] = useState(false);
   const { upsellOpen, setUpsellOpen, ensureCanDownload, reason: downloadReason, plan: downloadPlan } = useDownloadGate();
   const [playbackRate, setPlaybackRate] = useState(() => {
     const stored = Number(localStorage.getItem(PLAYBACK_RATE_STORAGE_KEY));
@@ -263,6 +265,20 @@ export function LessonPlayer({
   // vídeo e áudio inclusive.
   const canPrint = PRINTABLE_TYPES.includes(lesson.type);
 
+  // Abrir em outra aba é leitura — mesmo conteúdo que já toca aqui — então
+  // não passa pelo porteiro do download.
+  const handleOpenExternal = async () => {
+    if (opening) return;
+    setOpening(true);
+    try {
+      await openLessonInNewTab(lesson);
+    } catch (err: any) {
+      toast.error(err?.message || 'Não foi possível abrir este arquivo em outra aba.');
+    } finally {
+      setOpening(false);
+    }
+  };
+
   const handleDownload = async () => {
     if (!ensureCanDownload()) return;
     if (downloading) return;
@@ -386,6 +402,17 @@ export function LessonPlayer({
             className="w-9 h-9 rounded-full bg-white/10 disabled:opacity-40 hover:bg-white/15 flex items-center justify-center text-white transition-colors"
           >
             {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+          </button>
+          {/* Abrir numa aba nova, no visualizador do navegador. Também não
+              depende de `src`: o link é gerado no clique. */}
+          <button
+            onClick={handleOpenExternal}
+            disabled={opening}
+            title="Abrir em outra aba"
+            aria-label="Abrir em outra aba"
+            className="w-9 h-9 rounded-full bg-white/10 disabled:opacity-40 hover:bg-white/15 flex items-center justify-center text-white transition-colors"
+          >
+            {opening ? <Loader2 className="w-4 h-4 animate-spin" /> : <ExternalLink className="w-4 h-4" />}
           </button>
         </div>
         <div className="hidden sm:flex items-center gap-2">
