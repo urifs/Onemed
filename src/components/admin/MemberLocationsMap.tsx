@@ -5,6 +5,7 @@ import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { MapPin, Circle, AlertTriangle } from 'lucide-react';
 import { useVisibleMemberLocations, LocationPoint } from '@/hooks/useVisibleMemberLocations';
+import { CountryFlag } from '@/components/admin/CountryFlag';
 import { formatLastSeen } from '@/lib/utils';
 
 // Mesmo tom de --primary de src/index.css (claro e escuro) — todo ponto no
@@ -110,7 +111,10 @@ export function MemberLocationsMap() {
                   <Popup>
                     <div className="text-xs leading-relaxed">
                       <p className="font-semibold">{p.email}</p>
-                      <p>{[p.city, p.region].filter(Boolean).join(', ')}{p.country ? ` — ${p.country}` : ''}</p>
+                      <p className="flex items-center gap-1.5">
+                        <CountryFlag code={p.country_code} country={p.country} />
+                        <span>{[p.city, p.region].filter(Boolean).join(', ')}{p.country ? ` — ${p.country}` : ''}</span>
+                      </p>
                       <p>
                         {p.is_online ? 'Online agora' : p.last_active ? `Online ${formatLastSeen(p.last_active)}` : 'Última atividade desconhecida'}
                         {p.is_trial ? ' · Teste grátis' : ''}

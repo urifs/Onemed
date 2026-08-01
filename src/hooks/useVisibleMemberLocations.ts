@@ -6,6 +6,14 @@ export interface LocationPoint extends MemberLocationPoint {
   is_online: boolean;
 }
 
+export interface LocationGroup {
+  key: string;
+  label: string;
+  country: string | null;
+  countryCode: string | null;
+  users: LocationPoint[];
+}
+
 // Compartilhado entre o card do mapa e o card de "Localizações" (cards
 // irmãos, lado a lado no dashboard) — mesma derivação online/offline pros
 // dois nunca ficarem dessincronizados entre si.
@@ -34,11 +42,15 @@ export function useVisibleMemberLocations() {
   // TODAS as localizações, da mais populosa pra menos — sem corte. Quem
   // exibe é que decide a altura (o card rola por dentro); cortar aqui
   // escondia cidades inteiras sem nenhum sinal de que existiam.
-  const locationGroups = useMemo(() => {
-    const groups = new Map<string, LocationPoint[]>();
+  //
+  // A chave do agrupamento inclui o país, não só o rótulo: existem cidades
+  // homônimas em países diferentes (Santiago, Córdoba, San Jose), e juntá-las
+  // no mesmo grupo daria uma bandeira errada pra metade dos usuários dali.
+  const locationGroups: LocationGroup[] = useMemo(() => {
+    const groups = new Map<string, LocationGroup>();
     for (const p of visible) {
       // Cidade/estado bastam pra quem está no Brasil (a esmagadora maioria);
-      // fora dele, "Assunción, Central" não diz de que país é — então o país
+      // fora dele, "Asunción, Central" não diz de que país é — então o país
       // entra no rótulo só nesse caso.
       const local = [p.city, p.region].filter(Boolean).join(', ');
       const label = !local
@@ -46,10 +58,15 @@ export function useVisibleMemberLocations() {
         : p.country && p.country_code !== 'BR'
           ? `${local} — ${p.country}`
           : local;
-      if (!groups.has(label)) groups.set(label, []);
-      groups.get(label)!.push(p);
+      const key = `${p.country_code || '??'}|${label}`;
+      let group = groups.get(key);
+      if (!group) {
+        group = { key, label, country: p.country, countryCode: p.country_code, users: [] };
+        groups.set(key, group);
+      }
+      group.users.push(p);
     }
-    return [...groups.entries()].sort((a, b) => b[1].length - a[1].length);
+    return [...groups.values()].sort((a, b) => b.users.length - a.users.length);
   }, [visible]);
 
   return { visible, online, offline, totalOnlineCount, locationGroups, loading, loadError };
