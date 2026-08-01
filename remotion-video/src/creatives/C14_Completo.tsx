@@ -1,5 +1,5 @@
 import React from 'react';
-import { AbsoluteFill, useCurrentFrame, useVideoConfig, interpolate, spring } from 'remotion';
+import { AbsoluteFill, Sequence, useCurrentFrame, useVideoConfig, interpolate, spring } from 'remotion';
 import { AmbientBg, EndCard, FloatBadge, BadgeText, Narration, useCountUp } from './common';
 import { PhoneFrame, LaptopFrame, TabletFrame } from './DeviceFrames';
 import { CaptionTrack, Timing } from './Captions';
@@ -47,6 +47,12 @@ function sceneOpacity(t: number, [a, b]: readonly [number, number], first = fals
   return Math.min(fi, fo);
 }
 
+const ClipAt: React.FC<{ fromSec: number; children: React.ReactNode }> = ({ fromSec, children }) => (
+  <Sequence from={Math.max(0, Math.round(fromSec * FPS))} layout="none">
+    {children}
+  </Sequence>
+);
+
 // entrada suave de device: sobe ~140px com spring macio + fade
 function useRise(startSec: number, dist = 140) {
   const frame = useCurrentFrame();
@@ -80,7 +86,9 @@ const S1: React.FC<{ t: number }> = ({ t }) => {
         transformOrigin: '50% 18%',
         opacity: rise.op,
       }}>
-        <PhoneFrame src="rec/n_banner.mp4" width={590} startFrom={12} />
+        <ClipAt fromSec={0}>
+          <PhoneFrame src="rec/n_banner.mp4" width={590} startFrom={12} />
+        </ClipAt>
       </div>
     </div>
   );
@@ -107,7 +115,9 @@ const S2: React.FC<{ t: number }> = ({ t }) => {
         transform: `translateX(${-50 + (1 - lapS) * 18}%)`,
         opacity: lapOp,
       }}>
-        <LaptopFrame src="rec/nd_tree.mp4" width={1020} startFrom={100} />
+        <ClipAt fromSec={B.pastaPorPasta}>
+          <LaptopFrame src="rec/nd_tree.mp4" width={1020} startFrom={100} />
+        </ClipAt>
       </div>
       {/* celular na frente, deslocado à esquerda quando o notebook chega */}
       <div style={{
@@ -117,7 +127,9 @@ const S2: React.FC<{ t: number }> = ({ t }) => {
         transform: `translateX(-50%) translateY(${rise.y}px)`,
         opacity: rise.op,
       }}>
-        <PhoneFrame src="rec/n_tools.mp4" width={470} startFrom={358} />
+        <ClipAt fromSec={SCENES.s2[0]}>
+          <PhoneFrame src="rec/n_tools.mp4" width={470} startFrom={358} />
+        </ClipAt>
       </div>
       <FloatBadge x={620} y={250} delay={Math.round((SCENES.s2[0] + 0.35) * FPS)} from="right" accent>
         <BadgeText top="Mapa do curso" bottom="pasta por pasta, na ordem" />
@@ -142,7 +154,9 @@ const S3: React.FC<{ t: number }> = ({ t }) => {
         transformOrigin: '50% 20%',
         opacity: rise.op,
       }}>
-        <PhoneFrame src="rec/n_search2.mp4" width={600} startFrom={16} />
+        <ClipAt fromSec={SCENES.s3[0]}>
+          <PhoneFrame src="rec/n_search2.mp4" width={600} startFrom={16} />
+        </ClipAt>
       </div>
       <FloatBadge x={56} y={330} delay={Math.round((SCENES.s3[0] + 0.5) * FPS)} from="left">
         <BadgeText top="Busca total" bottom="aulas e arquivos, em segundos" />
@@ -180,7 +194,9 @@ const S4: React.FC<{ t: number }> = ({ t }) => {
             if (swOp <= 0) return null;
             return (
               <div key={i} style={{ position: i === 0 ? 'relative' : 'absolute', inset: 0, opacity: swOp }}>
-                <PhoneFrame src={sw.src} width={600} startFrom={sw.startFrom} />
+                <ClipAt fromSec={sw.from - 0.4}>
+                  <PhoneFrame src={sw.src} width={600} startFrom={sw.startFrom} />
+                </ClipAt>
               </div>
             );
           })}
@@ -221,13 +237,19 @@ const S5: React.FC<{ t: number }> = ({ t }) => {
     <div style={{ position: 'absolute', inset: 0, opacity: op }}>
       <div style={{ position: 'absolute', inset: 0, transform: `scale(${drift})`, transformOrigin: '50% 45%' }}>
         <div style={{ position: 'absolute', left: '50%', top: 330, transform: `translateX(-50%) translateY(${lap.y}px)`, opacity: lap.op }}>
-          <LaptopFrame src="rec/nd_community.mp4" width={940} startFrom={95} />
+          <ClipAt fromSec={SCENES.s5[0]}>
+            <LaptopFrame src="rec/nd_community.mp4" width={940} startFrom={95} />
+          </ClipAt>
         </div>
         <div style={{ position: 'absolute', left: 60, top: 620, transform: `translateY(${tab.y}px) rotate(-4deg)`, opacity: tab.op }}>
-          <TabletFrame src="rec/t_dashboard.mp4" width={400} startFrom={30} />
+          <ClipAt fromSec={SCENES.s5[0] + 0.2}>
+            <TabletFrame src="rec/t_dashboard.mp4" width={400} startFrom={30} />
+          </ClipAt>
         </div>
         <div style={{ position: 'absolute', right: 70, top: 660, transform: `translateY(${pho.y}px) rotate(4deg)`, opacity: pho.op }}>
-          <PhoneFrame src="rec/m_dashboard.mp4" width={310} startFrom={215} />
+          <ClipAt fromSec={SCENES.s5[0] + 0.4}>
+            <PhoneFrame src="rec/m_dashboard.mp4" width={310} startFrom={215} />
+          </ClipAt>
         </div>
       </div>
       <FloatBadge x={330} y={260} delay={base + 22} from="right" accent>
@@ -253,9 +275,13 @@ const S6: React.FC<{ t: number }> = ({ t }) => {
         opacity: rise.op,
       }}>
         <div style={{ position: 'relative' }}>
-          <PhoneFrame src="rec/n_community.mp4" width={600} startFrom={118} />
+          <ClipAt fromSec={SCENES.s6[0]}>
+            <PhoneFrame src="rec/n_community.mp4" width={600} startFrom={118} />
+          </ClipAt>
           <div style={{ position: 'absolute', inset: 0, opacity: replyOp }}>
-            <PhoneFrame src="rec/n_reply.mp4" width={600} startFrom={92} />
+            <ClipAt fromSec={B.equipe - 0.5}>
+              <PhoneFrame src="rec/n_reply.mp4" width={600} startFrom={92} />
+            </ClipAt>
           </div>
         </div>
       </div>
