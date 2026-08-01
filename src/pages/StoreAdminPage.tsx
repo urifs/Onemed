@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { ShoppingBag, Plus, Pencil, Trash2, Loader2, Eye, EyeOff, ExternalLink } from 'lucide-react';
+import { ShoppingBag, Plus, Pencil, Trash2, Loader2, Eye, EyeOff, ExternalLink, ChevronDown, Users, MessageCircle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { AdminLayout } from '@/components/AdminLayout';
 import { Button } from '@/components/ui/button';
@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { formatBRL, formatDateTimeSP } from '@/lib/utils';
+import { PLAN_LABELS } from '@/lib/plans';
 
 interface Product {
   id: string;
@@ -22,10 +23,16 @@ interface Product {
 
 interface Order {
   id: string;
+  product_id: string | null;
   product_name: string;
   email: string;
+  buyer_name: string | null;
+  whatsapp: string | null;
+  buyer_plan: string | null;
   price_paid: number;
   status: string;
+  payment_id: string | null;
+  external_reference: string;
   created_at: string;
   paid_at: string | null;
 }
@@ -40,11 +47,16 @@ export default function StoreAdminPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({ ...VAZIO });
   const [saving, setSaving] = useState(false);
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   const load = async () => {
     const [{ data: prods }, { data: ords }] = await Promise.all([
       supabase.from('store_products' as never).select('*').order('sort_order').order('created_at'),
-      supabase.from('store_orders' as never).select('*').order('created_at', { ascending: false }).limit(100),
+      // RPC (admin-only) em vez de select direto: nome, WhatsApp e plano do
+      // comprador vivem em profiles/accesses/buyers, que a RLS não abre pro
+      // navegador — e é justamente essa informação que falta pra saber QUEM
+      // comprou cada recurso.
+      supabase.rpc('get_store_orders' as never),
     ]);
     setProducts(((prods || []) as unknown as Product[]));
     setOrders(((ords || []) as unknown as Order[]));
@@ -172,8 +184,20 @@ export default function StoreAdminPage() {
               </p>
             ) : (
               <div className="divide-y divide-border">
-                {products.map(p => (
-                  <div key={p.id} className="flex items-center gap-3 px-5 py-3">
+                {products.map(p => {
+                  const compradores = aprovados.filter(o => o.product_id === p.id);
+                  const aberto = expanded === p.id;
+                  return (
+                  <div key={p.id}>
+                  <div className="flex items-center gap-3 px-5 py-3">
+                    <button
+                      onClick={() => setExpanded(aberto ? null : p.id)}
+                      aria-expanded={aberto}
+                      title={compradores.length ? 'Ver compradores' : 'Nenhum comprador ainda'}
+                      className="shrink-0 p-1 -m-1 rounded-md text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <ChevronDown className={`w-4 h-4 transition-transform ${aberto ? 'rotate-180' : ''}`} />
+                    </button>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-foreground flex items-center gap-2">
                         {p.name}
@@ -185,6 +209,12 @@ export default function StoreAdminPage() {
                       </p>
                       {p.tagline && <p className="text-xs text-muted-foreground truncate">{p.tagline}</p>}
                     </div>
+                    <span
+                      className="inline-flex items-center gap-1.5 text-xs text-muted-foreground shrink-0 tabular-nums"
+                      title="Compradores (pagamentos aprovados)"
+                    >
+                      <Users className="w-3.5 h-3.5" /> {compradores.length}
+                    </span>
                     <span className="text-sm font-semibold text-foreground tabular-nums shrink-0">{formatBRL(p.price)}</span>
                     <button
                       onClick={() => alternarAtivo(p)}
@@ -208,7 +238,61 @@ export default function StoreAdminPage() {
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
-                ))}
+
+                  {aberto && (
+                    <div className="bg-secondary/40 border-t border-border px-5 py-3">
+                      {compradores.length === 0 ? (
+                        <p className="text-sm text-muted-foreground py-2">
+                          Ninguém comprou este recurso ainda.
+                          {orders.some(o => o.product_id === p.id && o.status !== 'approved') && (
+                            <> Há {orders.filter(o => o.product_id === p.id && o.status !== 'approved').length} pagamento(s) iniciado(s) e não concluído(s).</>
+                          )}
+                        </p>
+                      ) : (
+                        <div className="space-y-2">
+                          <p className="text-xs uppercase tracking-wide font-semibold text-muted-foreground">
+                            {compradores.length} comprador{compradores.length !== 1 ? 'es' : ''} ·
+                            {' '}{formatBRL(compradores.reduce((t, o) => t + Number(o.price_paid), 0))}
+                          </p>
+                          {compradores.map(o => (
+                            <div key={o.id} className="rounded-lg bg-background-paper border border-border px-3 py-2.5">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-sm font-medium text-foreground">
+                                  {o.buyer_name || 'Sem nome cadastrado'}
+                                </span>
+                                {o.buyer_plan && (
+                                  <span className="text-[10px] uppercase font-semibold text-primary bg-primary/10 border border-primary/25 rounded px-1.5 py-0.5">
+                                    {PLAN_LABELS[o.buyer_plan] || o.buyer_plan}
+                                  </span>
+                                )}
+                                <span className="ml-auto text-sm font-semibold tabular-nums text-accent-success">
+                                  {formatBRL(o.price_paid)}
+                                </span>
+                              </div>
+                              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                                <span>{o.email}</span>
+                                {o.whatsapp && (
+                                  <a
+                                    href={`https://wa.me/${o.whatsapp.replace(/\D/g, '')}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 hover:text-foreground transition-colors"
+                                  >
+                                    <MessageCircle className="w-3 h-3 text-[#25D366]" /> {o.whatsapp}
+                                  </a>
+                                )}
+                                <span>Pago em {formatDateTimeSP(o.paid_at || o.created_at)}</span>
+                                {o.payment_id && <span className="font-mono">MP {o.payment_id}</span>}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  </div>
+                  );
+                })}
               </div>
             )}
           </CardContent>
@@ -226,7 +310,7 @@ export default function StoreAdminPage() {
                     <div className="flex-1 min-w-0">
                       <p className="text-foreground truncate">{o.product_name}</p>
                       <p className="text-xs text-muted-foreground truncate">
-                        {o.email} · {formatDateTimeSP(o.paid_at || o.created_at)}
+                        {o.buyer_name ? `${o.buyer_name} · ` : ''}{o.email} · {formatDateTimeSP(o.paid_at || o.created_at)}
                       </p>
                     </div>
                     <span className="tabular-nums text-foreground shrink-0">{formatBRL(o.price_paid)}</span>
