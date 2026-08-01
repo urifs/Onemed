@@ -29,6 +29,8 @@ import BuyersPage from "./pages/BuyersPage";
 import TrialUsersPage from "./pages/TrialUsersPage";
 import CouponsPage from "./pages/CouponsPage";
 import AdminCommunityPage from "./pages/AdminCommunityPage";
+import StorePage from "./pages/StorePage";
+import StoreAdminPage from "./pages/StoreAdminPage";
 import AnnouncementsPage from "./pages/AnnouncementsPage";
 import TermsPage from "./pages/TermsPage";
 import PrivacyPage from "./pages/PrivacyPage";
@@ -165,6 +167,7 @@ const App = () => (
             <Route path="/membros" element={<MemberProtectedRoute><MemberDashboardPage /></MemberProtectedRoute>} />
             <Route path="/membros/curso/:slug" element={<MemberProtectedRoute><CourseDetailPage /></MemberProtectedRoute>} />
             <Route path="/membros/comunidade" element={<MemberProtectedRoute><CommunityPage /></MemberProtectedRoute>} />
+            <Route path="/membros/loja" element={<MemberProtectedRoute><StorePage /></MemberProtectedRoute>} />
 
             {/* Protected admin routes */}
             <Route path="/admin" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
@@ -175,6 +178,7 @@ const App = () => (
             <Route path="/admin/trials" element={<ProtectedRoute><TrialUsersPage /></ProtectedRoute>} />
             <Route path="/admin/coupons" element={<ProtectedRoute><CouponsPage /></ProtectedRoute>} />
             <Route path="/admin/comunidade" element={<ProtectedRoute><AdminCommunityPage /></ProtectedRoute>} />
+            <Route path="/admin/loja" element={<ProtectedRoute><StoreAdminPage /></ProtectedRoute>} />
             <Route path="/admin/avisos" element={<ProtectedRoute><AnnouncementsPage /></ProtectedRoute>} />
             <Route path="/admin/database" element={<ProtectedRoute><DatabasePage /></ProtectedRoute>} />
             <Route path="/admin/email-campaign" element={<ProtectedRoute><EmailCampaignPage /></ProtectedRoute>} />
