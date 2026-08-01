@@ -5,6 +5,8 @@ import { Send, MessageCircle, BadgeCheck, Pencil } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
 import { useRequireName } from '@/hooks/useRequireName';
+import { useIsTrial } from '@/hooks/useIsTrial';
+import { CommunityLocked } from './CommunityLocked';
 import { NameRequiredModal } from './NameRequiredModal';
 import { CommentThread } from './CommentThread';
 import { PlanAvatarRing, PlanBadge } from './PlanBadge';
@@ -26,6 +28,7 @@ interface Comment {
 
 export function CommunityTab({ courseId }: { courseId: string }) {
   const { user } = useAuth();
+  const { isTrial, loading: trialLoading } = useIsTrial();
   const { promptOpen, setPromptOpen, ensureName, submitName } = useRequireName();
   const [comments, setComments] = useState<Comment[]>([]);
   const [body, setBody] = useState('');
@@ -50,7 +53,13 @@ export function CommunityTab({ courseId }: { courseId: string }) {
     }
   };
 
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [courseId]);
+  // Trial não busca comentário nenhum — o servidor recusa o feed, e a aba
+  // mostra o bloqueio no lugar.
+  useEffect(() => {
+    if (trialLoading || isTrial) { setLoading(false); return; }
+    load();
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [courseId, trialLoading, isTrial]);
 
   const doPost = async () => {
     if (!body.trim() || !user) return;
@@ -82,6 +91,8 @@ export function CommunityTab({ courseId }: { courseId: string }) {
 
   return (
     <div className="max-w-2xl">
+      {!trialLoading && isTrial ? <CommunityLocked compact /> : (
+      <>
       <div className="flex gap-3 mb-8">
         <div className="w-9 h-9 rounded-full bg-primary/15 border border-primary/25 flex items-center justify-center text-primary font-semibold text-sm shrink-0">
           {initials(user?.user_metadata?.name as string | undefined, user?.email)}
@@ -185,6 +196,8 @@ export function CommunityTab({ courseId }: { courseId: string }) {
         </div>
       )}
       <NameRequiredModal open={promptOpen} onOpenChange={setPromptOpen} onSubmit={submitName} />
+      </>
+      )}
     </div>
   );
 }
