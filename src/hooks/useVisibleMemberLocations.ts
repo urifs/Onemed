@@ -37,7 +37,15 @@ export function useVisibleMemberLocations() {
   const locationGroups = useMemo(() => {
     const groups = new Map<string, LocationPoint[]>();
     for (const p of visible) {
-      const label = [p.city, p.region].filter(Boolean).join(', ') || p.country || 'Desconhecido';
+      // Cidade/estado bastam pra quem está no Brasil (a esmagadora maioria);
+      // fora dele, "Assunción, Central" não diz de que país é — então o país
+      // entra no rótulo só nesse caso.
+      const local = [p.city, p.region].filter(Boolean).join(', ');
+      const label = !local
+        ? p.country || 'Desconhecido'
+        : p.country && p.country_code !== 'BR'
+          ? `${local} — ${p.country}`
+          : local;
       if (!groups.has(label)) groups.set(label, []);
       groups.get(label)!.push(p);
     }
