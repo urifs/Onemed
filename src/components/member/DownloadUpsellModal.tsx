@@ -1,8 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { toast } from 'sonner';
-import { Download, Lock, Loader2, Check } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { Download, Lock, Check } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -28,24 +26,13 @@ export function DownloadUpsellModal({ open, onOpenChange, reason, plan }: {
 }) {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [loadingUpgrade, setLoadingUpgrade] = useState(false);
-  const [upgradeInfo, setUpgradeInfo] = useState<{ plan: string; amountPaid: number | null } | null>(null);
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
 
-  // O modal de upgrade precisa do valor já pago pra mostrar só a diferença —
-  // isso vive no member-account-info, e só vale a pena buscar se a pessoa
-  // realmente quiser fazer upgrade.
-  const abrirUpgrade = async () => {
-    setLoadingUpgrade(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('member-account-info');
-      if (error || data?.error) throw new Error(data?.error || error?.message);
-      setUpgradeInfo({ plan: data.plan, amountPaid: data.amountPaid });
-      onOpenChange(false);
-    } catch (err: any) {
-      toast.error(err.message || 'Não foi possível carregar as opções de upgrade');
-    } finally {
-      setLoadingUpgrade(false);
-    }
+  // Não precisa buscar nada: o preço do upgrade é a diferença de tabela entre
+  // os planos, e o plano atual já veio do porteiro do download.
+  const abrirUpgrade = () => {
+    onOpenChange(false);
+    setUpgradeOpen(true);
   };
 
   const ehTrial = reason === 'trial';
@@ -85,20 +72,17 @@ export function DownloadUpsellModal({ open, onOpenChange, reason, plan }: {
             {ehTrial ? (
               <Button onClick={() => navigate('/checkout')}>Adquirir acesso completo</Button>
             ) : (
-              <Button onClick={abrirUpgrade} disabled={loadingUpgrade}>
-                {loadingUpgrade ? <><Loader2 className="w-4 h-4 animate-spin" /> Carregando…</> : 'Fazer upgrade'}
-              </Button>
+              <Button onClick={abrirUpgrade}>Fazer upgrade</Button>
             )}
           </div>
         </DialogContent>
       </Dialog>
 
-      {upgradeInfo && user?.email && (
+      {upgradeOpen && user?.email && plan && (
         <UpgradePlanModal
           open
-          onOpenChange={(o) => { if (!o) setUpgradeInfo(null); }}
-          currentPlan={upgradeInfo.plan}
-          amountPaid={upgradeInfo.amountPaid}
+          onOpenChange={setUpgradeOpen}
+          currentPlan={plan}
           userEmail={user.email}
         />
       )}

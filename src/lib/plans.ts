@@ -54,6 +54,23 @@ export const PLAN_FEATURES: Record<string, string[]> = {
   ],
 };
 
+// Preço do upgrade: SEMPRE a diferença entre os preços de TABELA dos dois
+// planos — nunca "preço do plano novo menos o que a pessoa pagou".
+//
+// O cálculo antigo punia quem comprou com cupom: um Plus adquirido com 50% de
+// desconto (R$ 299,50) fazia o upgrade pro Pro custar R$ 697,50, mais caro do
+// que a diferença real de R$ 398,00, e dois clientes no MESMO plano viam
+// preços diferentes pro MESMO upgrade. Com a diferença de tabela, o degrau
+// entre dois planos é fixo pra todo mundo.
+export const MIN_UPGRADE_PRICE = 1.00;
+
+export function upgradePriceFor(currentPlan: string | null | undefined, targetPlan: string): number {
+  const alvo = PLAN_PRICES[targetPlan];
+  if (!alvo) return 0;
+  const atual = (currentPlan && PLAN_PRICES[currentPlan]) || 0;
+  return Math.max(Math.round((alvo - atual) * 100) / 100, MIN_UPGRADE_PRICE);
+}
+
 // Quem pode baixar aula/arquivo. Teste grátis, Mensal e Anual não baixam —
 // clicar no download abre o convite pra assinar (trial) ou pra fazer upgrade
 // (Mensal/Anual). É a única lista que decide isso na plataforma inteira.

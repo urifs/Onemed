@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { canDownloadPlan, PLAN_LABELS, PLAN_FEATURES } from '@/lib/plans';
+import { canDownloadPlan, PLAN_LABELS, PLAN_FEATURES, PLAN_PRICES, upgradePriceFor, MIN_UPGRADE_PRICE } from '@/lib/plans';
 
 // Regra de produto: teste grátis, Mensal e Anual não baixam. Vitalício e
 // acima baixam. Está em teste porque é uma decisão de negócio fácil de
@@ -64,5 +64,35 @@ describe('diferença de benefícios no upgrade', () => {
 
   it('mensal → anual não promete download', () => {
     expect(novos('monthly', 'annual').filter(f => f.startsWith('Download'))).toEqual([]);
+  });
+});
+
+// O upgrade cobra a diferença de TABELA entre os planos. O bug que isso
+// corrige: descontar o valor efetivamente pago fazia quem comprou com cupom
+// pagar MAIS caro pra subir de plano do que quem pagou o preço cheio.
+describe('upgradePriceFor', () => {
+  it('cobra a diferença entre os preços de tabela', () => {
+    expect(upgradePriceFor('lifetime_plus', 'lifetime_pro')).toBe(398);
+    expect(upgradePriceFor('lifetime', 'lifetime_plus')).toBeCloseTo(299.10, 2);
+    expect(upgradePriceFor('annual', 'lifetime')).toBeCloseTo(100.90, 2);
+    expect(upgradePriceFor('monthly', 'annual')).toBe(150);
+  });
+
+  it('não depende de quanto a pessoa pagou (cupom não muda o degrau)', () => {
+    // Antes: Plus comprado com 50% off (R$ 299,50) → upgrade pro Pro saía
+    // R$ 697,50. Agora é o mesmo valor pra qualquer Plus.
+    const comCupom = upgradePriceFor('lifetime_plus', 'lifetime_pro');
+    const semCupom = upgradePriceFor('lifetime_plus', 'lifetime_pro');
+    expect(comCupom).toBe(semCupom);
+    expect(comCupom).toBeLessThan(PLAN_PRICES.lifetime_pro - 299.50);
+  });
+
+  it('sem plano atual conhecido, cobra o preço cheio do alvo', () => {
+    expect(upgradePriceFor(null, 'lifetime_pro')).toBe(PLAN_PRICES.lifetime_pro);
+    expect(upgradePriceFor('desconhecido', 'lifetime')).toBe(PLAN_PRICES.lifetime);
+  });
+
+  it('nunca devolve valor menor que o mínimo cobrável', () => {
+    expect(upgradePriceFor('lifetime_pro', 'lifetime_pro')).toBe(MIN_UPGRADE_PRICE);
   });
 });
