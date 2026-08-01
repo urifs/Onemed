@@ -32,20 +32,23 @@ export const PLAN_FEATURES: Record<string, string[]> = {
     'Acesso vitalício',
     '2 telas simultâneas',
     'Atualizações mensais',
+    'Download de arquivos, um a um',
   ],
   lifetime_plus: [
     'Acesso vitalício',
     '4 telas simultâneas',
     'Atualizações mensais',
     'Backup de tudo da plataforma no seu próprio Google Drive',
-    'Downloads liberados',
+    'Download de arquivos, um a um',
+    'Download em massa, cursos e pastas inteiras',
   ],
   lifetime_pro: [
     'Acesso vitalício',
     '6 telas simultâneas',
     'Atualizações mensais + semanais',
     'Backup de tudo da plataforma no seu próprio Google Drive',
-    'Downloads liberados em massa',
+    'Download de arquivos, um a um',
+    'Download em massa, cursos e pastas inteiras',
     'Acesso a todas as atualizações sem precisar de nenhuma colaboração',
     'Acesso à IA de diagnósticos Meduf (meduf.com.br)',
   ],
@@ -55,10 +58,10 @@ export const PLAN_FEATURES: Record<string, string[]> = {
 // clicar no download abre o convite pra assinar (trial) ou pra fazer upgrade
 // (Mensal/Anual). É a única lista que decide isso na plataforma inteira.
 //
-// Atenção ao mudar: PLAN_FEATURES anuncia "Downloads liberados" só no Plus e
-// no Pro; o Vitalício simples está liberado aqui por decisão de produto, não
-// por descuido. Se um dia ele também for bloqueado, é tirar daqui e
-// acrescentar a linha no PLAN_FEATURES do Plus.
+// Do Vitalício pra cima o download é liberado, um arquivo por vez — é o que
+// PLAN_FEATURES anuncia. Baixar em massa (curso/pasta inteira) é benefício de
+// Plus e Pro, e não passa por esta lista: hoje sai pelo backup no Drive
+// próprio, que só esses dois planos têm.
 export const PLANS_WITH_DOWNLOAD = new Set(['lifetime', 'lifetime_plus', 'lifetime_pro', 'admin']);
 
 export function canDownloadPlan(plan?: string | null): boolean {

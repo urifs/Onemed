@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { canDownloadPlan, PLAN_LABELS } from '@/lib/plans';
+import { canDownloadPlan, PLAN_LABELS, PLAN_FEATURES } from '@/lib/plans';
 
 // Regra de produto: teste grátis, Mensal e Anual não baixam. Vitalício e
 // acima baixam. Está em teste porque é uma decisão de negócio fácil de
@@ -37,5 +37,32 @@ describe('canDownloadPlan', () => {
     for (const plano of ['monthly', 'annual']) {
       expect(PLAN_LABELS[plano]).toBeTruthy();
     }
+  });
+});
+
+// O modal de upgrade lista "o que você ganha a mais" como diferença de
+// conjunto entre os textos de PLAN_FEATURES — por isso os textos repetidos
+// entre planos vizinhos precisam ser IDÊNTICOS, senão um benefício que a
+// pessoa já tem reaparece como novidade.
+describe('diferença de benefícios no upgrade', () => {
+  const novos = (de: string, para: string) =>
+    (PLAN_FEATURES[para] || []).filter(f => !(PLAN_FEATURES[de] || []).includes(f));
+
+  it('anual → vitalício ganha o download unitário', () => {
+    expect(novos('annual', 'lifetime')).toContain('Download de arquivos, um a um');
+  });
+
+  it('vitalício → plus ganha só o download em massa, não o unitário', () => {
+    const d = novos('lifetime', 'lifetime_plus');
+    expect(d).toContain('Download em massa, cursos e pastas inteiras');
+    expect(d).not.toContain('Download de arquivos, um a um');
+  });
+
+  it('plus → pro não repete nenhum benefício de download', () => {
+    expect(novos('lifetime_plus', 'lifetime_pro').filter(f => f.startsWith('Download'))).toEqual([]);
+  });
+
+  it('mensal → anual não promete download', () => {
+    expect(novos('monthly', 'annual').filter(f => f.startsWith('Download'))).toEqual([]);
   });
 });

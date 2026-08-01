@@ -21,7 +21,7 @@ const FAQ = [
   {
     question: 'Qual a diferença entre o plano Vitalício e o Vitalício Pro?',
     answer:
-      'O Vitalício dá acesso permanente ao acervo em 2 telas simultâneas, com atualizações mensais. O Vitalício Pro amplia para 6 telas, inclui atualizações semanais, backup de tudo no seu próprio Google Drive, downloads liberados e acesso à IA de diagnósticos Meduf.',
+      'O Vitalício dá acesso permanente ao acervo em 2 telas simultâneas, com atualizações mensais e download dos arquivos um a um. O Vitalício Pro amplia para 6 telas, inclui atualizações semanais, backup de tudo no seu próprio Google Drive, download em massa de cursos e pastas inteiras e acesso à IA de diagnósticos Meduf.',
   },
   {
     question: 'O pagamento é único ou é assinatura?',
