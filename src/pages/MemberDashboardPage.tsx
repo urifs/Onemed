@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Play, Info, FileText, File, Music, Image as ImageIcon, Loader2, FileSpreadsheet, FileType, Megaphone, Star, Highlighter } from 'lucide-react';
+import { Play, Info, FileText, File, Music, Image as ImageIcon, Loader2, FileSpreadsheet, FileType, Megaphone, Star, Highlighter, Trash2 } from 'lucide-react';
 import { useAnnouncementSettings } from '@/hooks/useAnnouncementSettings';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
@@ -10,6 +10,8 @@ import { CourseCard } from '@/components/member/CourseCard';
 import { CourseCover } from '@/components/member/CourseCover';
 import { CategorySidebar } from '@/components/member/CategorySidebar';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { CATEGORY_ORDER } from '@/lib/courseCategories';
 import { formatDuration, matchesSearch, stripYearFromTitle, withTimeout, withRetry, describeLoadError } from '@/lib/utils';
 import type { Database } from '@/integrations/supabase/types';
@@ -54,6 +56,11 @@ export default function MemberDashboardPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [courses, setCourses] = useState<Course[]>([]);
   const [continueList, setContinueList] = useState<ProgressRow[]>([]);
+  // course_id → quando o aluno tirou esse curso dos recentes. Guardar a hora
+  // (e não só "escondido") é o que faz o curso voltar sozinho quando ele
+  // assiste de novo, sem precisar desfazer nada à mão.
+  const [hiddenRecents, setHiddenRecents] = useState<Map<string, string>>(new Map());
+  const [managingRecents, setManagingRecents] = useState(false);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [favoriteLessons, setFavoriteLessons] = useState<FavoriteLesson[]>([]);
   const [favoriteLessonsLoading, setFavoriteLessonsLoading] = useState(false);
@@ -107,19 +114,26 @@ export default function MemberDashboardPage() {
     let alive = true;
     (async () => {
       try {
-        const [{ data: coursesData, error: coursesErr }, progressResult, { data: favData }] = await withRetry(() => withTimeout(
+        const [{ data: coursesData, error: coursesErr }, progressResult, { data: favData }, hiddenResult] = await withRetry(() => withTimeout(
           Promise.all([
             supabase.from('courses').select('*').eq('active', true).order('sort_order').order('title'),
+            // Vem por AULA, não por curso: várias aulas do mesmo curso ocupam
+            // linhas diferentes. Buscar 60 e reduzir a um curso por linha no
+            // cliente garante que a faixa continue cheia mesmo quando o aluno
+            // esconde alguns cursos ou vê muitas aulas do mesmo curso.
             userId
               ? supabase
                   .from('lesson_progress')
                   .select('*, lessons(*), courses(*)')
                   .eq('user_id', userId)
                   .order('last_watched_at', { ascending: false })
-                  .limit(12)
+                  .limit(60)
               : Promise.resolve({ data: [] as ProgressRow[] }),
             userId
               ? supabase.from('user_favorites').select('course_id').eq('user_id', userId)
+              : Promise.resolve({ data: [] }),
+            userId
+              ? (supabase as any).from('hidden_recent_courses').select('course_id, hidden_at').eq('user_id', userId)
               : Promise.resolve({ data: [] })
           ]),
           12000,
@@ -129,6 +143,10 @@ export default function MemberDashboardPage() {
         if (!alive) return;
         setCourses(coursesData || []);
         setContinueList(((progressResult as any).data || []) as ProgressRow[]);
+        setHiddenRecents(new Map(
+          (((hiddenResult as any)?.data || []) as { course_id: string; hidden_at: string }[])
+            .map(h => [h.course_id, h.hidden_at] as const),
+        ));
 
         if (favData) {
           setFavorites(new Set(favData.map(f => f.course_id)));
@@ -302,6 +320,48 @@ export default function MemberDashboardPage() {
   // make the cut below), then the biggest flagship courses — ranked by
   // lesson_count as a proxy for "maior nome" — so the destaque card cycles
   // through the platform's best content.
+  // "Continuar assistindo" — um curso por card (a consulta vem por aula), na
+  // ordem da aula mais recente, sem o que o aluno tirou da faixa.
+  //
+  // O curso escondido volta sozinho quando ele assiste de novo: basta a aula
+  // mais recente daquele curso ser posterior ao momento em que escondeu.
+  const recentCourses = useMemo(() => {
+    const out: { course: Course; progressPercent?: number; lessonId: string; watchedAt: string }[] = [];
+    const seen = new Set<string>();
+    for (const p of continueList) {
+      const course = p.courses;
+      if (!course || seen.has(course.id)) continue;
+      const hiddenAt = hiddenRecents.get(course.id);
+      if (hiddenAt && new Date(p.last_watched_at) <= new Date(hiddenAt)) continue;
+      seen.add(course.id);
+      out.push({
+        course,
+        progressPercent: p.lessons?.duration_seconds ? (p.watched_seconds / p.lessons.duration_seconds) * 100 : undefined,
+        lessonId: p.lesson_id,
+        watchedAt: p.last_watched_at,
+      });
+      if (out.length === 12) break;
+    }
+    return out;
+  }, [continueList, hiddenRecents]);
+
+  const hideFromRecents = async (courseIds: string[]) => {
+    if (!userId || courseIds.length === 0) return;
+    const hiddenAt = new Date().toISOString();
+    setHiddenRecents(prev => {
+      const next = new Map(prev);
+      for (const id of courseIds) next.set(id, hiddenAt);
+      return next;
+    });
+    setManagingRecents(false);
+    await (supabase as any)
+      .from('hidden_recent_courses')
+      .upsert(
+        courseIds.map(course_id => ({ user_id: userId, course_id, hidden_at: hiddenAt })),
+        { onConflict: 'user_id,course_id' },
+      );
+  };
+
   const featuredPool = useMemo(() => {
     const pinned = courses.filter(c => c.is_featured);
     const flagship = courses
@@ -311,13 +371,13 @@ export default function MemberDashboardPage() {
       .slice(0, 8);
     const pool: Course[] = [];
     const seen = new Set<string>();
-    const continuing = continueList[0]?.courses;
+    const continuing = recentCourses[0]?.course;
     if (continuing) { pool.push(continuing); seen.add(continuing.id); }
     for (const c of pinned) { if (!seen.has(c.id)) { pool.push(c); seen.add(c.id); } }
     for (const c of flagship) { if (!seen.has(c.id)) { pool.push(c); seen.add(c.id); } }
     if (pool.length === 0 && courses[0]) pool.push(courses[0]);
     return pool;
-  }, [courses, continueList]);
+  }, [courses, recentCourses]);
 
   const [featuredIndex, setFeaturedIndex] = useState(0);
   const [heroPaused, setHeroPaused] = useState(false);
@@ -335,11 +395,11 @@ export default function MemberDashboardPage() {
   }, [heroPaused, featuredPool.length]);
 
   const featured = featuredPool[featuredIndex];
-  const isContinuing = continueList[0]?.courses?.id === featured?.id;
-  const featuredProgressPct = isContinuing && continueList[0]?.lessons?.duration_seconds
-    ? Math.min(100, (continueList[0].watched_seconds / continueList[0].lessons.duration_seconds) * 100)
-    : 0;
-  const featuredLessonId = isContinuing ? continueList[0]?.lesson_id : undefined;
+  // Só chama de "Continue de onde parou" o curso que ainda está na faixa de
+  // recentes — escondido de lá, também não pode voltar como destaque.
+  const isContinuing = !!featured && recentCourses[0]?.course.id === featured.id;
+  const featuredProgressPct = isContinuing ? Math.min(100, recentCourses[0]?.progressPercent ?? 0) : 0;
+  const featuredLessonId = isContinuing ? recentCourses[0]?.lessonId : undefined;
 
   if (loading) {
     return (
@@ -670,15 +730,26 @@ export default function MemberDashboardPage() {
               </section>
             ) : (
               <>
-                {continueList.length > 0 && (
+                {recentCourses.length > 0 && (
                   <Row
                     title="Continuar assistindo"
-                    items={continueList.filter(p => p.courses).map(p => ({
-                      course: p.courses as Course,
-                      progressPercent: p.lessons?.duration_seconds ? (p.watched_seconds / p.lessons.duration_seconds) * 100 : undefined,
-                      isFavorite: p.courses ? favorites.has(p.courses.id) : false,
+                    items={recentCourses.map(r => ({
+                      course: r.course,
+                      progressPercent: r.progressPercent,
+                      isFavorite: favorites.has(r.course.id),
                     }))}
                     onToggleFavorite={handleToggleFavorite}
+                    action={(
+                      <button
+                        type="button"
+                        onClick={() => setManagingRecents(true)}
+                        title="Remover cursos dos recentes"
+                        aria-label="Remover cursos dos recentes"
+                        className="p-1.5 -m-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                   />
                 )}
                 {rows.map(row => (
@@ -692,17 +763,93 @@ export default function MemberDashboardPage() {
           </div>
         </div>
       </main>
+
+      <ManageRecentsDialog
+        open={managingRecents}
+        onOpenChange={setManagingRecents}
+        items={recentCourses.map(r => r.course)}
+        onConfirm={hideFromRecents}
+      />
     </div>
   );
 }
 
-function Row({ title, items, onToggleFavorite }: { title: string; items: { course: Course; progressPercent?: number; isFavorite?: boolean }[]; onToggleFavorite?: (id: string, current: boolean) => void }) {
+// Tela de remoção dos recentes: marca os cursos e confirma. Só tira o curso
+// da faixa — não apaga progresso nem aulas concluídas, e o curso volta
+// sozinho se o aluno assistir de novo.
+function ManageRecentsDialog({ open, onOpenChange, items, onConfirm }: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  items: Course[];
+  onConfirm: (courseIds: string[]) => void;
+}) {
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  // Zera a seleção a cada abertura — reabrir a tela nunca deve vir com
+  // caixas marcadas de uma vez anterior.
+  useEffect(() => { if (open) setSelected(new Set()); }, [open]);
+
+  const toggle = (id: string) => setSelected(prev => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="bg-background-paper border-border max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="text-foreground">Remover dos recentes</DialogTitle>
+          <DialogDescription>
+            Marque os cursos que você não quer mais ver em "Continuar assistindo". Seu progresso
+            continua salvo, e o curso volta pra faixa se você assistir de novo.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="max-h-[45vh] overflow-y-auto -mx-6 px-6 divide-y divide-border">
+          {items.map(course => (
+            <label
+              key={course.id}
+              className="flex items-center gap-3 py-2.5 cursor-pointer"
+            >
+              <Checkbox
+                checked={selected.has(course.id)}
+                onCheckedChange={() => toggle(course.id)}
+                aria-label={`Selecionar ${course.title}`}
+              />
+              <span className="text-sm text-foreground line-clamp-2">{stripYearFromTitle(course.title)}</span>
+            </label>
+          ))}
+        </div>
+
+        <DialogFooter className="gap-2 sm:gap-2">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
+          <Button
+            variant="destructive"
+            disabled={selected.size === 0}
+            onClick={() => onConfirm([...selected])}
+          >
+            Excluir dos recentes{selected.size > 0 ? ` (${selected.size})` : ''}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function Row({ title, items, onToggleFavorite, action }: {
+  title: string;
+  items: { course: Course; progressPercent?: number; isFavorite?: boolean }[];
+  onToggleFavorite?: (id: string, current: boolean) => void;
+  action?: React.ReactNode;
+}) {
   if (items.length === 0) return null;
   return (
     <section>
-      <div className="flex items-baseline gap-3 mb-3">
+      <div className="flex items-center gap-3 mb-3">
         <h2 className="font-secondary text-[17px] font-bold text-foreground">{title}</h2>
         <span className="text-xs text-muted-foreground tabular-nums">{items.length}</span>
+        {action}
       </div>
       <div className="flex items-start gap-3.5 overflow-x-auto pb-3 -mx-1 px-1 scrollbar-thin">
         {items.map(({ course, progressPercent, isFavorite }) => (
