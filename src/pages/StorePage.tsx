@@ -69,7 +69,17 @@ export default function StorePage() {
       // O checkout do Mercado Pago é o mesmo das assinaturas.
       window.location.href = data.init_point || data.sandbox_init_point;
     } catch (err: any) {
-      toast.error(err.message || 'Não foi possível abrir o checkout');
+      // A mensagem crua do supabase-js ("Failed to send a request to the Edge
+      // Function") aparece quando a requisição não completa — rede móvel
+      // instável, aba em segundo plano. Não diz nada pro aluno, e o pior é que
+      // costuma acontecer DEPOIS de o pedido já ter sido criado do outro lado.
+      const cru = String(err?.message || '');
+      const rede = /Failed to send a request|Failed to fetch|NetworkError|aborted|signal is aborted/i.test(cru);
+      toast.error(
+        rede
+          ? 'A conexão falhou antes de abrir o pagamento. Confira sua internet e toque em Comprar de novo — nada foi cobrado.'
+          : cru || 'Não foi possível abrir o checkout',
+      );
       setBuying(null);
     }
   };

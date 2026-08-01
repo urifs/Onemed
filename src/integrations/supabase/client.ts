@@ -26,6 +26,19 @@ const TIMEOUT_EXEMPT = /\/functions\/v1\/(member-sync-library|run-email-campaign
 // Functions instead of GoTrue's built-in endpoints.
 const AUTH_PATH = /\/auth\/v1\/|\/functions\/v1\/(member-auth-request|create-trial-access)/;
 
+// Criar cobrança tem que ter um orçamento MUITO maior que uma consulta comum.
+// A chamada faz três idas e voltas antes de responder (sessão, gravar o
+// pedido, criar a preferência no Mercado Pago) e ainda paga a partida a frio
+// da Edge Function — em rede móvel isso passa de 10s com facilidade.
+//
+// Abortar aqui é pior do que esperar: o servidor conclui assim mesmo, então o
+// aluno via "Failed to send a request to the Edge Function" enquanto o pedido
+// e o checkout JÁ existiam do outro lado. Foi exatamente o que aconteceu na
+// loja — todos os pedidos que "falharam" estavam gravados com a preferência
+// do Mercado Pago criada.
+const PAYMENT_PATH = /\/functions\/v1\/(store-create-payment|mp-create-payment)/;
+const PAYMENT_TIMEOUT_MS = 45000;
+
 // Without this, a request that never settles (dropped connection, a stuck
 // proxy, a backgrounded tab resuming mid-request) leaves its promise pending
 // forever — any page awaiting it gets stuck on its loading state until a hard
@@ -34,7 +47,9 @@ function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}): Pro
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
   if (TIMEOUT_EXEMPT.test(url)) return fetch(input, init);
 
-  const timeoutMs = AUTH_PATH.test(url) ? AUTH_TIMEOUT_MS : FETCH_TIMEOUT_MS;
+  const timeoutMs = PAYMENT_PATH.test(url)
+    ? PAYMENT_TIMEOUT_MS
+    : AUTH_PATH.test(url) ? AUTH_TIMEOUT_MS : FETCH_TIMEOUT_MS;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   if (init.signal) {
