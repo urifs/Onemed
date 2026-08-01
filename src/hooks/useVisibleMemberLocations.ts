@@ -31,15 +31,18 @@ export function useVisibleMemberLocations() {
   // online mas sem ponto no mapa por alguns instantes.
   const totalOnlineCount = onlineIds.size;
 
-  const topLocations = useMemo(() => {
+  // TODAS as localizações, da mais populosa pra menos — sem corte. Quem
+  // exibe é que decide a altura (o card rola por dentro); cortar aqui
+  // escondia cidades inteiras sem nenhum sinal de que existiam.
+  const locationGroups = useMemo(() => {
     const groups = new Map<string, LocationPoint[]>();
     for (const p of visible) {
       const label = [p.city, p.region].filter(Boolean).join(', ') || p.country || 'Desconhecido';
       if (!groups.has(label)) groups.set(label, []);
       groups.get(label)!.push(p);
     }
-    return [...groups.entries()].sort((a, b) => b[1].length - a[1].length).slice(0, 10);
+    return [...groups.entries()].sort((a, b) => b[1].length - a[1].length);
   }, [visible]);
 
-  return { visible, online, offline, totalOnlineCount, topLocations, loading, loadError };
+  return { visible, online, offline, totalOnlineCount, locationGroups, loading, loadError };
 }

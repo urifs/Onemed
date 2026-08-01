@@ -6,7 +6,7 @@ import { useVisibleMemberLocations, LocationPoint } from '@/hooks/useVisibleMemb
 import { formatLastSeen } from '@/lib/utils';
 
 export function MemberLocationsList() {
-  const { visible, topLocations, loading, loadError } = useVisibleMemberLocations();
+  const { visible, locationGroups, loading, loadError } = useVisibleMemberLocations();
   const [selectedLocation, setSelectedLocation] = useState<{ label: string; users: LocationPoint[] } | null>(null);
 
   return (
@@ -16,7 +16,9 @@ export function MemberLocationsList() {
           <MapPin className="w-4 h-4 text-primary" /> Localizações
         </CardTitle>
         {!loading && !loadError && (
-          <p className="text-xs text-muted-foreground">{visible.length} usuário{visible.length !== 1 ? 's' : ''} no total</p>
+          <p className="text-xs text-muted-foreground">
+            {locationGroups.length} localizaç{locationGroups.length !== 1 ? 'ões' : 'ão'} · {visible.length} usuário{visible.length !== 1 ? 's' : ''} no total
+          </p>
         )}
       </CardHeader>
       <CardContent className="p-0">
@@ -28,11 +30,14 @@ export function MemberLocationsList() {
           <div className="flex items-center gap-2 text-muted-foreground text-sm px-5 py-6">
             <AlertTriangle className="w-4 h-4 text-accent-warning" /> Não foi possível carregar as localizações.
           </div>
-        ) : topLocations.length === 0 ? (
+        ) : locationGroups.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-6">Nenhuma localização registrada ainda.</p>
         ) : (
-          <div className="grid sm:grid-cols-2 sm:gap-x-4">
-            {topLocations.map(([label, users], i) => (
+          // Mesma altura do mapa do card irmão (h-[420px]), pros dois
+          // ficarem alinhados lado a lado — a lista inteira rola por dentro
+          // em vez de esticar a página.
+          <div className="grid sm:grid-cols-2 sm:gap-x-4 max-h-[420px] overflow-y-auto overscroll-contain">
+            {locationGroups.map(([label, users], i) => (
               <button
                 key={label}
                 onClick={() => setSelectedLocation({ label, users })}
