@@ -213,3 +213,29 @@ export const TapDot: React.FC<{
     </div>
   );
 };
+
+// ── 8. Âncora de beat pela palavra falada ─────────────────────────────────
+// Retorna o instante (s) da n-ésima ocorrência da palavra na narração.
+import type { Timing } from './Captions';
+export function wordAt(T: Timing, word: string, occurrence = 1): number {
+  const norm = (s: string) => s.toLowerCase().replace(/[^\wáéíóúâêôãõçà0-9.+]/g, '');
+  let n = 0;
+  for (const w of T.words) {
+    if (norm(w.w) === norm(word)) {
+      n++;
+      if (n === occurrence) return w.t;
+    }
+  }
+  return 0;
+}
+
+// ── 9. Troca de conteúdo do device com crossfade (estilo C01) ─────────────
+// segments: [{src, startFrom, fromSec}] — cada um entra com fade de 0.5s.
+export interface SwapSegment { src: string; startFrom: number; fromSec: number }
+export function segmentOpacity(tSec: number, segments: SwapSegment[], index: number, fadeSec = 0.5): number {
+  const seg = segments[index];
+  const next = segments[index + 1];
+  const fadeIn = index === 0 ? 1 : Math.max(0, Math.min(1, (tSec - seg.fromSec) / fadeSec));
+  const fadeOut = next ? Math.max(0, Math.min(1, 1 - (tSec - next.fromSec) / fadeSec)) : 1;
+  return Math.min(fadeIn, fadeOut);
+}

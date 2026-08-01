@@ -19,6 +19,7 @@ import { C10_Atualizado, C10_DURATION } from './creatives/C10_Atualizado';
 import { C11_Ferramentas, C11_DURATION } from './creatives/C11_Ferramentas';
 import { C12_Comunidade, C12_DURATION } from './creatives/C12_Comunidade';
 import { C13_Organizacao, C13_DURATION } from './creatives/C13_Organizacao';
+import { C14_Completo, C14_DURATION } from './creatives/C14_Completo';
 
 const CREATIVES: Array<[string, React.FC, number]> = [
   ['C01-NovaEra', C01_NovaEra, C01_DURATION],
@@ -34,6 +35,7 @@ const CREATIVES: Array<[string, React.FC, number]> = [
   ['C11-Ferramentas', C11_Ferramentas, C11_DURATION],
   ['C12-Comunidade', C12_Comunidade, C12_DURATION],
   ['C13-Organizacao', C13_Organizacao, C13_DURATION],
+  ['C14-Completo', C14_Completo, C14_DURATION],
 ];
 
 export const RemotionRoot: React.FC = () => {
