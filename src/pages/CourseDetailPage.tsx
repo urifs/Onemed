@@ -17,6 +17,8 @@ import {
   formatDuration, formatFileSize, matchesSearch, stripYearFromTitle, withTimeout, withRetry, describeLoadError,
 } from '@/lib/utils';
 import { downloadLesson } from '@/lib/lessonDownload';
+import { DownloadUpsellModal } from '@/components/member/DownloadUpsellModal';
+import { useDownloadGate } from '@/hooks/useDownloadGate';
 import { CourseTree } from '@/components/member/CourseTree';
 import type { Database } from '@/integrations/supabase/types';
 
@@ -100,6 +102,10 @@ export default function CourseDetailPage() {
   // Qual aula está sendo baixada agora (spinner no ícone da linha). O
   // download é um de cada vez, por item — não existe mais seleção em massa.
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  // Teste grátis não baixa nada; Mensal e Anual também não — o clique abre o
+  // convite pra assinar/fazer upgrade em vez de baixar.
+  const { upsellOpen, setUpsellOpen, ensureCanDownload, reason: downloadReason, plan: downloadPlan } = useDownloadGate();
 
   useEffect(() => {
     let alive = true;
@@ -298,6 +304,7 @@ export default function CourseDetailPage() {
 
   // Baixar direto da lista, sem precisar abrir a aula.
   const handleDownloadLesson = async (lesson: Lesson) => {
+    if (!ensureCanDownload()) return;
     if (downloadingId) return;
     setDownloadingId(lesson.id);
     try {
@@ -489,6 +496,8 @@ export default function CourseDetailPage() {
           onNext={() => activeIndex < activeOrderedLessons.length - 1 && setActiveLesson(activeOrderedLessons[activeIndex + 1])}
         />
       )}
+
+      <DownloadUpsellModal open={upsellOpen} onOpenChange={setUpsellOpen} reason={downloadReason} plan={downloadPlan} />
     </div>
   );
 }

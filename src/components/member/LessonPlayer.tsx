@@ -7,6 +7,8 @@ import { OfficeViewer } from './OfficeViewer';
 import { TxtViewer } from './TxtViewer';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { downloadLesson } from '@/lib/lessonDownload';
+import { DownloadUpsellModal } from './DownloadUpsellModal';
+import { useDownloadGate } from '@/hooks/useDownloadGate';
 import { toast } from 'sonner';
 import type { Database } from '@/integrations/supabase/types';
 
@@ -56,6 +58,7 @@ export function LessonPlayer({
   // arquivo no Drive.
   const [usarEmbed, setUsarEmbed] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const { upsellOpen, setUpsellOpen, ensureCanDownload, reason: downloadReason, plan: downloadPlan } = useDownloadGate();
   const [playbackRate, setPlaybackRate] = useState(() => {
     const stored = Number(localStorage.getItem(PLAYBACK_RATE_STORAGE_KEY));
     return PLAYBACK_RATES.includes(stored) ? stored : 1;
@@ -261,6 +264,7 @@ export function LessonPlayer({
   const canPrint = PRINTABLE_TYPES.includes(lesson.type);
 
   const handleDownload = async () => {
+    if (!ensureCanDownload()) return;
     if (downloading) return;
     setDownloading(true);
     try {
@@ -472,6 +476,8 @@ export function LessonPlayer({
           </div>
         )}
       </div>
+
+      <DownloadUpsellModal open={upsellOpen} onOpenChange={setUpsellOpen} reason={downloadReason} plan={downloadPlan} />
     </div>
   );
 }

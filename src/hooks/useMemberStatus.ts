@@ -8,6 +8,10 @@ interface StatusRow {
   status: MemberStatus;
   last_type: string | null;
   expired_at: string | null;
+  // Plano efetivo da conta (o banco já resolve o access_type='paid' legado
+  // pela compra correspondente, senão mensal e anual antigos apareceriam
+  // como se fossem vitalício).
+  plan: string | null;
 }
 
 // Situação de acesso da conta logada, decidida pelo banco (my_member_status).
@@ -27,7 +31,7 @@ export function useMemberStatus() {
       // conhecem, daí o passeio por unknown.
       const raw = data as unknown;
       const row = (Array.isArray(raw) ? raw[0] : raw) as StatusRow | null | undefined;
-      return row ?? { status: 'none', last_type: null, expired_at: null };
+      return row ?? { status: 'none', last_type: null, expired_at: null, plan: null };
     },
   });
 
@@ -38,6 +42,7 @@ export function useMemberStatus() {
 
   return {
     status,
+    plan: data?.plan ?? null,
     lastType: data?.last_type ?? null,
     expiredAt: data?.expired_at ?? null,
     loading: !!user && isLoading && !isError,

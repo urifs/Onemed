@@ -51,6 +51,20 @@ export const PLAN_FEATURES: Record<string, string[]> = {
   ],
 };
 
+// Quem pode baixar aula/arquivo. Teste grátis, Mensal e Anual não baixam —
+// clicar no download abre o convite pra assinar (trial) ou pra fazer upgrade
+// (Mensal/Anual). É a única lista que decide isso na plataforma inteira.
+//
+// Atenção ao mudar: PLAN_FEATURES anuncia "Downloads liberados" só no Plus e
+// no Pro; o Vitalício simples está liberado aqui por decisão de produto, não
+// por descuido. Se um dia ele também for bloqueado, é tirar daqui e
+// acrescentar a linha no PLAN_FEATURES do Plus.
+export const PLANS_WITH_DOWNLOAD = new Set(['lifetime', 'lifetime_plus', 'lifetime_pro', 'admin']);
+
+export function canDownloadPlan(plan?: string | null): boolean {
+  return !!plan && PLANS_WITH_DOWNLOAD.has(plan);
+}
+
 // Vitalício Plus libera 4 telas simultâneas e Pro libera 6, em vez das 2 padrão.
 export const PLAN_DEVICE_LIMITS: Record<string, number> = {
   lifetime_plus: 4,
