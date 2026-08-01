@@ -105,9 +105,9 @@ const S2: React.FC<{ t: number }> = ({ t }) => {
       <div style={{
         position: 'absolute', left: '50%', top: 430,
         transform: `translateX(${-50 + (1 - lapS) * 18}%)`,
-        opacity: lapOp * 0.95,
+        opacity: lapOp,
       }}>
-        <LaptopFrame src="rec/nd_tree.mp4" width={1020} startFrom={110} />
+        <LaptopFrame src="rec/nd_tree.mp4" width={1020} startFrom={100} />
       </div>
       {/* celular na frente, deslocado à esquerda quando o notebook chega */}
       <div style={{
@@ -117,7 +117,7 @@ const S2: React.FC<{ t: number }> = ({ t }) => {
         transform: `translateX(-50%) translateY(${rise.y}px)`,
         opacity: rise.op,
       }}>
-        <PhoneFrame src="rec/n_tools.mp4" width={470} startFrom={252} />
+        <PhoneFrame src="rec/n_tools.mp4" width={470} startFrom={358} />
       </div>
       <FloatBadge x={620} y={250} delay={Math.round((SCENES.s2[0] + 0.35) * FPS)} from="right" accent>
         <BadgeText top="Mapa do curso" bottom="pasta por pasta, na ordem" />
@@ -156,8 +156,8 @@ const S3: React.FC<{ t: number }> = ({ t }) => {
 // ═══════════════════════════════════════════════════════════════════════════
 const SWAPS = [
   { src: 'rec/n_download.mp4', startFrom: 48, from: B.baixou },
-  { src: 'rec/n_tools.mp4', startFrom: 128, from: B.favoritou },
-  { src: 'rec/n_tools.mp4', startFrom: 48, from: B.concluida },
+  { src: 'rec/n_tools.mp4', startFrom: 145, from: B.favoritou },
+  { src: 'rec/n_tools.mp4', startFrom: 72, from: B.concluida },
 ];
 const S4: React.FC<{ t: number }> = ({ t }) => {
   const op = sceneOpacity(t, SCENES.s4);
@@ -214,14 +214,14 @@ const S5: React.FC<{ t: number }> = ({ t }) => {
     return { y: dist * (1 - s), op: interpolate(frame - base - delayF, [0, 12], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }) };
   };
   const lap = enter(0, 120);
-  const tab = enter(8, 150);
-  const pho = enter(16, 170);
+  const tab = enter(6, 150);
+  const pho = enter(12, 170);
   const drift = 1 + easeInOut(clamp01((t - SCENES.s5[0]) / 5)) * 0.035;
   return (
     <div style={{ position: 'absolute', inset: 0, opacity: op }}>
       <div style={{ position: 'absolute', inset: 0, transform: `scale(${drift})`, transformOrigin: '50% 45%' }}>
         <div style={{ position: 'absolute', left: '50%', top: 330, transform: `translateX(-50%) translateY(${lap.y}px)`, opacity: lap.op }}>
-          <LaptopFrame src="rec/nd_community.mp4" width={940} startFrom={80} />
+          <LaptopFrame src="rec/nd_community.mp4" width={940} startFrom={95} />
         </div>
         <div style={{ position: 'absolute', left: 60, top: 620, transform: `translateY(${tab.y}px) rotate(-4deg)`, opacity: tab.op }}>
           <TabletFrame src="rec/t_dashboard.mp4" width={400} startFrom={30} />
