@@ -94,11 +94,14 @@ serve(async (req) => {
     } catch { /* tabela indisponível não pode derrubar a geração */ }
 
     // ── entrada ────────────────────────────────────────────────────────────
-    const { lessonIds, difficulty, count, extraText } = await req.json()
+    const { lessonIds, difficulty, count, extraText, format } = await req.json()
     const ids: string[] = Array.isArray(lessonIds) ? lessonIds.slice(0, MAX_LESSONS) : []
     if (ids.length === 0) return json(req, { error: 'Selecione ao menos uma aula ou arquivo' }, 400)
     const nCards = Math.min(Math.max(Number(count) || 10, 1), MAX_CARDS)
     const nivel = DIFFICULTY_TEXT[difficulty] ? difficulty : 'intermediario'
+    // 'classic' = frente/verso aberto; 'multiple_choice' = alternativas pra
+    // marcar, com a certa indicada e a explicação no verso.
+    const formato = format === 'multiple_choice' ? 'multiple_choice' : 'classic'
     const complemento = String(extraText || '').slice(0, 2000)
 
     const { data: lessons } = await supabase
@@ -193,10 +196,20 @@ serve(async (req) => {
         complemento ? `Instruções extras do aluno (considere na geração): ${complemento}` : '',
         `Regras:`,
         `- FRENTE: uma pergunta objetiva e específica (nunca "o que o texto diz sobre...").`,
-        `- VERSO: resposta direta na primeira linha; depois, se couber, 1-2 frases de explicação.`,
+        formato === 'multiple_choice'
+          ? `- Cada carta tem 4 ALTERNATIVAS plausíveis (distratores realistas, do mesmo tema), exatamente UMA correta, em posição variada.`
+          : `- VERSO: resposta direta na primeira linha; depois, se couber, 1-2 frases de explicação.`,
+        formato === 'multiple_choice'
+          ? `- "back" traz a justificativa da alternativa CORRETA em 1-2 frases.`
+          : '',
+        formato === 'multiple_choice'
+          ? `- "why" é um array paralelo a "options": why[i] explica em 1 frase por que a alternativa i está errada (na posição da correta, por que está certa).`
+          : '',
         `- Cada carta testa UM conceito. Sem cartas duplicadas ou triviais.`,
         `- Se um material for um trecho de vídeo/áudio, use o que foi falado nele.`,
-        `- Responda APENAS um array JSON válido: [{"front":"...","back":"..."}] — sem markdown, sem comentários.`,
+        formato === 'multiple_choice'
+          ? `- Responda APENAS um array JSON válido: [{"front":"...","options":["...","...","...","..."],"correct":0,"back":"...","why":["...","...","...","..."]}] — "correct" é o índice (0-3) da alternativa certa. Sem markdown, sem comentários.`
+          : `- Responda APENAS um array JSON válido: [{"front":"...","back":"..."}] — sem markdown, sem comentários.`,
       ].filter(Boolean).join('\n'),
     })
 
@@ -223,11 +236,16 @@ serve(async (req) => {
     const raw: string = llmData.choices?.[0]?.message?.content || ''
     // O modelo às vezes embrulha em ```json ... ``` mesmo instruído a não fazer.
     const jsonText = raw.replace(/^\s*```(?:json)?/i, '').replace(/```\s*$/, '').trim()
-    let cards: { front: string; back: string }[]
+    let cards: { front: string; back: string; options?: string[]; correct?: number; why?: string[] }[]
     try {
       const parsed = JSON.parse(jsonText)
-      cards = (Array.isArray(parsed) ? parsed : parsed.cards || [])
+      const lista = (Array.isArray(parsed) ? parsed : parsed.cards || [])
+      cards = lista
         .filter((c: { front?: unknown; back?: unknown }) => typeof c?.front === 'string' && typeof c?.back === 'string')
+        .filter((c: { options?: unknown; correct?: unknown }) =>
+          formato !== 'multiple_choice'
+          || (Array.isArray(c.options) && c.options.length >= 2 && c.options.every((o: unknown) => typeof o === 'string')
+              && typeof c.correct === 'number' && c.correct >= 0 && c.correct < (c.options as string[]).length))
         .slice(0, MAX_CARDS)
     } catch {
       console.error('Resposta não-JSON do modelo:', raw.slice(0, 300))
@@ -243,6 +261,7 @@ serve(async (req) => {
     return json(req, {
       title,
       difficulty: nivel,
+      format: formato,
       cards,
       warnings,
       source: lessons.map(l => ({ id: l.id, title: l.title })),

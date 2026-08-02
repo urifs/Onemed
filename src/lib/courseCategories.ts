@@ -1,7 +1,7 @@
 import {
   HeartPulse, Siren, Pill, Baby, Scissors, ScanLine, Stethoscope, FlaskConical,
   Layers, Bone, BookMarked, ListChecks, GraduationCap, BadgeCheck, Plane, Briefcase, FolderOpen,
-  Star,
+  Star, Sparkles,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -46,4 +46,5 @@ export const CATEGORY_ICON: Record<string, LucideIcon> = {
   'Carreira, Gestão & Marketing': Briefcase,
   'Outros cursos': FolderOpen,
   'Favoritos': Star,
+  'Flashcards': Sparkles,
 };

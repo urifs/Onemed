@@ -18,6 +18,11 @@ export interface GeneratedDeck extends FlashcardDeck {
 
 const MAX_SOURCES = 8;
 
+const FORMATS = [
+  { value: 'classic', label: 'Pergunta e resposta', hint: 'Estilo Anki clássico: pensa e revela' },
+  { value: 'multiple_choice', label: 'Múltipla escolha', hint: '4 alternativas para marcar' },
+] as const;
+
 const DIFFICULTIES = [
   { value: 'basico', label: 'Básico' },
   { value: 'intermediario', label: 'Intermediário' },
@@ -246,6 +251,7 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
 }) {
   const [selected, setSelected] = useState<Map<string, string>>(new Map());
   const [difficulty, setDifficulty] = useState('intermediario');
+  const [format, setFormat] = useState<'classic' | 'multiple_choice'>('classic');
   const [count, setCount] = useState(10);
   const [extraText, setExtraText] = useState('');
   const [showTree, setShowTree] = useState(false);
@@ -277,6 +283,7 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
         body: {
           lessonIds: [...selected.keys()],
           difficulty,
+          format,
           count,
           extraText: extraText.trim() || undefined,
         },
@@ -343,6 +350,28 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
                 <Plus className="w-3.5 h-3.5" /> {showTree ? 'Ocultar cursos' : 'Adicionar mais conteúdo (opcional)'}
               </button>
               {showTree && <div className="mt-2"><ContentTree selected={selected} onToggle={toggle} /></div>}
+            </div>
+
+            {/* formato */}
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Formato</p>
+              <div className="grid grid-cols-2 gap-2">
+                {FORMATS.map(f => (
+                  <button
+                    key={f.value}
+                    type="button"
+                    onClick={() => setFormat(f.value)}
+                    className={`text-left px-3 py-2.5 rounded-lg border transition-colors ${
+                      format === f.value
+                        ? 'bg-primary/15 border-primary/40'
+                        : 'bg-secondary border-border hover:border-primary/25'
+                    }`}
+                  >
+                    <span className={`block text-sm font-medium ${format === f.value ? 'text-primary' : 'text-foreground'}`}>{f.label}</span>
+                    <span className="block text-[11px] text-muted-foreground mt-0.5">{f.hint}</span>
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* dificuldade */}

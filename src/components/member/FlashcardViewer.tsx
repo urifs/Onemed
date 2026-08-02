@@ -1,9 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
-import { X, Save, Check, RotateCcw, Loader2 } from 'lucide-react';
+import { X, Save, Check, RotateCcw, Loader2, ChevronDown } from 'lucide-react';
 
 export interface Flashcard {
   front: string;
   back: string;
+  // Presentes só no formato de múltipla escolha.
+  options?: string[];
+  correct?: number;
+  // Explicação por alternativa (mesma ordem de options): por que está certa/errada.
+  why?: string[];
 }
 
 export interface FlashcardDeck {
@@ -16,11 +21,11 @@ const DIFFICULTY_LABEL: Record<string, string> = {
   basico: 'Básico', intermediario: 'Intermediário', avancado: 'Avançado',
 };
 
-// Sessão de estudo no modelo do Anki: a carta mostra a frente, o aluno pensa,
-// revela o verso e se autoavalia. "Errei" e "Difícil" reenfileiram a carta
-// para reaparecer logo adiante NA MESMA sessão; "Bom" e "Fácil" a dão por
-// vista. A sessão termina quando a fila esvazia.
-const REQUEUE_AHEAD = { errei: 2, dificil: 5 } as const;
+// Errar reenfileira a carta pra reaparecer logo adiante NA MESMA sessão — a
+// sessão só termina quando o aluno acerta todas. O desempenho final, porém, é
+// calculado pela PRIMEIRA tentativa de cada carta: repetir até acertar não
+// melhora a média.
+const REQUEUE_AHEAD = 2;
 
 export function FlashcardViewer({ deck, onClose, onSave, saved, saving }: {
   deck: FlashcardDeck;
@@ -33,53 +38,82 @@ export function FlashcardViewer({ deck, onClose, onSave, saved, saving }: {
   // Fila de índices em deck.cards — reenfileirar é reinserir o índice.
   const [queue, setQueue] = useState<number[]>(() => deck.cards.map((_, i) => i));
   const [revealed, setRevealed] = useState(false);
-  const [seen, setSeen] = useState(0);
-  const [misses, setMisses] = useState(0);
+  // Múltipla escolha: alternativa marcada (null = ainda não marcou).
+  const [picked, setPicked] = useState<number | null>(null);
+  const [showWhy, setShowWhy] = useState(false);
+  // Primeira resposta de cada carta — é daqui que sai a média final.
+  const [firstTry, setFirstTry] = useState<Map<number, boolean>>(new Map());
 
-  const current = queue.length > 0 ? deck.cards[queue[0]] : null;
+  const currentIdx = queue.length > 0 ? queue[0] : null;
+  const current = currentIdx !== null ? deck.cards[currentIdx] : null;
   const total = deck.cards.length;
-  // Progresso pelo nº de cartas distintas já resolvidas (fila pode crescer).
+  const isMcq = !!current?.options?.length;
+
   const resolved = useMemo(() => {
     const pendentes = new Set(queue);
     return deck.cards.filter((_, i) => !pendentes.has(i)).length;
   }, [queue, deck.cards]);
 
-  const answer = (kind: 'errei' | 'dificil' | 'bom' | 'facil') => {
-    if (!current) return;
+  const advance = (correct: boolean) => {
+    if (currentIdx === null) return;
+    setFirstTry(prev => prev.has(currentIdx) ? prev : new Map(prev).set(currentIdx, correct));
     setRevealed(false);
-    setSeen(s => s + 1);
-    if (kind === 'errei') setMisses(m => m + 1);
+    setPicked(null);
+    setShowWhy(false);
     setQueue(q => {
       const [head, ...rest] = q;
-      if (kind === 'bom' || kind === 'facil') return rest;
-      const pos = Math.min(REQUEUE_AHEAD[kind], rest.length);
+      if (correct) return rest;
+      const pos = Math.min(REQUEUE_AHEAD, rest.length);
       return [...rest.slice(0, pos), head, ...rest.slice(pos)];
     });
+  };
+
+  const pick = (idx: number) => {
+    if (!current || picked !== null) return;
+    setPicked(idx);
+    setRevealed(true);
+  };
+
+  const continueMcq = () => {
+    if (!current || picked === null) return;
+    advance(picked === current.correct);
   };
 
   const restart = () => {
     setQueue(deck.cards.map((_, i) => i));
     setRevealed(false);
-    setSeen(0);
-    setMisses(0);
+    setPicked(null);
+    setShowWhy(false);
+    setFirstTry(new Map());
   };
 
-  // Atalhos do Anki: espaço/Enter revela; 1-4 respondem; Esc fecha.
+  // Atalhos: espaço/Enter revela; no avulso 1 Errei / 2 Acertei; na múltipla
+  // escolha 1-4 marcam a alternativa e Enter continua; Esc fecha.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') { onClose(); return; }
       if (!current) return;
+      if (isMcq) {
+        if (picked === null && /^[1-4]$/.test(e.key)) {
+          const idx = Number(e.key) - 1;
+          if (idx < (current.options?.length || 0)) pick(idx);
+          return;
+        }
+        if (picked !== null && (e.key === ' ' || e.key === 'Enter')) { e.preventDefault(); continueMcq(); }
+        return;
+      }
       if (!revealed && (e.key === ' ' || e.key === 'Enter')) { e.preventDefault(); setRevealed(true); return; }
       if (revealed) {
-        if (e.key === '1') answer('errei');
-        else if (e.key === '2') answer('dificil');
-        else if (e.key === '3' || e.key === ' ' || e.key === 'Enter') { e.preventDefault(); answer('bom'); }
-        else if (e.key === '4') answer('facil');
+        if (e.key === '1') advance(false);
+        else if (e.key === '2' || e.key === ' ' || e.key === 'Enter') { e.preventDefault(); advance(true); }
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   });
+
+  const acertosPrimeira = [...firstTry.values()].filter(Boolean).length;
+  const notaFinal = total > 0 ? Math.round((acertosPrimeira / total) * 100) : 0;
 
   return (
     <div className="fixed inset-0 z-[90] bg-background flex flex-col">
@@ -127,54 +161,130 @@ export function FlashcardViewer({ deck, onClose, onSave, saved, saving }: {
 
       {current ? (
         <div className="flex-1 flex flex-col items-center justify-center px-4 sm:px-8 py-6 overflow-y-auto">
-          <button
-            onClick={() => !revealed && setRevealed(true)}
-            className={`w-full max-w-2xl glass rounded-2xl border border-border p-6 sm:p-10 text-left transition-colors ${revealed ? 'cursor-default' : 'hover:border-primary/40 cursor-pointer'}`}
+          <div
+            onClick={() => !isMcq && !revealed && setRevealed(true)}
+            className={`w-full max-w-2xl glass rounded-2xl border border-border p-6 sm:p-8 text-left transition-colors ${!isMcq && !revealed ? 'hover:border-primary/40 cursor-pointer' : ''}`}
           >
             <p className="text-[11px] uppercase tracking-wider font-bold text-muted-foreground mb-3">Pergunta</p>
             <p className="text-lg sm:text-xl font-semibold text-foreground whitespace-pre-wrap leading-relaxed">
               {current.front}
             </p>
 
+            {isMcq && (
+              <div className="mt-5 space-y-2">
+                {current.options!.map((opt, idx) => {
+                  const letra = String.fromCharCode(65 + idx);
+                  const isCorrect = idx === current.correct;
+                  const isPicked = idx === picked;
+                  const cls = picked === null
+                    ? 'bg-secondary border-border hover:border-primary/40 cursor-pointer'
+                    : isCorrect
+                      ? 'bg-accent-success/15 border-accent-success/50 text-accent-success'
+                      : isPicked
+                        ? 'bg-red-600/15 border-red-600/50 text-red-500'
+                        : 'bg-secondary border-border opacity-50';
+                  return (
+                    <button
+                      key={idx}
+                      onClick={() => pick(idx)}
+                      disabled={picked !== null}
+                      className={`w-full flex items-start gap-3 border rounded-xl px-4 py-3 text-left text-sm transition-colors ${cls}`}
+                    >
+                      <span className="font-bold shrink-0">{letra})</span>
+                      <span className="whitespace-pre-wrap">{opt}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
             {revealed && (
               <div className="mt-6 pt-6 border-t border-border">
-                <p className="text-[11px] uppercase tracking-wider font-bold text-primary mb-3">Resposta</p>
+                <p className={`text-[11px] uppercase tracking-wider font-bold mb-3 ${isMcq && picked !== current.correct ? 'text-red-500' : 'text-primary'}`}>
+                  {isMcq
+                    ? (picked === current.correct
+                      ? 'Você acertou!'
+                      : `Você errou — a correta é a ${String.fromCharCode(65 + (current.correct ?? 0))}`)
+                    : 'Resposta'}
+                </p>
                 <p className="text-base sm:text-lg text-foreground/90 whitespace-pre-wrap leading-relaxed">
                   {current.back}
                 </p>
+
+                {/* Por que cada uma das OUTRAS alternativas está errada. */}
+                {isMcq && current.why && current.why.length > 0 && (
+                  <div className="mt-4">
+                    <button
+                      onClick={() => setShowWhy(v => !v)}
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showWhy ? 'rotate-180' : ''}`} />
+                      Por que as outras estão erradas?
+                    </button>
+                    {showWhy && (
+                      <div className="mt-2 space-y-2">
+                        {current.options!.map((_, idx) => {
+                          if (idx === current.correct) return null;
+                          return (
+                            <div key={idx} className="rounded-lg bg-secondary border border-border px-3 py-2 text-sm">
+                              <span className="font-bold text-foreground mr-1">{String.fromCharCode(65 + idx)})</span>
+                              <span className="text-muted-foreground">{current.why![idx] || 'Sem justificativa gerada para esta alternativa.'}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
-          </button>
+          </div>
 
           <div className="mt-6 w-full max-w-2xl">
-            {!revealed ? (
-              <button
-                onClick={() => setRevealed(true)}
-                className="w-full bg-primary hover:bg-primary-hover text-primary-foreground font-semibold py-3 rounded-xl transition-colors"
-              >
-                Mostrar resposta
-              </button>
+            {isMcq ? (
+              picked === null ? (
+                <p className="text-[11px] text-muted-foreground text-center">
+                  Marque uma alternativa · teclas 1-{current.options!.length}
+                </p>
+              ) : (
+                <button
+                  onClick={continueMcq}
+                  className="w-full bg-primary hover:bg-primary-hover text-primary-foreground font-semibold py-3 rounded-xl transition-colors"
+                >
+                  Continuar{picked !== current.correct ? ' · esta carta volta pra fila' : ''}
+                </button>
+              )
+            ) : !revealed ? (
+              <>
+                <button
+                  onClick={() => setRevealed(true)}
+                  className="w-full bg-primary hover:bg-primary-hover text-primary-foreground font-semibold py-3 rounded-xl transition-colors"
+                >
+                  Mostrar resposta
+                </button>
+                <p className="text-[11px] text-muted-foreground text-center mt-3">Espaço revela a resposta</p>
+              </>
             ) : (
-              <div className="grid grid-cols-4 gap-2">
-                {([
-                  ['errei', 'Errei', 'bg-red-600/15 text-red-500 border-red-600/30 hover:bg-red-600/25'],
-                  ['dificil', 'Difícil', 'bg-orange-500/15 text-orange-500 border-orange-500/30 hover:bg-orange-500/25'],
-                  ['bom', 'Bom', 'bg-accent-success/15 text-accent-success border-accent-success/30 hover:bg-accent-success/25'],
-                  ['facil', 'Fácil', 'bg-sky-500/15 text-sky-500 border-sky-500/30 hover:bg-sky-500/25'],
-                ] as const).map(([kind, label, cls]) => (
+              <>
+                {/* Avulso: o aluno se declara — só Errei/Acertei, é disso que
+                    sai a média final. Errar faz a carta voltar pra fila. */}
+                <div className="grid grid-cols-2 gap-2">
                   <button
-                    key={kind}
-                    onClick={() => answer(kind)}
-                    className={`border font-semibold text-sm py-2.5 rounded-xl transition-colors ${cls}`}
+                    onClick={() => advance(false)}
+                    className="border font-semibold text-sm py-3 rounded-xl transition-colors bg-red-600/15 text-red-500 border-red-600/30 hover:bg-red-600/25"
                   >
-                    {label}
+                    Errei
                   </button>
-                ))}
-              </div>
+                  <button
+                    onClick={() => advance(true)}
+                    className="border font-semibold text-sm py-3 rounded-xl transition-colors bg-accent-success/15 text-accent-success border-accent-success/30 hover:bg-accent-success/25"
+                  >
+                    Acertei
+                  </button>
+                </div>
+                <p className="text-[11px] text-muted-foreground text-center mt-3">1 Errei · 2 Acertei</p>
+              </>
             )}
-            <p className="text-[11px] text-muted-foreground text-center mt-3">
-              Espaço revela · 1 Errei · 2 Difícil · 3 Bom · 4 Fácil
-            </p>
           </div>
         </div>
       ) : (
@@ -183,10 +293,16 @@ export function FlashcardViewer({ deck, onClose, onSave, saved, saving }: {
             <Check className="w-6 h-6 text-accent-success" />
           </div>
           <h2 className="font-secondary text-xl font-bold text-foreground mb-1">Sessão concluída!</h2>
-          <p className="text-sm text-muted-foreground mb-6">
-            {total} carta{total !== 1 ? 's' : ''} estudada{total !== 1 ? 's' : ''} em {seen} revisão{seen !== 1 ? 'ões' : ''}
-            {misses > 0 ? ` · ${misses} erro${misses !== 1 ? 's' : ''} refeito${misses !== 1 ? 's' : ''} até acertar` : ' · nenhum erro'}
+
+          {/* Desempenho pela PRIMEIRA tentativa de cada carta. */}
+          <p className={`text-4xl font-bold my-3 ${notaFinal >= 70 ? 'text-accent-success' : notaFinal >= 40 ? 'text-accent-warning' : 'text-red-500'}`}>
+            {notaFinal}%
           </p>
+          <p className="text-sm text-muted-foreground mb-6">
+            Você acertou {acertosPrimeira} de {total} carta{total !== 1 ? 's' : ''} na primeira tentativa
+            {acertosPrimeira < total ? ' — as que errou voltaram até você acertar.' : '.'}
+          </p>
+
           <div className="flex items-center gap-3">
             <button
               onClick={restart}
