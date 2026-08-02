@@ -41,6 +41,13 @@ interface LessonNode {
   module_id: string | null;
 }
 
+interface SearchResult {
+  lesson_id: string;
+  lesson_title: string;
+  lesson_type: string;
+  course_title: string;
+}
+
 // Árvore de cursos para juntar mais conteúdo à geração. Tudo é carregado sob
 // demanda — são 400+ cursos e 200 mil+ aulas, impossível trazer de uma vez:
 // expandir um curso busca os módulos e as aulas soltas dele; expandir um
@@ -56,11 +63,33 @@ function ContentTree({ selected, onToggle }: {
   const [lessonsByKey, setLessonsByKey] = useState<Record<string, LessonNode[]>>({});
   const [loadingKeys, setLoadingKeys] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState('');
+  const [lessonResults, setLessonResults] = useState<SearchResult[]>([]);
+  const [searchingLessons, setSearchingLessons] = useState(false);
 
   useEffect(() => {
     supabase.from('courses').select('id, title').eq('active', true).order('title')
       .then(({ data }) => setCourses((data || []) as CourseNode[]));
   }, []);
+
+  // A busca não filtra só os cursos: procura também AULAS E ARQUIVOS pelo
+  // nome, no banco (mesma search_lessons da busca da página inicial — são
+  // 200 mil+ aulas, impossível filtrar no cliente). Debounce pra não
+  // disparar uma consulta a cada tecla.
+  useEffect(() => {
+    const q = filter.trim();
+    if (!q) { setLessonResults([]); setSearchingLessons(false); return; }
+    let alive = true;
+    setSearchingLessons(true);
+    const timer = setTimeout(() => {
+      supabase.rpc('search_lessons' as never, { _query: q, _limit: 40 } as never)
+        .then(({ data }: { data: unknown }) => {
+          if (!alive) return;
+          setLessonResults(((data || []) as SearchResult[]));
+          setSearchingLessons(false);
+        });
+    }, 350);
+    return () => { alive = false; clearTimeout(timer); };
+  }, [filter]);
 
   const markLoading = (key: string, on: boolean) => setLoadingKeys(prev => {
     const next = new Set(prev);
@@ -122,14 +151,45 @@ function ContentTree({ selected, onToggle }: {
       <input
         value={filter}
         onChange={e => setFilter(e.target.value)}
-        placeholder="Filtrar cursos…"
+        placeholder="Buscar curso, aula ou arquivo…"
         className="w-full bg-secondary px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none border-b border-border"
       />
       <div className="max-h-56 overflow-y-auto p-1.5">
+        {/* Resultados de aulas/arquivos que casam com a busca — seleção direta,
+            sem precisar navegar até a pasta. */}
+        {filter.trim() && (
+          <div className="mb-1.5">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground px-1 py-1">
+              Aulas e arquivos {searchingLessons && <Loader2 className="w-3 h-3 animate-spin inline ml-1" />}
+            </p>
+            {!searchingLessons && lessonResults.length === 0 ? (
+              <p className="text-xs text-muted-foreground px-1 pb-1">Nenhuma aula ou arquivo com esse nome.</p>
+            ) : lessonResults.map(r => {
+              const checked = selected.has(r.lesson_id);
+              const full = !checked && selected.size >= MAX_SOURCES;
+              return (
+                <label key={r.lesson_id} className={`flex items-center gap-2 py-1 pl-1 pr-2 rounded cursor-pointer hover:bg-secondary/60 ${full ? 'opacity-40 cursor-not-allowed' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    disabled={full}
+                    onChange={() => onToggle({ id: r.lesson_id, title: r.lesson_title })}
+                    className="w-3.5 h-3.5 accent-primary shrink-0"
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-xs text-foreground/90 truncate">{r.lesson_title}</span>
+                    <span className="block text-[10px] text-muted-foreground truncate">{r.course_title}</span>
+                  </span>
+                </label>
+              );
+            })}
+            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground px-1 pt-2 pb-1">Cursos</p>
+          </div>
+        )}
         {courses === null ? (
           <div className="flex justify-center py-6"><Loader2 className="w-4 h-4 animate-spin text-muted-foreground" /></div>
         ) : visibleCourses.length === 0 ? (
-          <p className="text-xs text-muted-foreground text-center py-4">Nenhum curso encontrado.</p>
+          <p className="text-xs text-muted-foreground text-center py-4">Nenhum curso com esse nome.</p>
         ) : visibleCourses.map(course => (
           <div key={course.id}>
             <button
