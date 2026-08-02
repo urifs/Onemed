@@ -145,6 +145,15 @@ export async function fetchAllRows<T = any>(
   return all;
 }
 
+// "R$ 49,90" — vírgula decimal e ponto de milhar, como se escreve preço em
+// português. Number.toFixed sozinho devolve "49.90", que não é como o preço
+// aparece em lugar nenhum do site.
+export function formatBRL(value: number | string | null | undefined): string {
+  const n = typeof value === 'string' ? Number(value) : value;
+  if (n == null || !Number.isFinite(n)) return 'R$ 0,00';
+  return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
 export function formatDuration(totalSeconds: number | null | undefined): string {
   if (!totalSeconds || totalSeconds <= 0) return '';
   const h = Math.floor(totalSeconds / 3600);

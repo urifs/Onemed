@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { ArrowRight, Loader2, Crown, Check } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { extractFunctionErrorMessage } from '@/lib/utils';
-import { PLAN_LABELS, PLAN_PRICES, PLAN_FEATURES } from '@/lib/plans';
+import { PLAN_LABELS, PLAN_PRICES, PLAN_FEATURES, upgradePriceFor } from '@/lib/plans';
 
 // Ordem de valor dos planos — upgrade só oferece o que vem DEPOIS do plano
 // atual nessa lista (nunca downgrade).
@@ -21,12 +21,15 @@ interface UpgradePlanModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   currentPlan: string;
-  amountPaid: number;
+  // Mantido por compatibilidade com quem já passa, mas NÃO entra mais no
+  // preço: o upgrade é diferença de tabela, igual pra quem pagou cheio e pra
+  // quem pagou com cupom.
+  amountPaid?: number;
   userEmail: string;
   userName?: string;
 }
 
-export function UpgradePlanModal({ open, onOpenChange, currentPlan, amountPaid, userEmail, userName }: UpgradePlanModalProps) {
+export function UpgradePlanModal({ open, onOpenChange, currentPlan, userEmail, userName }: UpgradePlanModalProps) {
   const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
   const targets = upgradeTargetsFor(currentPlan);
 
@@ -78,17 +81,23 @@ export function UpgradePlanModal({ open, onOpenChange, currentPlan, amountPaid, 
             <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold mb-1">Seu plano atual</p>
             <p className="text-foreground font-semibold">{PLAN_LABELS[currentPlan] || currentPlan}</p>
             <p className="text-sm text-muted-foreground mt-0.5">
-              Você já pagou <span className="text-foreground font-medium">R$ {amountPaid.toFixed(2).replace('.', ',')}</span>
+              Valor de tabela{' '}
+              <span className="text-foreground font-medium">
+                R$ {(PLAN_PRICES[currentPlan] ?? 0).toFixed(2).replace('.', ',')}
+              </span>
+              {' '}— no upgrade você paga só a diferença para o novo plano.
             </p>
           </div>
 
           {targets.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-4">Você já está no plano mais completo. 🎉</p>
+            <p className="text-sm text-muted-foreground text-center py-4">Você já está no plano mais completo.</p>
           ) : (
             <div className="space-y-3">
               {targets.map(targetPlan => {
                 const fullPrice = PLAN_PRICES[targetPlan];
-                const diff = Math.max(fullPrice - amountPaid, 1);
+                // Diferença de TABELA entre os planos, igual pra todo mundo —
+                // quanto a pessoa pagou (com ou sem cupom) não entra na conta.
+                const diff = upgradePriceFor(currentPlan, targetPlan);
                 const currentFeatures = PLAN_FEATURES[currentPlan] || [];
                 const newFeatures = (PLAN_FEATURES[targetPlan] || []).filter(f => !currentFeatures.includes(f));
                 return (

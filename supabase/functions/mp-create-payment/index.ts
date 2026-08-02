@@ -177,15 +177,22 @@ serve(async (req) => {
         || previousBuyer?.plan
         || (activeAccesses || [])[0]?.access_type
 
-      // Se não há valor real pago (acesso concedido manualmente, sem linha
-      // em buyers ou amount zerado), conta como se já tivesse pago o preço
-      // de tabela do plano atual — upgrade nunca cobra o preço cheio, seja
-      // a conta de um comprador de verdade ou de um grant manual do admin.
-      const realAmountPaid = previousBuyer?.amount ? Number(previousBuyer.amount) : 0
-      const alreadyPaid = realAmountPaid > 0 ? realAmountPaid : (currentPlan ? (PLAN_PRICES[currentPlan] ?? 0) : 0)
+      // O upgrade custa a diferença entre os preços de TABELA dos dois planos
+      // — nunca "preço do novo menos o que a pessoa pagou".
+      //
+      // Descontar o valor pago punia justamente quem comprou com cupom: um
+      // Plus adquirido por R$ 299,50 (50% off) fazia o upgrade pro Pro custar
+      // R$ 697,50, contra R$ 398,00 de diferença real entre os planos — e dois
+      // clientes no MESMO plano viam preços diferentes pro MESMO upgrade.
+      // Com a diferença de tabela, o degrau entre dois planos é fixo.
+      //
+      // Também resolve de graça o caso do acesso concedido à mão pelo admin
+      // (sem linha em buyers): não há valor pago pra descontar, e o preço
+      // continua saindo certo.
+      const tabelaAtual = currentPlan ? (PLAN_PRICES[currentPlan] ?? 0) : 0
 
       const MIN_UPGRADE_PRICE = 1.00
-      basePrice = Math.max(basePrice - alreadyPaid, MIN_UPGRADE_PRICE)
+      basePrice = Math.max(basePrice - tabelaAtual, MIN_UPGRADE_PRICE)
     }
 
     // ── 4. Validar cupom no banco (nunca confiar no desconto do cliente) ──────

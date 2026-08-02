@@ -7,6 +7,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
 import { useRequireName } from '@/hooks/useRequireName';
 import { useCommunitySettings } from '@/hooks/useCommunitySettings';
+import { useIsTrial } from '@/hooks/useIsTrial';
+import { CommunityLocked } from '@/components/member/CommunityLocked';
 import { MemberHeader } from '@/components/member/MemberHeader';
 import { NameRequiredModal } from '@/components/member/NameRequiredModal';
 import { CommentThread } from '@/components/member/CommentThread';
@@ -222,6 +224,7 @@ export default function CommunityPage() {
   const { user } = useAuth();
   const { promptOpen, setPromptOpen, ensureName, submitName } = useRequireName();
   const { whatsappGroupUrl } = useCommunitySettings();
+  const { isTrial, loading: trialLoading } = useIsTrial();
   const [items, setItems] = useState<FeedItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -261,11 +264,14 @@ export default function CommunityPage() {
   };
 
   useEffect(() => {
+    // Trial não carrega nada: o servidor recusa os feeds, então buscar só
+    // renderia um erro por trás do bloqueio.
+    if (trialLoading || isTrial) return;
     load(0);
     supabase.from('courses').select('id, title, category').eq('active', true).order('title')
       .then(({ data }) => setCourses((data || []) as CourseOption[]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [trialLoading, isTrial]);
 
   const handleRetry = () => { setLoading(true); load(0); };
   const handleLoadMore = () => { setLoadingMore(true); load(items.length); };
@@ -312,6 +318,27 @@ export default function CommunityPage() {
   const handleItemUpdated = (id: string, patch: Partial<FeedItem>) => {
     setItems(prev => prev.map(it => it.id === id ? { ...it, ...patch } : it));
   };
+
+  // Trial vê o título normal e o bloqueio no lugar do feed — nada de conteúdo
+  // da comunidade é buscado nem renderizado.
+  if (!trialLoading && isTrial) {
+    return (
+      <div className="min-h-screen bg-background">
+        <MemberHeader />
+        <div className="max-w-2xl mx-auto px-4 md:px-0 py-8 space-y-6">
+          <div>
+            <h1 className="font-secondary text-2xl font-bold text-foreground flex items-center gap-2">
+              <MessageCircle className="w-6 h-6 text-primary" /> Comunidade
+            </h1>
+            <p className="text-muted-foreground text-sm mt-1">
+              Dúvidas e comentários de todos os cursos e conteúdos, num só lugar.
+            </p>
+          </div>
+          <CommunityLocked />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">

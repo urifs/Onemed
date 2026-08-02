@@ -29,6 +29,9 @@ import BuyersPage from "./pages/BuyersPage";
 import TrialUsersPage from "./pages/TrialUsersPage";
 import CouponsPage from "./pages/CouponsPage";
 import AdminCommunityPage from "./pages/AdminCommunityPage";
+import StorePage from "./pages/StorePage";
+import StoreAdminPage from "./pages/StoreAdminPage";
+import FlashcardsAdminPage from "./pages/FlashcardsAdminPage";
 import AnnouncementsPage from "./pages/AnnouncementsPage";
 import TermsPage from "./pages/TermsPage";
 import PrivacyPage from "./pages/PrivacyPage";
@@ -45,6 +48,8 @@ import { PILLAR_HUBS, isNoIndexPath } from "@/seo/siteConfig";
 import { Seo } from "@/seo/Seo";
 import WhatsAppButton from "./components/WhatsAppButton";
 import { KickedOutModal } from "./components/member/KickedOutModal";
+import { AccessExpiredScreen } from "./components/member/AccessExpiredScreen";
+import { useMemberStatus } from "@/hooks/useMemberStatus";
 
 const queryClient = new QueryClient();
 
@@ -106,12 +111,26 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 
 const MemberProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
-  if (loading) return (
+  const { status, lastType, expiredAt, loading: statusLoading } = useMemberStatus();
+
+  const spinner = (
     <div className="flex min-h-screen items-center justify-center bg-background">
       <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
     </div>
   );
+
+  if (loading) return spinner;
   if (!user) return <Navigate to="/login" replace />;
+  if (statusLoading) return spinner;
+
+  // A sessão do navegador sobrevive ao fim do teste grátis — sem isto, o
+  // aluno fica dentro de uma plataforma vazia, sem explicação nem caminho
+  // pra comprar. `status` nulo é consulta que falhou: deixa passar (o
+  // conteúdo continua protegido pela RLS).
+  if (status === 'expired' || status === 'none') {
+    return <AccessExpiredScreen lastType={lastType} expiredAt={expiredAt} />;
+  }
+
   return <>{children}</>;
 };
 
@@ -149,6 +168,7 @@ const App = () => (
             <Route path="/membros" element={<MemberProtectedRoute><MemberDashboardPage /></MemberProtectedRoute>} />
             <Route path="/membros/curso/:slug" element={<MemberProtectedRoute><CourseDetailPage /></MemberProtectedRoute>} />
             <Route path="/membros/comunidade" element={<MemberProtectedRoute><CommunityPage /></MemberProtectedRoute>} />
+            <Route path="/membros/loja" element={<MemberProtectedRoute><StorePage /></MemberProtectedRoute>} />
 
             {/* Protected admin routes */}
             <Route path="/admin" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
@@ -159,6 +179,8 @@ const App = () => (
             <Route path="/admin/trials" element={<ProtectedRoute><TrialUsersPage /></ProtectedRoute>} />
             <Route path="/admin/coupons" element={<ProtectedRoute><CouponsPage /></ProtectedRoute>} />
             <Route path="/admin/comunidade" element={<ProtectedRoute><AdminCommunityPage /></ProtectedRoute>} />
+            <Route path="/admin/loja" element={<ProtectedRoute><StoreAdminPage /></ProtectedRoute>} />
+            <Route path="/admin/flashcards" element={<ProtectedRoute><FlashcardsAdminPage /></ProtectedRoute>} />
             <Route path="/admin/avisos" element={<ProtectedRoute><AnnouncementsPage /></ProtectedRoute>} />
             <Route path="/admin/database" element={<ProtectedRoute><DatabasePage /></ProtectedRoute>} />
             <Route path="/admin/email-campaign" element={<ProtectedRoute><EmailCampaignPage /></ProtectedRoute>} />

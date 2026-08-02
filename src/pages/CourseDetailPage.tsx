@@ -3,7 +3,7 @@ import { useNavigate, useParams, useSearchParams, Link } from 'react-router-dom'
 import { toast } from 'sonner';
 import {
   ArrowLeft, Play, FileText, File, Music, Image as ImageIcon, CheckCircle2, Clock,
-  FileSpreadsheet, FileType, Star, ListOrdered, Menu, X, Check, Download, Loader2,
+  FileSpreadsheet, FileType, Star, ListOrdered, Menu, X, Check, Download, Loader2, ExternalLink, SquareStack, ClipboardList, ChevronDown,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
@@ -17,6 +17,15 @@ import {
   formatDuration, formatFileSize, matchesSearch, stripYearFromTitle, withTimeout, withRetry, describeLoadError,
 } from '@/lib/utils';
 import { downloadLesson } from '@/lib/lessonDownload';
+import { openLessonInNewTab } from '@/lib/lessonOpen';
+import { FlashcardGeneratorModal, type FlashcardSource, type GeneratedDeck } from '@/components/member/FlashcardGeneratorModal';
+import { FlashcardViewer } from '@/components/member/FlashcardViewer';
+import { QuestionBankViewer } from '@/components/member/QuestionBankViewer';
+import { DownloadUpsellModal } from '@/components/member/DownloadUpsellModal';
+import { useDownloadGate } from '@/hooks/useDownloadGate';
+import { useMemberStatus } from '@/hooks/useMemberStatus';
+import { setOpenLesson } from '@/lib/assistantContext';
+import { AiUpsellModal } from '@/components/member/AiUpsellModal';
 import { CourseTree } from '@/components/member/CourseTree';
 import type { Database } from '@/integrations/supabase/types';
 
@@ -100,6 +109,79 @@ export default function CourseDetailPage() {
   // Qual aula está sendo baixada agora (spinner no ícone da linha). O
   // download é um de cada vez, por item — não existe mais seleção em massa.
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [openingId, setOpeningId] = useState<string | null>(null);
+
+  // Gerador de flashcards por IA: abre com a aula clicada já selecionada.
+  const [fcOpen, setFcOpen] = useState(false);
+  const [fcSources, setFcSources] = useState<FlashcardSource[]>([]);
+  const [fcDeck, setFcDeck] = useState<GeneratedDeck | null>(null);
+  const [fcSaved, setFcSaved] = useState(false);
+  const [fcSavedId, setFcSavedId] = useState<string | null>(null);
+  const [fcSaving, setFcSaving] = useState(false);
+
+  const openFlashcards = (lesson: Lesson) => {
+    if (!podeGerarIa) { setAiUpsell('flashcards'); return; }
+    setFcSources([{ id: lesson.id, title: lesson.title }]);
+    setFcOpen(true);
+  };
+
+  // Banco de questões: mesmo gerador em modo 'questions', visualizador de prova.
+  const [qbOpen, setQbOpen] = useState(false);
+  const [qbSources, setQbSources] = useState<FlashcardSource[]>([]);
+  const [qbBank, setQbBank] = useState<GeneratedDeck | null>(null);
+  const [qbSaved, setQbSaved] = useState(false);
+  const [qbSavedId, setQbSavedId] = useState<string | null>(null);
+  const [qbSaving, setQbSaving] = useState(false);
+
+  const openQuestions = (lesson: Lesson) => {
+    if (!podeGerarIa) { setAiUpsell('questoes'); return; }
+    setQbSources([{ id: lesson.id, title: lesson.title }]);
+    setQbOpen(true);
+  };
+
+  const saveBank = async () => {
+    if (!qbBank || !user || qbSaved || qbSaving) return;
+    setQbSaving(true);
+    const { data: savedRow, error } = await (supabase as any).from('question_banks').insert({
+      user_id: user.id,
+      title: qbBank.title,
+      difficulty: qbBank.difficulty,
+      questions: qbBank.cards,
+      source: qbBank.source,
+    }).select('id').single();
+    setQbSaving(false);
+    if (error) { toast.error('Não foi possível salvar o banco de questões'); return; }
+    setQbSavedId(savedRow?.id || null);
+    setQbSaved(true);
+    toast.success('Banco salvo! Ele fica na aba Banco de Questões, na página inicial.');
+  };
+
+  const saveDeck = async () => {
+    if (!fcDeck || !user || fcSaved || fcSaving) return;
+    setFcSaving(true);
+    const { data: savedRow, error } = await (supabase as any).from('flashcard_decks').insert({
+      user_id: user.id,
+      title: fcDeck.title,
+      difficulty: fcDeck.difficulty,
+      cards: fcDeck.cards,
+      source: fcDeck.source,
+    }).select('id').single();
+    setFcSaving(false);
+    if (error) { toast.error('Não foi possível salvar o baralho'); return; }
+    setFcSavedId(savedRow?.id || null);
+    setFcSaved(true);
+    toast.success('Baralho salvo! Ele fica na aba Flashcards, na página inicial.');
+  };
+
+  // Teste grátis não baixa nada; Mensal e Anual também não — o clique abre o
+  // convite pra assinar/fazer upgrade em vez de baixar.
+  const { upsellOpen, setUpsellOpen, ensureCanDownload, reason: downloadReason, plan: downloadPlan } = useDownloadGate();
+
+  // Mensal não gera flashcards nem banco de questões — clique abre o convite
+  // de upgrade. A mesma consulta de plano do porteiro do download (em cache).
+  const { plan: memberPlan } = useMemberStatus();
+  const [aiUpsell, setAiUpsell] = useState<null | 'flashcards' | 'questoes'>(null);
+  const podeGerarIa = memberPlan !== 'monthly';
 
   useEffect(() => {
     let alive = true;
@@ -298,6 +380,7 @@ export default function CourseDetailPage() {
 
   // Baixar direto da lista, sem precisar abrir a aula.
   const handleDownloadLesson = async (lesson: Lesson) => {
+    if (!ensureCanDownload()) return;
     if (downloadingId) return;
     setDownloadingId(lesson.id);
     try {
@@ -309,6 +392,37 @@ export default function CourseDetailPage() {
       setDownloadingId(null);
     }
   };
+
+  // Abrir em outra aba: é leitura, o mesmo conteúdo que já toca no player —
+  // por isso não passa pelo porteiro do download.
+  const handleOpenLesson = async (lesson: Lesson) => {
+    if (openingId) return;
+    setOpeningId(lesson.id);
+    try {
+      await openLessonInNewTab(lesson);
+    } catch (err: any) {
+      toast.error(err?.message || `Não foi possível abrir "${lesson.title}"`);
+    } finally {
+      setOpeningId(null);
+    }
+  };
+
+  // Publica pro assistente flutuante qual aula/arquivo está aberto AGORA.
+  // Nada é enviado à IA por abrir — o widget só usa isso quando o aluno
+  // manda uma pergunta.
+  useEffect(() => {
+    if (activeLesson && course) {
+      setOpenLesson({
+        id: activeLesson.id,
+        title: activeLesson.title,
+        type: activeLesson.type,
+        courseTitle: course.title,
+      });
+    } else {
+      setOpenLesson(null);
+    }
+    return () => setOpenLesson(null);
+  }, [activeLesson, course]);
 
   const activeIndex = activeLesson ? activeOrderedLessons.findIndex(l => l.id === activeLesson.id) : -1;
 
@@ -447,6 +561,9 @@ export default function CourseDetailPage() {
                   favoriteIds={favoriteLessonIds} onToggleFavorite={handleToggleLessonFavorite}
                   onToggleCompleted={handleToggleCompleted}
                   onDownload={handleDownloadLesson} downloadingId={downloadingId}
+                  onOpenExternal={handleOpenLesson} openingId={openingId}
+                  onGenerateFlashcards={openFlashcards}
+                  onGenerateQuestions={openQuestions}
                 />
               </>
             ) : tab === 'arquivos' ? (
@@ -465,6 +582,9 @@ export default function CourseDetailPage() {
                   favoriteIds={favoriteLessonIds} onToggleFavorite={handleToggleLessonFavorite}
                   onToggleCompleted={handleToggleCompleted}
                   onDownload={handleDownloadLesson} downloadingId={downloadingId}
+                  onOpenExternal={handleOpenLesson} openingId={openingId}
+                  onGenerateFlashcards={openFlashcards}
+                  onGenerateQuestions={openQuestions}
                 />
               </>
             ) : (
@@ -487,6 +607,47 @@ export default function CourseDetailPage() {
           hasNext={activeIndex >= 0 && activeIndex < activeOrderedLessons.length - 1}
           onPrev={() => activeIndex > 0 && setActiveLesson(activeOrderedLessons[activeIndex - 1])}
           onNext={() => activeIndex < activeOrderedLessons.length - 1 && setActiveLesson(activeOrderedLessons[activeIndex + 1])}
+          onGenerateFlashcards={() => openFlashcards(activeLesson)}
+          onGenerateQuestions={() => openQuestions(activeLesson)}
+        />
+      )}
+
+      <DownloadUpsellModal open={upsellOpen} onOpenChange={setUpsellOpen} reason={downloadReason} plan={downloadPlan} />
+      {aiUpsell && (
+        <AiUpsellModal open onOpenChange={(o) => { if (!o) setAiUpsell(null); }} feature={aiUpsell} />
+      )}
+
+      <FlashcardGeneratorModal
+        open={fcOpen}
+        onOpenChange={setFcOpen}
+        initialSources={fcSources}
+        onGenerated={(deck) => { setFcDeck(deck); setFcSaved(false); setFcSavedId(null); }}
+      />
+      <FlashcardGeneratorModal
+        mode="questions"
+        open={qbOpen}
+        onOpenChange={setQbOpen}
+        initialSources={qbSources}
+        onGenerated={(deck) => { setQbBank(deck); setQbSaved(false); setQbSavedId(null); }}
+      />
+      {qbBank && (
+        <QuestionBankViewer
+          bank={{ title: qbBank.title, difficulty: qbBank.difficulty, questions: qbBank.cards }}
+          bankId={qbSavedId}
+          onClose={() => setQbBank(null)}
+          onSave={saveBank}
+          saved={qbSaved}
+          saving={qbSaving}
+        />
+      )}
+      {fcDeck && (
+        <FlashcardViewer
+          deck={fcDeck}
+          deckId={fcSavedId}
+          onClose={() => setFcDeck(null)}
+          onSave={saveDeck}
+          saved={fcSaved}
+          saving={fcSaving}
         />
       )}
     </div>
@@ -568,7 +729,7 @@ function CourseSummarySidebar({
 
 function LessonGroupList({
   groups, progressMap, onSelect, favoriteIds, onToggleFavorite,
-  onToggleCompleted, onDownload, downloadingId,
+  onToggleCompleted, onDownload, downloadingId, onOpenExternal, openingId, onGenerateFlashcards, onGenerateQuestions,
 }: {
   groups: { id: string; title: string; lessons: Lesson[] }[];
   progressMap: Record<string, Progress>;
@@ -578,7 +739,14 @@ function LessonGroupList({
   onToggleCompleted?: (lesson: Lesson, completed: boolean) => void;
   onDownload?: (lesson: Lesson) => void;
   downloadingId?: string | null;
+  onOpenExternal?: (lesson: Lesson) => void;
+  openingId?: string | null;
+  onGenerateFlashcards?: (lesson: Lesson) => void;
+  onGenerateQuestions?: (lesson: Lesson) => void;
 }) {
+  // Mobile: as ações ficam atrás de uma seta por linha — com todas visíveis,
+  // os ícones engoliam o título da aula em telas estreitas.
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   return (
     <div className="space-y-8">
       {groups.map(group => (
@@ -599,7 +767,8 @@ function LessonGroupList({
                 // Não é <button> — dentro tem vários controles clicáveis
                 // independentes (abrir, baixar, concluir, favoritar), e botão
                 // aninhado dentro de botão é HTML inválido.
-                <div key={lesson.id} className="w-full flex items-center gap-3.5 px-4 py-3.5 bg-card hover:bg-secondary transition-colors group">
+                <div key={lesson.id}>
+                <div className="w-full flex items-center gap-3.5 px-4 py-3.5 bg-card hover:bg-secondary transition-colors group">
                   <button
                     onClick={() => onSelect(lesson)}
                     className="flex-1 min-w-0 flex items-center gap-3.5 text-left"
@@ -623,29 +792,64 @@ function LessonGroupList({
                       {lesson.type === 'video' ? formatDuration(lesson.duration_seconds) : formatFileSize(lesson.size_bytes)}
                     </span>
                   </button>
-                  {/* Baixar sem precisar abrir. Vale pra aula em vídeo do
-                      mesmo jeito que pra PDF — o arquivo sai com o nome e a
-                      extensão que aparecem aqui na lista. */}
-                  <button
-                    onClick={() => onDownload?.(lesson)}
-                    disabled={!!downloadingId}
-                    className="shrink-0 p-1.5 rounded-lg text-muted-foreground/50 hover:text-primary hover:bg-primary/10 disabled:opacity-40 transition-colors"
-                    title={`Baixar "${lesson.title}"`}
-                    aria-label={`Baixar ${lesson.title}`}
-                  >
-                    {isDownloading
-                      ? <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                      : <Download className="w-4 h-4" />}
-                  </button>
-                  {/* Caixa de concluída: vale pra qualquer tipo. Antes só
-                      vídeo virava "assistido" (pelos 92% de reprodução) — PDF,
-                      apostila e imagem não tinham como ser marcados. */}
+                  {/* Desktop: ações visíveis na linha, como sempre. */}
+                  <div className="hidden md:flex items-center gap-0.5">
+                    <button
+                      onClick={() => onDownload?.(lesson)}
+                      disabled={!!downloadingId}
+                      className="shrink-0 p-1.5 rounded-lg text-muted-foreground/50 hover:text-primary hover:bg-primary/10 disabled:opacity-40 transition-colors"
+                      title={`Baixar "${lesson.title}"`}
+                      aria-label={`Baixar ${lesson.title}`}
+                    >
+                      {isDownloading
+                        ? <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                        : <Download className="w-4 h-4" />}
+                    </button>
+                    <button
+                      onClick={() => onOpenExternal?.(lesson)}
+                      disabled={openingId === lesson.id}
+                      className="shrink-0 p-1.5 rounded-lg text-muted-foreground/50 hover:text-primary hover:bg-primary/10 disabled:opacity-40 transition-colors"
+                      title={`Abrir "${lesson.title}" em outra aba`}
+                      aria-label={`Abrir ${lesson.title} em outra aba`}
+                    >
+                      {openingId === lesson.id
+                        ? <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                        : <ExternalLink className="w-4 h-4" />}
+                    </button>
+                    <button
+                      onClick={() => onGenerateFlashcards?.(lesson)}
+                      className="shrink-0 p-1.5 rounded-lg text-muted-foreground/50 hover:text-primary hover:bg-primary/10 transition-colors"
+                      title={`Gerar flashcards de "${lesson.title}"`}
+                      aria-label={`Gerar flashcards de ${lesson.title}`}
+                    >
+                      <SquareStack className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => onGenerateQuestions?.(lesson)}
+                      className="shrink-0 p-1.5 rounded-lg text-muted-foreground/50 hover:text-primary hover:bg-primary/10 transition-colors"
+                      title={`Gerar banco de questões de "${lesson.title}"`}
+                      aria-label={`Gerar banco de questões de ${lesson.title}`}
+                    >
+                      <ClipboardList className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => onToggleFavorite?.(lesson)}
+                      className={`shrink-0 p-1.5 rounded-lg transition-colors ${isLessonFavorite ? 'text-accent-warning' : 'text-muted-foreground/30 hover:text-muted-foreground'}`}
+                      title={isLessonFavorite ? 'Remover dos favoritos' : 'Favoritar'}
+                    >
+                      <Star className="w-4 h-4" fill={isLessonFavorite ? 'currentColor' : 'none'} />
+                    </button>
+                  </div>
+
+                  {/* Caixa de concluída — única ação sempre visível, em
+                      qualquer tamanho de tela. Fundo e check aparente mesmo
+                      desmarcada, pra não parecer um buraco na linha. */}
                   <button
                     onClick={() => onToggleCompleted?.(lesson, !p?.completed)}
-                    className={`shrink-0 w-6 h-6 rounded-md border-2 flex items-center justify-center transition-colors ${
+                    className={`shrink-0 w-6 h-6 rounded-md border flex items-center justify-center transition-all ${
                       p?.completed
-                        ? 'bg-accent-success border-accent-success text-white'
-                        : 'border-muted-foreground/30 hover:border-accent-success text-transparent'
+                        ? 'bg-accent-success border-accent-success text-white shadow-sm'
+                        : 'bg-secondary border-muted-foreground/30 text-muted-foreground/40 hover:border-accent-success hover:text-accent-success'
                     }`}
                     title={p?.completed ? 'Marcar como não concluída' : 'Marcar como concluída'}
                     aria-pressed={!!p?.completed}
@@ -653,13 +857,39 @@ function LessonGroupList({
                   >
                     <Check className="w-3.5 h-3.5" strokeWidth={3} />
                   </button>
+
+                  {/* Mobile: seta que expande as demais ações. */}
                   <button
-                    onClick={() => onToggleFavorite?.(lesson)}
-                    className={`shrink-0 p-1.5 rounded-lg transition-colors ${isLessonFavorite ? 'text-accent-warning' : 'text-muted-foreground/30 hover:text-muted-foreground'}`}
-                    title={isLessonFavorite ? 'Remover dos favoritos' : 'Favoritar'}
+                    onClick={() => setExpandedId(expandedId === lesson.id ? null : lesson.id)}
+                    className="md:hidden shrink-0 p-1.5 rounded-lg text-muted-foreground/60 hover:text-foreground transition-colors"
+                    title="Mais ações"
+                    aria-expanded={expandedId === lesson.id}
+                    aria-label={`Mais ações de ${lesson.title}`}
                   >
-                    <Star className="w-4 h-4" fill={isLessonFavorite ? 'currentColor' : 'none'} />
+                    <ChevronDown className={`w-4 h-4 transition-transform ${expandedId === lesson.id ? 'rotate-180' : ''}`} />
                   </button>
+                </div>
+
+                {expandedId === lesson.id && (
+                  <div className="md:hidden flex items-stretch gap-2 px-4 pb-3 bg-card">
+                    {[
+                      { rot: 'Baixar', act: () => onDownload?.(lesson), icon: isDownloading ? Loader2 : Download, spin: isDownloading },
+                      { rot: 'Outra aba', act: () => onOpenExternal?.(lesson), icon: openingId === lesson.id ? Loader2 : ExternalLink, spin: openingId === lesson.id },
+                      { rot: 'Flashcards', act: () => onGenerateFlashcards?.(lesson), icon: SquareStack, spin: false },
+                      { rot: 'Questões', act: () => onGenerateQuestions?.(lesson), icon: ClipboardList, spin: false },
+                      { rot: isLessonFavorite ? 'Favorito' : 'Favoritar', act: () => onToggleFavorite?.(lesson), icon: Star, spin: false, fav: isLessonFavorite },
+                    ].map(({ rot, act, icon: ActionIcon, spin, fav }) => (
+                      <button
+                        key={rot}
+                        onClick={act}
+                        className={`flex-1 flex flex-col items-center gap-1 rounded-lg border border-border bg-secondary py-2 text-[11px] font-medium transition-colors ${fav ? 'text-accent-warning' : 'text-muted-foreground hover:text-foreground'}`}
+                      >
+                        <ActionIcon className={`w-4 h-4 ${spin ? 'animate-spin' : ''}`} fill={fav ? 'currentColor' : 'none'} />
+                        {rot}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 </div>
               );
             })}

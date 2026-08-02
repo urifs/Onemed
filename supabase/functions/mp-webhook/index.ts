@@ -367,6 +367,35 @@ serve(async (req) => {
     console.log('Buyer found:', buyer?.id, 'email:', buyer?.email, 'externalRef:', externalRef)
 
     if (!buyer) {
+      // Pode ser uma compra da LOJA de recursos avulsos (store-create-payment):
+      // mesmo checkout, mesma referência externa, só que o pedido vive em
+      // store_orders. Só entra aqui quando não é uma compra de plano — o fluxo
+      // de assinatura acima não muda em nada.
+      const { data: orderRows } = await supabase
+        .from('store_orders')
+        .select('id, status, product_name, email')
+        .eq('external_reference', externalRef)
+
+      const order = orderRows?.[0] || null
+      if (order) {
+        const patch: Record<string, unknown> = { status, payment_id: String(paymentId) }
+        if (status === 'approved') patch.paid_at = new Date().toISOString()
+
+        // `.neq('status','approved')` é a trava de idempotência: o MP reenvia
+        // o mesmo aviso várias vezes, e um pedido já aprovado não pode ter a
+        // data de pagamento reescrita a cada reenvio.
+        const { error: orderErr } = await supabase
+          .from('store_orders')
+          .update(patch)
+          .eq('id', order.id)
+          .neq('status', 'approved')
+
+        if (orderErr) console.error('Erro ao atualizar pedido da loja:', orderErr.message)
+        else console.log('Pedido da loja atualizado:', order.id, order.product_name, '->', status)
+
+        return new Response('ok', { headers: getCorsHeaders(req) })
+      }
+
       console.log('No buyer found for external_reference:', externalRef, '— skipping access grant')
       return new Response('ok', { headers: getCorsHeaders(req) })
     }
