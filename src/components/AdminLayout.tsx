@@ -21,7 +21,7 @@ import {
   GraduationCap,
   Megaphone,
   ShoppingBag,
-  Sparkles,
+  Layers,
 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -39,7 +39,7 @@ const navItems = [
   { path: '/admin/comunidade', label: 'Comunidade', icon: MessagesSquare },
   { path: '/admin/avisos', label: 'Avisos', icon: Megaphone },
   { path: '/admin/loja', label: 'Loja', icon: ShoppingBag },
-  { path: '/admin/flashcards', label: 'Flashcards', icon: Sparkles },
+  { path: '/admin/flashcards', label: 'Flashcards', icon: Layers },
   { path: '/admin/drive', label: 'Google Drive', icon: FolderOpen },
   { path: '/admin/email-campaign', label: 'Campanha Email', icon: Mail },
   { path: '/admin/sms', label: 'SMS', icon: Smartphone },

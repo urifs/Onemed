@@ -3,7 +3,7 @@ import { useNavigate, useParams, useSearchParams, Link } from 'react-router-dom'
 import { toast } from 'sonner';
 import {
   ArrowLeft, Play, FileText, File, Music, Image as ImageIcon, CheckCircle2, Clock,
-  FileSpreadsheet, FileType, Star, ListOrdered, Menu, X, Check, Download, Loader2, ExternalLink, Sparkles, ChevronDown,
+  FileSpreadsheet, FileType, Star, ListOrdered, Menu, X, Check, Download, Loader2, ExternalLink, SquareStack, ClipboardList, ChevronDown,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
@@ -20,6 +20,7 @@ import { downloadLesson } from '@/lib/lessonDownload';
 import { openLessonInNewTab } from '@/lib/lessonOpen';
 import { FlashcardGeneratorModal, type FlashcardSource, type GeneratedDeck } from '@/components/member/FlashcardGeneratorModal';
 import { FlashcardViewer } from '@/components/member/FlashcardViewer';
+import { QuestionBankViewer } from '@/components/member/QuestionBankViewer';
 import { DownloadUpsellModal } from '@/components/member/DownloadUpsellModal';
 import { useDownloadGate } from '@/hooks/useDownloadGate';
 import { CourseTree } from '@/components/member/CourseTree';
@@ -118,6 +119,36 @@ export default function CourseDetailPage() {
   const openFlashcards = (lesson: Lesson) => {
     setFcSources([{ id: lesson.id, title: lesson.title }]);
     setFcOpen(true);
+  };
+
+  // Banco de questões: mesmo gerador em modo 'questions', visualizador de prova.
+  const [qbOpen, setQbOpen] = useState(false);
+  const [qbSources, setQbSources] = useState<FlashcardSource[]>([]);
+  const [qbBank, setQbBank] = useState<GeneratedDeck | null>(null);
+  const [qbSaved, setQbSaved] = useState(false);
+  const [qbSavedId, setQbSavedId] = useState<string | null>(null);
+  const [qbSaving, setQbSaving] = useState(false);
+
+  const openQuestions = (lesson: Lesson) => {
+    setQbSources([{ id: lesson.id, title: lesson.title }]);
+    setQbOpen(true);
+  };
+
+  const saveBank = async () => {
+    if (!qbBank || !user || qbSaved || qbSaving) return;
+    setQbSaving(true);
+    const { data: savedRow, error } = await (supabase as any).from('question_banks').insert({
+      user_id: user.id,
+      title: qbBank.title,
+      difficulty: qbBank.difficulty,
+      questions: qbBank.cards,
+      source: qbBank.source,
+    }).select('id').single();
+    setQbSaving(false);
+    if (error) { toast.error('Não foi possível salvar o banco de questões'); return; }
+    setQbSavedId(savedRow?.id || null);
+    setQbSaved(true);
+    toast.success('Banco salvo! Ele fica na aba Banco de Questões, na página inicial.');
   };
 
   const saveDeck = async () => {
@@ -504,6 +535,7 @@ export default function CourseDetailPage() {
                   onDownload={handleDownloadLesson} downloadingId={downloadingId}
                   onOpenExternal={handleOpenLesson} openingId={openingId}
                   onGenerateFlashcards={openFlashcards}
+                  onGenerateQuestions={openQuestions}
                 />
               </>
             ) : tab === 'arquivos' ? (
@@ -524,6 +556,7 @@ export default function CourseDetailPage() {
                   onDownload={handleDownloadLesson} downloadingId={downloadingId}
                   onOpenExternal={handleOpenLesson} openingId={openingId}
                   onGenerateFlashcards={openFlashcards}
+                  onGenerateQuestions={openQuestions}
                 />
               </>
             ) : (
@@ -547,6 +580,7 @@ export default function CourseDetailPage() {
           onPrev={() => activeIndex > 0 && setActiveLesson(activeOrderedLessons[activeIndex - 1])}
           onNext={() => activeIndex < activeOrderedLessons.length - 1 && setActiveLesson(activeOrderedLessons[activeIndex + 1])}
           onGenerateFlashcards={() => openFlashcards(activeLesson)}
+          onGenerateQuestions={() => openQuestions(activeLesson)}
         />
       )}
 
@@ -558,6 +592,23 @@ export default function CourseDetailPage() {
         initialSources={fcSources}
         onGenerated={(deck) => { setFcDeck(deck); setFcSaved(false); setFcSavedId(null); }}
       />
+      <FlashcardGeneratorModal
+        mode="questions"
+        open={qbOpen}
+        onOpenChange={setQbOpen}
+        initialSources={qbSources}
+        onGenerated={(deck) => { setQbBank(deck); setQbSaved(false); setQbSavedId(null); }}
+      />
+      {qbBank && (
+        <QuestionBankViewer
+          bank={{ title: qbBank.title, difficulty: qbBank.difficulty, questions: qbBank.cards }}
+          bankId={qbSavedId}
+          onClose={() => setQbBank(null)}
+          onSave={saveBank}
+          saved={qbSaved}
+          saving={qbSaving}
+        />
+      )}
       {fcDeck && (
         <FlashcardViewer
           deck={fcDeck}
@@ -647,7 +698,7 @@ function CourseSummarySidebar({
 
 function LessonGroupList({
   groups, progressMap, onSelect, favoriteIds, onToggleFavorite,
-  onToggleCompleted, onDownload, downloadingId, onOpenExternal, openingId, onGenerateFlashcards,
+  onToggleCompleted, onDownload, downloadingId, onOpenExternal, openingId, onGenerateFlashcards, onGenerateQuestions,
 }: {
   groups: { id: string; title: string; lessons: Lesson[] }[];
   progressMap: Record<string, Progress>;
@@ -660,6 +711,7 @@ function LessonGroupList({
   onOpenExternal?: (lesson: Lesson) => void;
   openingId?: string | null;
   onGenerateFlashcards?: (lesson: Lesson) => void;
+  onGenerateQuestions?: (lesson: Lesson) => void;
 }) {
   // Mobile: as ações ficam atrás de uma seta por linha — com todas visíveis,
   // os ícones engoliam o título da aula em telas estreitas.
@@ -739,7 +791,15 @@ function LessonGroupList({
                       title={`Gerar flashcards de "${lesson.title}"`}
                       aria-label={`Gerar flashcards de ${lesson.title}`}
                     >
-                      <Sparkles className="w-4 h-4" />
+                      <SquareStack className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => onGenerateQuestions?.(lesson)}
+                      className="shrink-0 p-1.5 rounded-lg text-muted-foreground/50 hover:text-primary hover:bg-primary/10 transition-colors"
+                      title={`Gerar banco de questões de "${lesson.title}"`}
+                      aria-label={`Gerar banco de questões de ${lesson.title}`}
+                    >
+                      <ClipboardList className="w-4 h-4" />
                     </button>
                     <button
                       onClick={() => onToggleFavorite?.(lesson)}
@@ -784,7 +844,8 @@ function LessonGroupList({
                     {[
                       { rot: 'Baixar', act: () => onDownload?.(lesson), icon: isDownloading ? Loader2 : Download, spin: isDownloading },
                       { rot: 'Outra aba', act: () => onOpenExternal?.(lesson), icon: openingId === lesson.id ? Loader2 : ExternalLink, spin: openingId === lesson.id },
-                      { rot: 'Flashcards', act: () => onGenerateFlashcards?.(lesson), icon: Sparkles, spin: false },
+                      { rot: 'Flashcards', act: () => onGenerateFlashcards?.(lesson), icon: SquareStack, spin: false },
+                      { rot: 'Questões', act: () => onGenerateQuestions?.(lesson), icon: ClipboardList, spin: false },
                       { rot: isLessonFavorite ? 'Favorito' : 'Favoritar', act: () => onToggleFavorite?.(lesson), icon: Star, spin: false, fav: isLessonFavorite },
                     ].map(({ rot, act, icon: ActionIcon, spin, fav }) => (
                       <button

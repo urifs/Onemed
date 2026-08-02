@@ -79,28 +79,33 @@ serve(async (req) => {
     const { data: { user }, error: authErr } = await supabase.auth.getUser(jwt)
     if (authErr || !user) return json(req, { error: 'Sessão inválida' }, 401)
 
-    // ── limite de uso: gerar chama uma IA paga, 15 baralhos/dia por conta ──
+    // ── entrada ────────────────────────────────────────────────────────────
+    const { lessonIds, difficulty, count, extraText, format, uploads, mode } = await req.json()
+    // 'questions' = banco de questões: sempre múltipla escolha, com enunciado
+    // no estilo de prova de residência. Reusa todo o pipeline dos flashcards.
+    const modo = mode === 'questions' ? 'questions' : 'flashcards'
+    // Limites separados por modo — 15 gerações/dia de cada.
+    const rlAction = modo === 'questions' ? 'questions' : 'flashcards'
+
+    // ── limite de uso: gerar chama uma IA paga, 15 gerações/dia por modo ───
     try {
       const now = new Date()
       const { data: rl } = await supabase.from('rate_limits')
         .select('attempts, window_start')
-        .eq('identifier', user.id).eq('action', 'flashcards').maybeSingle()
+        .eq('identifier', user.id).eq('action', rlAction).maybeSingle()
       if (rl && (now.getTime() - new Date(rl.window_start).getTime()) < 24 * 3600 * 1000) {
         if (rl.attempts >= 15) {
           return json(req, { error: 'Você atingiu o limite de 15 gerações por dia. Tente novamente amanhã.' }, 429)
         }
         await supabase.from('rate_limits').update({ attempts: rl.attempts + 1 })
-          .eq('identifier', user.id).eq('action', 'flashcards')
+          .eq('identifier', user.id).eq('action', rlAction)
       } else {
         await supabase.from('rate_limits').upsert(
-          { identifier: user.id, action: 'flashcards', attempts: 1, window_start: now.toISOString() },
+          { identifier: user.id, action: rlAction, attempts: 1, window_start: now.toISOString() },
           { onConflict: 'identifier,action' },
         )
       }
     } catch { /* tabela indisponível não pode derrubar a geração */ }
-
-    // ── entrada ────────────────────────────────────────────────────────────
-    const { lessonIds, difficulty, count, extraText, format, uploads } = await req.json()
     const ids: string[] = Array.isArray(lessonIds) ? lessonIds.slice(0, MAX_LESSONS) : []
 
     const enviados: { name: string; mime: string; data: string }[] = (Array.isArray(uploads) ? uploads : [])
@@ -118,7 +123,7 @@ serve(async (req) => {
     const nivel = DIFFICULTY_TEXT[difficulty] ? difficulty : 'intermediario'
     // 'classic' = frente/verso aberto; 'multiple_choice' = alternativas pra
     // marcar, com a certa indicada e a explicação no verso.
-    const formato = format === 'multiple_choice' ? 'multiple_choice' : 'classic'
+    const formato = (modo === 'questions' || format === 'multiple_choice') ? 'multiple_choice' : 'classic'
     const complemento = String(extraText || '').slice(0, 2000)
 
     const { data: lessons } = ids.length > 0
@@ -228,8 +233,10 @@ serve(async (req) => {
     parts.push({
       type: 'text',
       text: [
-        `Você é um professor de medicina criando flashcards de estudo (estilo Anki) em português do Brasil.`,
-        `Crie EXATAMENTE ${nCards} flashcards a partir dos materiais acima.`,
+        modo === 'questions'
+          ? `Você é um elaborador de provas de medicina criando um BANCO DE QUESTÕES em português do Brasil, no estilo das provas de residência médica (enunciado objetivo, quando couber um mini caso clínico).`
+          : `Você é um professor de medicina criando flashcards de estudo (estilo Anki) em português do Brasil.`,
+        `Crie EXATAMENTE ${nCards} ${modo === 'questions' ? 'questões' : 'flashcards'} a partir dos materiais acima.`,
         `Nível de dificuldade — ${DIFFICULTY_TEXT[nivel]}`,
         complemento ? `Instruções extras do aluno (considere na geração): ${complemento}` : '',
         `Regras:`,

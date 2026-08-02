@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Play, Info, FileText, File, Music, Image as ImageIcon, Loader2, FileSpreadsheet, FileType, Megaphone, Star, Highlighter, Trash2, Sparkles } from 'lucide-react';
+import { Play, Info, FileText, File, Music, Image as ImageIcon, Loader2, FileSpreadsheet, FileType, Megaphone, Star, Highlighter, Trash2, SquareStack, ClipboardList } from 'lucide-react';
 import { useAnnouncementSettings } from '@/hooks/useAnnouncementSettings';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { FlashcardViewer, type FlashcardDeck } from '@/components/member/FlashcardViewer';
 import { FlashcardGeneratorModal, type GeneratedDeck } from '@/components/member/FlashcardGeneratorModal';
+import { QuestionBankViewer } from '@/components/member/QuestionBankViewer';
 import { CATEGORY_ORDER } from '@/lib/courseCategories';
 import { formatDateTimeSP, formatDuration, matchesSearch, stripYearFromTitle, withTimeout, withRetry, describeLoadError } from '@/lib/utils';
 import type { Database } from '@/integrations/supabase/types';
@@ -29,11 +30,31 @@ interface AnnotatedLesson {
 
 const ANNOTATIONS_TAB = 'Minhas anotações';
 const FLASHCARDS_TAB = 'Flashcards';
+const QUESTIONS_TAB = 'Banco de Questões';
 
 interface SavedDeck extends FlashcardDeck {
   id: string;
   created_at: string;
   source: { id: string; title: string }[];
+}
+
+interface SavedBank {
+  id: string;
+  title: string;
+  difficulty: string;
+  questions: { front: string; back: string; options?: string[]; correct?: number; why?: string[] }[];
+  source: { id: string | null; title: string }[];
+  created_at: string;
+}
+
+interface BankSession {
+  id: string;
+  bank_id: string | null;
+  bank_title: string;
+  total_questions: number;
+  correct: number;
+  duration_seconds: number | null;
+  created_at: string;
 }
 
 interface StudySession {
@@ -94,6 +115,33 @@ export default function MemberDashboardPage() {
   const [openDeck, setOpenDeck] = useState<SavedDeck | null>(null);
   const [sessions, setSessions] = useState<StudySession[]>([]);
   const [sessionsTick, setSessionsTick] = useState(0);
+  const [banks, setBanks] = useState<SavedBank[]>([]);
+  const [bankSessions, setBankSessions] = useState<BankSession[]>([]);
+  const [banksLoading, setBanksLoading] = useState(false);
+  const [openBank, setOpenBank] = useState<SavedBank | null>(null);
+  const [qbCreateOpen, setQbCreateOpen] = useState(false);
+  const [qbNew, setQbNew] = useState<GeneratedDeck | null>(null);
+  const [qbNewSaved, setQbNewSaved] = useState(false);
+  const [qbNewSavedId, setQbNewSavedId] = useState<string | null>(null);
+  const [qbNewSaving, setQbNewSaving] = useState(false);
+
+  const saveNewBank = async () => {
+    if (!qbNew || !userId || qbNewSaved || qbNewSaving) return;
+    setQbNewSaving(true);
+    const { data: savedRow, error } = await (supabase as any).from('question_banks').insert({
+      user_id: userId,
+      title: qbNew.title,
+      difficulty: qbNew.difficulty,
+      questions: qbNew.cards,
+      source: qbNew.source,
+    }).select('id').single();
+    setQbNewSaving(false);
+    if (error) return;
+    setQbNewSavedId(savedRow?.id || null);
+    setQbNewSaved(true);
+    setSessionsTick(t => t + 1);
+  };
+
   const [fcCreateOpen, setFcCreateOpen] = useState(false);
   const [fcNewDeck, setFcNewDeck] = useState<GeneratedDeck | null>(null);
   const [fcNewSaved, setFcNewSaved] = useState(false);
@@ -303,6 +351,33 @@ export default function MemberDashboardPage() {
     return () => { alive = false; };
   }, [activeCategory, userId, sessionsTick]);
 
+  useEffect(() => {
+    if (activeCategory !== QUESTIONS_TAB || !userId) return;
+    let alive = true;
+    setBanksLoading(true);
+    Promise.all([
+      (supabase as any).from('question_banks')
+        .select('id, title, difficulty, questions, source, created_at')
+        .order('created_at', { ascending: false }),
+      (supabase as any).from('question_sessions')
+        .select('id, bank_id, bank_title, total_questions, correct, duration_seconds, created_at')
+        .order('created_at', { ascending: false })
+        .limit(200),
+    ]).then(([{ data: banksData }, { data: sessData }]: { data: unknown }[]) => {
+      if (!alive) return;
+      setBanks(((banksData || []) as SavedBank[]));
+      setBankSessions(((sessData || []) as BankSession[]));
+      setBanksLoading(false);
+    });
+    return () => { alive = false; };
+  }, [activeCategory, userId, sessionsTick]);
+
+  const deleteBank = async (bank: SavedBank) => {
+    if (!confirm(`Excluir o banco "${bank.title}"? O histórico de provas fica.`)) return;
+    setBanks(prev => prev.filter(b => b.id !== bank.id));
+    await (supabase as any).from('question_banks').delete().eq('id', bank.id);
+  };
+
   const deleteDeck = async (deck: SavedDeck) => {
     if (!confirm(`Excluir o baralho "${deck.title}"?`)) return;
     setDecks(prev => prev.filter(d => d.id !== deck.id));
@@ -375,6 +450,7 @@ export default function MemberDashboardPage() {
 
     // Favoritos sempre aparece, mesmo sem nada marcado ainda — o cliente
     // precisa ver que a opção existe, não só depois de favoritar algo.
+    cats.unshift({ name: QUESTIONS_TAB, count: banks.length });
     cats.unshift({ name: FLASHCARDS_TAB, count: decks.length });
     cats.unshift({ name: 'Favoritos', count: favorites.size });
     // Sempre visível, como Favoritos: o aluno precisa descobrir que pode
@@ -389,7 +465,7 @@ export default function MemberDashboardPage() {
     if (activeCategory === 'Favoritos') {
       return courses.filter(c => favorites.has(c.id));
     }
-    if (activeCategory === ANNOTATIONS_TAB || activeCategory === FLASHCARDS_TAB) return [];
+    if (activeCategory === ANNOTATIONS_TAB || activeCategory === FLASHCARDS_TAB || activeCategory === QUESTIONS_TAB) return [];
     return courses.filter(c => c.category === activeCategory);
   }, [courses, activeCategory, favorites]);
 
@@ -658,6 +734,15 @@ export default function MemberDashboardPage() {
                   </div>
                 )}
               </section>
+            ) : activeCategory === QUESTIONS_TAB ? (
+              <QuestionsTab
+                banks={banks}
+                sessions={bankSessions}
+                loading={banksLoading}
+                onOpenBank={setOpenBank}
+                onDeleteBank={deleteBank}
+                onCreate={() => setQbCreateOpen(true)}
+              />
             ) : activeCategory === FLASHCARDS_TAB ? (
               <FlashcardsTab
                 decks={decks}
@@ -853,6 +938,31 @@ export default function MemberDashboardPage() {
       </main>
 
       <FlashcardGeneratorModal
+        mode="questions"
+        open={qbCreateOpen}
+        onOpenChange={setQbCreateOpen}
+        initialSources={[]}
+        onGenerated={(deck) => { setQbNew(deck); setQbNewSaved(false); setQbNewSavedId(null); }}
+      />
+      {qbNew && (
+        <QuestionBankViewer
+          bank={{ title: qbNew.title, difficulty: qbNew.difficulty, questions: qbNew.cards }}
+          bankId={qbNewSavedId}
+          onClose={() => { setQbNew(null); setSessionsTick(t => t + 1); }}
+          onSave={saveNewBank}
+          saved={qbNewSaved}
+          saving={qbNewSaving}
+        />
+      )}
+      {openBank && (
+        <QuestionBankViewer
+          bank={{ title: openBank.title, difficulty: openBank.difficulty, questions: openBank.questions }}
+          bankId={openBank.id}
+          onClose={() => { setOpenBank(null); setSessionsTick(t => t + 1); }}
+        />
+      )}
+
+      <FlashcardGeneratorModal
         open={fcCreateOpen}
         onOpenChange={setFcCreateOpen}
         initialSources={[]}
@@ -1012,7 +1122,7 @@ function FlashcardsTab({ decks, sessions, loading, onOpenDeck, onDeleteDeck, onC
           </p>
         </div>
         <Button onClick={onCreate} className="shrink-0">
-          <Sparkles className="w-4 h-4" /> Criar flashcards
+          <SquareStack className="w-4 h-4" /> Criar flashcards
         </Button>
       </div>
 
@@ -1093,7 +1203,7 @@ function FlashcardsTab({ decks, sessions, loading, onOpenDeck, onDeleteDeck, onC
                   <div key={deck.id} className="flex items-center gap-3.5 px-4 py-3.5 bg-card hover:bg-secondary transition-colors group">
                     <button onClick={() => onOpenDeck(deck)} className="flex items-center gap-3.5 flex-1 min-w-0 text-left">
                       <div className="w-9 h-9 rounded-full bg-secondary group-hover:bg-primary/15 flex items-center justify-center shrink-0 transition-colors">
-                        <Sparkles className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                        <SquareStack className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-foreground truncate">{deck.title}</p>
@@ -1125,7 +1235,7 @@ function FlashcardsTab({ decks, sessions, loading, onOpenDeck, onDeleteDeck, onC
             </div>
           ) : (
             <div className="rounded-xl border border-border bg-card px-4 py-8 text-center">
-              <Sparkles className="w-6 h-6 text-muted-foreground/50 mx-auto mb-2" />
+              <SquareStack className="w-6 h-6 text-muted-foreground/50 mx-auto mb-2" />
               <p className="text-sm text-muted-foreground">
                 Nenhum baralho salvo ainda. Toque em "Criar flashcards" aqui em cima, escolha as
                 aulas e arquivos, e a IA monta um baralho de estudo pra você.
@@ -1150,6 +1260,192 @@ function FlashcardsTab({ decks, sessions, loading, onOpenDeck, onDeleteDeck, onC
                           {formatDateTimeSP(s.created_at)}
                           {' '}· {s.correct_first_try}/{s.total_cards} certas
                           {s.reviews > s.total_cards ? ` · ${s.reviews - s.total_cards} ${s.reviews - s.total_cards === 1 ? 'repetição' : 'repetições'}` : ''}
+                          {s.duration_seconds ? ` · ${Math.max(1, Math.round(s.duration_seconds / 60))}min` : ''}
+                        </p>
+                      </div>
+                      <span className={`text-sm font-bold tabular-nums shrink-0 ${notaCor(nota)}`}>{nota}%</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+
+// ─── Aba Banco de Questões: estatísticas + bancos + histórico ───────────────
+// Mesmo desenho da aba Flashcards, sobre question_banks/question_sessions.
+function QuestionsTab({ banks, sessions, loading, onOpenBank, onDeleteBank, onCreate }: {
+  banks: SavedBank[];
+  sessions: BankSession[];
+  loading: boolean;
+  onOpenBank: (bank: SavedBank) => void;
+  onDeleteBank: (bank: SavedBank) => void;
+  onCreate: () => void;
+}) {
+  const pct = (ok: number, total: number) => total > 0 ? Math.round((ok / total) * 100) : 0;
+
+  const totalQ = sessions.reduce((t, s) => t + s.total_questions, 0);
+  const totalOk = sessions.reduce((t, s) => t + s.correct, 0);
+  const mediaGeral = pct(totalOk, totalQ);
+  const tempoTotal = sessions.reduce((t, s) => t + (s.duration_seconds || 0), 0);
+
+  const porBanco = new Map<string, BankSession[]>();
+  for (const s of sessions) {
+    if (!s.bank_id) continue;
+    if (!porBanco.has(s.bank_id)) porBanco.set(s.bank_id, []);
+    porBanco.get(s.bank_id)!.push(s);
+  }
+
+  const evolucao = [...sessions].slice(0, 14).reverse();
+
+  return (
+    <section className="space-y-6">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h2 className="font-secondary text-lg font-bold text-foreground mb-1">Banco de Questões</h2>
+          <p className="text-sm text-muted-foreground">
+            Provas de múltipla escolha geradas por IA a partir das aulas e arquivos do acervo.
+          </p>
+        </div>
+        <Button onClick={onCreate} className="shrink-0">
+          <ClipboardList className="w-4 h-4" /> Criar banco de questões
+        </Button>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-10">
+          <Loader2 className="w-5 h-5 animate-spin text-primary" />
+        </div>
+      ) : (
+        <>
+          {sessions.length > 0 && (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="glass rounded-xl border border-border p-4">
+                <p className="text-xs text-muted-foreground mb-1">Média geral</p>
+                <p className={`text-2xl font-bold ${notaCor(mediaGeral)}`}>{mediaGeral}%</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">acertos sobre o total</p>
+              </div>
+              <div className="glass rounded-xl border border-border p-4">
+                <p className="text-xs text-muted-foreground mb-1">Provas corrigidas</p>
+                <p className="text-2xl font-bold text-foreground">{sessions.length}</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">finalizadas até o fim</p>
+              </div>
+              <div className="glass rounded-xl border border-border p-4">
+                <p className="text-xs text-muted-foreground mb-1">Questões respondidas</p>
+                <p className="text-2xl font-bold text-foreground">{totalQ}</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  {totalOk} certas · {totalQ - totalOk} erradas
+                </p>
+              </div>
+              <div className="glass rounded-xl border border-border p-4">
+                <p className="text-xs text-muted-foreground mb-1">Tempo em prova</p>
+                <p className="text-2xl font-bold text-foreground">
+                  {tempoTotal >= 3600
+                    ? `${Math.floor(tempoTotal / 3600)}h${String(Math.floor((tempoTotal % 3600) / 60)).padStart(2, '0')}`
+                    : `${Math.max(1, Math.round(tempoTotal / 60))}min`}
+                </p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">somando todas as provas</p>
+              </div>
+            </div>
+          )}
+
+          {evolucao.length >= 2 && (
+            <div className="glass rounded-xl border border-border p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">
+                Evolução — últimas {evolucao.length} provas
+              </p>
+              <div className="flex items-end gap-1.5 h-24">
+                {evolucao.map(s => {
+                  const nota = pct(s.correct, s.total_questions);
+                  const cor = nota >= 70 ? 'bg-accent-success' : nota >= 40 ? 'bg-accent-warning' : 'bg-red-500';
+                  return (
+                    <div
+                      key={s.id}
+                      className="flex-1 flex flex-col items-center gap-1 group relative"
+                      title={`${s.bank_title} — ${nota}% (${s.correct}/${s.total_questions}) · ${formatDateTimeSP(s.created_at)}`}
+                    >
+                      <span className="text-[10px] tabular-nums text-muted-foreground opacity-0 group-hover:opacity-100 absolute -top-4 transition-opacity">{nota}%</span>
+                      <div className={`w-full rounded-t ${cor} transition-all`} style={{ height: `${Math.max(nota, 4)}%` }} />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {banks.length > 0 ? (
+            <div className="rounded-xl border border-border overflow-hidden divide-y divide-border">
+              {banks.map(bank => {
+                const hist = porBanco.get(bank.id) || [];
+                const q = hist.reduce((t, s) => t + s.total_questions, 0);
+                const ok = hist.reduce((t, s) => t + s.correct, 0);
+                const mediaBanco = pct(ok, q);
+                const melhor = hist.length ? Math.max(...hist.map(s => pct(s.correct, s.total_questions))) : 0;
+                const ultima = hist[0] ? pct(hist[0].correct, hist[0].total_questions) : null;
+                return (
+                  <div key={bank.id} className="flex items-center gap-3.5 px-4 py-3.5 bg-card hover:bg-secondary transition-colors group">
+                    <button onClick={() => onOpenBank(bank)} className="flex items-center gap-3.5 flex-1 min-w-0 text-left">
+                      <div className="w-9 h-9 rounded-full bg-secondary group-hover:bg-primary/15 flex items-center justify-center shrink-0 transition-colors">
+                        <ClipboardList className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-foreground truncate">{bank.title}</p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {bank.questions.length} questõe{bank.questions.length !== 1 ? 's' : ''}{bank.questions.length === 1 ? ' questão' : ''}
+                          {' '}· {bank.difficulty === 'basico' ? 'Básico' : bank.difficulty === 'avancado' ? 'Avançado' : 'Intermediário'}
+                          {hist.length > 0
+                            ? <> · {hist.length} {hist.length === 1 ? 'prova' : 'provas'} · melhor {melhor}%</>
+                            : <> · nunca respondido</>}
+                        </p>
+                      </div>
+                    </button>
+                    {hist.length > 0 && (
+                      <div className="hidden sm:block text-right shrink-0">
+                        <p className={`text-sm font-bold tabular-nums ${notaCor(mediaBanco)}`}>{mediaBanco}%</p>
+                        <p className="text-[10px] text-muted-foreground">média{ultima !== null ? ` · última ${ultima}%` : ''}</p>
+                      </div>
+                    )}
+                    <button
+                      onClick={() => onDeleteBank(bank)}
+                      title="Excluir banco (o histórico de provas fica)"
+                      className="shrink-0 p-1.5 rounded-lg text-muted-foreground/40 hover:text-destructive hover:bg-secondary transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="rounded-xl border border-border bg-card px-4 py-8 text-center">
+              <ClipboardList className="w-6 h-6 text-muted-foreground/50 mx-auto mb-2" />
+              <p className="text-sm text-muted-foreground">
+                Nenhum banco de questões salvo ainda. Toque em "Criar banco de questões", escolha as
+                aulas e arquivos, e a IA monta a prova pra você.
+              </p>
+            </div>
+          )}
+
+          {sessions.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                Histórico de provas
+              </p>
+              <div className="rounded-xl border border-border overflow-hidden divide-y divide-border max-h-72 overflow-y-auto">
+                {sessions.slice(0, 30).map(s => {
+                  const nota = pct(s.correct, s.total_questions);
+                  return (
+                    <div key={s.id} className="flex items-center gap-3 px-4 py-2.5 bg-card text-sm">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-foreground truncate">{s.bank_title}</p>
+                        <p className="text-[11px] text-muted-foreground">
+                          {formatDateTimeSP(s.created_at)}
+                          {' '}· {s.correct}/{s.total_questions} certas
                           {s.duration_seconds ? ` · ${Math.max(1, Math.round(s.duration_seconds / 60))}min` : ''}
                         </p>
                       </div>

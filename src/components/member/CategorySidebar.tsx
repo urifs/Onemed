@@ -21,7 +21,7 @@ export function CategorySidebar({ categories, active, onSelect, totalCount }: Ca
   // logo abaixo. Sem o rank explícito, a ordenação alfabética jogava
   // "Flashcards" pro meio das categorias de curso — parecia que a aba nem
   // existia.
-  const rank = (name: string) => name === 'Favoritos' ? 0 : name === 'Flashcards' ? 1 : 2;
+  const rank = (name: string) => name === 'Favoritos' ? 0 : name === 'Flashcards' ? 1 : name === 'Banco de Questões' ? 2 : 3;
   const sorted = [...categories].sort((a, b) => {
     const r = rank(a.name) - rank(b.name);
     return r !== 0 ? r : a.name.localeCompare(b.name, 'pt-BR');
@@ -55,7 +55,7 @@ export function CategorySidebar({ categories, active, onSelect, totalCount }: Ca
               count={cat.count}
               icon={CATEGORY_ICON[cat.name] || LayoutGrid}
               isActive={active === cat.name}
-              highlight={cat.name === 'Favoritos' || cat.name === 'Flashcards'}
+              highlight={cat.name === 'Favoritos' || cat.name === 'Flashcards' || cat.name === 'Banco de Questões'}
               onClick={() => handleSelect(cat.name)}
             />
           ))}
@@ -105,7 +105,7 @@ export function CategorySidebar({ categories, active, onSelect, totalCount }: Ca
                   count={cat.count}
                   icon={CATEGORY_ICON[cat.name] || LayoutGrid}
                   isActive={active === cat.name}
-                  highlight={cat.name === 'Favoritos' || cat.name === 'Flashcards'}
+                  highlight={cat.name === 'Favoritos' || cat.name === 'Flashcards' || cat.name === 'Banco de Questões'}
                   onClick={() => handleSelect(cat.name)}
                 />
               ))}

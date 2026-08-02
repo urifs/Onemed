@@ -90,7 +90,7 @@ export function UpgradePlanModal({ open, onOpenChange, currentPlan, userEmail, u
           </div>
 
           {targets.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-4">Você já está no plano mais completo. 🎉</p>
+            <p className="text-sm text-muted-foreground text-center py-4">Você já está no plano mais completo.</p>
           ) : (
             <div className="space-y-3">
               {targets.map(targetPlan => {

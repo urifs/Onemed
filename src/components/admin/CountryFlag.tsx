@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Globe } from 'lucide-react';
 
 // Bandeira do país como IMAGEM, não como emoji. O emoji de bandeira
 // (indicadores regionais, 🇧🇷) simplesmente não existe nas fontes do Windows
@@ -25,7 +26,7 @@ export function CountryFlag({ code, country, className = '' }: {
   const title = country || code || 'País desconhecido';
 
   if (!valid) {
-    return <span className={`text-sm leading-none ${className}`} title={title} aria-hidden>🌐</span>;
+    return <Globe className={`w-4 h-4 text-muted-foreground ${className}`} aria-hidden />;
   }
   if (failed) {
     return <span className={`text-sm leading-none ${className}`} title={title}>{emojiFlag(code!)}</span>;

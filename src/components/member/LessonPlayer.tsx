@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type Mpegts from 'mpegts.js';
-import { X, ChevronLeft, ChevronRight, Loader2, ExternalLink, Download, Printer, Gauge, Check, Sparkles } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Loader2, ExternalLink, Download, Printer, Gauge, Check, SquareStack, ClipboardList } from 'lucide-react';
 import { useLessonStreamUrl } from '@/hooks/useLessonStream';
 import { PdfViewer } from './PdfViewer';
 import { OfficeViewer } from './OfficeViewer';
@@ -37,11 +37,12 @@ interface LessonPlayerProps {
   hasPrev?: boolean;
   hasNext?: boolean;
   onGenerateFlashcards?: () => void;
+  onGenerateQuestions?: () => void;
 }
 
 export function LessonPlayer({
   lesson, courseTitle, initialWatchedSeconds, onClose, onProgress, onPrev, onNext, hasPrev, hasNext,
-  completed, onToggleCompleted, onGenerateFlashcards,
+  completed, onToggleCompleted, onGenerateFlashcards, onGenerateQuestions,
 }: LessonPlayerProps) {
   const getUrl = useLessonStreamUrl();
   const [src, setSrc] = useState<string | null>(null);
@@ -422,7 +423,17 @@ export function LessonPlayer({
               aria-label="Gerar flashcards desta aula"
               className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/15 flex items-center justify-center text-white transition-colors"
             >
-              <Sparkles className="w-4 h-4" />
+              <SquareStack className="w-4 h-4" />
+            </button>
+          )}
+          {onGenerateQuestions && (
+            <button
+              onClick={onGenerateQuestions}
+              title="Gerar banco de questões desta aula"
+              aria-label="Gerar banco de questões desta aula"
+              className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/15 flex items-center justify-center text-white transition-colors"
+            >
+              <ClipboardList className="w-4 h-4" />
             </button>
           )}
         </div>

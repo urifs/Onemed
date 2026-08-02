@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Sparkles, ChevronDown, Loader2, Users } from 'lucide-react';
+import { Layers, ChevronDown, Loader2, Users } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { AdminLayout } from '@/components/AdminLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -80,7 +80,7 @@ export default function FlashcardsAdminPage() {
       <div className="space-y-6">
         <div>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-            <Sparkles className="w-6 h-6 text-primary" /> Flashcards
+            <Layers className="w-6 h-6 text-primary" /> Flashcards
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             Baralhos gerados pelos alunos e o desempenho de estudo de cada um.

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { ChevronDown, ChevronRight, Loader2, Plus, Sparkles, Upload, FileText, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Loader2, Plus, SquareStack, ClipboardList, Upload, FileText, X } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -275,12 +275,18 @@ function ContentTree({ selected, onToggle }: {
   );
 }
 
-export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, onGenerated }: {
+export type GeneratorMode = 'flashcards' | 'questions';
+
+export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, onGenerated, mode = 'flashcards' }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialSources: FlashcardSource[];
   onGenerated: (deck: GeneratedDeck) => void;
+  // 'questions' = banco de questões: sempre múltipla escolha, sem seletor de formato.
+  mode?: GeneratorMode;
 }) {
+  const ehQuestoes = mode === 'questions';
+  const ModeIcon = ehQuestoes ? ClipboardList : SquareStack;
   const [selected, setSelected] = useState<Map<string, string>>(new Map());
   const [difficulty, setDifficulty] = useState('intermediario');
   const [format, setFormat] = useState<'classic' | 'multiple_choice'>('classic');
@@ -357,7 +363,8 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
         body: {
           lessonIds: [...selected.keys()],
           difficulty,
-          format,
+          format: ehQuestoes ? 'multiple_choice' : format,
+          mode,
           count,
           extraText: extraText.trim() || undefined,
           uploads: uploads.map(u => ({ name: u.name, mime: u.mime, data: u.data })),
@@ -380,17 +387,19 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
       <DialogContent className="bg-background-paper border-border max-w-lg z-[85] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-foreground flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-primary" /> Gerar flashcards
+            <ModeIcon className="w-5 h-5 text-primary" /> {ehQuestoes ? 'Gerar banco de questões' : 'Gerar flashcards'}
           </DialogTitle>
           <DialogDescription>
-            A IA lê o conteúdo selecionado — inclusive o áudio de aulas em vídeo — e monta um baralho de estudo no estilo Anki.
+            {ehQuestoes
+              ? 'A IA lê o conteúdo selecionado — inclusive o áudio de aulas em vídeo — e monta questões de múltipla escolha no estilo de prova.'
+              : 'A IA lê o conteúdo selecionado — inclusive o áudio de aulas em vídeo — e monta um baralho de estudo no estilo Anki.'}
           </DialogDescription>
         </DialogHeader>
 
         {generating ? (
           <div className="py-10 text-center">
             <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto mb-4" />
-            <p className="text-sm font-semibold text-foreground mb-1">Gerando seus flashcards…</p>
+            <p className="text-sm font-semibold text-foreground mb-1">{ehQuestoes ? 'Gerando suas questões…' : 'Gerando seus flashcards…'}</p>
             <p className="text-xs text-muted-foreground">
               Esse processo pode levar alguns minutos — a IA está lendo o conteúdo selecionado.
               Mantenha esta tela aberta.
@@ -463,7 +472,8 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
               </div>
             </div>
 
-            {/* formato */}
+            {/* formato (banco de questões é sempre múltipla escolha) */}
+            {!ehQuestoes && (
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Formato</p>
               <div className="grid grid-cols-2 gap-2">
@@ -484,6 +494,7 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
                 ))}
               </div>
             </div>
+            )}
 
             {/* dificuldade */}
             <div>
@@ -509,7 +520,7 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
             {/* quantidade */}
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
-                Quantidade de flashcards
+                {ehQuestoes ? 'Quantidade de questões' : 'Quantidade de flashcards'}
               </p>
               <input
                 type="number"
@@ -539,7 +550,7 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
             </div>
 
             <Button className="w-full" onClick={generate} disabled={selected.size === 0 && uploads.length === 0}>
-              <Sparkles className="w-4 h-4" /> Gerar {count} flashcard{count !== 1 ? 's' : ''}
+              <ModeIcon className="w-4 h-4" /> Gerar {count} {ehQuestoes ? (count !== 1 ? 'questões' : 'questão') : `flashcard${count !== 1 ? 's' : ''}`}
             </Button>
           </div>
         )}
