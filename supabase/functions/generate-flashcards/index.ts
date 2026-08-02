@@ -56,6 +56,31 @@ const DIFFICULTY_TEXT: Record<string, string> = {
 // Mimes que o Gemini aceita inline. docx/xlsx ficam de fora — viram aviso.
 const GEMINI_OK = /^(application\/pdf|image\/(png|jpe?g|webp|heic|heif)|video\/(mp4|webm|quicktime|x-matroska|mpeg)|audio\/|text\/)/i
 
+// Vídeos MP4/MOV precisam do índice (caixa "moov") DENTRO do trecho enviado —
+// quando o arquivo foi gravado com o moov no FIM (comum em gravação direta),
+// o pedaço inicial é ilegível pra IA e derruba a chamada inteira com
+// INVALID_ARGUMENT. Percorre as caixas de topo do MP4 procurando o moov.
+function mp4TemMoov(bytes: Uint8Array): boolean {
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  let off = 0
+  while (off + 8 <= bytes.length) {
+    let size = dv.getUint32(off)
+    const type = String.fromCharCode(bytes[off + 4], bytes[off + 5], bytes[off + 6], bytes[off + 7])
+    if (type === 'moov') return true
+    if (size === 1) {
+      if (off + 16 > bytes.length) return false
+      size = dv.getUint32(off + 8) * 4294967296 + dv.getUint32(off + 12)
+    } else if (size === 0) {
+      return false
+    }
+    if (size < 8) return false
+    off += size
+  }
+  return false
+}
+
+const MP4_FAMILY = /^(video\/(mp4|quicktime)|audio\/(mp4|x-m4a))/i
+
 function b64(bytes: Uint8Array): string {
   let out = ''
   const CHUNK = 0x8000
@@ -165,6 +190,15 @@ serve(async (req) => {
         warnings.push(`"${up.name}" tem um formato que a IA não lê (envie PDF, imagem, áudio, vídeo ou texto).`)
         continue
       }
+      if (MP4_FAMILY.test(up.mime)) {
+        const raw = Uint8Array.from(atob(up.data), c => c.charCodeAt(0))
+        if (!mp4TemMoov(raw)) {
+          warnings.push(`"${up.name}" está num formato de vídeo que a IA não lê em trecho — usado só o nome.`)
+          sourceTitles.push(up.name)
+          parts.push({ type: 'text', text: `Material (somente nome do arquivo): "${up.name}"` })
+          continue
+        }
+      }
       sourceTitles.push(up.name)
       budget -= rawSize
       parts.push({ type: 'text', text: `Material enviado pelo aluno: "${up.name}":` })
@@ -224,6 +258,14 @@ serve(async (req) => {
         continue
       }
 
+      // Pedaço de MP4 sem o índice dentro = ilegível pra IA. Cai pro título
+      // com aviso em vez de derrubar a geração inteira.
+      if (isAv && bytes.length < (lesson.size_bytes || Infinity) && MP4_FAMILY.test(mime) && !mp4TemMoov(bytes)) {
+        warnings.push(`"${lesson.title}" é um vídeo num formato que a IA não lê em trecho — usado só o título.`)
+        parts.push({ type: 'text', text: `Material (somente título): "${lesson.title}" (curso: ${courseTitle})` })
+        continue
+      }
+
       budget -= bytes.length
       parts.push({ type: 'text', text: `Material: "${lesson.title}" (curso: ${courseTitle})${isAv ? ' — trecho inicial da aula em vídeo/áudio' : ''}:` })
       parts.push({ type: 'file', file: { file_data: `data:${mime};base64,${b64(bytes)}` } })
@@ -259,7 +301,7 @@ serve(async (req) => {
     })
 
     // ── chama o Gemini ─────────────────────────────────────────────────────
-    const llmRes = await fetch(LLM_URL, {
+    const chamarLLM = (conteudo: unknown[]) => fetch(LLM_URL, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${Deno.env.get('EMERGENT_LLM_KEY')}`,
@@ -267,37 +309,83 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         model: LLM_MODEL,
-        messages: [{ role: 'user', content: parts }],
+        messages: [{ role: 'user', content: conteudo }],
         temperature: 0.4,
+        // Sem isto, resposta longa (30 questões com justificativas) vinha
+        // CORTADA no limite padrão do provedor e o JSON quebrava no meio.
+        max_tokens: 16384,
       }),
     })
 
-    const llmData = await llmRes.json()
+    let llmRes = await chamarLLM(parts)
+    let llmData = await llmRes.json()
+
+    // Alguma mídia ainda pode ser recusada pelo modelo (400) por defeito que
+    // não dá pra detectar daqui. Nesse caso a geração NÃO morre: refaz só com
+    // os textos (títulos + complemento do aluno) e avisa.
+    if (!llmRes.ok && llmRes.status === 400) {
+      const soTexto = (parts as { type: string }[]).filter(p => p.type === 'text')
+      if (soTexto.length < parts.length) {
+        console.warn('LLM 400 com mídia; tentando só com texto:', JSON.stringify(llmData).slice(0, 300))
+        warnings.push('Um dos arquivos não pôde ser lido pela IA — a geração usou os títulos do conteúdo.')
+        llmRes = await chamarLLM(soTexto)
+        llmData = await llmRes.json()
+      }
+    }
+
     if (!llmRes.ok) {
       console.error('LLM error', llmRes.status, JSON.stringify(llmData).slice(0, 500))
       return json(req, { error: 'A IA não conseguiu processar este conteúdo agora. Tente novamente em instantes.' }, 502)
     }
 
-    const raw: string = llmData.choices?.[0]?.message?.content || ''
-    // O modelo às vezes embrulha em ```json ... ``` mesmo instruído a não fazer.
-    const jsonText = raw.replace(/^\s*```(?:json)?/i, '').replace(/```\s*$/, '').trim()
-    let cards: { front: string; back: string; options?: string[]; correct?: number; why?: string[] }[]
-    try {
-      const parsed = JSON.parse(jsonText)
-      const lista = (Array.isArray(parsed) ? parsed : parsed.cards || [])
-      cards = lista
-        .filter((c: { front?: unknown; back?: unknown }) => typeof c?.front === 'string' && typeof c?.back === 'string')
-        .filter((c: { options?: unknown; correct?: unknown }) =>
-          formato !== 'multiple_choice'
-          || (Array.isArray(c.options) && c.options.length >= 2 && c.options.every((o: unknown) => typeof o === 'string')
-              && typeof c.correct === 'number' && c.correct >= 0 && c.correct < (c.options as string[]).length))
-        .slice(0, MAX_CARDS)
-    } catch {
-      console.error('Resposta não-JSON do modelo:', raw.slice(0, 300))
-      return json(req, { error: 'A IA devolveu uma resposta inválida. Tente gerar de novo.' }, 502)
+    type Carta = { front: string; back: string; options?: string[]; correct?: number; why?: string[] }
+
+    // O modelo às vezes embrulha em ```json ... ```, põe texto antes/depois,
+    // ou é cortado no meio da última carta. Este parser recupera o máximo:
+    // 1) parse direto; 2) recorte do primeiro '[' em diante; 3) poda até o
+    // fim da última carta completa ('}') e fecha o array.
+    const extrairCartas = (raw: string): Carta[] | null => {
+      const semCerca = raw.replace(/^\s*```(?:json)?/i, '').replace(/```\s*$/, '').trim()
+      const candidatos: string[] = [semCerca]
+      const ini = semCerca.indexOf('[')
+      if (ini >= 0) {
+        const fim = semCerca.lastIndexOf(']')
+        if (fim > ini) candidatos.push(semCerca.slice(ini, fim + 1))
+        const ultimaChave = semCerca.lastIndexOf('}')
+        if (ultimaChave > ini) candidatos.push(semCerca.slice(ini, ultimaChave + 1) + ']')
+      }
+      for (const texto of candidatos) {
+        try {
+          const parsed = JSON.parse(texto)
+          const lista = Array.isArray(parsed) ? parsed : parsed.cards || []
+          if (Array.isArray(lista)) return lista as Carta[]
+        } catch { /* tenta o próximo candidato */ }
+      }
+      return null
     }
+
+    const validar = (lista: Carta[]): Carta[] => lista
+      .filter((c) => typeof c?.front === 'string' && typeof c?.back === 'string')
+      .filter((c) =>
+        formato !== 'multiple_choice'
+        || (Array.isArray(c.options) && c.options.length >= 2 && c.options.every((o: unknown) => typeof o === 'string')
+            && typeof c.correct === 'number' && c.correct >= 0 && c.correct < (c.options as string[]).length))
+      .slice(0, MAX_CARDS)
+
+    let cards = validar(extrairCartas(llmData.choices?.[0]?.message?.content || '') || [])
+
+    // Resposta irrecuperável: uma repetição automática antes de desistir —
+    // a falha é intermitente do modelo, não do conteúdo.
     if (cards.length === 0) {
-      return json(req, { error: 'Nenhum flashcard pôde ser gerado deste conteúdo.' }, 422)
+      console.warn('Resposta inválida do modelo; repetindo a chamada uma vez')
+      llmRes = await chamarLLM(parts)
+      llmData = await llmRes.json()
+      if (llmRes.ok) cards = validar(extrairCartas(llmData.choices?.[0]?.message?.content || '') || [])
+    }
+
+    if (cards.length === 0) {
+      console.error('Resposta não-JSON do modelo (2x):', String(llmData.choices?.[0]?.message?.content || '').slice(0, 300))
+      return json(req, { error: 'A IA devolveu uma resposta inválida. Tente gerar de novo.' }, 502)
     }
 
     if (sourceTitles.length === 0) {
