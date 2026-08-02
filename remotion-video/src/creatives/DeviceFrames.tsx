@@ -2,9 +2,11 @@ import React from 'react';
 import { OffthreadVideo, staticFile } from 'remotion';
 import { BG } from './theme';
 
-/** Barra de status iOS falsa (desenhada, sem marca) */
-const StatusBar: React.FC<{ width: number }> = ({ width }) => {
+/** Barra de status iOS falsa (desenhada, sem marca). dark = ícones escuros p/ apps claros */
+const StatusBar: React.FC<{ width: number; dark?: boolean }> = ({ width, dark }) => {
   const s = width / 390;
+  const C = dark ? '#0e1b33' : '#fff';
+  const C5 = dark ? 'rgba(14,27,51,.5)' : 'rgba(255,255,255,.5)';
   return (
     <div style={{
       position: 'absolute', top: 0, left: 0, right: 0, height: 44 * s,
@@ -13,27 +15,27 @@ const StatusBar: React.FC<{ width: number }> = ({ width }) => {
     }}>
       <span style={{
         fontFamily: "-apple-system,'Inter',sans-serif", fontWeight: 600,
-        fontSize: 15 * s, color: '#fff', letterSpacing: 0.2,
+        fontSize: 15 * s, color: C, letterSpacing: 0.2,
       }}>9:41</span>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 * s }}>
         {/* sinal */}
-        <svg width={17 * s} height={11 * s} viewBox="0 0 17 11" fill="#fff">
+        <svg width={17 * s} height={11 * s} viewBox="0 0 17 11" fill={C}>
           <rect x="0" y="7" width="3" height="4" rx="0.8" />
           <rect x="4.5" y="5" width="3" height="6" rx="0.8" />
           <rect x="9" y="2.5" width="3" height="8.5" rx="0.8" />
           <rect x="13.5" y="0" width="3" height="11" rx="0.8" />
         </svg>
         {/* wifi */}
-        <svg width={16 * s} height={11 * s} viewBox="0 0 16 11" fill="#fff">
+        <svg width={16 * s} height={11 * s} viewBox="0 0 16 11" fill={C}>
           <path d="M8 9.5 L9.8 7.6 A2.8 2.8 0 0 0 6.2 7.6 Z" />
           <path d="M4.2 5.6 A5.6 5.6 0 0 1 11.8 5.6 L10.4 7 A3.7 3.7 0 0 0 5.6 7 Z" opacity=".9" />
           <path d="M1.6 3 A9.2 9.2 0 0 1 14.4 3 L13 4.4 A7.2 7.2 0 0 0 3 4.4 Z" opacity=".8" />
         </svg>
         {/* bateria */}
         <svg width={25 * s} height={12 * s} viewBox="0 0 25 12">
-          <rect x="0.5" y="0.5" width="21" height="11" rx="3" fill="none" stroke="rgba(255,255,255,.5)" />
-          <rect x="2" y="2" width="15" height="8" rx="1.6" fill="#fff" />
-          <rect x="22.5" y="3.5" width="2" height="5" rx="1" fill="rgba(255,255,255,.5)" />
+          <rect x="0.5" y="0.5" width="21" height="11" rx="3" fill="none" stroke={C5} />
+          <rect x="2" y="2" width="15" height="8" rx="1.6" fill={C} />
+          <rect x="22.5" y="3.5" width="2" height="5" rx="1" fill={C5} />
         </svg>
       </div>
     </div>
@@ -50,7 +52,8 @@ export const PhoneFrame: React.FC<{
   startFrom?: number;
   muted?: boolean;
   style?: React.CSSProperties;
-}> = ({ src, width, startFrom = 0, style }) => {
+  statusDark?: boolean;
+}> = ({ src, width, startFrom = 0, style, statusDark }) => {
   const bezel = width * 0.032;
   const screenW = width - bezel * 2;
   const screenH = screenW * (844 / 390);
@@ -77,7 +80,7 @@ export const PhoneFrame: React.FC<{
           startFrom={startFrom}
           style={{ width: '100%', height: '100%', objectFit: 'cover' }}
         />
-        <StatusBar width={screenW} />
+        <StatusBar width={screenW} dark={statusDark} />
         {/* dynamic island */}
         <div style={{
           position: 'absolute', top: screenW * 0.028, left: '50%', transform: 'translateX(-50%)',

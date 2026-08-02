@@ -26,6 +26,7 @@ import { C17_Turma, C17_DURATION } from './creatives/C17_Turma';
 import { C18_Interno, C18_DURATION } from './creatives/C18_Interno';
 import { C19_Conta, C19_DURATION } from './creatives/C19_Conta';
 import { C20_Recomeco, C20_DURATION } from './creatives/C20_Recomeco';
+import { M01_Meduf, M01_DURATION } from './creatives/M01_Meduf';
 
 const CREATIVES: Array<[string, React.FC, number]> = [
   ['C01-NovaEra', C01_NovaEra, C01_DURATION],
@@ -48,6 +49,7 @@ const CREATIVES: Array<[string, React.FC, number]> = [
   ['C18-Interno', C18_Interno, C18_DURATION],
   ['C19-Conta', C19_Conta, C19_DURATION],
   ['C20-Recomeco', C20_Recomeco, C20_DURATION],
+  ['M01-Meduf', M01_Meduf, M01_DURATION],
 ];
 
 export const RemotionRoot: React.FC = () => {
