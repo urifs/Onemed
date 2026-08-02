@@ -12,22 +12,22 @@ const DELAY = 0.7;
 export const C17_DURATION = Math.round((DELAY + T.duration + 2.2) * FPS);
 
 const B = {
-  estrategia: DELAY + 2.8,
-  medway: DELAY + 4.5,
-  dois: DELAY + 6.4,
+  estrategia: DELAY + 3.0,
+  medway: DELAY + 4.6,
+  dois: DELAY + 6.5,
   achei: DELAY + 7.9,          // "Eu achei um lugar com todos eles"
-  nomes: DELAY + 10.1,         // enumeração dos gigantes
-  teoria: DELAY + 19.4,        // "assistia a teoria de um..."
-  favoritei: DELAY + 26.3,
-  baixei: DELAY + 27.3,
-  conclui: DELAY + 28.1,
-  celular: DELAY + 28.9,       // "no celular, no notebook"
-  lista: DELAY + 31.8,         // "Quando a lista de aprovados saiu"
-  r1: DELAY + 35.0,
-  n530: DELAY + 37.0,
-  n9000: DELAY + 38.7,
-  atualizados: DELAY + 40.4,
-  porque: DELAY + 42.7,        // "Por que escolher um cursinho..."
+  nomes: DELAY + 9.9,          // enumeração dos gigantes
+  teoria: DELAY + 18.3,        // "assistia a teoria de um..."
+  favoritei: DELAY + 24.9,
+  baixei: DELAY + 25.65,
+  conclui: DELAY + 26.25,
+  celular: DELAY + 26.8,       // "no celular, no notebook"
+  lista: DELAY + 29.2,         // "Quando a lista de aprovados saiu"
+  r1: DELAY + 32.4,
+  n530: DELAY + 34.2,
+  n9000: DELAY + 35.9,
+  atualizados: DELAY + 37.2,
+  porque: DELAY + 39.3,        // "Por que escolher um cursinho..."
   end: DELAY + T.duration - 3.2,
 };
 
@@ -35,9 +35,9 @@ const SC = {
   split: [0, B.achei] as Range,
   gigantes: [B.achei, B.teoria] as Range,
   hero: [B.teoria, B.favoritei] as Range,
-  triade: [B.favoritei, B.celular + 0.3] as Range,
-  trio: [B.celular + 0.3, B.lista] as Range,
-  aprovados: [B.lista, B.n530 - 0.3] as Range,
+  triade: [B.favoritei, B.celular + 0.4] as Range,
+  trio: [B.celular + 0.4, B.lista + 0.4] as Range,
+  aprovados: [B.lista + 0.4, B.n530 - 0.3] as Range,
   numeros: [B.n530 - 0.3, B.porque] as Range,
   porque: [B.porque, B.end + 1.0] as Range,
 };
@@ -162,16 +162,16 @@ export const C17_Turma: React.FC = () => {
       {/* os gigantes lado a lado no grid real */}
       <DemoPhone t={t} range={SC.gigantes} src="rec/n_extensivos.mp4" startFrom={92}
         badgeTop="Todos os gigantes" badgeBottom="no mesmo login" badgeX={56} badgeFrom="left">
-        <FloatBadge x={590} y={520} delay={Math.round((B.nomes + 0.6) * FPS)} from="right">
+        <FloatBadge x={590} y={520} delay={Math.round((B.nomes + 0.4) * FPS)} from="right">
           <BadgeText top="Estratégia Med Extensivo" />
         </FloatBadge>
-        <FloatBadge x={40} y={690} delay={Math.round((B.nomes + 2.6) * FPS)} from="left">
+        <FloatBadge x={40} y={690} delay={Math.round((B.nomes + 2.0) * FPS)} from="left">
           <BadgeText top="MEDCurso completo" />
         </FloatBadge>
-        <FloatBadge x={580} y={860} delay={Math.round((B.nomes + 4.3) * FPS)} from="right">
+        <FloatBadge x={580} y={860} delay={Math.round((B.nomes + 3.7) * FPS)} from="right">
           <BadgeText top="Medway · Medcof" />
         </FloatBadge>
-        <FloatBadge x={60} y={1030} delay={Math.round((B.nomes + 6.1) * FPS)} from="left">
+        <FloatBadge x={60} y={1030} delay={Math.round((B.nomes + 5.4) * FPS)} from="left">
           <BadgeText top="HardWork" bottom="lado a lado" />
         </FloatBadge>
       </DemoPhone>

@@ -12,26 +12,26 @@ export const C19_DURATION = Math.round((DELAY + T.duration + 2.2) * FPS);
 
 const B = {
   linha1: DELAY + 1.6,        // "pra estudar do jeito que eu queria"
-  linha2: DELAY + 3.8,        // "três cursinhos diferentes"
-  linha3: DELAY + 6.1,        // "cada um custava uma fortuna"
-  desisti: DELAY + 7.8,       // papel amassa
-  achei: DELAY + 9.5,
-  estrategia: DELAY + 13.2,
-  medgrupo: DELAY + 14.3,
-  medway: DELAY + 15.4,
-  medcof: DELAY + 16.3,
-  hardwork: DELAY + 17.3,
-  livros: DELAY + 18.7,
-  acesso: DELAY + 20.9,       // "Um acesso."
-  organizado: DELAY + 22.1,
-  mapa: DELAY + 23.8,
-  buscaB: DELAY + 24.9,
-  download: DELAY + 25.5,
-  comunidade: DELAY + 26.9,
-  atualizam: DELAY + 29.3,
-  fechou: DELAY + 31.8,       // "A conta que não fechava? Fechou."
-  cafe: DELAY + 35.2,
-  n530: DELAY + 36.5,
+  linha2: DELAY + 4.0,        // "três cursinhos diferentes"
+  linha3: DELAY + 6.3,        // "cada um custava uma fortuna"
+  desisti: DELAY + 8.0,       // papel amassa
+  achei: DELAY + 9.4,
+  estrategia: DELAY + 12.7,
+  medgrupo: DELAY + 13.65,
+  medway: DELAY + 14.7,
+  medcof: DELAY + 15.6,
+  hardwork: DELAY + 16.6,
+  livros: DELAY + 18.3,
+  acesso: DELAY + 20.1,       // "Um acesso."
+  organizado: DELAY + 21.1,
+  mapa: DELAY + 22.9,
+  buscaB: DELAY + 23.8,
+  download: DELAY + 24.25,
+  comunidade: DELAY + 25.3,
+  atualizam: DELAY + 27.9,
+  fechou: DELAY + 30.4,       // "A conta que não fechava? Fechou."
+  cafe: DELAY + 33.7,
+  n530: DELAY + 34.9,
   end: DELAY + T.duration - 3.2,
 };
 
