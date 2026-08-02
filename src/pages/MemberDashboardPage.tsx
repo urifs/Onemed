@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Play, Info, FileText, File, Music, Image as ImageIcon, Loader2, FileSpreadsheet, FileType, Megaphone, Star, Highlighter, Trash2 } from 'lucide-react';
+import { Play, Info, FileText, File, Music, Image as ImageIcon, Loader2, FileSpreadsheet, FileType, Megaphone, Star, Highlighter, Trash2, Sparkles } from 'lucide-react';
 import { useAnnouncementSettings } from '@/hooks/useAnnouncementSettings';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
@@ -12,8 +12,9 @@ import { CategorySidebar } from '@/components/member/CategorySidebar';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { FlashcardViewer, type FlashcardDeck } from '@/components/member/FlashcardViewer';
 import { CATEGORY_ORDER } from '@/lib/courseCategories';
-import { formatDuration, matchesSearch, stripYearFromTitle, withTimeout, withRetry, describeLoadError } from '@/lib/utils';
+import { formatDateTimeSP, formatDuration, matchesSearch, stripYearFromTitle, withTimeout, withRetry, describeLoadError } from '@/lib/utils';
 import type { Database } from '@/integrations/supabase/types';
 
 interface AnnotatedLesson {
@@ -26,6 +27,13 @@ interface AnnotatedLesson {
 }
 
 const ANNOTATIONS_TAB = 'Minhas anotações';
+const FLASHCARDS_TAB = 'Flashcards';
+
+interface SavedDeck extends FlashcardDeck {
+  id: string;
+  created_at: string;
+  source: { id: string; title: string }[];
+}
 
 type Course = Database['public']['Tables']['courses']['Row'];
 type Lesson = Database['public']['Tables']['lessons']['Row'];
@@ -66,6 +74,9 @@ export default function MemberDashboardPage() {
   const [favoriteLessonsLoading, setFavoriteLessonsLoading] = useState(false);
   const [annotated, setAnnotated] = useState<AnnotatedLesson[]>([]);
   const [annotatedLoading, setAnnotatedLoading] = useState(false);
+  const [decks, setDecks] = useState<SavedDeck[]>([]);
+  const [decksLoading, setDecksLoading] = useState(false);
+  const [openDeck, setOpenDeck] = useState<SavedDeck | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [loadErrorMessage, setLoadErrorMessage] = useState('');
@@ -231,6 +242,28 @@ export default function MemberDashboardPage() {
     return () => { alive = false; };
   }, [activeCategory, userId]);
 
+  // Baralhos salvos: mesma ideia das outras abas, só busca quando abre.
+  useEffect(() => {
+    if (activeCategory !== FLASHCARDS_TAB || !userId) return;
+    let alive = true;
+    setDecksLoading(true);
+    (supabase as any).from('flashcard_decks')
+      .select('id, title, difficulty, cards, source, created_at')
+      .order('created_at', { ascending: false })
+      .then(({ data }: { data: unknown }) => {
+        if (!alive) return;
+        setDecks(((data || []) as SavedDeck[]));
+        setDecksLoading(false);
+      });
+    return () => { alive = false; };
+  }, [activeCategory, userId]);
+
+  const deleteDeck = async (deck: SavedDeck) => {
+    if (!confirm(`Excluir o baralho "${deck.title}"?`)) return;
+    setDecks(prev => prev.filter(d => d.id !== deck.id));
+    await (supabase as any).from('flashcard_decks').delete().eq('id', deck.id);
+  };
+
   const handleUnfavoriteLesson = async (lessonId: string) => {
     if (!userId) return;
     setFavoriteLessons(prev => prev.filter(l => l.lesson_id !== lessonId));
@@ -297,6 +330,7 @@ export default function MemberDashboardPage() {
 
     // Favoritos sempre aparece, mesmo sem nada marcado ainda — o cliente
     // precisa ver que a opção existe, não só depois de favoritar algo.
+    cats.unshift({ name: FLASHCARDS_TAB, count: decks.length });
     cats.unshift({ name: 'Favoritos', count: favorites.size });
     // Sempre visível, como Favoritos: o aluno precisa descobrir que pode
     // anotar, não só encontrar a aba depois de já ter anotado.
@@ -310,7 +344,7 @@ export default function MemberDashboardPage() {
     if (activeCategory === 'Favoritos') {
       return courses.filter(c => favorites.has(c.id));
     }
-    if (activeCategory === ANNOTATIONS_TAB) return [];
+    if (activeCategory === ANNOTATIONS_TAB || activeCategory === FLASHCARDS_TAB) return [];
     return courses.filter(c => c.category === activeCategory);
   }, [courses, activeCategory, favorites]);
 
@@ -579,6 +613,57 @@ export default function MemberDashboardPage() {
                   </div>
                 )}
               </section>
+            ) : activeCategory === FLASHCARDS_TAB ? (
+              <section className="space-y-4">
+                <div>
+                  <h2 className="font-secondary text-lg font-bold text-foreground mb-1">Flashcards</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Baralhos que você gerou por IA e salvou. Para criar um novo, abra qualquer aula ou
+                    arquivo e toque no ícone <Sparkles className="w-3.5 h-3.5 inline text-primary" />.
+                  </p>
+                </div>
+
+                {decksLoading ? (
+                  <div className="flex justify-center py-10">
+                    <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                  </div>
+                ) : decks.length > 0 ? (
+                  <div className="rounded-xl border border-border overflow-hidden divide-y divide-border">
+                    {decks.map(deck => (
+                      <div key={deck.id} className="flex items-center gap-3.5 px-4 py-3.5 bg-card hover:bg-secondary transition-colors group">
+                        <button onClick={() => setOpenDeck(deck)} className="flex items-center gap-3.5 flex-1 min-w-0 text-left">
+                          <div className="w-9 h-9 rounded-full bg-secondary group-hover:bg-primary/15 flex items-center justify-center shrink-0 transition-colors">
+                            <Sparkles className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-foreground truncate">{deck.title}</p>
+                            <p className="text-xs text-muted-foreground truncate">
+                              {deck.cards.length} carta{deck.cards.length !== 1 ? 's' : ''}
+                              {' '}· {deck.difficulty === 'basico' ? 'Básico' : deck.difficulty === 'avancado' ? 'Avançado' : 'Intermediário'}
+                              {' '}· {formatDateTimeSP(deck.created_at)}
+                            </p>
+                          </div>
+                        </button>
+                        <button
+                          onClick={() => deleteDeck(deck)}
+                          title="Excluir baralho"
+                          className="shrink-0 p-1.5 rounded-lg text-muted-foreground/40 hover:text-destructive hover:bg-secondary transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-border bg-card px-4 py-8 text-center">
+                    <Sparkles className="w-6 h-6 text-muted-foreground/50 mx-auto mb-2" />
+                    <p className="text-sm text-muted-foreground">
+                      Nenhum baralho salvo ainda. Abra uma aula ou arquivo, toque no ícone de flashcards
+                      e a IA monta um baralho de estudo pra você.
+                    </p>
+                  </div>
+                )}
+              </section>
             ) : activeCategory === ANNOTATIONS_TAB ? (
               <section className="space-y-4">
                 <div>
@@ -763,6 +848,10 @@ export default function MemberDashboardPage() {
           </div>
         </div>
       </main>
+
+      {openDeck && (
+        <FlashcardViewer deck={openDeck} onClose={() => setOpenDeck(null)} />
+      )}
 
       <ManageRecentsDialog
         open={managingRecents}

@@ -3,7 +3,7 @@ import { useNavigate, useParams, useSearchParams, Link } from 'react-router-dom'
 import { toast } from 'sonner';
 import {
   ArrowLeft, Play, FileText, File, Music, Image as ImageIcon, CheckCircle2, Clock,
-  FileSpreadsheet, FileType, Star, ListOrdered, Menu, X, Check, Download, Loader2, ExternalLink,
+  FileSpreadsheet, FileType, Star, ListOrdered, Menu, X, Check, Download, Loader2, ExternalLink, Sparkles,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
@@ -18,6 +18,8 @@ import {
 } from '@/lib/utils';
 import { downloadLesson } from '@/lib/lessonDownload';
 import { openLessonInNewTab } from '@/lib/lessonOpen';
+import { FlashcardGeneratorModal, type FlashcardSource, type GeneratedDeck } from '@/components/member/FlashcardGeneratorModal';
+import { FlashcardViewer } from '@/components/member/FlashcardViewer';
 import { DownloadUpsellModal } from '@/components/member/DownloadUpsellModal';
 import { useDownloadGate } from '@/hooks/useDownloadGate';
 import { CourseTree } from '@/components/member/CourseTree';
@@ -104,6 +106,34 @@ export default function CourseDetailPage() {
   // download é um de cada vez, por item — não existe mais seleção em massa.
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [openingId, setOpeningId] = useState<string | null>(null);
+
+  // Gerador de flashcards por IA: abre com a aula clicada já selecionada.
+  const [fcOpen, setFcOpen] = useState(false);
+  const [fcSources, setFcSources] = useState<FlashcardSource[]>([]);
+  const [fcDeck, setFcDeck] = useState<GeneratedDeck | null>(null);
+  const [fcSaved, setFcSaved] = useState(false);
+  const [fcSaving, setFcSaving] = useState(false);
+
+  const openFlashcards = (lesson: Lesson) => {
+    setFcSources([{ id: lesson.id, title: lesson.title }]);
+    setFcOpen(true);
+  };
+
+  const saveDeck = async () => {
+    if (!fcDeck || !user || fcSaved || fcSaving) return;
+    setFcSaving(true);
+    const { error } = await (supabase as any).from('flashcard_decks').insert({
+      user_id: user.id,
+      title: fcDeck.title,
+      difficulty: fcDeck.difficulty,
+      cards: fcDeck.cards,
+      source: fcDeck.source,
+    });
+    setFcSaving(false);
+    if (error) { toast.error('Não foi possível salvar o baralho'); return; }
+    setFcSaved(true);
+    toast.success('Baralho salvo! Ele fica na aba Flashcards, na página inicial.');
+  };
 
   // Teste grátis não baixa nada; Mensal e Anual também não — o clique abre o
   // convite pra assinar/fazer upgrade em vez de baixar.
@@ -471,6 +501,7 @@ export default function CourseDetailPage() {
                   onToggleCompleted={handleToggleCompleted}
                   onDownload={handleDownloadLesson} downloadingId={downloadingId}
                   onOpenExternal={handleOpenLesson} openingId={openingId}
+                  onGenerateFlashcards={openFlashcards}
                 />
               </>
             ) : tab === 'arquivos' ? (
@@ -490,6 +521,7 @@ export default function CourseDetailPage() {
                   onToggleCompleted={handleToggleCompleted}
                   onDownload={handleDownloadLesson} downloadingId={downloadingId}
                   onOpenExternal={handleOpenLesson} openingId={openingId}
+                  onGenerateFlashcards={openFlashcards}
                 />
               </>
             ) : (
@@ -512,10 +544,27 @@ export default function CourseDetailPage() {
           hasNext={activeIndex >= 0 && activeIndex < activeOrderedLessons.length - 1}
           onPrev={() => activeIndex > 0 && setActiveLesson(activeOrderedLessons[activeIndex - 1])}
           onNext={() => activeIndex < activeOrderedLessons.length - 1 && setActiveLesson(activeOrderedLessons[activeIndex + 1])}
+          onGenerateFlashcards={() => openFlashcards(activeLesson)}
         />
       )}
 
       <DownloadUpsellModal open={upsellOpen} onOpenChange={setUpsellOpen} reason={downloadReason} plan={downloadPlan} />
+
+      <FlashcardGeneratorModal
+        open={fcOpen}
+        onOpenChange={setFcOpen}
+        initialSources={fcSources}
+        onGenerated={(deck) => { setFcDeck(deck); setFcSaved(false); }}
+      />
+      {fcDeck && (
+        <FlashcardViewer
+          deck={fcDeck}
+          onClose={() => setFcDeck(null)}
+          onSave={saveDeck}
+          saved={fcSaved}
+          saving={fcSaving}
+        />
+      )}
     </div>
   );
 }
@@ -595,7 +644,7 @@ function CourseSummarySidebar({
 
 function LessonGroupList({
   groups, progressMap, onSelect, favoriteIds, onToggleFavorite,
-  onToggleCompleted, onDownload, downloadingId, onOpenExternal, openingId,
+  onToggleCompleted, onDownload, downloadingId, onOpenExternal, openingId, onGenerateFlashcards,
 }: {
   groups: { id: string; title: string; lessons: Lesson[] }[];
   progressMap: Record<string, Progress>;
@@ -607,6 +656,7 @@ function LessonGroupList({
   downloadingId?: string | null;
   onOpenExternal?: (lesson: Lesson) => void;
   openingId?: string | null;
+  onGenerateFlashcards?: (lesson: Lesson) => void;
 }) {
   return (
     <div className="space-y-8">
@@ -678,6 +728,15 @@ function LessonGroupList({
                     {openingId === lesson.id
                       ? <Loader2 className="w-4 h-4 animate-spin text-primary" />
                       : <ExternalLink className="w-4 h-4" />}
+                  </button>
+                  {/* Gerar flashcards por IA a partir deste conteúdo. */}
+                  <button
+                    onClick={() => onGenerateFlashcards?.(lesson)}
+                    className="shrink-0 p-1.5 rounded-lg text-muted-foreground/50 hover:text-primary hover:bg-primary/10 transition-colors"
+                    title={`Gerar flashcards de "${lesson.title}"`}
+                    aria-label={`Gerar flashcards de ${lesson.title}`}
+                  >
+                    <Sparkles className="w-4 h-4" />
                   </button>
                   {/* Caixa de concluída: vale pra qualquer tipo. Antes só
                       vídeo virava "assistido" (pelos 92% de reprodução) — PDF,

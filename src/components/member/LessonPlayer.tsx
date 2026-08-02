@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type Mpegts from 'mpegts.js';
-import { X, ChevronLeft, ChevronRight, Loader2, ExternalLink, Download, Printer, Gauge, Check } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Loader2, ExternalLink, Download, Printer, Gauge, Check, Sparkles } from 'lucide-react';
 import { useLessonStreamUrl } from '@/hooks/useLessonStream';
 import { PdfViewer } from './PdfViewer';
 import { OfficeViewer } from './OfficeViewer';
@@ -36,11 +36,12 @@ interface LessonPlayerProps {
   onNext?: () => void;
   hasPrev?: boolean;
   hasNext?: boolean;
+  onGenerateFlashcards?: () => void;
 }
 
 export function LessonPlayer({
   lesson, courseTitle, initialWatchedSeconds, onClose, onProgress, onPrev, onNext, hasPrev, hasNext,
-  completed, onToggleCompleted,
+  completed, onToggleCompleted, onGenerateFlashcards,
 }: LessonPlayerProps) {
   const getUrl = useLessonStreamUrl();
   const [src, setSrc] = useState<string | null>(null);
@@ -414,6 +415,16 @@ export function LessonPlayer({
           >
             {opening ? <Loader2 className="w-4 h-4 animate-spin" /> : <ExternalLink className="w-4 h-4" />}
           </button>
+          {onGenerateFlashcards && (
+            <button
+              onClick={onGenerateFlashcards}
+              title="Gerar flashcards desta aula"
+              aria-label="Gerar flashcards desta aula"
+              className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/15 flex items-center justify-center text-white transition-colors"
+            >
+              <Sparkles className="w-4 h-4" />
+            </button>
+          )}
         </div>
         <div className="hidden sm:flex items-center gap-2">
           <button
