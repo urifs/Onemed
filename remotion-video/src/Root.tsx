@@ -21,6 +21,11 @@ import { C12_Comunidade, C12_DURATION } from './creatives/C12_Comunidade';
 import { C13_Organizacao, C13_DURATION } from './creatives/C13_Organizacao';
 import { C14_Completo, C14_DURATION } from './creatives/C14_Completo';
 import { C15_Historia, C15_DURATION } from './creatives/C15_Historia';
+import { C16_Revalida, C16_DURATION } from './creatives/C16_Revalida';
+import { C17_Turma, C17_DURATION } from './creatives/C17_Turma';
+import { C18_Interno, C18_DURATION } from './creatives/C18_Interno';
+import { C19_Conta, C19_DURATION } from './creatives/C19_Conta';
+import { C20_Recomeco, C20_DURATION } from './creatives/C20_Recomeco';
 
 const CREATIVES: Array<[string, React.FC, number]> = [
   ['C01-NovaEra', C01_NovaEra, C01_DURATION],
@@ -38,6 +43,11 @@ const CREATIVES: Array<[string, React.FC, number]> = [
   ['C13-Organizacao', C13_Organizacao, C13_DURATION],
   ['C14-Completo', C14_Completo, C14_DURATION],
   ['C15-Historia', C15_Historia, C15_DURATION],
+  ['C16-Revalida', C16_Revalida, C16_DURATION],
+  ['C17-Turma', C17_Turma, C17_DURATION],
+  ['C18-Interno', C18_Interno, C18_DURATION],
+  ['C19-Conta', C19_Conta, C19_DURATION],
+  ['C20-Recomeco', C20_Recomeco, C20_DURATION],
 ];
 
 export const RemotionRoot: React.FC = () => {
