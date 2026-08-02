@@ -4,6 +4,7 @@ import { Stethoscope, MessageCircle, ShoppingBag } from 'lucide-react';
 import { AccountMenu } from './AccountMenu';
 import { useIsTrial } from '@/hooks/useIsTrial';
 import { NotificationsBell } from './NotificationsBell';
+import { AssistantWidget } from './AssistantWidget';
 import { TrialCountdownBar } from './TrialCountdownBar';
 import { MemberPWAHead } from './MemberPWAHead';
 import { ThemeToggle } from '@/components/ThemeToggle';
@@ -91,6 +92,7 @@ export function MemberHeader() {
         </div>
       </header>
       <TrialCountdownBar />
+      <AssistantWidget />
     </>
   );
 }

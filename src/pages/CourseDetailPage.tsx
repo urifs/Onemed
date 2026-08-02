@@ -24,6 +24,7 @@ import { QuestionBankViewer } from '@/components/member/QuestionBankViewer';
 import { DownloadUpsellModal } from '@/components/member/DownloadUpsellModal';
 import { useDownloadGate } from '@/hooks/useDownloadGate';
 import { useMemberStatus } from '@/hooks/useMemberStatus';
+import { setOpenLesson } from '@/lib/assistantContext';
 import { AiUpsellModal } from '@/components/member/AiUpsellModal';
 import { CourseTree } from '@/components/member/CourseTree';
 import type { Database } from '@/integrations/supabase/types';
@@ -405,6 +406,23 @@ export default function CourseDetailPage() {
       setOpeningId(null);
     }
   };
+
+  // Publica pro assistente flutuante qual aula/arquivo está aberto AGORA.
+  // Nada é enviado à IA por abrir — o widget só usa isso quando o aluno
+  // manda uma pergunta.
+  useEffect(() => {
+    if (activeLesson && course) {
+      setOpenLesson({
+        id: activeLesson.id,
+        title: activeLesson.title,
+        type: activeLesson.type,
+        courseTitle: course.title,
+      });
+    } else {
+      setOpenLesson(null);
+    }
+    return () => setOpenLesson(null);
+  }, [activeLesson, course]);
 
   const activeIndex = activeLesson ? activeOrderedLessons.findIndex(l => l.id === activeLesson.id) : -1;
 
