@@ -112,6 +112,15 @@ describe('geradores de IA nos benefícios', () => {
     }
   });
 
+  it('plus e pro anunciam o assistente de IA, com texto idêntico; os demais não', () => {
+    const ASSISTENTE = 'Assistente de IA que lê em tempo real a aula ou arquivo que você está estudando e tira qualquer dúvida';
+    expect(PLAN_FEATURES.lifetime_plus).toContain(ASSISTENTE);
+    expect(PLAN_FEATURES.lifetime_pro).toContain(ASSISTENTE);
+    for (const plano of ['monthly', 'annual', 'lifetime']) {
+      expect(PLAN_FEATURES[plano].filter(f => f.startsWith('Assistente'))).toEqual([]);
+    }
+  });
+
   it('mensal, anual e vitalício não citam os geradores', () => {
     for (const plano of ['monthly', 'annual', 'lifetime']) {
       expect(PLAN_FEATURES[plano].filter(f => f.startsWith('Gerador'))).toEqual([]);

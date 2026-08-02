@@ -124,6 +124,7 @@ const PLANS: Record<string, {
       'Download em massa, cursos e pastas inteiras',
       'Gerador de flashcards a partir de qualquer conteúdo da plataforma',
       'Gerador de banco de questões a partir de qualquer conteúdo da plataforma',
+      'Assistente de IA que lê em tempo real a aula ou arquivo que você está estudando e tira qualquer dúvida',
     ],
   },
   lifetime_pro: {
@@ -140,6 +141,7 @@ const PLANS: Record<string, {
       'Download em massa, cursos e pastas inteiras',
       'Gerador de flashcards a partir de qualquer conteúdo da plataforma',
       'Gerador de banco de questões a partir de qualquer conteúdo da plataforma',
+      'Assistente de IA que lê em tempo real a aula ou arquivo que você está estudando e tira qualquer dúvida',
       'Acesso a todas as atualizações sem precisar de nenhuma colaboração',
       'Acesso à IA de diagnósticos Meduf (meduf.com.br)',
     ],
