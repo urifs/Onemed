@@ -1,7 +1,9 @@
 import { useMemo, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
-import { X, Save, Check, RotateCcw, Loader2, ChevronDown, ClipboardList } from 'lucide-react';
+import { X, Save, Check, RotateCcw, Loader2, ChevronDown, ClipboardList, FileDown } from 'lucide-react';
+import { toast } from 'sonner';
+import { exportQuestionBankPdf } from '@/lib/questionBankPdf';
 
 export interface BankQuestion {
   front: string;
@@ -37,6 +39,19 @@ export function QuestionBankViewer({ bank, bankId, onClose, onSave, saved, savin
 }) {
   const { user } = useAuth();
   const [answers, setAnswers] = useState<Map<number, number>>(new Map());
+  const [exporting, setExporting] = useState(false);
+
+  const baixarPdf = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      await exportQuestionBankPdf(bank);
+    } catch {
+      toast.error('Não foi possível gerar o PDF');
+    } finally {
+      setExporting(false);
+    }
+  };
   const [finished, setFinished] = useState(false);
   const [openGabarito, setOpenGabarito] = useState<Set<number>>(new Set());
   const startedAt = useRef(Date.now());
@@ -106,6 +121,17 @@ export function QuestionBankViewer({ bank, bankId, onClose, onSave, saved, savin
             {saved ? 'Salvo' : saving ? 'Salvando…' : 'Salvar'}
           </button>
         ) : <span className="w-[88px]" />}
+
+        <button
+          onClick={baixarPdf}
+          disabled={exporting}
+          title="Baixar em PDF (questões + gabarito comentado)"
+          aria-label="Baixar em PDF"
+          className="inline-flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-lg bg-secondary border border-border text-foreground hover:bg-secondary/70 transition-colors"
+        >
+          {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
+          <span className="hidden sm:inline">PDF</span>
+        </button>
 
         <div className="flex-1 min-w-0 text-center">
           <p className="text-sm font-semibold text-foreground truncate">{bank.title}</p>

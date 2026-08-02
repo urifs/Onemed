@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Play, Info, FileText, File, Music, Image as ImageIcon, Loader2, FileSpreadsheet, FileType, Megaphone, Star, Highlighter, Trash2, SquareStack, ClipboardList } from 'lucide-react';
+import { Play, Info, FileText, File, Music, Image as ImageIcon, Loader2, FileSpreadsheet, FileType, Megaphone, Star, Highlighter, Trash2, SquareStack, ClipboardList, FileDown } from 'lucide-react';
 import { useAnnouncementSettings } from '@/hooks/useAnnouncementSettings';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { FlashcardViewer, type FlashcardDeck } from '@/components/member/FlashcardViewer';
 import { FlashcardGeneratorModal, type GeneratedDeck } from '@/components/member/FlashcardGeneratorModal';
 import { QuestionBankViewer } from '@/components/member/QuestionBankViewer';
+import { exportQuestionBankPdf } from '@/lib/questionBankPdf';
 import { CATEGORY_ORDER } from '@/lib/courseCategories';
 import { formatDateTimeSP, formatDuration, matchesSearch, stripYearFromTitle, withTimeout, withRetry, describeLoadError } from '@/lib/utils';
 import type { Database } from '@/integrations/supabase/types';
@@ -1410,6 +1411,13 @@ function QuestionsTab({ banks, sessions, loading, onOpenBank, onDeleteBank, onCr
                         <p className="text-[10px] text-muted-foreground">média{ultima !== null ? ` · última ${ultima}%` : ''}</p>
                       </div>
                     )}
+                    <button
+                      onClick={() => exportQuestionBankPdf({ title: bank.title, difficulty: bank.difficulty, questions: bank.questions })}
+                      title="Baixar em PDF (questões + gabarito comentado)"
+                      className="shrink-0 p-1.5 rounded-lg text-muted-foreground/40 hover:text-primary hover:bg-secondary transition-colors"
+                    >
+                      <FileDown className="w-4 h-4" />
+                    </button>
                     <button
                       onClick={() => onDeleteBank(bank)}
                       title="Excluir banco (o histórico de provas fica)"
