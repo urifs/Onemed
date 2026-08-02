@@ -47,10 +47,31 @@ const MAX_CARDS = 30
 const MAX_UPLOADS = 5
 const MAX_UPLOAD_BYTES = 14 * 1024 * 1024
 
+// O nível precisa mudar a pergunta DE VERDADE — uma frase solta não muda o
+// comportamento do modelo. Cada nível vira um bloco de regras obrigatórias,
+// incluindo como construir os distratores (é neles que a dificuldade mora).
 const DIFFICULTY_TEXT: Record<string, string> = {
-  basico: 'BÁSICO: perguntas diretas sobre definições e conceitos fundamentais do conteúdo.',
-  intermediario: 'INTERMEDIÁRIO: perguntas que exigem relacionar conceitos, critérios diagnósticos, classificações e condutas.',
-  avancado: 'AVANÇADO: casos aplicados, exceções, diagnósticos diferenciais, detalhes que caem em prova de residência.',
+  basico: [
+    'BÁSICO — regras obrigatórias deste nível:',
+    '- Perguntas diretas de definição, reconhecimento e conceito fundamental ("o que é", "qual a função", valor normal).',
+    '- Enunciado curto, SEM caso clínico.',
+    '- Distratores claramente distinguíveis para quem estudou o material uma vez — de temas ou classes visivelmente diferentes.',
+    '- PROIBIDO: exceções, condutas de segunda linha, estatísticas finas, pegadinhas.',
+  ].join('\n'),
+  intermediario: [
+    'INTERMEDIÁRIO — regras obrigatórias deste nível:',
+    '- Perguntas que exigem RELACIONAR conceitos: critérios diagnósticos, classificações, mecanismos, primeira conduta.',
+    '- Enunciado pode trazer uma vinheta curta (1-2 frases).',
+    '- Distratores plausíveis DO MESMO tema, que exigem atenção — mas sem pegadinha de leitura.',
+    '- PROIBIDO: pergunta de definição pura (isso é nível básico).',
+  ].join('\n'),
+  avancado: [
+    'AVANÇADO — regras obrigatórias deste nível:',
+    '- Nível prova de residência: caso clínico com dados concretos (idade, achados, exames) exigindo raciocínio em 2 ou mais passos.',
+    '- Cobre exceções, contraindicações, diagnósticos diferenciais próximos e condutas de segunda linha presentes no material.',
+    '- Distratores MUITO próximos da correta: mesma classe de droga, critérios parecidos, condutas vizinhas — errar por desatenção deve ser fácil.',
+    '- PROIBIDO: pergunta de definição simples ou de resposta óbvia pelo enunciado.',
+  ].join('\n'),
 }
 
 // Mimes que o Gemini aceita inline. docx/xlsx ficam de fora — viram aviso.
@@ -386,6 +407,26 @@ serve(async (req) => {
     if (cards.length === 0) {
       console.error('Resposta não-JSON do modelo (2x):', String(llmData.choices?.[0]?.message?.content || '').slice(0, 300))
       return json(req, { error: 'A IA devolveu uma resposta inválida. Tente gerar de novo.' }, 502)
+    }
+
+    // Embaralha as alternativas de cada carta AQUI, não no prompt: o modelo
+    // tem viés de posição (concentra a correta nas mesmas letras) e pedir
+    // "varie as letras" não conserta viés estatístico. Com Fisher-Yates por
+    // carta, a letra da correta fica uniforme de verdade — why[] e correct
+    // são remapeados junto.
+    for (const c of cards) {
+      if (!Array.isArray(c.options) || typeof c.correct !== 'number') continue
+      const n = c.options.length
+      const perm = [...Array(n).keys()]
+      for (let i = n - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1))
+        ;[perm[i], perm[j]] = [perm[j], perm[i]]
+      }
+      const opts = c.options
+      const whys = Array.isArray(c.why) ? c.why : null
+      c.options = perm.map(o => opts[o])
+      if (whys) c.why = perm.map(o => whys[o] ?? '')
+      c.correct = perm.indexOf(c.correct)
     }
 
     if (sourceTitles.length === 0) {
