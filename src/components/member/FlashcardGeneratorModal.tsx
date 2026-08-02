@@ -21,23 +21,32 @@ const MAX_SOURCES = 8;
 // Upload próprio: lido no navegador e mandado em base64 DENTRO da requisição
 // de geração — nunca sobe pro Storage nem entra em tabela; o servidor usa e
 // descarta junto com a requisição.
-const MAX_UPLOADS = 3;
-const MAX_UPLOAD_TOTAL = 12 * 1024 * 1024;
-const UPLOAD_OK = /^(application\/pdf|image\/(png|jpe?g|webp)|video\/(mp4|webm|quicktime)|audio\/|text\/)/i;
+//
+// Vídeo e áudio podem ter QUALQUER tamanho: o navegador fatia e manda só o
+// trecho inicial (mesmo tratamento das aulas da plataforma — a IA transcreve
+// o que recebeu). Já PDF/imagem/texto precisam ir INTEIROS (PDF truncado é
+// arquivo quebrado), então valem os limites físicos do modelo: ~13MB de
+// mídia somada por geração.
+const MAX_UPLOADS = 5;
+const AV_SLICE = 10 * 1024 * 1024;
+const MEDIA_TOTAL = 13 * 1024 * 1024;
+const UPLOAD_OK = /^(application\/pdf|image\/(png|jpe?g|webp)|video\/|audio\/|text\/)/i;
 
 interface UploadedFile {
   name: string;
   mime: string;
-  size: number;
-  data: string; // base64 sem prefixo
+  size: number;      // tamanho original, só pra exibição
+  sentBytes: number; // o que realmente viaja na requisição
+  partial: boolean;  // vídeo/áudio fatiado
+  data: string;      // base64 sem prefixo
 }
 
-function readAsBase64(file: File): Promise<string> {
+function readAsBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const r = new FileReader();
     r.onload = () => resolve(String(r.result).split(',')[1] || '');
     r.onerror = () => reject(r.error);
-    r.readAsDataURL(file);
+    r.readAsDataURL(blob);
   });
 }
 
@@ -287,14 +296,31 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
     setReading(true);
     try {
       const novos: UploadedFile[] = [];
-      let totalAtual = uploads.reduce((t, u) => t + u.size, 0);
+      let totalEnviado = uploads.reduce((t, u) => t + u.sentBytes, 0);
       for (const file of Array.from(files)) {
-        if (uploads.length + novos.length >= MAX_UPLOADS) { toast.error(`Máximo de ${MAX_UPLOADS} arquivos enviados`); break; }
+        if (uploads.length + novos.length >= MAX_UPLOADS) { toast.error(`Máximo de ${MAX_UPLOADS} arquivos por geração`); break; }
         const mime = file.type || 'application/octet-stream';
         if (!UPLOAD_OK.test(mime)) { toast.error(`"${file.name}": envie PDF, imagem, áudio, vídeo ou texto`); continue; }
-        if (totalAtual + file.size > MAX_UPLOAD_TOTAL) { toast.error(`"${file.name}" estoura o limite de 12MB no total`); continue; }
-        totalAtual += file.size;
-        novos.push({ name: file.name, mime, size: file.size, data: await readAsBase64(file) });
+
+        const isAv = /^(video|audio)\//i.test(mime);
+        const restante = MEDIA_TOTAL - totalEnviado;
+        if (restante <= 0) { toast.error('Esta geração já está no limite de conteúdo — gere e depois crie outro baralho com o restante'); break; }
+
+        let blob: Blob = file;
+        let partial = false;
+        if (isAv) {
+          // Aula/vídeo de qualquer tamanho: viaja só o trecho inicial.
+          const fatia = Math.min(file.size, AV_SLICE, restante);
+          blob = file.slice(0, fatia, mime);
+          partial = fatia < file.size;
+        } else if (file.size > restante) {
+          // PDF/imagem/texto não pode ser cortado — precisa caber inteiro.
+          toast.error(`"${file.name}" (${(file.size / 1048576).toFixed(0)}MB) não cabe nesta geração — a IA lê até ~13MB de documentos somados. Vídeos podem ter qualquer tamanho.`);
+          continue;
+        }
+
+        totalEnviado += blob.size;
+        novos.push({ name: file.name, mime, size: file.size, sentBytes: blob.size, partial, data: await readAsBase64(blob) });
       }
       if (novos.length) setUploads(prev => [...prev, ...novos]);
     } finally {
@@ -406,7 +432,9 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
                   <div key={i} className="flex items-center gap-2 text-sm bg-secondary border border-border rounded-lg px-3 py-1.5 mb-1.5">
                     <FileText className="w-3.5 h-3.5 text-primary shrink-0" />
                     <span className="flex-1 truncate text-foreground/90">{u.name}</span>
-                    <span className="text-[11px] text-muted-foreground shrink-0">{(u.size / 1048576).toFixed(1)}MB</span>
+                    <span className="text-[11px] text-muted-foreground shrink-0">
+                      {(u.size / 1048576).toFixed(1)}MB{u.partial ? ' · trecho inicial' : ''}
+                    </span>
                     <button
                       onClick={() => setUploads(prev => prev.filter((_, j) => j !== i))}
                       className="text-muted-foreground hover:text-foreground shrink-0"
@@ -429,7 +457,8 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
                   />
                 </label>
                 <p className="text-[10px] text-muted-foreground mt-1">
-                  Seus arquivos não ficam salvos na plataforma — são usados só nesta geração e descartados.
+                  Vídeos e áudios de qualquer tamanho (a IA usa o trecho inicial). Seus arquivos não
+                  ficam salvos na plataforma — são usados só nesta geração e descartados.
                 </p>
               </div>
             </div>

@@ -42,9 +42,10 @@ const MAX_LESSONS = 8
 const MAX_CARDS = 30
 // Uploads do próprio aluno: chegam em base64 no corpo da requisição e são
 // usados SÓ nesta geração — nunca gravados em Storage nem em tabela alguma;
-// morrem com a requisição. 3 arquivos, 12MB brutos no total.
-const MAX_UPLOADS = 3
-const MAX_UPLOAD_BYTES = 12 * 1024 * 1024
+// morrem com a requisição. O navegador já fatia vídeo/áudio grande antes de
+// mandar (viaja só o trecho inicial), então aqui o teto é o do modelo.
+const MAX_UPLOADS = 5
+const MAX_UPLOAD_BYTES = 14 * 1024 * 1024
 
 const DIFFICULTY_TEXT: Record<string, string> = {
   basico: 'BÁSICO: perguntas diretas sobre definições e conceitos fundamentais do conteúdo.',
