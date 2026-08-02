@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/context/AuthContext';
 import { X, Save, Check, RotateCcw, Loader2, ChevronDown } from 'lucide-react';
 
 export interface Flashcard {
@@ -27,14 +29,17 @@ const DIFFICULTY_LABEL: Record<string, string> = {
 // melhora a média.
 const REQUEUE_AHEAD = 2;
 
-export function FlashcardViewer({ deck, onClose, onSave, saved, saving }: {
+export function FlashcardViewer({ deck, deckId, onClose, onSave, saved, saving }: {
   deck: FlashcardDeck;
+  // id do baralho salvo — liga a sessão ao baralho nas estatísticas.
+  deckId?: string | null;
   onClose: () => void;
   // Ausente quando o baralho já veio da lista de salvos.
   onSave?: () => void;
   saved?: boolean;
   saving?: boolean;
 }) {
+  const { user } = useAuth();
   // Fila de índices em deck.cards — reenfileirar é reinserir o índice.
   const [queue, setQueue] = useState<number[]>(() => deck.cards.map((_, i) => i));
   const [revealed, setRevealed] = useState(false);
@@ -43,6 +48,9 @@ export function FlashcardViewer({ deck, onClose, onSave, saved, saving }: {
   const [showWhy, setShowWhy] = useState(false);
   // Primeira resposta de cada carta — é daqui que sai a média final.
   const [firstTry, setFirstTry] = useState<Map<number, boolean>>(new Map());
+  const [reviews, setReviews] = useState(0);
+  const startedAt = useRef(Date.now());
+  const recorded = useRef(false);
 
   const currentIdx = queue.length > 0 ? queue[0] : null;
   const current = currentIdx !== null ? deck.cards[currentIdx] : null;
@@ -56,6 +64,7 @@ export function FlashcardViewer({ deck, onClose, onSave, saved, saving }: {
 
   const advance = (correct: boolean) => {
     if (currentIdx === null) return;
+    setReviews(r => r + 1);
     setFirstTry(prev => prev.has(currentIdx) ? prev : new Map(prev).set(currentIdx, correct));
     setRevealed(false);
     setPicked(null);
@@ -85,6 +94,9 @@ export function FlashcardViewer({ deck, onClose, onSave, saved, saving }: {
     setPicked(null);
     setShowWhy(false);
     setFirstTry(new Map());
+    setReviews(0);
+    startedAt.current = Date.now();
+    recorded.current = false;
   };
 
   // Atalhos: espaço/Enter revela; no avulso 1 Errei / 2 Acertei; na múltipla
@@ -114,6 +126,24 @@ export function FlashcardViewer({ deck, onClose, onSave, saved, saving }: {
 
   const acertosPrimeira = [...firstTry.values()].filter(Boolean).length;
   const notaFinal = total > 0 ? Math.round((acertosPrimeira / total) * 100) : 0;
+
+  // Sessão concluída (fila vazia) → grava no histórico UMA vez. É o que
+  // alimenta a média e as estatísticas da aba Flashcards. Melhor esforço:
+  // falha de rede não interrompe a tela de resultado.
+  useEffect(() => {
+    if (current !== null || total === 0 || recorded.current || !user) return;
+    recorded.current = true;
+    void (supabase as any).from('flashcard_sessions').insert({
+      user_id: user.id,
+      deck_id: deckId || null,
+      deck_title: deck.title,
+      total_cards: total,
+      correct_first_try: acertosPrimeira,
+      reviews,
+      duration_seconds: Math.round((Date.now() - startedAt.current) / 1000),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current]);
 
   return (
     <div className="fixed inset-0 z-[90] bg-background flex flex-col">

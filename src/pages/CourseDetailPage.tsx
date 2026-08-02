@@ -112,6 +112,7 @@ export default function CourseDetailPage() {
   const [fcSources, setFcSources] = useState<FlashcardSource[]>([]);
   const [fcDeck, setFcDeck] = useState<GeneratedDeck | null>(null);
   const [fcSaved, setFcSaved] = useState(false);
+  const [fcSavedId, setFcSavedId] = useState<string | null>(null);
   const [fcSaving, setFcSaving] = useState(false);
 
   const openFlashcards = (lesson: Lesson) => {
@@ -122,15 +123,16 @@ export default function CourseDetailPage() {
   const saveDeck = async () => {
     if (!fcDeck || !user || fcSaved || fcSaving) return;
     setFcSaving(true);
-    const { error } = await (supabase as any).from('flashcard_decks').insert({
+    const { data: savedRow, error } = await (supabase as any).from('flashcard_decks').insert({
       user_id: user.id,
       title: fcDeck.title,
       difficulty: fcDeck.difficulty,
       cards: fcDeck.cards,
       source: fcDeck.source,
-    });
+    }).select('id').single();
     setFcSaving(false);
     if (error) { toast.error('Não foi possível salvar o baralho'); return; }
+    setFcSavedId(savedRow?.id || null);
     setFcSaved(true);
     toast.success('Baralho salvo! Ele fica na aba Flashcards, na página inicial.');
   };
@@ -554,11 +556,12 @@ export default function CourseDetailPage() {
         open={fcOpen}
         onOpenChange={setFcOpen}
         initialSources={fcSources}
-        onGenerated={(deck) => { setFcDeck(deck); setFcSaved(false); }}
+        onGenerated={(deck) => { setFcDeck(deck); setFcSaved(false); setFcSavedId(null); }}
       />
       {fcDeck && (
         <FlashcardViewer
           deck={fcDeck}
+          deckId={fcSavedId}
           onClose={() => setFcDeck(null)}
           onSave={saveDeck}
           saved={fcSaved}

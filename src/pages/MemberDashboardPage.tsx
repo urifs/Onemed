@@ -35,6 +35,20 @@ interface SavedDeck extends FlashcardDeck {
   source: { id: string; title: string }[];
 }
 
+interface StudySession {
+  id: string;
+  deck_id: string | null;
+  deck_title: string;
+  total_cards: number;
+  correct_first_try: number;
+  reviews: number;
+  duration_seconds: number | null;
+  created_at: string;
+}
+
+const notaCor = (pct: number) =>
+  pct >= 70 ? 'text-accent-success' : pct >= 40 ? 'text-accent-warning' : 'text-red-500';
+
 type Course = Database['public']['Tables']['courses']['Row'];
 type Lesson = Database['public']['Tables']['lessons']['Row'];
 type ProgressRow = Database['public']['Tables']['lesson_progress']['Row'] & {
@@ -77,6 +91,8 @@ export default function MemberDashboardPage() {
   const [decks, setDecks] = useState<SavedDeck[]>([]);
   const [decksLoading, setDecksLoading] = useState(false);
   const [openDeck, setOpenDeck] = useState<SavedDeck | null>(null);
+  const [sessions, setSessions] = useState<StudySession[]>([]);
+  const [sessionsTick, setSessionsTick] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [loadErrorMessage, setLoadErrorMessage] = useState('');
@@ -247,16 +263,22 @@ export default function MemberDashboardPage() {
     if (activeCategory !== FLASHCARDS_TAB || !userId) return;
     let alive = true;
     setDecksLoading(true);
-    (supabase as any).from('flashcard_decks')
-      .select('id, title, difficulty, cards, source, created_at')
-      .order('created_at', { ascending: false })
-      .then(({ data }: { data: unknown }) => {
-        if (!alive) return;
-        setDecks(((data || []) as SavedDeck[]));
-        setDecksLoading(false);
-      });
+    Promise.all([
+      (supabase as any).from('flashcard_decks')
+        .select('id, title, difficulty, cards, source, created_at')
+        .order('created_at', { ascending: false }),
+      (supabase as any).from('flashcard_sessions')
+        .select('id, deck_id, deck_title, total_cards, correct_first_try, reviews, duration_seconds, created_at')
+        .order('created_at', { ascending: false })
+        .limit(200),
+    ]).then(([{ data: decksData }, { data: sessData }]: { data: unknown }[]) => {
+      if (!alive) return;
+      setDecks(((decksData || []) as SavedDeck[]));
+      setSessions(((sessData || []) as StudySession[]));
+      setDecksLoading(false);
+    });
     return () => { alive = false; };
-  }, [activeCategory, userId]);
+  }, [activeCategory, userId, sessionsTick]);
 
   const deleteDeck = async (deck: SavedDeck) => {
     if (!confirm(`Excluir o baralho "${deck.title}"?`)) return;
@@ -614,56 +636,13 @@ export default function MemberDashboardPage() {
                 )}
               </section>
             ) : activeCategory === FLASHCARDS_TAB ? (
-              <section className="space-y-4">
-                <div>
-                  <h2 className="font-secondary text-lg font-bold text-foreground mb-1">Flashcards</h2>
-                  <p className="text-sm text-muted-foreground">
-                    Baralhos que você gerou por IA e salvou. Para criar um novo, abra qualquer aula ou
-                    arquivo e toque no ícone <Sparkles className="w-3.5 h-3.5 inline text-primary" />.
-                  </p>
-                </div>
-
-                {decksLoading ? (
-                  <div className="flex justify-center py-10">
-                    <Loader2 className="w-5 h-5 animate-spin text-primary" />
-                  </div>
-                ) : decks.length > 0 ? (
-                  <div className="rounded-xl border border-border overflow-hidden divide-y divide-border">
-                    {decks.map(deck => (
-                      <div key={deck.id} className="flex items-center gap-3.5 px-4 py-3.5 bg-card hover:bg-secondary transition-colors group">
-                        <button onClick={() => setOpenDeck(deck)} className="flex items-center gap-3.5 flex-1 min-w-0 text-left">
-                          <div className="w-9 h-9 rounded-full bg-secondary group-hover:bg-primary/15 flex items-center justify-center shrink-0 transition-colors">
-                            <Sparkles className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-foreground truncate">{deck.title}</p>
-                            <p className="text-xs text-muted-foreground truncate">
-                              {deck.cards.length} carta{deck.cards.length !== 1 ? 's' : ''}
-                              {' '}· {deck.difficulty === 'basico' ? 'Básico' : deck.difficulty === 'avancado' ? 'Avançado' : 'Intermediário'}
-                              {' '}· {formatDateTimeSP(deck.created_at)}
-                            </p>
-                          </div>
-                        </button>
-                        <button
-                          onClick={() => deleteDeck(deck)}
-                          title="Excluir baralho"
-                          className="shrink-0 p-1.5 rounded-lg text-muted-foreground/40 hover:text-destructive hover:bg-secondary transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="rounded-xl border border-border bg-card px-4 py-8 text-center">
-                    <Sparkles className="w-6 h-6 text-muted-foreground/50 mx-auto mb-2" />
-                    <p className="text-sm text-muted-foreground">
-                      Nenhum baralho salvo ainda. Abra uma aula ou arquivo, toque no ícone de flashcards
-                      e a IA monta um baralho de estudo pra você.
-                    </p>
-                  </div>
-                )}
-              </section>
+              <FlashcardsTab
+                decks={decks}
+                sessions={sessions}
+                loading={decksLoading}
+                onOpenDeck={setOpenDeck}
+                onDeleteDeck={deleteDeck}
+              />
             ) : activeCategory === ANNOTATIONS_TAB ? (
               <section className="space-y-4">
                 <div>
@@ -850,7 +829,7 @@ export default function MemberDashboardPage() {
       </main>
 
       {openDeck && (
-        <FlashcardViewer deck={openDeck} onClose={() => setOpenDeck(null)} />
+        <FlashcardViewer deck={openDeck} deckId={openDeck.id} onClose={() => { setOpenDeck(null); setSessionsTick(t => t + 1); }} />
       )}
 
       <ManageRecentsDialog
@@ -947,6 +926,196 @@ function Row({ title, items, onToggleFavorite, action }: {
           </div>
         ))}
       </div>
+    </section>
+  );
+}
+
+
+// ─── Aba Flashcards: estatísticas + baralhos + histórico ────────────────────
+//
+// Tudo derivado de flashcard_sessions (uma linha por sessão CONCLUÍDA). A
+// média é sempre da PRIMEIRA tentativa de cada carta — repetir até acertar
+// não infla nota nenhuma daqui.
+function FlashcardsTab({ decks, sessions, loading, onOpenDeck, onDeleteDeck }: {
+  decks: SavedDeck[];
+  sessions: StudySession[];
+  loading: boolean;
+  onOpenDeck: (deck: SavedDeck) => void;
+  onDeleteDeck: (deck: SavedDeck) => void;
+}) {
+  const pct = (ok: number, total: number) => total > 0 ? Math.round((ok / total) * 100) : 0;
+
+  const totalCartas = sessions.reduce((t, s) => t + s.total_cards, 0);
+  const totalAcertos = sessions.reduce((t, s) => t + s.correct_first_try, 0);
+  const mediaGeral = pct(totalAcertos, totalCartas);
+  const tempoTotal = sessions.reduce((t, s) => t + (s.duration_seconds || 0), 0);
+
+  const porBaralho = new Map<string, StudySession[]>();
+  for (const s of sessions) {
+    if (!s.deck_id) continue;
+    if (!porBaralho.has(s.deck_id)) porBaralho.set(s.deck_id, []);
+    porBaralho.get(s.deck_id)!.push(s);
+  }
+
+  // Evolução: até 14 sessões mais recentes, da mais antiga pra mais nova.
+  const evolucao = [...sessions].slice(0, 14).reverse();
+
+  return (
+    <section className="space-y-6">
+      <div>
+        <h2 className="font-secondary text-lg font-bold text-foreground mb-1">Flashcards</h2>
+        <p className="text-sm text-muted-foreground">
+          Baralhos que você gerou por IA e salvou. Para criar um novo, abra qualquer aula ou
+          arquivo e toque no ícone <Sparkles className="w-3.5 h-3.5 inline text-primary" />.
+        </p>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-10">
+          <Loader2 className="w-5 h-5 animate-spin text-primary" />
+        </div>
+      ) : (
+        <>
+          {/* resumo geral */}
+          {sessions.length > 0 && (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="glass rounded-xl border border-border p-4">
+                <p className="text-xs text-muted-foreground mb-1">Média geral</p>
+                <p className={`text-2xl font-bold ${notaCor(mediaGeral)}`}>{mediaGeral}%</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">na primeira tentativa</p>
+              </div>
+              <div className="glass rounded-xl border border-border p-4">
+                <p className="text-xs text-muted-foreground mb-1">Sessões de estudo</p>
+                <p className="text-2xl font-bold text-foreground">{sessions.length}</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">concluídas até o fim</p>
+              </div>
+              <div className="glass rounded-xl border border-border p-4">
+                <p className="text-xs text-muted-foreground mb-1">Cartas respondidas</p>
+                <p className="text-2xl font-bold text-foreground">{totalCartas}</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  {totalAcertos} certas · {totalCartas - totalAcertos} erradas
+                </p>
+              </div>
+              <div className="glass rounded-xl border border-border p-4">
+                <p className="text-xs text-muted-foreground mb-1">Tempo estudando</p>
+                <p className="text-2xl font-bold text-foreground">
+                  {tempoTotal >= 3600
+                    ? `${Math.floor(tempoTotal / 3600)}h${String(Math.floor((tempoTotal % 3600) / 60)).padStart(2, '0')}`
+                    : `${Math.max(1, Math.round(tempoTotal / 60))}min`}
+                </p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">somando todas as sessões</p>
+              </div>
+            </div>
+          )}
+
+          {/* evolução das últimas sessões */}
+          {evolucao.length >= 2 && (
+            <div className="glass rounded-xl border border-border p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">
+                Evolução — últimas {evolucao.length} sessões
+              </p>
+              <div className="flex items-end gap-1.5 h-24">
+                {evolucao.map(s => {
+                  const nota = pct(s.correct_first_try, s.total_cards);
+                  const cor = nota >= 70 ? 'bg-accent-success' : nota >= 40 ? 'bg-accent-warning' : 'bg-red-500';
+                  return (
+                    <div
+                      key={s.id}
+                      className="flex-1 flex flex-col items-center gap-1 group relative"
+                      title={`${s.deck_title} — ${nota}% (${s.correct_first_try}/${s.total_cards}) · ${formatDateTimeSP(s.created_at)}`}
+                    >
+                      <span className="text-[10px] tabular-nums text-muted-foreground opacity-0 group-hover:opacity-100 absolute -top-4 transition-opacity">{nota}%</span>
+                      <div className={`w-full rounded-t ${cor} transition-all`} style={{ height: `${Math.max(nota, 4)}%` }} />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* baralhos com estatísticas próprias */}
+          {decks.length > 0 ? (
+            <div className="rounded-xl border border-border overflow-hidden divide-y divide-border">
+              {decks.map(deck => {
+                const hist = porBaralho.get(deck.id) || [];
+                const cartasDeck = hist.reduce((t, s) => t + s.total_cards, 0);
+                const acertosDeck = hist.reduce((t, s) => t + s.correct_first_try, 0);
+                const mediaDeck = pct(acertosDeck, cartasDeck);
+                const melhor = hist.length ? Math.max(...hist.map(s => pct(s.correct_first_try, s.total_cards))) : 0;
+                const ultima = hist[0] ? pct(hist[0].correct_first_try, hist[0].total_cards) : null;
+                return (
+                  <div key={deck.id} className="flex items-center gap-3.5 px-4 py-3.5 bg-card hover:bg-secondary transition-colors group">
+                    <button onClick={() => onOpenDeck(deck)} className="flex items-center gap-3.5 flex-1 min-w-0 text-left">
+                      <div className="w-9 h-9 rounded-full bg-secondary group-hover:bg-primary/15 flex items-center justify-center shrink-0 transition-colors">
+                        <Sparkles className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-foreground truncate">{deck.title}</p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {deck.cards.length} carta{deck.cards.length !== 1 ? 's' : ''}
+                          {' '}· {deck.difficulty === 'basico' ? 'Básico' : deck.difficulty === 'avancado' ? 'Avançado' : 'Intermediário'}
+                          {hist.length > 0
+                            ? <> · {hist.length} {hist.length === 1 ? 'sessão' : 'sessões'} · melhor {melhor}%</>
+                            : <> · nunca estudado</>}
+                        </p>
+                      </div>
+                    </button>
+                    {hist.length > 0 && (
+                      <div className="hidden sm:block text-right shrink-0">
+                        <p className={`text-sm font-bold tabular-nums ${notaCor(mediaDeck)}`}>{mediaDeck}%</p>
+                        <p className="text-[10px] text-muted-foreground">média{ultima !== null ? ` · última ${ultima}%` : ''}</p>
+                      </div>
+                    )}
+                    <button
+                      onClick={() => onDeleteDeck(deck)}
+                      title="Excluir baralho (o histórico de estudo fica)"
+                      className="shrink-0 p-1.5 rounded-lg text-muted-foreground/40 hover:text-destructive hover:bg-secondary transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="rounded-xl border border-border bg-card px-4 py-8 text-center">
+              <Sparkles className="w-6 h-6 text-muted-foreground/50 mx-auto mb-2" />
+              <p className="text-sm text-muted-foreground">
+                Nenhum baralho salvo ainda. Abra uma aula ou arquivo, toque no ícone de flashcards
+                e a IA monta um baralho de estudo pra você.
+              </p>
+            </div>
+          )}
+
+          {/* histórico de sessões */}
+          {sessions.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                Histórico de sessões
+              </p>
+              <div className="rounded-xl border border-border overflow-hidden divide-y divide-border max-h-72 overflow-y-auto">
+                {sessions.slice(0, 30).map(s => {
+                  const nota = pct(s.correct_first_try, s.total_cards);
+                  return (
+                    <div key={s.id} className="flex items-center gap-3 px-4 py-2.5 bg-card text-sm">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-foreground truncate">{s.deck_title}</p>
+                        <p className="text-[11px] text-muted-foreground">
+                          {formatDateTimeSP(s.created_at)}
+                          {' '}· {s.correct_first_try}/{s.total_cards} de primeira
+                          {s.reviews > s.total_cards ? ` · ${s.reviews - s.total_cards} ${s.reviews - s.total_cards === 1 ? 'repetição' : 'repetições'}` : ''}
+                          {s.duration_seconds ? ` · ${Math.max(1, Math.round(s.duration_seconds / 60))}min` : ''}
+                        </p>
+                      </div>
+                      <span className={`text-sm font-bold tabular-nums shrink-0 ${notaCor(nota)}`}>{nota}%</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </>
+      )}
     </section>
   );
 }
