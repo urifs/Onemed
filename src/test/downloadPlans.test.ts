@@ -96,3 +96,32 @@ describe('upgradePriceFor', () => {
     expect(upgradePriceFor('lifetime_pro', 'lifetime_pro')).toBe(MIN_UPGRADE_PRICE);
   });
 });
+
+// Ferramentas de IA anunciadas SO no Plus e no Pro (Mensal/Anual/Vitalicio
+// não citam — serão bloqueados futuramente sem quebrar promessa de venda).
+describe('geradores de IA nos benefícios', () => {
+  const GERADORES = [
+    'Gerador de flashcards a partir de qualquer conteúdo da plataforma',
+    'Gerador de banco de questões a partir de qualquer conteúdo da plataforma',
+  ];
+
+  it('plus e pro anunciam os dois geradores, com texto idêntico', () => {
+    for (const g of GERADORES) {
+      expect(PLAN_FEATURES.lifetime_plus).toContain(g);
+      expect(PLAN_FEATURES.lifetime_pro).toContain(g);
+    }
+  });
+
+  it('mensal, anual e vitalício não citam os geradores', () => {
+    for (const plano of ['monthly', 'annual', 'lifetime']) {
+      expect(PLAN_FEATURES[plano].filter(f => f.startsWith('Gerador'))).toEqual([]);
+    }
+  });
+
+  it('vitalício → plus ganha os geradores como novidade; plus → pro não repete', () => {
+    const novos = (de: string, para: string) =>
+      (PLAN_FEATURES[para] || []).filter(f => !(PLAN_FEATURES[de] || []).includes(f));
+    for (const g of GERADORES) expect(novos('lifetime', 'lifetime_plus')).toContain(g);
+    expect(novos('lifetime_plus', 'lifetime_pro').filter(f => f.startsWith('Gerador'))).toEqual([]);
+  });
+});

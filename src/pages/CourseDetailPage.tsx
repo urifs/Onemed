@@ -23,6 +23,8 @@ import { FlashcardViewer } from '@/components/member/FlashcardViewer';
 import { QuestionBankViewer } from '@/components/member/QuestionBankViewer';
 import { DownloadUpsellModal } from '@/components/member/DownloadUpsellModal';
 import { useDownloadGate } from '@/hooks/useDownloadGate';
+import { useMemberStatus } from '@/hooks/useMemberStatus';
+import { AiUpsellModal } from '@/components/member/AiUpsellModal';
 import { CourseTree } from '@/components/member/CourseTree';
 import type { Database } from '@/integrations/supabase/types';
 
@@ -117,6 +119,7 @@ export default function CourseDetailPage() {
   const [fcSaving, setFcSaving] = useState(false);
 
   const openFlashcards = (lesson: Lesson) => {
+    if (!podeGerarIa) { setAiUpsell('flashcards'); return; }
     setFcSources([{ id: lesson.id, title: lesson.title }]);
     setFcOpen(true);
   };
@@ -130,6 +133,7 @@ export default function CourseDetailPage() {
   const [qbSaving, setQbSaving] = useState(false);
 
   const openQuestions = (lesson: Lesson) => {
+    if (!podeGerarIa) { setAiUpsell('questoes'); return; }
     setQbSources([{ id: lesson.id, title: lesson.title }]);
     setQbOpen(true);
   };
@@ -171,6 +175,12 @@ export default function CourseDetailPage() {
   // Teste grátis não baixa nada; Mensal e Anual também não — o clique abre o
   // convite pra assinar/fazer upgrade em vez de baixar.
   const { upsellOpen, setUpsellOpen, ensureCanDownload, reason: downloadReason, plan: downloadPlan } = useDownloadGate();
+
+  // Mensal não gera flashcards nem banco de questões — clique abre o convite
+  // de upgrade. A mesma consulta de plano do porteiro do download (em cache).
+  const { plan: memberPlan } = useMemberStatus();
+  const [aiUpsell, setAiUpsell] = useState<null | 'flashcards' | 'questoes'>(null);
+  const podeGerarIa = memberPlan !== 'monthly';
 
   useEffect(() => {
     let alive = true;
@@ -585,6 +595,9 @@ export default function CourseDetailPage() {
       )}
 
       <DownloadUpsellModal open={upsellOpen} onOpenChange={setUpsellOpen} reason={downloadReason} plan={downloadPlan} />
+      {aiUpsell && (
+        <AiUpsellModal open onOpenChange={(o) => { if (!o) setAiUpsell(null); }} feature={aiUpsell} />
+      )}
 
       <FlashcardGeneratorModal
         open={fcOpen}

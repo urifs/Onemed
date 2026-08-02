@@ -125,6 +125,24 @@ serve(async (req) => {
     const { data: { user }, error: authErr } = await supabase.auth.getUser(jwt)
     if (authErr || !user) return json(req, { error: 'Sessão inválida' }, 401)
 
+    // Plano Mensal não usa as ferramentas de IA — o mesmo my_member_status
+    // das telas decide (chamado com o JWT do aluno, então auth.uid() vale).
+    // Falha na consulta NÃO bloqueia: pior negar a um assinante com direito
+    // do que deixar passar uma geração.
+    try {
+      const anonKey = Deno.env.get('SUPABASE_ANON_KEY') || ''
+      const asUser = createClient(supabaseUrl, anonKey, {
+        global: { headers: { Authorization: `Bearer ${jwt}` } },
+      })
+      const { data: st } = await asUser.rpc('my_member_status')
+      const planoAtual = (Array.isArray(st) ? st[0] : st)?.plan
+      if (planoAtual === 'monthly') {
+        return json(req, {
+          error: 'O Plano Mensal não inclui as ferramentas de geração por IA. Faça upgrade de plano para liberar.',
+        }, 403)
+      }
+    } catch { /* segue liberado */ }
+
     // ── entrada ────────────────────────────────────────────────────────────
     const { lessonIds, difficulty, count, extraText, format, uploads, mode } = await req.json()
     // 'questions' = banco de questões: sempre múltipla escolha, com enunciado

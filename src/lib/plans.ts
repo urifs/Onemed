@@ -41,6 +41,8 @@ export const PLAN_FEATURES: Record<string, string[]> = {
     'Backup de tudo da plataforma no seu próprio Google Drive',
     'Download de arquivos, um a um',
     'Download em massa, cursos e pastas inteiras',
+    'Gerador de flashcards a partir de qualquer conteúdo da plataforma',
+    'Gerador de banco de questões a partir de qualquer conteúdo da plataforma',
   ],
   lifetime_pro: [
     'Acesso vitalício',
@@ -49,6 +51,8 @@ export const PLAN_FEATURES: Record<string, string[]> = {
     'Backup de tudo da plataforma no seu próprio Google Drive',
     'Download de arquivos, um a um',
     'Download em massa, cursos e pastas inteiras',
+    'Gerador de flashcards a partir de qualquer conteúdo da plataforma',
+    'Gerador de banco de questões a partir de qualquer conteúdo da plataforma',
     'Acesso a todas as atualizações sem precisar de nenhuma colaboração',
     'Acesso à IA de diagnósticos Meduf (meduf.com.br)',
   ],

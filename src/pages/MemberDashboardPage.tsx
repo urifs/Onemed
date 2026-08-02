@@ -16,6 +16,8 @@ import { FlashcardViewer, type FlashcardDeck } from '@/components/member/Flashca
 import { FlashcardGeneratorModal, type GeneratedDeck } from '@/components/member/FlashcardGeneratorModal';
 import { QuestionBankViewer } from '@/components/member/QuestionBankViewer';
 import { exportQuestionBankPdf } from '@/lib/questionBankPdf';
+import { useMemberStatus } from '@/hooks/useMemberStatus';
+import { AiUpsellModal } from '@/components/member/AiUpsellModal';
 import { CATEGORY_ORDER } from '@/lib/courseCategories';
 import { formatDateTimeSP, formatDuration, matchesSearch, stripYearFromTitle, withTimeout, withRetry, describeLoadError } from '@/lib/utils';
 import type { Database } from '@/integrations/supabase/types';
@@ -121,6 +123,9 @@ export default function MemberDashboardPage() {
   const [banksLoading, setBanksLoading] = useState(false);
   const [openBank, setOpenBank] = useState<SavedBank | null>(null);
   const [qbCreateOpen, setQbCreateOpen] = useState(false);
+  const { plan: memberPlan } = useMemberStatus();
+  const podeGerarIa = memberPlan !== 'monthly';
+  const [aiUpsell, setAiUpsell] = useState<null | 'flashcards' | 'questoes'>(null);
   const [qbNew, setQbNew] = useState<GeneratedDeck | null>(null);
   const [qbNewSaved, setQbNewSaved] = useState(false);
   const [qbNewSavedId, setQbNewSavedId] = useState<string | null>(null);
@@ -449,17 +454,20 @@ export default function MemberDashboardPage() {
     
     const cats = order.filter(cat => counts.has(cat)).map(cat => ({ name: cat, count: counts.get(cat)! }));
 
-    // Favoritos sempre aparece, mesmo sem nada marcado ainda — o cliente
-    // precisa ver que a opção existe, não só depois de favoritar algo.
-    cats.unshift({ name: QUESTIONS_TAB, count: banks.length });
-    cats.unshift({ name: FLASHCARDS_TAB, count: decks.length });
-    cats.unshift({ name: 'Favoritos', count: favorites.size });
-    // Sempre visível, como Favoritos: o aluno precisa descobrir que pode
-    // anotar, não só encontrar a aba depois de já ter anotado.
+    // Sempre visível, junto das categorias: o aluno precisa descobrir que
+    // pode anotar, não só encontrar a aba depois de já ter anotado.
     cats.unshift({ name: ANNOTATIONS_TAB, count: annotated.length });
 
     return cats;
   }, [courses, favorites.size, annotated.length]);
+
+  // Seção "Menu" da barra lateral: as áreas do aluno, acima das categorias.
+  // Sempre visíveis, mesmo zeradas — é assim que se descobre que existem.
+  const menuList = useMemo(() => [
+    { name: 'Favoritos', count: favorites.size },
+    { name: FLASHCARDS_TAB, count: decks.length },
+    { name: QUESTIONS_TAB, count: banks.length },
+  ], [favorites.size, decks.length, banks.length]);
 
   const categoryCourses = useMemo(() => {
     if (!activeCategory) return [];
@@ -665,6 +673,7 @@ export default function MemberDashboardPage() {
       <main className="max-w-[1400px] mx-auto px-4 md:px-8 pb-16 pt-8">
         <div className="md:flex md:items-start md:gap-8">
           <CategorySidebar
+            menuItems={menuList}
             categories={categoryList}
             active={activeCategory}
             onSelect={handleSelectCategory}
@@ -742,7 +751,7 @@ export default function MemberDashboardPage() {
                 loading={banksLoading}
                 onOpenBank={setOpenBank}
                 onDeleteBank={deleteBank}
-                onCreate={() => setQbCreateOpen(true)}
+                onCreate={() => podeGerarIa ? setQbCreateOpen(true) : setAiUpsell('questoes')}
               />
             ) : activeCategory === FLASHCARDS_TAB ? (
               <FlashcardsTab
@@ -751,7 +760,7 @@ export default function MemberDashboardPage() {
                 loading={decksLoading}
                 onOpenDeck={setOpenDeck}
                 onDeleteDeck={deleteDeck}
-                onCreate={() => setFcCreateOpen(true)}
+                onCreate={() => podeGerarIa ? setFcCreateOpen(true) : setAiUpsell('flashcards')}
               />
             ) : activeCategory === ANNOTATIONS_TAB ? (
               <section className="space-y-4">
@@ -982,6 +991,10 @@ export default function MemberDashboardPage() {
 
       {openDeck && (
         <FlashcardViewer deck={openDeck} deckId={openDeck.id} onClose={() => { setOpenDeck(null); setSessionsTick(t => t + 1); }} />
+      )}
+
+      {aiUpsell && (
+        <AiUpsellModal open onOpenChange={(o) => { if (!o) setAiUpsell(null); }} feature={aiUpsell} />
       )}
 
       <ManageRecentsDialog
