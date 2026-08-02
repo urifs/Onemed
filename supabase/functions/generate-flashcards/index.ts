@@ -40,6 +40,11 @@ const MEDIA_BUDGET = 13 * 1024 * 1024
 const VIDEO_CHUNK = 10 * 1024 * 1024
 const MAX_LESSONS = 8
 const MAX_CARDS = 30
+// Uploads do próprio aluno: chegam em base64 no corpo da requisição e são
+// usados SÓ nesta geração — nunca gravados em Storage nem em tabela alguma;
+// morrem com a requisição. 3 arquivos, 12MB brutos no total.
+const MAX_UPLOADS = 3
+const MAX_UPLOAD_BYTES = 12 * 1024 * 1024
 
 const DIFFICULTY_TEXT: Record<string, string> = {
   basico: 'BÁSICO: perguntas diretas sobre definições e conceitos fundamentais do conteúdo.',
@@ -94,9 +99,20 @@ serve(async (req) => {
     } catch { /* tabela indisponível não pode derrubar a geração */ }
 
     // ── entrada ────────────────────────────────────────────────────────────
-    const { lessonIds, difficulty, count, extraText, format } = await req.json()
+    const { lessonIds, difficulty, count, extraText, format, uploads } = await req.json()
     const ids: string[] = Array.isArray(lessonIds) ? lessonIds.slice(0, MAX_LESSONS) : []
-    if (ids.length === 0) return json(req, { error: 'Selecione ao menos uma aula ou arquivo' }, 400)
+
+    const enviados: { name: string; mime: string; data: string }[] = (Array.isArray(uploads) ? uploads : [])
+      .slice(0, MAX_UPLOADS)
+      .filter((u: { name?: unknown; mime?: unknown; data?: unknown }) =>
+        typeof u?.name === 'string' && typeof u?.mime === 'string' && typeof u?.data === 'string' && u.data.length > 0)
+      .map((u: { name: string; mime: string; data: string }) => ({
+        name: u.name.slice(0, 120), mime: u.mime, data: u.data,
+      }))
+
+    if (ids.length === 0 && enviados.length === 0) {
+      return json(req, { error: 'Selecione ao menos uma aula, arquivo ou envie um arquivo seu' }, 400)
+    }
     const nCards = Math.min(Math.max(Number(count) || 10, 1), MAX_CARDS)
     const nivel = DIFFICULTY_TEXT[difficulty] ? difficulty : 'intermediario'
     // 'classic' = frente/verso aberto; 'multiple_choice' = alternativas pra
@@ -104,11 +120,13 @@ serve(async (req) => {
     const formato = format === 'multiple_choice' ? 'multiple_choice' : 'classic'
     const complemento = String(extraText || '').slice(0, 2000)
 
-    const { data: lessons } = await supabase
-      .from('lessons')
-      .select('id, title, type, mime_type, drive_file_id, storage_path, size_bytes, courses(title)')
-      .in('id', ids)
-    if (!lessons?.length) return json(req, { error: 'Conteúdo não encontrado' }, 404)
+    const { data: lessons } = ids.length > 0
+      ? await supabase
+        .from('lessons')
+        .select('id, title, type, mime_type, drive_file_id, storage_path, size_bytes, courses(title)')
+        .in('id', ids)
+      : { data: [] as never[] }
+    if (ids.length > 0 && !lessons?.length) return json(req, { error: 'Conteúdo não encontrado' }, 404)
 
     // ── monta as partes multimodais dentro do orçamento ────────────────────
     const warnings: string[] = []
@@ -128,7 +146,26 @@ serve(async (req) => {
 
     const sourceTitles: string[] = []
 
-    for (const lesson of lessons) {
+    // ── arquivos enviados pelo aluno (nunca persistidos) ───────────────────
+    let uploadRaw = 0
+    for (const up of enviados) {
+      const rawSize = Math.floor(up.data.length * 3 / 4)
+      uploadRaw += rawSize
+      if (uploadRaw > MAX_UPLOAD_BYTES || rawSize > budget) {
+        warnings.push(`"${up.name}" ultrapassou o limite de tamanho dos uploads — ignorado.`)
+        continue
+      }
+      if (!GEMINI_OK.test(up.mime)) {
+        warnings.push(`"${up.name}" tem um formato que a IA não lê (envie PDF, imagem, áudio, vídeo ou texto).`)
+        continue
+      }
+      sourceTitles.push(up.name)
+      budget -= rawSize
+      parts.push({ type: 'text', text: `Material enviado pelo aluno: "${up.name}":` })
+      parts.push({ type: 'file', file: { file_data: `data:${up.mime};base64,${up.data}` } })
+    }
+
+    for (const lesson of (lessons || [])) {
       const courseTitle = (lesson as { courses?: { title?: string } }).courses?.title || ''
       sourceTitles.push(lesson.title)
 
@@ -255,6 +292,9 @@ serve(async (req) => {
       return json(req, { error: 'Nenhum flashcard pôde ser gerado deste conteúdo.' }, 422)
     }
 
+    if (sourceTitles.length === 0) {
+      return json(req, { error: 'Nenhum conteúdo pôde ser lido para gerar os flashcards' }, 422)
+    }
     const title = sourceTitles[0].replace(/\.[a-z0-9]{2,5}$/i, '')
       + (sourceTitles.length > 1 ? ` +${sourceTitles.length - 1}` : '')
 
@@ -264,7 +304,10 @@ serve(async (req) => {
       format: formato,
       cards,
       warnings,
-      source: lessons.map(l => ({ id: l.id, title: l.title })),
+      source: [
+        ...(lessons || []).map((l: { id: string; title: string }) => ({ id: l.id, title: l.title })),
+        ...enviados.map(u => ({ id: null, title: `${u.name} (arquivo enviado)` })),
+      ],
     })
   } catch (err) {
     console.error('Erro inesperado:', (err as Error)?.message || err)

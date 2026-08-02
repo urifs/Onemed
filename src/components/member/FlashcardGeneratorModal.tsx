@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { ChevronDown, ChevronRight, Loader2, Plus, Sparkles, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Loader2, Plus, Sparkles, Upload, FileText, X } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -17,6 +17,29 @@ export interface GeneratedDeck extends FlashcardDeck {
 }
 
 const MAX_SOURCES = 8;
+
+// Upload próprio: lido no navegador e mandado em base64 DENTRO da requisição
+// de geração — nunca sobe pro Storage nem entra em tabela; o servidor usa e
+// descarta junto com a requisição.
+const MAX_UPLOADS = 3;
+const MAX_UPLOAD_TOTAL = 12 * 1024 * 1024;
+const UPLOAD_OK = /^(application\/pdf|image\/(png|jpe?g|webp)|video\/(mp4|webm|quicktime)|audio\/|text\/)/i;
+
+interface UploadedFile {
+  name: string;
+  mime: string;
+  size: number;
+  data: string; // base64 sem prefixo
+}
+
+function readAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(',')[1] || '');
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(file);
+  });
+}
 
 const FORMATS = [
   { value: 'classic', label: 'Pergunta e resposta', hint: 'Estilo Anki clássico: pensa e revela' },
@@ -256,11 +279,34 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
   const [extraText, setExtraText] = useState('');
   const [showTree, setShowTree] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [uploads, setUploads] = useState<UploadedFile[]>([]);
+  const [reading, setReading] = useState(false);
+
+  const handleFiles = async (files: FileList | null) => {
+    if (!files?.length) return;
+    setReading(true);
+    try {
+      const novos: UploadedFile[] = [];
+      let totalAtual = uploads.reduce((t, u) => t + u.size, 0);
+      for (const file of Array.from(files)) {
+        if (uploads.length + novos.length >= MAX_UPLOADS) { toast.error(`Máximo de ${MAX_UPLOADS} arquivos enviados`); break; }
+        const mime = file.type || 'application/octet-stream';
+        if (!UPLOAD_OK.test(mime)) { toast.error(`"${file.name}": envie PDF, imagem, áudio, vídeo ou texto`); continue; }
+        if (totalAtual + file.size > MAX_UPLOAD_TOTAL) { toast.error(`"${file.name}" estoura o limite de 12MB no total`); continue; }
+        totalAtual += file.size;
+        novos.push({ name: file.name, mime, size: file.size, data: await readAsBase64(file) });
+      }
+      if (novos.length) setUploads(prev => [...prev, ...novos]);
+    } finally {
+      setReading(false);
+    }
+  };
 
   // Reabrir o modal para outra aula recomeça do zero, com a aula clicada.
   useEffect(() => {
     if (!open) return;
     setSelected(new Map(initialSources.map(s => [s.id, s.title])));
+    setUploads([]);
     // Aberto pela aba Flashcards (sem aula pré-selecionada), a árvore já
     // aparece — escolher o conteúdo é o primeiro passo, não um opcional.
     setShowTree(initialSources.length === 0);
@@ -278,7 +324,7 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
   };
 
   const generate = async () => {
-    if (selected.size === 0) { toast.error('Selecione ao menos um conteúdo'); return; }
+    if (selected.size === 0 && uploads.length === 0) { toast.error('Selecione um conteúdo ou envie um arquivo'); return; }
     setGenerating(true);
     try {
       const { data, error } = await supabase.functions.invoke('generate-flashcards', {
@@ -288,6 +334,7 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
           format,
           count,
           extraText: extraText.trim() || undefined,
+          uploads: uploads.map(u => ({ name: u.name, mime: u.mime, data: u.data })),
         },
       });
       if (error || data?.error) throw new Error(data?.error || error?.message);
@@ -352,6 +399,39 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
                 <Plus className="w-3.5 h-3.5" /> {showTree ? 'Ocultar cursos' : 'Adicionar mais conteúdo (opcional)'}
               </button>
               {showTree && <div className="mt-2"><ContentTree selected={selected} onToggle={toggle} /></div>}
+
+              {/* upload próprio */}
+              <div className="mt-3">
+                {uploads.map((u, i) => (
+                  <div key={i} className="flex items-center gap-2 text-sm bg-secondary border border-border rounded-lg px-3 py-1.5 mb-1.5">
+                    <FileText className="w-3.5 h-3.5 text-primary shrink-0" />
+                    <span className="flex-1 truncate text-foreground/90">{u.name}</span>
+                    <span className="text-[11px] text-muted-foreground shrink-0">{(u.size / 1048576).toFixed(1)}MB</span>
+                    <button
+                      onClick={() => setUploads(prev => prev.filter((_, j) => j !== i))}
+                      className="text-muted-foreground hover:text-foreground shrink-0"
+                      aria-label={`Remover ${u.name}`}
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+                <label className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline cursor-pointer">
+                  <Upload className="w-3.5 h-3.5" />
+                  {reading ? 'Lendo arquivo…' : 'Enviar arquivo do seu dispositivo (opcional)'}
+                  <input
+                    type="file"
+                    multiple
+                    accept=".pdf,.png,.jpg,.jpeg,.webp,.mp3,.m4a,.wav,.mp4,.webm,.mov,.txt,application/pdf,image/*,audio/*,video/*,text/plain"
+                    className="hidden"
+                    disabled={reading || uploads.length >= MAX_UPLOADS}
+                    onChange={e => { handleFiles(e.target.files); e.target.value = ''; }}
+                  />
+                </label>
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  Seus arquivos não ficam salvos na plataforma — são usados só nesta geração e descartados.
+                </p>
+              </div>
             </div>
 
             {/* formato */}
@@ -429,7 +509,7 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
               />
             </div>
 
-            <Button className="w-full" onClick={generate} disabled={selected.size === 0}>
+            <Button className="w-full" onClick={generate} disabled={selected.size === 0 && uploads.length === 0}>
               <Sparkles className="w-4 h-4" /> Gerar {count} flashcard{count !== 1 ? 's' : ''}
             </Button>
           </div>
