@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import workerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import { Check, Eraser, Highlighter, Loader2, Pen, RotateCcw, Trash2 } from 'lucide-react';
+import { Check, Eraser, Highlighter, Loader2, Pen, RotateCcw, Trash2, ZoomIn, ZoomOut } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
 import {
@@ -86,6 +86,41 @@ export function PdfViewer({ url, lessonId }: { url: string; title?: string; less
       flush();
     };
   }, [persist]);
+
+  // Zoom por CSS, sem re-renderizar o PDF: as páginas já são pintadas em alta
+  // resolução (devicePixelRatio) e escaladas por estilo — diminuir a largura
+  // exibida mantém a nitidez e mostra mais área de uma vez. As anotações não
+  // desalinham: os traços são normalizados (0..1) e o ponteiro é lido contra
+  // o rect NA TELA, que encolhe junto.
+  const [zoom, setZoom] = useState(1);
+  const zoomRef = useRef(1);
+
+  const applyZoom = useCallback((z: number) => {
+    zoomRef.current = z;
+    const container = containerRef.current;
+    if (!container) return;
+    for (const wrapper of Array.from(container.children) as HTMLElement[]) {
+      const baseW = Number(wrapper.dataset.baseW || 0);
+      const baseH = Number(wrapper.dataset.baseH || 0);
+      if (!baseW || !baseH) continue;
+      const w = Math.round(baseW * z);
+      const h = Math.round(baseH * z);
+      wrapper.style.width = `${w}px`;
+      wrapper.style.height = `${h}px`;
+      for (const canvas of Array.from(wrapper.querySelectorAll('canvas')) as HTMLElement[]) {
+        canvas.style.width = `${w}px`;
+        canvas.style.height = `${h}px`;
+      }
+    }
+  }, []);
+
+  const changeZoom = (delta: number) => {
+    setZoom(prev => {
+      const next = Math.min(1.5, Math.max(0.5, Math.round((prev + delta) * 10) / 10));
+      applyZoom(next);
+      return next;
+    });
+  };
 
   const redrawAll = useCallback(() => {
     for (const [page, canvas] of overlaysRef.current) {
@@ -250,15 +285,18 @@ export function PdfViewer({ url, lessonId }: { url: string; title?: string; less
           // cima, exatamente do mesmo tamanho.
           const wrapper = document.createElement('div');
           wrapper.className = 'relative mb-3 shadow-lg rounded overflow-hidden';
-          wrapper.style.width = `${viewport.width}px`;
-          wrapper.style.height = `${viewport.height}px`;
+          wrapper.dataset.baseW = String(viewport.width);
+          wrapper.dataset.baseH = String(viewport.height);
+          const z = zoomRef.current;
+          wrapper.style.width = `${Math.round(viewport.width * z)}px`;
+          wrapper.style.height = `${Math.round(viewport.height * z)}px`;
           container.appendChild(wrapper);
 
           const canvas = document.createElement('canvas');
           canvas.width = Math.floor(viewport.width * outputScale);
           canvas.height = Math.floor(viewport.height * outputScale);
-          canvas.style.width = `${viewport.width}px`;
-          canvas.style.height = `${viewport.height}px`;
+          canvas.style.width = `${Math.round(viewport.width * zoomRef.current)}px`;
+          canvas.style.height = `${Math.round(viewport.height * zoomRef.current)}px`;
           const ctx = canvas.getContext('2d');
           if (!ctx || cancelled) return;
           wrapper.appendChild(canvas);
@@ -267,8 +305,8 @@ export function PdfViewer({ url, lessonId }: { url: string; title?: string; less
             const overlay = document.createElement('canvas');
             overlay.width = canvas.width;
             overlay.height = canvas.height;
-            overlay.style.width = `${viewport.width}px`;
-            overlay.style.height = `${viewport.height}px`;
+            overlay.style.width = `${Math.round(viewport.width * zoomRef.current)}px`;
+            overlay.style.height = `${Math.round(viewport.height * zoomRef.current)}px`;
             overlay.className = 'absolute inset-0';
             // Sem ferramenta ativa o overlay é transparente a cliques: o aluno
             // rola e seleciona texto como antes. Só ao escolher caneta ou
@@ -317,8 +355,24 @@ export function PdfViewer({ url, lessonId }: { url: string; title?: string; less
 
   return (
     <div className="w-full h-full flex flex-col bg-[#525659] rounded-lg overflow-hidden">
-      {canAnnotate && (
-        <div className="shrink-0 flex flex-wrap items-center gap-1.5 px-2.5 py-2 bg-black/40 border-b border-white/10">
+      <div className="shrink-0 flex flex-wrap items-center gap-1.5 px-2.5 py-2 bg-black/40 border-b border-white/10">
+          {/* zoom: diminuir mostra mais área da página de uma vez */}
+          <ToolButton onClick={() => changeZoom(-0.1)} label="Diminuir zoom" disabled={zoom <= 0.5}>
+            <ZoomOut className="w-4 h-4" />
+          </ToolButton>
+          <button
+            onClick={() => { setZoom(1); applyZoom(1); }}
+            title="Restaurar zoom"
+            className="text-[11px] tabular-nums text-white/70 hover:text-white w-10 text-center"
+          >
+            {Math.round(zoom * 100)}%
+          </button>
+          <ToolButton onClick={() => changeZoom(0.1)} label="Aumentar zoom" disabled={zoom >= 1.5}>
+            <ZoomIn className="w-4 h-4" />
+          </ToolButton>
+
+          {canAnnotate && (<>
+          <span className="w-px h-5 bg-white/15 mx-1" />
           <ToolButton active={mode === 'pen'} onClick={() => setMode(m => (m === 'pen' ? null : 'pen'))} label="Caneta">
             <Pen className="w-4 h-4" />
           </ToolButton>
@@ -363,8 +417,8 @@ export function PdfViewer({ url, lessonId }: { url: string; title?: string; less
               <Trash2 className="w-4 h-4" />
             </ToolButton>
           </div>
+          </>)}
         </div>
-      )}
 
       <div className="flex-1 overflow-auto" onContextMenu={e => e.preventDefault()}>
         {loading && (
