@@ -83,13 +83,15 @@ const LabCard: React.FC<{ t: number; startSec: number; scrollT?: number; ringAt:
       boxShadow: '0 40px 100px -28px rgba(14,27,51,0.5)',
       padding: '34px 40px', overflow: 'hidden', height: 640,
     }}>
-      <div style={{ fontFamily: HEAD, fontWeight: 800, fontSize: 25, color: M_NAVY, letterSpacing: 1 }}>
-        LABORATÓRIO · ANÁLISES CLÍNICAS
+      <div style={{ position: 'relative', zIndex: 2, background: WHITE, margin: '-34px -40px 0', padding: '34px 40px 14px' }}>
+        <div style={{ fontFamily: HEAD, fontWeight: 800, fontSize: 25, color: M_NAVY, letterSpacing: 1 }}>
+          LABORATÓRIO · ANÁLISES CLÍNICAS
+        </div>
+        <div style={{ fontFamily: BODY, fontSize: 18, color: M_MUT, marginTop: 6 }}>
+          J.S.M. · 67 anos · coleta hoje 06:40
+        </div>
       </div>
-      <div style={{ fontFamily: BODY, fontSize: 18, color: M_MUT, marginTop: 6, marginBottom: 18 }}>
-        J.S.M. · 67 anos · coleta hoje 06:40
-      </div>
-      <div style={{ transform: `translateY(${scroll}px)` }}>
+      <div style={{ position: 'relative', zIndex: 1, transform: `translateY(${scroll}px)` }}>
         {ROWS.map(([n, v, ref, isK], i) => (
           <div key={i} style={{
             position: 'relative',
