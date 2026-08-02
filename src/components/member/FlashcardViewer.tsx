@@ -23,11 +23,10 @@ const DIFFICULTY_LABEL: Record<string, string> = {
   basico: 'Básico', intermediario: 'Intermediário', avancado: 'Avançado',
 };
 
-// Errar reenfileira a carta pra reaparecer logo adiante NA MESMA sessão — a
-// sessão só termina quando o aluno acerta todas. O desempenho final, porém, é
-// calculado pela PRIMEIRA tentativa de cada carta: repetir até acertar não
-// melhora a média.
-const REQUEUE_AHEAD = 2;
+// A sessão é corrida: cada carta aparece UMA vez, acertando ou errando —
+// a média final é acertos sobre o total de cartas. Errar não trava nem
+// repete a carta; a resposta certa e as justificativas já foram mostradas
+// na correção.
 
 export function FlashcardViewer({ deck, deckId, onClose, onSave, saved, saving }: {
   deck: FlashcardDeck;
@@ -46,7 +45,7 @@ export function FlashcardViewer({ deck, deckId, onClose, onSave, saved, saving }
   // Múltipla escolha: alternativa marcada (null = ainda não marcou).
   const [picked, setPicked] = useState<number | null>(null);
   const [showWhy, setShowWhy] = useState(false);
-  // Primeira resposta de cada carta — é daqui que sai a média final.
+  // Resposta de cada carta (uma só por sessão) — é daqui que sai a média.
   const [firstTry, setFirstTry] = useState<Map<number, boolean>>(new Map());
   const [reviews, setReviews] = useState(0);
   const startedAt = useRef(Date.now());
@@ -69,12 +68,7 @@ export function FlashcardViewer({ deck, deckId, onClose, onSave, saved, saving }
     setRevealed(false);
     setPicked(null);
     setShowWhy(false);
-    setQueue(q => {
-      const [head, ...rest] = q;
-      if (correct) return rest;
-      const pos = Math.min(REQUEUE_AHEAD, rest.length);
-      return [...rest.slice(0, pos), head, ...rest.slice(pos)];
-    });
+    setQueue(q => q.slice(1));
   };
 
   const pick = (idx: number) => {
@@ -281,7 +275,7 @@ export function FlashcardViewer({ deck, deckId, onClose, onSave, saved, saving }
                   onClick={continueMcq}
                   className="w-full bg-primary hover:bg-primary-hover text-primary-foreground font-semibold py-3 rounded-xl transition-colors"
                 >
-                  Continuar{picked !== current.correct ? ' · esta carta volta pra fila' : ''}
+                  Continuar
                 </button>
               )
             ) : !revealed ? (
@@ -329,8 +323,7 @@ export function FlashcardViewer({ deck, deckId, onClose, onSave, saved, saving }
             {notaFinal}%
           </p>
           <p className="text-sm text-muted-foreground mb-6">
-            Você acertou {acertosPrimeira} de {total} carta{total !== 1 ? 's' : ''} na primeira tentativa
-            {acertosPrimeira < total ? ' — as que errou voltaram até você acertar.' : '.'}
+            Você acertou {acertosPrimeira} de {total} carta{total !== 1 ? 's' : ''}.
           </p>
 
           <div className="flex items-center gap-3">

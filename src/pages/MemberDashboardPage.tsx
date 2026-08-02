@@ -982,7 +982,7 @@ function FlashcardsTab({ decks, sessions, loading, onOpenDeck, onDeleteDeck }: {
               <div className="glass rounded-xl border border-border p-4">
                 <p className="text-xs text-muted-foreground mb-1">Média geral</p>
                 <p className={`text-2xl font-bold ${notaCor(mediaGeral)}`}>{mediaGeral}%</p>
-                <p className="text-[11px] text-muted-foreground mt-0.5">na primeira tentativa</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">acertos sobre o total</p>
               </div>
               <div className="glass rounded-xl border border-border p-4">
                 <p className="text-xs text-muted-foreground mb-1">Sessões de estudo</p>
@@ -1102,7 +1102,7 @@ function FlashcardsTab({ decks, sessions, loading, onOpenDeck, onDeleteDeck }: {
                         <p className="text-foreground truncate">{s.deck_title}</p>
                         <p className="text-[11px] text-muted-foreground">
                           {formatDateTimeSP(s.created_at)}
-                          {' '}· {s.correct_first_try}/{s.total_cards} de primeira
+                          {' '}· {s.correct_first_try}/{s.total_cards} certas
                           {s.reviews > s.total_cards ? ` · ${s.reviews - s.total_cards} ${s.reviews - s.total_cards === 1 ? 'repetição' : 'repetições'}` : ''}
                           {s.duration_seconds ? ` · ${Math.max(1, Math.round(s.duration_seconds / 60))}min` : ''}
                         </p>
