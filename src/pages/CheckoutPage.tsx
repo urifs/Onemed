@@ -188,12 +188,11 @@ export default function CheckoutPage() {
     if (!c) { toast.error('Digite um código de cupom'); return; }
     setCouponLoading(true);
     try {
-      const { data } = await supabase
-        .from('coupons')
-        .select('*')
-        .eq('code', c.toUpperCase())
-        .eq('active', true)
-        .single();
+      // valida por código exato via RPC (SECURITY DEFINER) — a leitura pública
+      // da tabela coupons foi removida para não expor todos os códigos ativos.
+      // A RPC já filtra ativo + não expirado + dentro do limite de usos.
+      const { data: rows } = await supabase.rpc('validate_coupon' as never, { _code: c } as never);
+      const data = Array.isArray(rows) ? rows[0] : rows;
       if (data) {
         setCouponApplied(data);
         setDiscountPercent(data.discount_percent);

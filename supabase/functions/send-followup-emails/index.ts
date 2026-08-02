@@ -212,16 +212,18 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: getCorsHeaders(req) })
 
   try {
-    // ── Verificação de CRON_SECRET (ativa somente se o secret estiver configurado) ──
+    // ── Verificação de CRON_SECRET (FAIL-CLOSED) ──
+    // Antes a checagem só rodava SE o secret estivesse configurado — sem ele, o
+    // modo test_email virava open relay (3 e-mails da marca pra qualquer
+    // endereço, com cupons). Agora exige o secret sempre.
+    // ⚠️ Configure CRON_SECRET nos secrets ANTES de deployar, senão o cron para.
     const cronSecret = Deno.env.get('CRON_SECRET')
-    if (cronSecret) {
-      const providedSecret = req.headers.get('x-cron-secret') || ''
-      if (providedSecret !== cronSecret) {
-        console.error('send-followup-emails: x-cron-secret inválido ou ausente')
-        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-          status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
-        })
-      }
+    const providedSecret = req.headers.get('x-cron-secret') || ''
+    if (!cronSecret || providedSecret !== cronSecret) {
+      console.error('send-followup-emails: CRON_SECRET não configurado ou x-cron-secret inválido')
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
+      })
     }
 
     const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')!

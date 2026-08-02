@@ -314,6 +314,7 @@ serve(async (req) => {
     supabase.from('visits').insert({ page: 'trial', user_agent: '' }).then(() => {}).catch(() => {})
 
     supabase.functions.invoke('send-access-email', {
+      headers: { Authorization: `Bearer ${supabaseKey}` },
       body: { to: normalizedEmail, type: 'trial_access' },
     }).then(() => {}).catch((e: any) => console.warn('Trial email falhou:', e))
 

@@ -15,6 +15,26 @@ function getCorsHeaders(req: Request) {
 
 const GOOGLE_CLIENT_ID = '110017470335-2l6er8r451vj5hf3ob05rvolc2p4v9ku.apps.googleusercontent.com'
 
+// Comparação em tempo constante (mesmo padrão de drive-access-token) — evita
+// side-channel de timing ao conferir a service_role key.
+async function secureCompare(a: string, b: string): Promise<boolean> {
+  const encoder = new TextEncoder()
+  const key = await crypto.subtle.importKey(
+    'raw', encoder.encode('timing-safe-compare'),
+    { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
+  )
+  const [sigA, sigB] = await Promise.all([
+    crypto.subtle.sign('HMAC', key, encoder.encode(a)),
+    crypto.subtle.sign('HMAC', key, encoder.encode(b)),
+  ])
+  const a8 = new Uint8Array(sigA)
+  const b8 = new Uint8Array(sigB)
+  if (a.length !== b.length) return false
+  let diff = 0
+  for (let i = 0; i < 32; i++) diff |= a8[i] ^ b8[i]
+  return diff === 0
+}
+
 async function refreshAccessToken(refreshToken: string, clientSecret: string): Promise<string> {
   const res = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
@@ -39,14 +59,17 @@ serve(async (req) => {
     const supabaseKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabase     = createClient(supabaseUrl, supabaseKey)
 
-    // Proteção: aceita chamadas internas (service role key ou sem header) ou JWT de admin
+    // Proteção: aceita chamada interna (service role key, comparada em tempo
+    // constante) OU JWT de admin via painel. Ausência de header NUNCA autoriza
+    // — o webhook (mp-webhook) e o painel sempre mandam Authorization; o antigo
+    // ramo "sem header = autorizado" deixava a função aberta a qualquer um.
     const authHeader = req.headers.get('Authorization') || ''
     let isAuthorized = false
 
     if (authHeader.startsWith('Bearer ')) {
       const token = authHeader.replace('Bearer ', '')
-      // Chamada interna com service role key (comparação por valor)
-      if (token === supabaseKey) {
+      // Chamada interna com service role key (tempo constante)
+      if (await secureCompare(token, supabaseKey)) {
         isAuthorized = true
       } else {
         // JWT de admin via painel
@@ -61,9 +84,6 @@ serve(async (req) => {
           if (roleData) isAuthorized = true
         }
       }
-    } else {
-      // Sem header — chamada interna via supabase.functions.invoke
-      isAuthorized = true
     }
 
     if (!isAuthorized) {

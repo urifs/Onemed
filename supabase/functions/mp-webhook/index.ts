@@ -201,7 +201,9 @@ async function sendMetaCAPIEvent(
 // separada da usada pro streaming das aulas (ver folderType: 'backup').
 async function shareBackupFolder(supabase: ReturnType<typeof createClient>, email: string): Promise<void> {
   try {
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const { error } = await supabase.functions.invoke('drive-share-folder', {
+      headers: { Authorization: `Bearer ${serviceKey}` },
       body: { email, folderType: 'backup' },
     })
     if (error) console.error('Backup folder share error:', JSON.stringify(error))
@@ -504,6 +506,7 @@ serve(async (req) => {
       // Send access confirmation email
       try {
         const emailRes = await supabase.functions.invoke('send-access-email', {
+          headers: { Authorization: `Bearer ${supabaseKey}` },
           body: {
             to: buyer.email,
             name: buyer.name,

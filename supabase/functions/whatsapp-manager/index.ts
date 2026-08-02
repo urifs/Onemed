@@ -37,6 +37,16 @@ serve(async (req) => {
   )
 
   try {
+    // Gate de admin OBRIGATÓRIO: o comentário do topo já dizia "requer admin",
+    // mas não havia checagem — a função vazava evolution_api_key e conversas de
+    // leads (PII) e permitia SSRF via save-config. O painel manda o JWT de admin.
+    const jwt = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
+    if (!jwt) return json(req, { error: 'Não autenticado' }, 401)
+    const { data: userData } = await supabase.auth.getUser(jwt)
+    if (!userData?.user) return json(req, { error: 'Sessão inválida' }, 401)
+    const { data: isAdmin } = await supabase.rpc('has_role', { _user_id: userData.user.id, _role: 'admin' })
+    if (!isAdmin) return json(req, { error: 'Acesso restrito a administradores' }, 403)
+
     const body = await req.json().catch(() => ({}))
     const { mode } = body
 

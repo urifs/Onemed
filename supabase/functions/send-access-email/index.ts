@@ -16,6 +16,34 @@ const SITE_NAME = 'OneMed'
 const FROM_EMAIL = 'contato@onemedcursos.com.br'
 const WHATSAPP_URL = 'https://wa.me/5563999191551?text=Ol%C3%A1!%20Tenho%20interesse%20no%20OneMed.'
 
+// Escapa texto antes de interpolar no HTML do e-mail. Campos como o nome do
+// comprador vêm do checkout (controláveis pelo usuário) — sem escaping, um
+// nome com HTML injetaria conteúdo/links no e-mail enviado pelo domínio da marca.
+function htmlEscape(s: string): string {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+}
+
+// Comparação em tempo constante da service_role key (mesmo padrão de drive-access-token).
+async function secureCompare(a: string, b: string): Promise<boolean> {
+  const encoder = new TextEncoder()
+  const key = await crypto.subtle.importKey(
+    'raw', encoder.encode('timing-safe-compare'),
+    { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
+  )
+  const [sigA, sigB] = await Promise.all([
+    crypto.subtle.sign('HMAC', key, encoder.encode(a)),
+    crypto.subtle.sign('HMAC', key, encoder.encode(b)),
+  ])
+  const a8 = new Uint8Array(sigA)
+  const b8 = new Uint8Array(sigB)
+  if (a.length !== b.length) return false
+  let diff = 0
+  for (let i = 0; i < 32; i++) diff |= a8[i] ^ b8[i]
+  return diff === 0
+}
+
 function getBaseTemplate(content: string, title: string): string {
   return `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -125,7 +153,7 @@ function getTrialAccessEmail(email: string): string {
     </table>
 
     <p style="color: #64748B; font-size: 13px; margin: 20px 0 0;">
-      Login sem senha — use o e-mail <strong style="color: #94A3B8;">${email}</strong>.
+      Login sem senha — use o e-mail <strong style="color: #94A3B8;">${htmlEscape(email)}</strong>.
     </p>
   `
   return getBaseTemplate(content, `Bem-vindo ao ${SITE_NAME}!`)
@@ -138,8 +166,10 @@ function getPaymentApprovedEmail(firstName: string, plan: string, amount?: numbe
   const planDuration: Record<string, string> = {
     monthly: 'por 30 dias', annual: 'por 1 ano', lifetime: 'para sempre', lifetime_plus: 'para sempre', lifetime_pro: 'para sempre',
   }
-  const planLabel = planLabels[plan] || plan
+  const planLabel = planLabels[plan] || htmlEscape(plan)
   const duration = planDuration[plan] || ''
+  const safeFirstName = htmlEscape(firstName)
+  const safeBuyerEmail = htmlEscape(buyerEmail || 'cadastrado na compra')
 
   const content = `
     <h1 style="color: white; font-size: 24px; font-weight: 700; margin: 0 0 16px;">
@@ -147,7 +177,7 @@ function getPaymentApprovedEmail(firstName: string, plan: string, amount?: numbe
     </h1>
 
     <p style="color: #94A3B8; font-size: 15px; line-height: 1.6; margin: 0 0 24px;">
-      Parabéns, ${firstName}. Seu acesso já está liberado na plataforma.
+      Parabéns, ${safeFirstName}. Seu acesso já está liberado na plataforma.
     </p>
 
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #161616; border-radius: 10px; border-left: 3px solid #16A34A; margin: 0 0 28px;">
@@ -177,7 +207,7 @@ function getPaymentApprovedEmail(firstName: string, plan: string, amount?: numbe
 
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin: 0 0 28px;">
       <tr><td style="padding: 6px 0; color: #94A3B8; font-size: 14px;">1. Clique no botão abaixo para abrir a plataforma</td></tr>
-      <tr><td style="padding: 6px 0; color: #94A3B8; font-size: 14px;">2. Entre com o e-mail <strong style="color: white;">${buyerEmail || 'cadastrado na compra'}</strong></td></tr>
+      <tr><td style="padding: 6px 0; color: #94A3B8; font-size: 14px;">2. Entre com o e-mail <strong style="color: white;">${safeBuyerEmail}</strong></td></tr>
       <tr><td style="padding: 6px 0; color: #94A3B8; font-size: 14px;">3. Sem senha — você recebe um link de acesso por e-mail</td></tr>
     </table>
 
@@ -203,6 +233,19 @@ serve(async (req) => {
 
   try {
     const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')!
+
+    // Auth: esta função só é chamada internamente por mp-webhook e
+    // create-trial-access, que usam a service_role key (via functions.invoke).
+    // Sem isto era um open relay: qualquer um mandava e-mail arbitrário pelo
+    // domínio/Resend da OneMed (phishing com SPF/DKIM válidos).
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
+    if (!token || !(await secureCompare(token, serviceKey))) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
+      })
+    }
+
     const body = await req.json()
     const { name, type, plan, amount } = body
     const to = body.to || body.email  // accept both 'to' and 'email' fields

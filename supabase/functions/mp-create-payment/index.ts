@@ -301,7 +301,15 @@ serve(async (req) => {
       || null
     const clientUserAgent = req.headers.get('user-agent') || null
 
+    // `plan: plan` torna buyers.plan AUTORITATIVO do servidor. buyers.plan é o
+    // que o mp-webhook usa pra decidir o acesso concedido, mas era gravado pelo
+    // cliente e nunca reconciliado com o plano realmente precificado/pago aqui.
+    // Sem isto: inserir buyers com plan='lifetime_pro', pagar uma preferência de
+    // plan='monthly' (R$49) e receber o vitalício de R$997. Sobrescrevendo com o
+    // `plan` já validado contra PLAN_PRICES, o webhook concede o plano pago.
+    // No fluxo legítimo o plano é o mesmo, então é no-op.
     await supabase.from('buyers').update({
+      plan,
       payment_id: mpData.id,
       amount: totalAmount,
       client_ip: clientIp,

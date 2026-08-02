@@ -37,6 +37,19 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabase = createClient(supabaseUrl, supabaseKey)
 
+    // Gate de admin: só o painel deve reapontar a pasta central de conteúdo.
+    // A anon key (pública) satisfaz verify_jwt; sem esta checagem de role,
+    // qualquer visitante corromperia drive_config.folder_id (DoS do acervo).
+    const jwt = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
+    if (!jwt) return new Response(JSON.stringify({ error: 'Não autenticado' }), {
+      status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } })
+    const { data: userData } = await supabase.auth.getUser(jwt)
+    if (!userData?.user) return new Response(JSON.stringify({ error: 'Sessão inválida' }), {
+      status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } })
+    const { data: isAdmin } = await supabase.rpc('has_role', { _user_id: userData.user.id, _role: 'admin' })
+    if (!isAdmin) return new Response(JSON.stringify({ error: 'Acesso restrito a administradores' }), {
+      status: 403, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } })
+
     const { folder_id, target } = await req.json()
     const trimmedId = folder_id?.trim()
     // 'backup' salva a pasta de backup exclusivo (planos Vitalício Plus/Pro)

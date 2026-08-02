@@ -83,8 +83,14 @@ serve(async (req) => {
       return new Response('ok', { status: 200 })
     }
 
-    // Valida apikey do webhook contra a config (Evolution API inclui apikey no body)
-    if (body.apikey && config.evolution_api_key && body.apikey !== config.evolution_api_key) {
+    // Autenticação OBRIGATÓRIA (fail-closed): a Evolution API inclui a apikey da
+    // instância no corpo do webhook. Antes o check era condicional a body.apikey
+    // existir — bastava OMITIR o campo pra pular a validação e forjar um evento,
+    // fazendo o número oficial disparar a auto-resposta pra números arbitrários
+    // (spam → risco de ban do número pela Meta). Agora exige a apikey correta.
+    // Retorna 200 silencioso pra não dar sinal a quem sonda o endpoint.
+    if (!body.apikey || !config.evolution_api_key || body.apikey !== config.evolution_api_key) {
+      console.warn('whatsapp-webhook: apikey ausente ou inválida — evento ignorado')
       return new Response('ok', { status: 200 })
     }
 

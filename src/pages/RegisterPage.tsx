@@ -7,7 +7,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Stethoscope, Mail, Lock, User, ArrowRight } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
-import { supabase } from '@/integrations/supabase/client';
 
 export default function RegisterPage() {
   const [name, setName] = useState('');
@@ -25,11 +24,11 @@ export default function RegisterPage() {
     setLoading(true);
     try {
       await register(email, password, name);
-      // Grant admin role
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        await supabase.from('user_roles').insert({ user_id: user.id, role: 'admin' });
-      }
+      // NÃO concede role admin pelo cliente. A concessão de admin deve ser feita
+      // no servidor (SQL/seed ou uma Edge Function restrita a admins existentes).
+      // O insert client-side em user_roles era barrado pela RLS de qualquer forma
+      // (exige has_role('admin')); mantê-lo era um padrão frágil — se a policy
+      // fosse afrouxada, virava escalonamento para admin com um clique.
       toast.success('Conta criada com sucesso!');
       navigate('/admin');
     } catch (err: any) {

@@ -239,9 +239,11 @@ serve(async (req) => {
         const { data: isAdmin } = await supabase.rpc('has_role', { _user_id: user.id, _role: 'admin' })
         authed = !!isAdmin
       }
-    } else if (!cronSecret) {
-      authed = true
     }
+    // FAIL-CLOSED: removido o antigo ramo `else if (!cronSecret) authed = true`,
+    // que liberava qualquer chamada anônima enquanto o CRON_SECRET não estivesse
+    // configurado. Requer x-cron-secret (cron) ou JWT de admin (painel).
+    // ⚠️ Configure CRON_SECRET nos secrets ANTES de deployar, senão o cron para.
 
     if (!authed) {
       console.error('run-email-campaign: unauthorized')

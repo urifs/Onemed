@@ -95,6 +95,32 @@ serve(async (req) => {
     ])
     if (!activeAccess && !buyer && !isAdmin) return jsonResponse(req, { error: 'Sem acesso ativo' }, 403)
 
+    // Rate limit por usuário (admin isento): trava a coleta automatizada de
+    // URLs — sem isto, um trial (ou conta qualquer) podia enumerar as aulas e
+    // assinar milhares de links em segundos. 60/min é folgado pra uso humano
+    // (uma aula = uma chamada, reusada por 2h na reprodução). Fail-open se a
+    // tabela rate_limits estiver indisponível — nunca bloqueia a aula por isso.
+    if (!isAdmin) {
+      try {
+        const RL_MAX = 60, RL_WINDOW_MS = 60_000
+        const now = Date.now()
+        const { data: rl } = await supabase.from('rate_limits')
+          .select('attempts, window_start').eq('identifier', user.id).eq('action', 'lesson_token').maybeSingle()
+        if (!rl || (now - new Date(rl.window_start).getTime()) > RL_WINDOW_MS) {
+          await supabase.from('rate_limits').upsert(
+            { identifier: user.id, action: 'lesson_token', attempts: 1, window_start: new Date(now).toISOString() },
+            { onConflict: 'identifier,action' })
+        } else if (rl.attempts >= RL_MAX) {
+          return jsonResponse(req, { error: 'Muitas aberturas em sequência. Aguarde alguns segundos e tente de novo.' }, 429)
+        } else {
+          await supabase.from('rate_limits').update({ attempts: rl.attempts + 1 })
+            .eq('identifier', user.id).eq('action', 'lesson_token')
+        }
+      } catch (rlErr) {
+        console.warn('lesson_token rate limit indisponível:', rlErr)
+      }
+    }
+
     if (lesson.storage_path) {
       const { data: signed, error: signErr } = await supabase.storage
         .from('lesson-media')

@@ -88,9 +88,9 @@ serve(async (req) => {
           .select('role').eq('user_id', user.id).eq('role', 'admin').maybeSingle()
         if (roleData) authed = true
       }
-    } else if (!cronSecret) {
-      authed = true
     }
+    // FAIL-CLOSED: removido o ramo `else if (!cronSecret) authed = true`.
+    // ⚠️ Configure CRON_SECRET nos secrets ANTES de deployar, senão o cron para.
 
     if (!authed) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
