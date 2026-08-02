@@ -27,6 +27,11 @@ import { C18_Interno, C18_DURATION } from './creatives/C18_Interno';
 import { C19_Conta, C19_DURATION } from './creatives/C19_Conta';
 import { C20_Recomeco, C20_DURATION } from './creatives/C20_Recomeco';
 import { M01_Meduf, M01_DURATION } from './creatives/M01_Meduf';
+import { M02_Chat, M02_DURATION } from './creatives/M02_Chat';
+import { M03_Diag, M03_DURATION } from './creatives/M03_Diag';
+import { M04_Ecg, M04_DURATION } from './creatives/M04_Ecg';
+import { M05_Lab, M05_DURATION } from './creatives/M05_Lab';
+import { M06_Rx, M06_DURATION } from './creatives/M06_Rx';
 
 const CREATIVES: Array<[string, React.FC, number]> = [
   ['C01-NovaEra', C01_NovaEra, C01_DURATION],
@@ -50,6 +55,11 @@ const CREATIVES: Array<[string, React.FC, number]> = [
   ['C19-Conta', C19_Conta, C19_DURATION],
   ['C20-Recomeco', C20_Recomeco, C20_DURATION],
   ['M01-Meduf', M01_Meduf, M01_DURATION],
+  ['M02-Chat', M02_Chat, M02_DURATION],
+  ['M03-Diag', M03_Diag, M03_DURATION],
+  ['M04-Ecg', M04_Ecg, M04_DURATION],
+  ['M05-Lab', M05_Lab, M05_DURATION],
+  ['M06-Rx', M06_Rx, M06_DURATION],
 ];
 
 export const RemotionRoot: React.FC = () => {

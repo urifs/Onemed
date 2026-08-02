@@ -53,7 +53,8 @@ export const PhoneFrame: React.FC<{
   muted?: boolean;
   style?: React.CSSProperties;
   statusDark?: boolean;
-}> = ({ src, width, startFrom = 0, style, statusDark }) => {
+  playbackRate?: number;
+}> = ({ src, width, startFrom = 0, style, statusDark, playbackRate }) => {
   const bezel = width * 0.032;
   const screenW = width - bezel * 2;
   const screenH = screenW * (844 / 390);
@@ -78,6 +79,7 @@ export const PhoneFrame: React.FC<{
           src={staticFile(src)}
           muted
           startFrom={startFrom}
+          playbackRate={playbackRate}
           style={{ width: '100%', height: '100%', objectFit: 'cover' }}
         />
         <StatusBar width={screenW} dark={statusDark} />
