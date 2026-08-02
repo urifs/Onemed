@@ -42,6 +42,24 @@ serve(async (req) => {
     if (authErr || !user?.email) return json(req, { error: 'Sessão inválida' }, 401)
     const email = user.email.toLowerCase().trim()
 
+    // ── 1b. Teste grátis não compra ────────────────────────────────────────
+    // Precisa ser verificado aqui à mão: esta função usa a service role, que
+    // ignora RLS de propósito (é ela quem grava o pedido) — então a política
+    // que esconde os produtos do trial não vale dentro daqui.
+    //
+    // A definição é a mesma de is_trial_member(): trial ativo e NENHUM sinal
+    // de pagamento. Na dúvida, deixa comprar — recusar a compra de um
+    // assinante seria bem pior do que deixar passar uma venda.
+    const [{ data: acessos }, { data: compras }] = await Promise.all([
+      supabase.from('accesses').select('access_type').eq('email', email).eq('status', 'active'),
+      supabase.from('buyers').select('id').eq('email', email).eq('access_granted', true).limit(1),
+    ])
+    const tipos = (acessos || []).map((a: { access_type: string }) => a.access_type)
+    const soTrial = tipos.length > 0 && tipos.every(t => t === 'trial') && !(compras || []).length
+    if (soTrial) {
+      return json(req, { error: 'A loja é exclusiva para assinantes. Assine um plano para comprar recursos adicionais.' }, 403)
+    }
+
     // ── 2. Produto e preço, direto do banco ────────────────────────────────
     const { productId } = await req.json()
     if (!productId) return json(req, { error: 'Produto não informado' }, 400)

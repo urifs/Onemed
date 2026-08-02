@@ -4,6 +4,9 @@ import { toast } from 'sonner';
 import { ShoppingBag, ChevronDown, Loader2, Check, AlertTriangle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
+import { useIsTrial } from '@/hooks/useIsTrial';
+import { useNavigate } from 'react-router-dom';
+import { Lock } from 'lucide-react';
 import { MemberHeader } from '@/components/member/MemberHeader';
 import { Button } from '@/components/ui/button';
 import { formatBRL } from '@/lib/utils';
@@ -25,6 +28,8 @@ const RETORNO: Record<string, { texto: string; tom: 'ok' | 'aviso' }> = {
 
 export default function StorePage() {
   const { user } = useAuth();
+  const { isTrial, loading: trialLoading } = useIsTrial();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [products, setProducts] = useState<StoreProduct[]>([]);
   const [purchased, setPurchased] = useState<Set<string>>(new Set());
@@ -35,6 +40,9 @@ export default function StorePage() {
   const retorno = RETORNO[searchParams.get('compra') || ''];
 
   useEffect(() => {
+    // Trial não vê a loja nem o ícone dela — e se digitar a URL, não busca
+    // nada (o banco também não devolveria).
+    if (trialLoading || isTrial) { setLoading(false); return; }
     let alive = true;
     (async () => {
       const [{ data: prods }, { data: orders }] = await Promise.all([
@@ -56,7 +64,7 @@ export default function StorePage() {
       setLoading(false);
     })();
     return () => { alive = false; };
-  }, [user?.id]);
+  }, [user?.id, trialLoading, isTrial]);
 
   const comprar = async (product: StoreProduct) => {
     if (buying) return;
@@ -83,6 +91,30 @@ export default function StorePage() {
       setBuying(null);
     }
   };
+
+  if (!trialLoading && isTrial) {
+    return (
+      <div className="min-h-screen bg-background">
+        <MemberHeader />
+        <div className="max-w-md mx-auto px-4 py-16 text-center">
+          <div className="glass rounded-2xl border border-primary/25 p-7">
+            <div className="w-12 h-12 rounded-full bg-primary/15 border border-primary/30 flex items-center justify-center mx-auto mb-4">
+              <Lock className="w-5 h-5 text-primary" />
+            </div>
+            <h1 className="font-secondary text-xl font-bold text-foreground mb-2">
+              A loja é exclusiva para assinantes
+            </h1>
+            <p className="text-sm text-muted-foreground mb-5">
+              Assine um plano para liberar a plataforma completa e os recursos adicionais.
+            </p>
+            <Button className="w-full" onClick={() => navigate('/checkout')}>
+              Adquirir acesso completo
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">

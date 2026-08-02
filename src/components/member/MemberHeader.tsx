@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Stethoscope, MessageCircle, ShoppingBag } from 'lucide-react';
 import { AccountMenu } from './AccountMenu';
+import { useIsTrial } from '@/hooks/useIsTrial';
 import { NotificationsBell } from './NotificationsBell';
 import { TrialCountdownBar } from './TrialCountdownBar';
 import { MemberPWAHead } from './MemberPWAHead';
@@ -43,6 +44,7 @@ function useLocationCapture() {
 export function MemberHeader() {
   useMemberPresence();
   useLocationCapture();
+  const { isTrial } = useIsTrial();
   return (
     <>
       <MemberPWAHead />
@@ -70,14 +72,20 @@ export function MemberHeader() {
           >
             <MessageCircle className="w-4 h-4" />
           </Link>
-          <Link
-            to="/membros/loja"
-            className="w-9 h-9 shrink-0 rounded-full bg-secondary border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors"
-            title="Loja"
-          >
-            <ShoppingBag className="w-4 h-4" />
-          </Link>
-          <NotificationsBell />
+          {/* Loja e notificações são para assinante: no teste grátis nem o
+              ícone aparece. */}
+          {!isTrial && (
+            <>
+              <Link
+                to="/membros/loja"
+                className="w-9 h-9 shrink-0 rounded-full bg-secondary border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors"
+                title="Loja"
+              >
+                <ShoppingBag className="w-4 h-4" />
+              </Link>
+              <NotificationsBell />
+            </>
+          )}
           <ThemeToggle />
           <AccountMenu />
         </div>
