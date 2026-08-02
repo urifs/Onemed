@@ -36,9 +36,6 @@ export function AssistantWidget() {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [openLesson, setOpenLessonState] = useState<OpenLessonRef | null>(null);
-  // "Usar o conteúdo do arquivo aberto" — o aluno decide quando gastar a
-  // leitura do PDF; desligado, só os metadados (título/curso) acompanham.
-  const [usarConteudo, setUsarConteudo] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -69,8 +66,10 @@ export function AssistantWidget() {
       const { data, error } = await supabase.functions.invoke('member-assistant', {
         body: {
           messages: novas.slice(-12),
+          // O servidor anexa o conteúdo do material aberto automaticamente
+          // (PDF/imagem inteiros; vídeo/áudio o trecho inicial) — sempre só
+          // no momento da pergunta.
           currentLesson: openLesson ? { id: openLesson.id } : undefined,
-          includeLessonContent: !!(openLesson && usarConteudo),
         },
       });
       if (error || data?.error) throw new Error(data?.error || error?.message);
@@ -187,25 +186,16 @@ export function AssistantWidget() {
             )}
           </div>
 
-          {/* aula aberta: chip de contexto */}
+          {/* material aberto: o assistente lê o conteúdo automaticamente */}
           {openLesson && (
             <div className="px-4 pb-1.5">
-              <button
-                onClick={() => setUsarConteudo(v => !v)}
-                title={openLesson.type === 'pdf'
-                  ? 'Ligado, o assistente lê o PDF aberto para responder (gasta mais créditos)'
-                  : 'O assistente sabe qual aula você está vendo'}
-                className={`inline-flex items-center gap-1.5 max-w-full text-[11px] font-medium rounded-full border px-2.5 py-1 transition-colors ${
-                  usarConteudo
-                    ? 'bg-primary/15 border-primary/40 text-primary'
-                    : 'bg-secondary border-border text-muted-foreground hover:text-foreground'
-                }`}
+              <span
+                title="O assistente lê este material para responder suas perguntas sobre ele"
+                className="inline-flex items-center gap-1.5 max-w-full text-[11px] font-medium rounded-full border px-2.5 py-1 bg-primary/15 border-primary/40 text-primary"
               >
                 <BookOpen className="w-3 h-3 shrink-0" />
-                <span className="truncate">
-                  {usarConteudo && openLesson.type === 'pdf' ? 'Lendo: ' : 'Vendo: '}{openLesson.title}
-                </span>
-              </button>
+                <span className="truncate">Lendo: {openLesson.title}</span>
+              </span>
             </div>
           )}
 

@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { PDFDocument } from 'https://esm.sh/pdf-lib@1.17.1'
 
 // Assistente da área de membros (widget flutuante). Gemini 2.5 Flash pela
 // chave universal da Emergent — a chave vive AQUI, nunca no navegador.
@@ -41,7 +42,34 @@ const LLM_URL = 'https://integrations.emergentagent.com/llm/v1/chat/completions'
 const LLM_MODEL = 'gemini/gemini-2.5-flash'
 const MAX_HISTORY = 12
 const MAX_MSG_CHARS = 2000
-const PDF_ATTACH_MAX = 6 * 1024 * 1024
+const PDF_ATTACH_MAX = 12 * 1024 * 1024
+const AV_CHUNK = 12 * 1024 * 1024
+// PDF maior que o limite por chamada: quebrado por PÁGINAS em partes, cada
+// parte lida pelo modelo separadamente (extração guiada pela pergunta) e a
+// resposta final montada com os trechos — o material é lido POR COMPLETO.
+const PDF_PART_TARGET = 9 * 1024 * 1024
+const PDF_MAX_PARTS = 6
+
+// Mesmo detector do generate-flashcards: pedaço de MP4/MOV sem o índice
+// (moov) dentro é ilegível pra IA — melhor nem anexar.
+function mp4TemMoov(bytes: Uint8Array): boolean {
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  let off = 0
+  while (off + 8 <= bytes.length) {
+    let size = dv.getUint32(off)
+    const type = String.fromCharCode(bytes[off + 4], bytes[off + 5], bytes[off + 6], bytes[off + 7])
+    if (type === 'moov') return true
+    if (size === 1) {
+      if (off + 16 > bytes.length) return false
+      size = dv.getUint32(off + 8) * 4294967296 + dv.getUint32(off + 12)
+    } else if (size === 0) return false
+    if (size < 8) return false
+    off += size
+  }
+  return false
+}
+const MP4_FAMILY = /^(video\/(mp4|quicktime)|audio\/(mp4|x-m4a))/i
+const ANEXAVEL = /^(application\/pdf|image\/(png|jpe?g|webp)|video\/|audio\/|text\/)/i
 
 // Manual da plataforma — é daqui que saem respostas sobre "como faço X".
 // Manter atualizado quando novas funções entrarem.
@@ -78,6 +106,31 @@ CONTA (ícone de pessoa no topo): nome, plano, detalhes do plano, upgrade, insta
 
 SUPORTE HUMANO: WhatsApp +55 63 99919-1551 (também no menu da conta). Para problemas de pagamento, acesso ou conta, direcione ao suporte.
 `.trim()
+
+function toB64(bytes: Uint8Array): string {
+  let b = ''
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    b += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+  }
+  return btoa(b)
+}
+
+async function chamarLLM(messages: unknown[], maxTokens: number): Promise<string | null> {
+  const res = await fetch(LLM_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${Deno.env.get('EMERGENT_LLM_KEY')}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ model: LLM_MODEL, messages, temperature: 0.3, max_tokens: maxTokens }),
+  })
+  const data = await res.json()
+  if (!res.ok) {
+    console.error('LLM error', res.status, JSON.stringify(data).slice(0, 300))
+    return null
+  }
+  return data.choices?.[0]?.message?.content || null
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: getCorsHeaders(req) })
@@ -175,14 +228,22 @@ serve(async (req) => {
         const curso = (lesson as { courses?: { title?: string; slug?: string } }).courses
         aulaAbertaTxt = `O aluno está NESTE MOMENTO com o conteúdo aberto: "${lesson.title}" (tipo: ${lesson.type}) dentro do curso "${curso?.title || '?'}" (caminho: /membros/curso/${curso?.slug || ''}). Perguntas sobre "essa aula/esse arquivo" referem-se a ele.`
 
-        // Conteúdo do PDF só quando o aluno pediu — é o que come tokens.
-        if (includeLessonContent === true && lesson.mime_type === 'application/pdf'
-            && (lesson.size_bytes || 0) <= PDF_ATTACH_MAX) {
+        // O conteúdo do que está aberto vai JUNTO da pergunta, automaticamente
+        // — anexado só no momento do envio (nunca por simplesmente abrir a
+        // aula). PDF/texto/imagem inteiros dentro do limite; vídeo/áudio o
+        // trecho inicial, o mesmo tratamento do gerador de flashcards.
+        // `includeLessonContent === false` permite ao cliente desligar.
+        const mime = lesson.mime_type || ''
+        const isAv = /^(video|audio)\//i.test(mime)
+        if (includeLessonContent !== false && ANEXAVEL.test(mime)) {
           try {
             let bytes: Uint8Array | null = null
             if (lesson.storage_path) {
               const { data: blob } = await supabase.storage.from('lesson-media').download(lesson.storage_path)
-              if (blob) bytes = new Uint8Array(await blob.arrayBuffer())
+              if (blob) {
+                const buf = new Uint8Array(await blob.arrayBuffer())
+                bytes = isAv ? buf.subarray(0, AV_CHUNK) : buf
+              }
             } else if (lesson.drive_file_id) {
               const tokRes = await fetch(`${supabaseUrl}/functions/v1/drive-access-token`, {
                 headers: { Authorization: `Bearer ${serviceKey}` },
@@ -190,19 +251,63 @@ serve(async (req) => {
               if (tokRes.ok) {
                 const { accessToken } = await tokRes.json()
                 const res = await fetch(`https://www.googleapis.com/drive/v3/files/${lesson.drive_file_id}?alt=media`,
-                  { headers: { Authorization: `Bearer ${accessToken}` } })
-                if (res.ok) bytes = new Uint8Array(await res.arrayBuffer())
+                  { headers: { Authorization: `Bearer ${accessToken}`, ...(isAv ? { Range: `bytes=0-${AV_CHUNK - 1}` } : {}) } })
+                if (res.ok || res.status === 206) bytes = new Uint8Array(await res.arrayBuffer())
               }
             }
-            if (bytes && bytes.length > 0) {
-              let b = ''
-              for (let i = 0; i < bytes.length; i += 0x8000) {
-                b += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
-              }
-              parts.push({ type: 'text', text: `Conteúdo do arquivo aberto ("${lesson.title}"):` })
-              parts.push({ type: 'file', file: { file_data: `data:application/pdf;base64,${btoa(b)}` } })
+            // Trecho de MP4 sem índice legível: não anexa (o modelo rejeitaria).
+            if (bytes && isAv && bytes.length < (lesson.size_bytes || Infinity)
+                && MP4_FAMILY.test(mime) && !mp4TemMoov(bytes)) {
+              bytes = null
             }
-          } catch { /* segue só com metadados */ }
+
+            if (bytes && bytes.length > 0 && mime === 'application/pdf' && bytes.length > PDF_ATTACH_MAX) {
+              // ── PDF grande: LEITURA COMPLETA por partes ─────────────────
+              // Divide por páginas; o modelo extrai de CADA parte o que é
+              // relevante à pergunta; os trechos entram no contexto final.
+              // Assim nenhum pedaço do material fica sem ser lido.
+              const src = await PDFDocument.load(bytes, { ignoreEncryption: true })
+              const totalPaginas = src.getPageCount()
+              const nPartes = Math.min(Math.ceil(bytes.length / PDF_PART_TARGET), PDF_MAX_PARTS)
+              const porParte = Math.ceil(totalPaginas / nPartes)
+
+              const extrair = async (inicio: number): Promise<string> => {
+                const fim = Math.min(inicio + porParte, totalPaginas)
+                const parte = await PDFDocument.create()
+                const paginas = await parte.copyPages(src, Array.from({ length: fim - inicio }, (_, k) => inicio + k))
+                for (const pg of paginas) parte.addPage(pg)
+                const parteBytes = await parte.save()
+                const resposta = await chamarLLM([
+                  { role: 'user', content: [
+                    { type: 'file', file: { file_data: `data:application/pdf;base64,${toB64(new Uint8Array(parteBytes))}` } },
+                    { type: 'text', text: `Este é o trecho (páginas ${inicio + 1}-${fim}) do material "${lesson.title}". Extraia NA ÍNTEGRA tudo que for relevante para responder à pergunta abaixo (enunciados, dados, respostas, explicações). Se nada for relevante, responda apenas: NADA RELEVANTE.\n\nPergunta do aluno: ${pergunta}` },
+                  ] },
+                ], 2500)
+                return resposta && !/^\s*NADA RELEVANTE/i.test(resposta) ? `[páginas ${inicio + 1}-${fim}] ${resposta}` : ''
+              }
+
+              // Duas partes por vez — equilíbrio entre tempo total e carga.
+              const inicios = Array.from({ length: nPartes }, (_, k) => k * porParte).filter(i => i < totalPaginas)
+              const trechos: string[] = []
+              for (let i = 0; i < inicios.length; i += 2) {
+                const lote = await Promise.all(inicios.slice(i, i + 2).map(extrair))
+                trechos.push(...lote.filter(Boolean))
+              }
+
+              if (trechos.length > 0) {
+                parts.push({ type: 'text', text: `TRECHOS RELEVANTES DO MATERIAL COMPLETO "${lesson.title}" (${totalPaginas} páginas, todas lidas):\n${trechos.join('\n\n').slice(0, 24000)}` })
+                aulaAbertaTxt += ' O material aberto foi lido POR COMPLETO e os trechos relevantes à pergunta estão nesta mensagem — responda com base neles. Nunca diga que não consegue acessar o conteúdo.'
+              } else {
+                aulaAbertaTxt += ` O material completo (${totalPaginas} páginas) foi lido e não contém nada diretamente relacionado à pergunta — diga isso ao aluno e responda com seu conhecimento, deixando claro.`
+              }
+            } else if (bytes && bytes.length > 0 && bytes.length <= PDF_ATTACH_MAX * (isAv ? 2 : 1)) {
+              parts.push({ type: 'text', text: `Conteúdo do material aberto ("${lesson.title}")${isAv ? ' — trecho inicial do vídeo/áudio' : ''}:` })
+              parts.push({ type: 'file', file: { file_data: `data:${mime};base64,${toB64(bytes)}` } })
+              aulaAbertaTxt += ' O CONTEÚDO deste material está anexado nesta mensagem — responda com base nele, citando trechos quando ajudar. Nunca diga que não consegue acessar o conteúdo.'
+            }
+          } catch (attachErr) {
+            console.warn('Falha ao anexar material:', (attachErr as Error)?.message)
+          }
         }
       }
     }
