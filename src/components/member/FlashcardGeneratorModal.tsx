@@ -261,7 +261,9 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
   useEffect(() => {
     if (!open) return;
     setSelected(new Map(initialSources.map(s => [s.id, s.title])));
-    setShowTree(false);
+    // Aberto pela aba Flashcards (sem aula pré-selecionada), a árvore já
+    // aparece — escolher o conteúdo é o primeiro passo, não um opcional.
+    setShowTree(initialSources.length === 0);
     setGenerating(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);

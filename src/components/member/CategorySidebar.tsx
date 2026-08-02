@@ -55,7 +55,7 @@ export function CategorySidebar({ categories, active, onSelect, totalCount }: Ca
               count={cat.count}
               icon={CATEGORY_ICON[cat.name] || LayoutGrid}
               isActive={active === cat.name}
-              highlight={cat.name === 'Favoritos'}
+              highlight={cat.name === 'Favoritos' || cat.name === 'Flashcards'}
               onClick={() => handleSelect(cat.name)}
             />
           ))}
@@ -105,7 +105,7 @@ export function CategorySidebar({ categories, active, onSelect, totalCount }: Ca
                   count={cat.count}
                   icon={CATEGORY_ICON[cat.name] || LayoutGrid}
                   isActive={active === cat.name}
-                  highlight={cat.name === 'Favoritos'}
+                  highlight={cat.name === 'Favoritos' || cat.name === 'Flashcards'}
                   onClick={() => handleSelect(cat.name)}
                 />
               ))}

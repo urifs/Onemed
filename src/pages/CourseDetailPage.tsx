@@ -3,7 +3,7 @@ import { useNavigate, useParams, useSearchParams, Link } from 'react-router-dom'
 import { toast } from 'sonner';
 import {
   ArrowLeft, Play, FileText, File, Music, Image as ImageIcon, CheckCircle2, Clock,
-  FileSpreadsheet, FileType, Star, ListOrdered, Menu, X, Check, Download, Loader2, ExternalLink, Sparkles,
+  FileSpreadsheet, FileType, Star, ListOrdered, Menu, X, Check, Download, Loader2, ExternalLink, Sparkles, ChevronDown,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
@@ -661,6 +661,9 @@ function LessonGroupList({
   openingId?: string | null;
   onGenerateFlashcards?: (lesson: Lesson) => void;
 }) {
+  // Mobile: as ações ficam atrás de uma seta por linha — com todas visíveis,
+  // os ícones engoliam o título da aula em telas estreitas.
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   return (
     <div className="space-y-8">
       {groups.map(group => (
@@ -681,7 +684,8 @@ function LessonGroupList({
                 // Não é <button> — dentro tem vários controles clicáveis
                 // independentes (abrir, baixar, concluir, favoritar), e botão
                 // aninhado dentro de botão é HTML inválido.
-                <div key={lesson.id} className="w-full flex items-center gap-3.5 px-4 py-3.5 bg-card hover:bg-secondary transition-colors group">
+                <div key={lesson.id}>
+                <div className="w-full flex items-center gap-3.5 px-4 py-3.5 bg-card hover:bg-secondary transition-colors group">
                   <button
                     onClick={() => onSelect(lesson)}
                     className="flex-1 min-w-0 flex items-center gap-3.5 text-left"
@@ -705,51 +709,56 @@ function LessonGroupList({
                       {lesson.type === 'video' ? formatDuration(lesson.duration_seconds) : formatFileSize(lesson.size_bytes)}
                     </span>
                   </button>
-                  {/* Baixar sem precisar abrir. Vale pra aula em vídeo do
-                      mesmo jeito que pra PDF — o arquivo sai com o nome e a
-                      extensão que aparecem aqui na lista. */}
-                  <button
-                    onClick={() => onDownload?.(lesson)}
-                    disabled={!!downloadingId}
-                    className="shrink-0 p-1.5 rounded-lg text-muted-foreground/50 hover:text-primary hover:bg-primary/10 disabled:opacity-40 transition-colors"
-                    title={`Baixar "${lesson.title}"`}
-                    aria-label={`Baixar ${lesson.title}`}
-                  >
-                    {isDownloading
-                      ? <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                      : <Download className="w-4 h-4" />}
-                  </button>
-                  {/* Abrir numa aba nova, no visualizador do navegador —
-                      sem sair da plataforma nem perder a posição da lista. */}
-                  <button
-                    onClick={() => onOpenExternal?.(lesson)}
-                    disabled={openingId === lesson.id}
-                    className="shrink-0 p-1.5 rounded-lg text-muted-foreground/50 hover:text-primary hover:bg-primary/10 disabled:opacity-40 transition-colors"
-                    title={`Abrir "${lesson.title}" em outra aba`}
-                    aria-label={`Abrir ${lesson.title} em outra aba`}
-                  >
-                    {openingId === lesson.id
-                      ? <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                      : <ExternalLink className="w-4 h-4" />}
-                  </button>
-                  {/* Gerar flashcards por IA a partir deste conteúdo. */}
-                  <button
-                    onClick={() => onGenerateFlashcards?.(lesson)}
-                    className="shrink-0 p-1.5 rounded-lg text-muted-foreground/50 hover:text-primary hover:bg-primary/10 transition-colors"
-                    title={`Gerar flashcards de "${lesson.title}"`}
-                    aria-label={`Gerar flashcards de ${lesson.title}`}
-                  >
-                    <Sparkles className="w-4 h-4" />
-                  </button>
-                  {/* Caixa de concluída: vale pra qualquer tipo. Antes só
-                      vídeo virava "assistido" (pelos 92% de reprodução) — PDF,
-                      apostila e imagem não tinham como ser marcados. */}
+                  {/* Desktop: ações visíveis na linha, como sempre. */}
+                  <div className="hidden md:flex items-center gap-0.5">
+                    <button
+                      onClick={() => onDownload?.(lesson)}
+                      disabled={!!downloadingId}
+                      className="shrink-0 p-1.5 rounded-lg text-muted-foreground/50 hover:text-primary hover:bg-primary/10 disabled:opacity-40 transition-colors"
+                      title={`Baixar "${lesson.title}"`}
+                      aria-label={`Baixar ${lesson.title}`}
+                    >
+                      {isDownloading
+                        ? <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                        : <Download className="w-4 h-4" />}
+                    </button>
+                    <button
+                      onClick={() => onOpenExternal?.(lesson)}
+                      disabled={openingId === lesson.id}
+                      className="shrink-0 p-1.5 rounded-lg text-muted-foreground/50 hover:text-primary hover:bg-primary/10 disabled:opacity-40 transition-colors"
+                      title={`Abrir "${lesson.title}" em outra aba`}
+                      aria-label={`Abrir ${lesson.title} em outra aba`}
+                    >
+                      {openingId === lesson.id
+                        ? <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                        : <ExternalLink className="w-4 h-4" />}
+                    </button>
+                    <button
+                      onClick={() => onGenerateFlashcards?.(lesson)}
+                      className="shrink-0 p-1.5 rounded-lg text-muted-foreground/50 hover:text-primary hover:bg-primary/10 transition-colors"
+                      title={`Gerar flashcards de "${lesson.title}"`}
+                      aria-label={`Gerar flashcards de ${lesson.title}`}
+                    >
+                      <Sparkles className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => onToggleFavorite?.(lesson)}
+                      className={`shrink-0 p-1.5 rounded-lg transition-colors ${isLessonFavorite ? 'text-accent-warning' : 'text-muted-foreground/30 hover:text-muted-foreground'}`}
+                      title={isLessonFavorite ? 'Remover dos favoritos' : 'Favoritar'}
+                    >
+                      <Star className="w-4 h-4" fill={isLessonFavorite ? 'currentColor' : 'none'} />
+                    </button>
+                  </div>
+
+                  {/* Caixa de concluída — única ação sempre visível, em
+                      qualquer tamanho de tela. Fundo e check aparente mesmo
+                      desmarcada, pra não parecer um buraco na linha. */}
                   <button
                     onClick={() => onToggleCompleted?.(lesson, !p?.completed)}
-                    className={`shrink-0 w-6 h-6 rounded-md border-2 flex items-center justify-center transition-colors ${
+                    className={`shrink-0 w-6 h-6 rounded-md border flex items-center justify-center transition-all ${
                       p?.completed
-                        ? 'bg-accent-success border-accent-success text-white'
-                        : 'border-muted-foreground/30 hover:border-accent-success text-transparent'
+                        ? 'bg-accent-success border-accent-success text-white shadow-sm'
+                        : 'bg-secondary border-muted-foreground/30 text-muted-foreground/40 hover:border-accent-success hover:text-accent-success'
                     }`}
                     title={p?.completed ? 'Marcar como não concluída' : 'Marcar como concluída'}
                     aria-pressed={!!p?.completed}
@@ -757,13 +766,38 @@ function LessonGroupList({
                   >
                     <Check className="w-3.5 h-3.5" strokeWidth={3} />
                   </button>
+
+                  {/* Mobile: seta que expande as demais ações. */}
                   <button
-                    onClick={() => onToggleFavorite?.(lesson)}
-                    className={`shrink-0 p-1.5 rounded-lg transition-colors ${isLessonFavorite ? 'text-accent-warning' : 'text-muted-foreground/30 hover:text-muted-foreground'}`}
-                    title={isLessonFavorite ? 'Remover dos favoritos' : 'Favoritar'}
+                    onClick={() => setExpandedId(expandedId === lesson.id ? null : lesson.id)}
+                    className="md:hidden shrink-0 p-1.5 rounded-lg text-muted-foreground/60 hover:text-foreground transition-colors"
+                    title="Mais ações"
+                    aria-expanded={expandedId === lesson.id}
+                    aria-label={`Mais ações de ${lesson.title}`}
                   >
-                    <Star className="w-4 h-4" fill={isLessonFavorite ? 'currentColor' : 'none'} />
+                    <ChevronDown className={`w-4 h-4 transition-transform ${expandedId === lesson.id ? 'rotate-180' : ''}`} />
                   </button>
+                </div>
+
+                {expandedId === lesson.id && (
+                  <div className="md:hidden flex items-stretch gap-2 px-4 pb-3 bg-card">
+                    {[
+                      { rot: 'Baixar', act: () => onDownload?.(lesson), icon: isDownloading ? Loader2 : Download, spin: isDownloading },
+                      { rot: 'Outra aba', act: () => onOpenExternal?.(lesson), icon: openingId === lesson.id ? Loader2 : ExternalLink, spin: openingId === lesson.id },
+                      { rot: 'Flashcards', act: () => onGenerateFlashcards?.(lesson), icon: Sparkles, spin: false },
+                      { rot: isLessonFavorite ? 'Favorito' : 'Favoritar', act: () => onToggleFavorite?.(lesson), icon: Star, spin: false, fav: isLessonFavorite },
+                    ].map(({ rot, act, icon: ActionIcon, spin, fav }) => (
+                      <button
+                        key={rot}
+                        onClick={act}
+                        className={`flex-1 flex flex-col items-center gap-1 rounded-lg border border-border bg-secondary py-2 text-[11px] font-medium transition-colors ${fav ? 'text-accent-warning' : 'text-muted-foreground hover:text-foreground'}`}
+                      >
+                        <ActionIcon className={`w-4 h-4 ${spin ? 'animate-spin' : ''}`} fill={fav ? 'currentColor' : 'none'} />
+                        {rot}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 </div>
               );
             })}

@@ -13,6 +13,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { FlashcardViewer, type FlashcardDeck } from '@/components/member/FlashcardViewer';
+import { FlashcardGeneratorModal, type GeneratedDeck } from '@/components/member/FlashcardGeneratorModal';
 import { CATEGORY_ORDER } from '@/lib/courseCategories';
 import { formatDateTimeSP, formatDuration, matchesSearch, stripYearFromTitle, withTimeout, withRetry, describeLoadError } from '@/lib/utils';
 import type { Database } from '@/integrations/supabase/types';
@@ -93,6 +94,28 @@ export default function MemberDashboardPage() {
   const [openDeck, setOpenDeck] = useState<SavedDeck | null>(null);
   const [sessions, setSessions] = useState<StudySession[]>([]);
   const [sessionsTick, setSessionsTick] = useState(0);
+  const [fcCreateOpen, setFcCreateOpen] = useState(false);
+  const [fcNewDeck, setFcNewDeck] = useState<GeneratedDeck | null>(null);
+  const [fcNewSaved, setFcNewSaved] = useState(false);
+  const [fcNewSavedId, setFcNewSavedId] = useState<string | null>(null);
+  const [fcNewSaving, setFcNewSaving] = useState(false);
+
+  const saveNewDeck = async () => {
+    if (!fcNewDeck || !userId || fcNewSaved || fcNewSaving) return;
+    setFcNewSaving(true);
+    const { data: savedRow, error } = await (supabase as any).from('flashcard_decks').insert({
+      user_id: userId,
+      title: fcNewDeck.title,
+      difficulty: fcNewDeck.difficulty,
+      cards: fcNewDeck.cards,
+      source: fcNewDeck.source,
+    }).select('id').single();
+    setFcNewSaving(false);
+    if (error) return;
+    setFcNewSavedId(savedRow?.id || null);
+    setFcNewSaved(true);
+    setSessionsTick(t => t + 1);
+  };
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [loadErrorMessage, setLoadErrorMessage] = useState('');
@@ -642,6 +665,7 @@ export default function MemberDashboardPage() {
                 loading={decksLoading}
                 onOpenDeck={setOpenDeck}
                 onDeleteDeck={deleteDeck}
+                onCreate={() => setFcCreateOpen(true)}
               />
             ) : activeCategory === ANNOTATIONS_TAB ? (
               <section className="space-y-4">
@@ -828,6 +852,23 @@ export default function MemberDashboardPage() {
         </div>
       </main>
 
+      <FlashcardGeneratorModal
+        open={fcCreateOpen}
+        onOpenChange={setFcCreateOpen}
+        initialSources={[]}
+        onGenerated={(deck) => { setFcNewDeck(deck); setFcNewSaved(false); setFcNewSavedId(null); }}
+      />
+      {fcNewDeck && (
+        <FlashcardViewer
+          deck={fcNewDeck}
+          deckId={fcNewSavedId}
+          onClose={() => { setFcNewDeck(null); setSessionsTick(t => t + 1); }}
+          onSave={saveNewDeck}
+          saved={fcNewSaved}
+          saving={fcNewSaving}
+        />
+      )}
+
       {openDeck && (
         <FlashcardViewer deck={openDeck} deckId={openDeck.id} onClose={() => { setOpenDeck(null); setSessionsTick(t => t + 1); }} />
       )}
@@ -936,12 +977,13 @@ function Row({ title, items, onToggleFavorite, action }: {
 // Tudo derivado de flashcard_sessions (uma linha por sessão CONCLUÍDA). A
 // média é sempre da PRIMEIRA tentativa de cada carta — repetir até acertar
 // não infla nota nenhuma daqui.
-function FlashcardsTab({ decks, sessions, loading, onOpenDeck, onDeleteDeck }: {
+function FlashcardsTab({ decks, sessions, loading, onOpenDeck, onDeleteDeck, onCreate }: {
   decks: SavedDeck[];
   sessions: StudySession[];
   loading: boolean;
   onOpenDeck: (deck: SavedDeck) => void;
   onDeleteDeck: (deck: SavedDeck) => void;
+  onCreate: () => void;
 }) {
   const pct = (ok: number, total: number) => total > 0 ? Math.round((ok / total) * 100) : 0;
 
@@ -962,12 +1004,16 @@ function FlashcardsTab({ decks, sessions, loading, onOpenDeck, onDeleteDeck }: {
 
   return (
     <section className="space-y-6">
-      <div>
-        <h2 className="font-secondary text-lg font-bold text-foreground mb-1">Flashcards</h2>
-        <p className="text-sm text-muted-foreground">
-          Baralhos que você gerou por IA e salvou. Para criar um novo, abra qualquer aula ou
-          arquivo e toque no ícone <Sparkles className="w-3.5 h-3.5 inline text-primary" />.
-        </p>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h2 className="font-secondary text-lg font-bold text-foreground mb-1">Flashcards</h2>
+          <p className="text-sm text-muted-foreground">
+            Baralhos de estudo gerados por IA a partir das aulas e arquivos do acervo.
+          </p>
+        </div>
+        <Button onClick={onCreate} className="shrink-0">
+          <Sparkles className="w-4 h-4" /> Criar flashcards
+        </Button>
       </div>
 
       {loading ? (
@@ -1081,8 +1127,8 @@ function FlashcardsTab({ decks, sessions, loading, onOpenDeck, onDeleteDeck }: {
             <div className="rounded-xl border border-border bg-card px-4 py-8 text-center">
               <Sparkles className="w-6 h-6 text-muted-foreground/50 mx-auto mb-2" />
               <p className="text-sm text-muted-foreground">
-                Nenhum baralho salvo ainda. Abra uma aula ou arquivo, toque no ícone de flashcards
-                e a IA monta um baralho de estudo pra você.
+                Nenhum baralho salvo ainda. Toque em "Criar flashcards" aqui em cima, escolha as
+                aulas e arquivos, e a IA monta um baralho de estudo pra você.
               </p>
             </div>
           )}
