@@ -37,6 +37,16 @@ import { M08_Dia, M08_DURATION } from './creatives/M08_Dia';
 import { M09_Paciente, M09_DURATION } from './creatives/M09_Paciente';
 import { M10_Conta, M10_DURATION } from './creatives/M10_Conta';
 import { M11_Objecao, M11_DURATION } from './creatives/M11_Objecao';
+import { C21_Unboxing, C21_DURATION } from './creatives/C21_Unboxing';
+import { C22_D7, C22_DURATION } from './creatives/C22_D7';
+import { C23_Reler, C23_DURATION } from './creatives/C23_Reler';
+import { C24_Comentario, C24_DURATION } from './creatives/C24_Comentario';
+import { C25_OlhaIsso, C25_DURATION } from './creatives/C25_OlhaIsso';
+import { C26_Desdobra, C26_DURATION } from './creatives/C26_Desdobra';
+import { C27_Equacao, C27_DURATION } from './creatives/C27_Equacao';
+import { C28_Verdades, C28_DURATION } from './creatives/C28_Verdades';
+import { C29_Caderno, C29_DURATION } from './creatives/C29_Caderno';
+import { C30_Rotina, C30_DURATION } from './creatives/C30_Rotina';
 
 const CREATIVES: Array<[string, React.FC, number]> = [
   ['C01-NovaEra', C01_NovaEra, C01_DURATION],
@@ -70,6 +80,16 @@ const CREATIVES: Array<[string, React.FC, number]> = [
   ['M09-Paciente', M09_Paciente, M09_DURATION],
   ['M10-Conta', M10_Conta, M10_DURATION],
   ['M11-Objecao', M11_Objecao, M11_DURATION],
+  ['C21-Unboxing', C21_Unboxing, C21_DURATION],
+  ['C22-D7', C22_D7, C22_DURATION],
+  ['C23-Reler', C23_Reler, C23_DURATION],
+  ['C24-Comentario', C24_Comentario, C24_DURATION],
+  ['C25-OlhaIsso', C25_OlhaIsso, C25_DURATION],
+  ['C26-Desdobra', C26_Desdobra, C26_DURATION],
+  ['C27-Equacao', C27_Equacao, C27_DURATION],
+  ['C28-Verdades', C28_Verdades, C28_DURATION],
+  ['C29-Caderno', C29_Caderno, C29_DURATION],
+  ['C30-Rotina', C30_Rotina, C30_DURATION],
 ];
 
 export const RemotionRoot: React.FC = () => {
