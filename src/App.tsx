@@ -56,6 +56,7 @@ import WhatsAppButton from "./components/WhatsAppButton";
 import { KickedOutModal } from "./components/member/KickedOutModal";
 import { AccessExpiredScreen } from "./components/member/AccessExpiredScreen";
 import { useMemberStatus } from "@/hooks/useMemberStatus";
+import { useIsAffiliate } from "@/hooks/useIsAffiliate";
 
 const queryClient = new QueryClient();
 
@@ -121,6 +122,7 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 const MemberProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
   const { status, lastType, expiredAt, loading: statusLoading } = useMemberStatus();
+  const isAffiliate = useIsAffiliate();
 
   const spinner = (
     <div className="flex min-h-screen items-center justify-center bg-background">
@@ -132,11 +134,20 @@ const MemberProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   if (!user) return <Navigate to="/login" replace />;
   if (statusLoading) return spinner;
 
+  // Conta de afiliado é SEPARADA da de assinante — quem entrou só como
+  // afiliado não tem acesso à plataforma. Em vez da tela de "adquira acesso",
+  // manda direto pro painel de afiliado (a menos que a conta também seja
+  // assinante ativa: aí passa como assinante normal). Espera o hook resolver
+  // pra não piscar a tela de expirado antes de redirecionar.
+  const semAcesso = status === 'expired' || status === 'none';
+  if (semAcesso && isAffiliate === null) return spinner;
+  if (semAcesso && isAffiliate) return <Navigate to="/afiliado" replace />;
+
   // A sessão do navegador sobrevive ao fim do teste grátis — sem isto, o
   // aluno fica dentro de uma plataforma vazia, sem explicação nem caminho
   // pra comprar. `status` nulo é consulta que falhou: deixa passar (o
   // conteúdo continua protegido pela RLS).
-  if (status === 'expired' || status === 'none') {
+  if (semAcesso) {
     return <AccessExpiredScreen lastType={lastType} expiredAt={expiredAt} />;
   }
 
