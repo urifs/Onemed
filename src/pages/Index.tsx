@@ -9,6 +9,7 @@ import {
   BooksSection,
   FaqSection,
   LandingFooter,
+  AffiliateSection,
   LANDING_FAQS,
 } from '@/components/landing';
 import { Seo } from '@/seo/Seo';
@@ -139,6 +140,7 @@ export default function Index() {
       <CoursesSection />
       <BooksSection />
       <FaqSection />
+      <AffiliateSection />
       {/* Porta de entrada do silo: leva a home para os hubs de maior
           intenção de busca, distribuindo autoridade a partir da página
           mais forte do domínio. */}

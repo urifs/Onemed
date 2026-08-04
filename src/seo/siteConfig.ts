@@ -745,7 +745,7 @@ export const PUBLIC_ROUTES: PublicRoute[] = [
  * problema real — vaza conteúdo pago para o índice e enche a busca de
  * páginas de checkout sem valor.
  */
-export const NOINDEX_PREFIXES = ['/admin', '/membros', '/payment', '/checkout', '/claim-access', '/login'];
+export const NOINDEX_PREFIXES = ['/admin', '/membros', '/payment', '/checkout', '/claim-access', '/login', '/afiliado'];
 
 export function isNoIndexPath(path: string): boolean {
   return NOINDEX_PREFIXES.some(prefix => path === prefix || path.startsWith(`${prefix}/`));

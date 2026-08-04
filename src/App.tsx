@@ -30,6 +30,10 @@ import TrialUsersPage from "./pages/TrialUsersPage";
 import CouponsPage from "./pages/CouponsPage";
 import AdminCommunityPage from "./pages/AdminCommunityPage";
 import StorePage from "./pages/StorePage";
+import AffiliateRegisterPage from "./pages/affiliate/AffiliateRegisterPage";
+import AffiliateLoginPage from "./pages/affiliate/AffiliateLoginPage";
+import AffiliatePanelPage from "./pages/affiliate/AffiliatePanelPage";
+import AffiliatesAdminPage from "./pages/AffiliatesAdminPage";
 import StoreAdminPage from "./pages/StoreAdminPage";
 import FlashcardsAdminPage from "./pages/FlashcardsAdminPage";
 import AnnouncementsPage from "./pages/AnnouncementsPage";
@@ -160,6 +164,11 @@ const App = () => (
             {PILLAR_HUBS.map(hub => (
               <Route key={hub.slug} path={`/${hub.slug}`} element={<PillarHubPage slug={hub.slug} />} />
             ))}
+            {/* Programa de afiliados */}
+            <Route path="/afiliado/registro" element={<AffiliateRegisterPage />} />
+            <Route path="/afiliado/login" element={<AffiliateLoginPage />} />
+            <Route path="/afiliado" element={<AffiliatePanelPage />} />
+
             <Route path="/admin/login" element={<LoginPage />} />
             <Route path="/admin/register" element={<RegisterPage />} />
 
@@ -180,6 +189,7 @@ const App = () => (
             <Route path="/admin/coupons" element={<ProtectedRoute><CouponsPage /></ProtectedRoute>} />
             <Route path="/admin/comunidade" element={<ProtectedRoute><AdminCommunityPage /></ProtectedRoute>} />
             <Route path="/admin/loja" element={<ProtectedRoute><StoreAdminPage /></ProtectedRoute>} />
+            <Route path="/admin/afiliados" element={<ProtectedRoute><AffiliatesAdminPage /></ProtectedRoute>} />
             <Route path="/admin/flashcards" element={<ProtectedRoute><FlashcardsAdminPage /></ProtectedRoute>} />
             <Route path="/admin/avisos" element={<ProtectedRoute><AnnouncementsPage /></ProtectedRoute>} />
             <Route path="/admin/database" element={<ProtectedRoute><DatabasePage /></ProtectedRoute>} />

@@ -211,6 +211,153 @@ async function shareBackupFolder(supabase: ReturnType<typeof createClient>, emai
   }
 }
 
+// ─── PROGRAMA DE AFILIADOS ────────────────────────────────────────────────────
+// A venda chega ao afiliado pelo cupom: buyers.coupon_code (gravado no
+// mp-create-payment) → affiliates.coupon_code. Comissão sobre o valor
+// efetivamente pago. affiliate_sales.external_reference é UNIQUE — webhook
+// duplicado do MP não duplica comissão.
+const AFFILIATE_COMMISSION_PERCENT: Record<string, number> = {
+  monthly: 15,
+  annual: 20,
+  lifetime: 20,
+  lifetime_plus: 25,
+  lifetime_pro: 30,
+}
+// A partir de 5 vendas o afiliado ganha a conta Vitalício Pro na plataforma.
+const AFFILIATE_PRO_THRESHOLD = 5
+
+function affiliateSaleEmailHtml(affiliateName: string, saleInfo: {
+  planLabel: string; amount: number; commission: number; buyerName: string; proUnlocked: boolean; totalSales: number
+}): string {
+  const firstName = affiliateName.split(' ')[0]
+  const brl = (v: number) => `R$ ${v.toFixed(2).replace('.', ',')}`
+  return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,Helvetica,sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:32px 16px;"><tr><td align="center">
+    <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:12px;overflow:hidden;">
+      <tr><td style="background:#e11d2e;padding:20px 32px;">
+        <span style="color:#ffffff;font-size:20px;font-weight:bold;">OneMed</span>
+      </td></tr>
+      <tr><td style="padding:32px;">
+        <h1 style="margin:0 0 16px;font-size:22px;color:#18181b;">Parabéns, ${firstName}! Você fez uma venda!</h1>
+        <p style="margin:0 0 20px;font-size:15px;line-height:1.6;color:#3f3f46;">
+          Uma compra com o seu cupom acabou de ser aprovada. Os detalhes:
+        </p>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fafafa;border:1px solid #e4e4e7;border-radius:8px;">
+          <tr><td style="padding:16px 20px;font-size:14px;color:#3f3f46;line-height:2;">
+            <b>Plano:</b> ${saleInfo.planLabel}<br/>
+            <b>Comprador:</b> ${saleInfo.buyerName || '—'}<br/>
+            <b>Valor da venda:</b> ${brl(saleInfo.amount)}<br/>
+            <b style="color:#16a34a;">Sua comissão: ${brl(saleInfo.commission)}</b><br/>
+            <b>Total de vendas:</b> ${saleInfo.totalSales}
+          </td></tr>
+        </table>
+        ${saleInfo.proUnlocked ? `<p style="margin:20px 0 0;font-size:15px;line-height:1.6;color:#16a34a;font-weight:bold;">
+          Você atingiu ${AFFILIATE_PRO_THRESHOLD} vendas e desbloqueou sua conta Vitalício Pro na plataforma!
+        </p>` : ''}
+        <table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:24px;"><tr><td style="border-radius:8px;background:#e11d2e;">
+          <a href="https://onemedcursos.com.br/afiliado" style="display:inline-block;padding:14px 28px;font-size:15px;font-weight:bold;color:#ffffff;text-decoration:none;">Acessar meu painel</a>
+        </td></tr></table>
+      </td></tr>
+    </table>
+  </td></tr></table>
+</body></html>`
+}
+
+// Registra a comissão do afiliado dono do cupom usado na compra, libera a
+// conta Vitalício Pro na 5ª venda e envia o e-mail de "você fez uma venda".
+// Nada aqui pode derrubar o webhook: falha vira log, nunca throw pra fora.
+async function processAffiliateSale(
+  supabase: ReturnType<typeof createClient>,
+  buyer: any,
+  transactionAmount: number,
+  paymentId: string,
+): Promise<void> {
+  try {
+    if (!buyer?.coupon_code) return
+    const { data: affiliate } = await supabase.from('affiliates')
+      .select('id, name, email')
+      .eq('coupon_code', buyer.coupon_code)
+      .maybeSingle()
+    if (!affiliate) return
+
+    const percent = AFFILIATE_COMMISSION_PERCENT[buyer.plan]
+    if (!percent) return
+    const amount = Number(transactionAmount ?? buyer.amount ?? 0)
+    const commission = Math.round(amount * percent) / 100
+
+    const { data: inserted, error: insErr } = await supabase.from('affiliate_sales')
+      .upsert({
+        affiliate_id: affiliate.id,
+        buyer_email: buyer.email,
+        buyer_name: buyer.name || null,
+        plan: buyer.plan,
+        amount,
+        commission_percent: percent,
+        commission_amount: commission,
+        payment_id: paymentId,
+        external_reference: buyer.external_reference,
+      }, { onConflict: 'external_reference', ignoreDuplicates: true })
+      .select('id')
+    if (insErr) { console.error('affiliate_sales insert error:', insErr.message); return }
+    if (!inserted || inserted.length === 0) {
+      console.log('Affiliate sale already recorded for:', buyer.external_reference)
+      return
+    }
+
+    const { count } = await supabase.from('affiliate_sales')
+      .select('id', { count: 'exact', head: true })
+      .eq('affiliate_id', affiliate.id)
+    const totalSales = count ?? 1
+
+    // Benefício das 5 vendas: conta Vitalício Pro pro e-mail do afiliado,
+    // sem rebaixar quem já tem tier igual ou superior.
+    let proUnlocked = false
+    if (totalSales >= AFFILIATE_PRO_THRESHOLD) {
+      const { data: existing } = await supabase.from('accesses')
+        .select('id, access_type').eq('email', affiliate.email).eq('status', 'active')
+        .neq('access_type', 'trial')
+        .order('created_at', { ascending: false }).limit(1).maybeSingle()
+      const existingRank = existing ? (LIFETIME_TIER_RANK[existing.access_type] ?? 0) : -1
+      if (existingRank < LIFETIME_TIER_RANK.lifetime_pro) {
+        if (existing) {
+          await supabase.from('accesses').update({ access_type: 'lifetime_pro', status: 'active', expires_at: null }).eq('id', existing.id)
+        } else {
+          await supabase.from('accesses').insert({ email: affiliate.email, access_type: 'lifetime_pro', status: 'active', expires_at: null })
+        }
+        proUnlocked = totalSales === AFFILIATE_PRO_THRESHOLD
+        console.log('Affiliate Pro account granted to:', affiliate.email)
+      }
+    }
+
+    try {
+      const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')!
+      const emailRes = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          from: 'OneMed <contato@onemedcursos.com.br>',
+          to: [affiliate.email],
+          subject: 'Parabéns! Você fez uma venda na OneMed',
+          html: affiliateSaleEmailHtml(affiliate.name, {
+            planLabel: PLAN_CONTENT_NAMES[buyer.plan] || buyer.plan,
+            amount,
+            commission,
+            buyerName: buyer.name || '',
+            proUnlocked,
+            totalSales,
+          }),
+        }),
+      })
+      if (!emailRes.ok) console.error('affiliate sale email failed:', await emailRes.text())
+      else console.log('Affiliate sale email sent to:', affiliate.email)
+    } catch (e: any) {
+      console.error('affiliate sale email error:', e?.message || e)
+    }
+  } catch (err: any) {
+    console.error('processAffiliateSale error:', err?.message || err)
+  }
+}
+
 // ─── CORS ─────────────────────────────────────────────────────────────────────
 const ALLOWED_ORIGINS = ['https://onemedcursos.com.br', 'http://localhost:5173', 'http://localhost:3000']
 
@@ -519,6 +666,9 @@ serve(async (req) => {
       } catch (emailErr: any) {
         console.error('Email error:', emailErr?.message || emailErr)
       }
+
+      // Comissão de afiliado (se a compra usou cupom de afiliado)
+      await processAffiliateSale(supabase, buyer, payment.transaction_amount ?? buyer.amount ?? 0, String(paymentId))
     }
 
     return new Response('ok', { headers: getCorsHeaders(req) })
