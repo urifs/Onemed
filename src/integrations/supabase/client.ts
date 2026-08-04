@@ -20,7 +20,7 @@ const AUTH_TIMEOUT_MS = 25000;
 // its own 6-minute per-batch allowance; admin-backfill-lesson-durations reads
 // real bytes from Drive per lesson — a batch of 8 measured at ~30s) — exempt
 // them from the blanket timeout.
-const TIMEOUT_EXEMPT = /\/functions\/v1\/(member-sync-library|run-email-campaign|admin-backfill-lesson-durations|admin-capi-health|admin-capi-backfill|generate-flashcards|member-assistant|archive-manage)/;
+const TIMEOUT_EXEMPT = /\/functions\/v1\/(member-sync-library|run-email-campaign|admin-backfill-lesson-durations|admin-capi-health|admin-capi-backfill|generate-flashcards|generate-study-plan|member-assistant|archive-manage)/;
 // member-auth-request/create-trial-access are the login/trial entry points —
 // same reasoning as /auth/v1/ below, just implemented as our own Edge
 // Functions instead of GoTrue's built-in endpoints.

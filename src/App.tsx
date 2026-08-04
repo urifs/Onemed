@@ -31,6 +31,8 @@ import CouponsPage from "./pages/CouponsPage";
 import AdminCommunityPage from "./pages/AdminCommunityPage";
 import StorePage from "./pages/StorePage";
 import ArchivePage from "./pages/ArchivePage";
+import StudyPlanPage from "./pages/StudyPlanPage";
+import StudyPlansAdminPage from "./pages/StudyPlansAdminPage";
 import { captureAffiliateRefFromUrl } from "./lib/affiliateRef";
 import AffiliateRegisterPage from "./pages/affiliate/AffiliateRegisterPage";
 import AffiliateLoginPage from "./pages/affiliate/AffiliateLoginPage";
@@ -195,6 +197,7 @@ const App = () => (
             <Route path="/membros/comunidade" element={<MemberProtectedRoute><CommunityPage /></MemberProtectedRoute>} />
             <Route path="/membros/loja" element={<MemberProtectedRoute><StorePage /></MemberProtectedRoute>} />
             <Route path="/membros/acervo" element={<MemberProtectedRoute><ArchivePage /></MemberProtectedRoute>} />
+            <Route path="/membros/cronograma" element={<MemberProtectedRoute><StudyPlanPage /></MemberProtectedRoute>} />
 
             {/* Protected admin routes */}
             <Route path="/admin" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
@@ -207,6 +210,7 @@ const App = () => (
             <Route path="/admin/comunidade" element={<ProtectedRoute><AdminCommunityPage /></ProtectedRoute>} />
             <Route path="/admin/loja" element={<ProtectedRoute><StoreAdminPage /></ProtectedRoute>} />
             <Route path="/admin/afiliados" element={<ProtectedRoute><AffiliatesAdminPage /></ProtectedRoute>} />
+            <Route path="/admin/cronogramas" element={<ProtectedRoute><StudyPlansAdminPage /></ProtectedRoute>} />
             <Route path="/admin/flashcards" element={<ProtectedRoute><FlashcardsAdminPage /></ProtectedRoute>} />
             <Route path="/admin/avisos" element={<ProtectedRoute><AnnouncementsPage /></ProtectedRoute>} />
             <Route path="/admin/database" element={<ProtectedRoute><DatabasePage /></ProtectedRoute>} />
