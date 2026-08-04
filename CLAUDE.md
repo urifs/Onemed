@@ -1318,6 +1318,32 @@ numeração da interface — sem mexer na ordem. Testado em produção com PDF d
 
 ---
 
+### 2026-08-04 (sessão remota) — acervo: upload robusto, player da plataforma, "não carrega"
+
+**"Não foi possível carregar acervo" — duas causas.** (1) O bug de `bigint` (42804) no
+`archive_feed`, corrigido no mesmo dia (cast `::bigint` no `sum(size_bytes)`). (2) "Carregar" =
+UPLOAD: o loop de upload do cliente ABORTAVA a pasta inteira se UM arquivo falhava no PUT — o
+`finalize` nunca era chamado e o item ficava preso em `pending` (some do feed, que só mostra
+`ready`). Um cliente real (`andrelins.med`) teve um upload de pasta preso assim; recuperado
+rodando `finalize` (3 arquivos com bytes viraram `ready`; o de 0 byte foi descartado).
+
+**Upload blindado:** cada arquivo tenta 2×; o `finalize` roda SEMPRE que ≥1 arquivo subiu (com
+retry), publicando o que deu certo e avisando quantos falharam ("Publicado com X de Y"). Feed com
+retry único em falha de rede/timeout antes de avisar.
+
+**Acervo usa o MESMO LessonPlayer das aulas** (pedido do dono): abrir um arquivo do acervo
+reproduz/visualiza DENTRO da plataforma (vídeo com remux TS, PDF com zoom + anotações, Office,
+imagem, áudio, velocidade) em vez de abrir aba crua. `LessonPlayer` ganhou props opcionais
+`resolveUrl` (link vem do `archive-manage` `file_token` em vez do `member-lesson-token`) e
+`bypassDownloadGate` (acervo é conteúdo entre assinantes, sem trava de plano); `fileToLesson()`
+monta uma aula sintética a partir do `archive_file` (sem `drive_file_id`/`storage_path`, então o
+fallback de cota/embed — específico da conta de conteúdo — não dispara). O player vai num
+`createPortal(document.body)` pra ficar acima do diálogo de detalhe (que também é portalizado).
+Fluxo de aulas normais intacto. Verificado em produção: PDF do acervo renderiza no visualizador
+da plataforma, streaming via worker 200.
+
+---
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
