@@ -57,7 +57,9 @@ export default function AffiliatePanelPage() {
       if (!userData?.user) { navigate('/afiliado/login'); return; }
       const { data: aff } = await supabase.from('affiliates' as never)
         .select('*').eq('user_id', userData.user.id).maybeSingle();
-      if (!aff) { navigate('/afiliado/login'); return; }
+      // Logado (ex: assinante vindo do menu da plataforma) mas ainda sem conta
+      // de afiliado → direto pro cadastro, não pra tela de login.
+      if (!aff) { navigate('/afiliado/registro'); return; }
       const a = aff as unknown as Affiliate;
       setAffiliate(a);
       setCouponInput(a.coupon_code || '');

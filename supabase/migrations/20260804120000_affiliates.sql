@@ -89,3 +89,16 @@ CREATE TRIGGER update_affiliates_updated_at
 -- gravada pelo CheckoutPage no insert. Atribuição independente do cupom: o
 -- webhook usa coupon_code e, na falta dele, affiliate_ref.
 ALTER TABLE public.buyers ADD COLUMN IF NOT EXISTS affiliate_ref text;
+
+-- Códigos de verificação para cadastro de afiliado com e-mail que JÁ tem
+-- conta (assinante/admin). Sem essa prova de posse, qualquer um poderia
+-- definir senha na conta de um assinante que só usa magic link e tomá-la.
+-- Sem policy de RLS de propósito: só a Edge Function (service role) toca.
+CREATE TABLE IF NOT EXISTS public.affiliate_email_codes (
+  email      text        PRIMARY KEY,
+  code_hash  text        NOT NULL,
+  attempts   integer     NOT NULL DEFAULT 0,
+  expires_at timestamptz NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE public.affiliate_email_codes ENABLE ROW LEVEL SECURITY;

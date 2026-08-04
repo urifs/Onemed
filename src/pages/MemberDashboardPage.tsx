@@ -33,6 +33,7 @@ interface AnnotatedLesson {
 
 const ANNOTATIONS_TAB = 'Minhas anotações';
 const ACERVO_TAB = 'Acervo Público';
+const AFILIADO_TAB = 'Programa de Afiliados';
 const FLASHCARDS_TAB = 'Flashcards';
 const QUESTIONS_TAB = 'Banco de Questões';
 
@@ -210,6 +211,7 @@ export default function MemberDashboardPage() {
 
   const handleSelectCategory = (category: string | null) => {
     if (category === ACERVO_TAB) { navigate('/membros/acervo'); return; }
+    if (category === AFILIADO_TAB) { navigate('/afiliado'); return; }
     setActiveCategory(category);
     setQuery('');
   };
@@ -486,6 +488,8 @@ export default function MemberDashboardPage() {
     // Acervo Público é página própria (rota /membros/acervo) e é exclusivo de
     // assinante — trial nem vê a opção.
     ...(memberStatus !== 'trial' ? [{ name: ACERVO_TAB, count: 0 }] : []),
+    // Atalho pro painel/cadastro de afiliado sem passar pela landing.
+    { name: AFILIADO_TAB, count: 0 },
   ], [favorites.size, decks.length, banks.length, memberStatus]);
 
   const categoryCourses = useMemo(() => {

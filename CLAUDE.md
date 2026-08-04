@@ -1230,10 +1230,16 @@ do suporte com a mensagem pronta).
 PIX de cada um) com botão **"Já quitado"** (marca todas as vendas pendentes do afiliado como
 `paid`), e lista completa com extrato expandível por afiliado.
 
-**Segurança:** e-mail já existente no Auth → 409 (impede tomar conta de assinante magic-link
-definindo senha); `REVOKE UPDATE` + `GRANT UPDATE (pix_key, pix_name, pix_bank)` — afiliado só
-edita os campos de PIX direto no banco (cupom só pela função; testado: PATCH de coupon_code → 403);
-vendas só via service role; rotas `/afiliado` em `NOINDEX_PREFIXES`.
+**Mesmo e-mail de assinante/admin PODE virar afiliado** (pedido do dono): quando o e-mail já
+existe no Auth, o cadastro exige prova de posse — código de 6 dígitos enviado ao próprio e-mail
+(tabela `affiliate_email_codes`, hash sha256, 15 min, 5 tentativas). Confirmado o código, a senha
+informada passa a valer pro login da conta (com `email_confirm: true` junto — sem isso, conta que
+nunca redimiu magic link trava com "email_not_confirmed") e a linha de afiliado nasce no MESMO
+user_id. Sem o código, definir senha em conta alheia seria roubo de conta de assinante magic-link.
+Atalho no menu da área de membros ("Programa de Afiliados" → `/afiliado`); painel redireciona
+logado-sem-afiliado pro cadastro. Demais travas: `REVOKE UPDATE` + `GRANT UPDATE (pix_key,
+pix_name, pix_bank)` (cupom só pela função; PATCH de coupon_code → 403); vendas só via service
+role; rotas `/afiliado` em `NOINDEX_PREFIXES`.
 
 ---
 
