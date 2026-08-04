@@ -221,3 +221,9 @@ BEGIN
   WHERE c.item_id = _item_id
   ORDER BY c.created_at;
 END $$;
+
+-- O acervo grava na CONTA DE ARMAZENAMENTO (drive_storage_accounts), não na
+-- conta de conteúdo (que está sem espaço). Pasta-raiz do acervo por conta, e
+-- cada item lembra em qual conta mora (pra apagar/verificar com o token certo).
+ALTER TABLE public.drive_storage_accounts ADD COLUMN IF NOT EXISTS acervo_folder_id text;
+ALTER TABLE public.archive_items ADD COLUMN IF NOT EXISTS storage_account_id uuid;

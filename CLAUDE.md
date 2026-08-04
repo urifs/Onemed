@@ -1265,10 +1265,17 @@ com gate `assert_archive_access()` (assinante-nunca-trial ou admin). RLS nas tab
 numeric — precisa de `::bigint` pra casar com o RETURNS TABLE (deu erro 42804 em produção antes
 do cast).
 
-> ⚠️ **Uploads bloqueados até liberar espaço no Drive:** a conta `onemedcursos@gmail.com` está
-> com 18,91 GB usados de 16,11 GB — o Google recusa QUALQUER upload novo. O `init` já detecta
-> (checa `about.storageQuota` antes de criar qualquer coisa) e devolve "armazenamento lotado".
-> Basta liberar espaço ou ampliar o Google One que o acervo passa a aceitar uploads sem deploy.
+**Onde os bytes moram:** na CONTA DE ARMAZENAMENTO (`drive_storage_accounts` —
+`ufgravity@gmail.com`, 5 TB), nunca na conta de conteúdo (sem espaço). A pasta-raiz "Acervo
+Público - OneMed" é criada na conta de armazenamento (`acervo_folder_id` na tabela) e
+COMPARTILHADA como leitura com a conta de conteúdo — é com o token da conta de conteúdo que o
+worker de streaming serve os arquivos, e a permissão herdada na pasta é o que faz isso funcionar.
+Cada item guarda `storage_account_id` (finalize/delete usam o token da conta certa). Client OAuth
+das contas de armazenamento: `GOOGLE_STORAGE_CLIENT_ID`/`GOOGLE_STORAGE_CLIENT_SECRET` (fallback
+no client de conteúdo). Ciclo completo TESTADO em produção: init → PUT direto no Google (200) →
+finalize (1 ready) → feed → streaming via worker (bytes exatos) → like → comentário → delete
+(some do Drive junto). Detalhe do teste: o `X-Upload-Content-Length` declarado no init PRECISA
+bater com os bytes enviados — divergência dá 400 no PUT.
 
 ---
 
