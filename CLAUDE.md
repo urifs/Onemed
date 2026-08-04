@@ -1511,6 +1511,17 @@ Favoritos da página inicial ganhou a seção "Acervo Público favoritado" (join
 passa pela RLS do acervo — item que virou privado some da lista sozinho; clicar navega pro item).
 Verificado em produção: favoritar no card → badge no detalhe → seção na aba → navegação.
 
+**Cupons de afiliados apagados — links dando "expirado" (04-05/08):** 18 dos 22 afiliados
+estavam com `coupon_code` no cadastro mas SEM a linha em `coupons` (apagada da tabela — os
+sobreviventes eram só os cadastrados depois de ~18h de 04/08 + um recriado à mão às 23:38).
+Sintoma: todo indicado via `?ref=` ou digitando o cupom via "Cupom inválido ou expirado".
+Cupons recriados em produção (10%, ativos) e fluxo E2E testado: link `?ref=` → landing guarda →
+checkout auto-aplica em silêncio (R$ 269,91 no Vitalício) → `mp-create-payment` 200 → redirect
+real pro Mercado Pago → `buyers` com `coupon_code` E `affiliate_ref`. Proteções: `/admin/cupons`
+recusa excluir cupom que pertence a um afiliado (orienta desativar; confirmação nas demais
+exclusões) e `affiliate-coupon` recria/reativa a linha se o afiliado re-salvar o próprio código.
+Detalhe do fluxo: o checkout exige e-mail @gmail.com na etapa de dados (por design).
+
 ---
 
 ## Meta Ads — Contexto Geral
