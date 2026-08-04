@@ -1427,6 +1427,34 @@ visualmente idêntico ao que era (conferido por screenshot nos dois temas); no c
 vira um cartão escuro limpo com borda. Regra: arte de curso é sempre escura por design — nunca
 fundir com o fundo da página, escurecer pro preto.
 
+**Capa de curso SEM "gradiente pro preto" no modo claro (pedido do dono):** `CourseCover`
+agora gera UMA arte por tema — escuro mantém o original (vermelho afundando em `hsl(0 0% 6%)`);
+claro usa a mesma família de vermelhos indo pra um carmim profundo (`hsl(350 80% 25%)`), sem
+preto, vibrante contra o branco (duas camadas absolutas, `dark:hidden`/`hidden dark:block`).
+Todos os apoios pretos POR CIMA da arte acompanham com variantes `dark:` (senão o preto voltava):
+overlays dos heróis do dashboard/curso (`from-red-950/* dark:from-black/*`), hover/chip "N
+aulas"/botão play/trilha de progresso/estrela de favorito do `CourseCard`
+(`bg-red-950/* dark:bg-black/*`). Varredura visual completa do modo claro feita por screenshot em
+produção: landing (topo/meio/fim), checkout, /login, afiliado (login), dashboard, curso,
+comunidade, acervo (feed + detalhe), cronograma, loja, favoritos, anotações, menu da conta, sino,
+upgrade, mobile — só os banners estavam quebrados; o restante já era tokenizado. Escuro conferido
+idêntico ao original após a mudança.
+
+**🔴 Bug sistêmico: builder do supabase-js descartado com `void` NUNCA dispara.** O
+PostgrestBuilder é lazy — só executa em `await`/`.then()`. Três chamadas em produção estavam
+mortas desde o lançamento por causa disso: `archive_register_view` (contador de acessos do
+acervo sempre 0), `flashcard_sessions` insert (nenhuma sessão de estudo gravada — por isso o
+admin mostrava todo aluno "sem estudo") e `question_sessions` insert (nenhuma prova gravada).
+Corrigidas com `.then()`. **Regra: nunca descartar chamada do supabase-js com `void` puro.**
+
+**Visualizações do acervo por ABERTURA (pedido do dono):** `archive_register_view` reescrita
+(migration `20260805020000_archive_view_per_open.sql`): +1 a CADA abertura de arquivo, por
+qualquer cliente, sem dedupe (o dedupe por usuário anterior foi descartado junto com a
+semântica antiga); devolve o total novo pra UI atualizar na hora. O cliente registra no
+`openFile` (inclusive no auto-open via `?file=` da busca). Contadores zerados no lançamento da
+semântica nova. Verificado em produção: abertura real de arquivo → RPC 200 devolvendo total
+incrementado.
+
 **Formulários de flashcards/questões cortados PRA DIREITA — bug era do Dialog base:** medido em
 produção (Playwright): com `overflow-y-auto` no `DialogContent`, os filhos do grid saíam a 512px
 dentro de um content-box de ~460px (`scrollWidth` 560 × `clientWidth` 510) — a coluna implícita
