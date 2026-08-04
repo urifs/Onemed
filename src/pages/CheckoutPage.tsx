@@ -187,15 +187,21 @@ export default function CheckoutPage() {
   // email (o formulário só é preenchido três passos adiante) — ou seja, a
   // campanha otimizava para quem abre a página, não para quem quer comprar.
   useEffect(() => {
-    if (initialCoupon) handleApplyCoupon(initialCoupon);
+    // Cupom da URL: aplicado com feedback normal. Cupom vindo só da indicação
+    // de afiliado (?ref= guardado): aplicado em silêncio — se não valer mais,
+    // o checkout segue limpo, sem erro na cara do comprador.
+    if (initialCoupon) handleApplyCoupon(initialCoupon, { silent: !searchParams.get('coupon') });
     const plan = PLANS[selectedPlan];
     if (plan) trackViewContent(selectedPlan, plan.price);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleApplyCoupon = async (code?: string) => {
+  // `silent` é para o cupom auto-aplicado da indicação de afiliado: se o
+  // afiliado trocou/desativou o cupom desde o clique no link, o comprador não
+  // pode abrir o checkout já levando um toast de erro do nada.
+  const handleApplyCoupon = async (code?: string, opts?: { silent?: boolean }) => {
     const c = (code || couponCode).trim();
-    if (!c) { toast.error('Digite um código de cupom'); return; }
+    if (!c) { if (!opts?.silent) toast.error('Digite um código de cupom'); return; }
     setCouponLoading(true);
     try {
       const { data } = await supabase
@@ -215,10 +221,12 @@ export default function CheckoutPage() {
       } else {
         setCouponApplied(null);
         setDiscountPercent(0);
-        toast.error('Cupom inválido ou expirado');
+        if (!opts?.silent) toast.error('Cupom inválido ou expirado');
+        else setCouponCode('');
       }
     } catch {
-      toast.error('Erro ao validar cupom');
+      if (!opts?.silent) toast.error('Erro ao validar cupom');
+      else { setCouponApplied(null); setDiscountPercent(0); setCouponCode(''); }
     } finally {
       setCouponLoading(false);
     }
