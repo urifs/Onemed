@@ -90,8 +90,11 @@ export default function AffiliatePanelPage() {
     };
   }, [sales]);
 
+  // O link leva pra LANDING, não pro checkout: o indicado conhece o produto,
+  // pode fazer o teste grátis e comprar depois — a referência fica guardada
+  // por 30 dias no navegador dele e a venda continua sendo do afiliado.
   const shareLink = affiliate?.coupon_code
-    ? `${SITE_URL}/checkout?coupon=${affiliate.coupon_code}`
+    ? `${SITE_URL}/?ref=${affiliate.coupon_code}`
     : null;
 
   const copy = (text: string, what: string) => {
@@ -244,8 +247,9 @@ export default function AffiliatePanelPage() {
               <p className="text-sm text-muted-foreground">Gere seu cupom abaixo para liberar o link.</p>
             )}
             <p className="text-xs text-muted-foreground mt-2">
-              Quem abrir por este link já entra no checkout com seu cupom de 10% aplicado — e toda
-              compra com ele é sua.
+              Quem abrir por este link cai na página inicial e fica marcado como indicado seu por 30
+              dias: no checkout o cupom de 10% entra sozinho, e mesmo que a pessoa faça o teste grátis
+              e compre dias depois, a venda é sua.
             </p>
           </div>
 

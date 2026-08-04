@@ -84,3 +84,8 @@ CREATE POLICY "Admin gerencia vendas de afiliados"
 CREATE TRIGGER update_affiliates_updated_at
   BEFORE UPDATE ON public.affiliates
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+-- Referência do afiliado que indicou o comprador (link ?ref= na landing),
+-- gravada pelo CheckoutPage no insert. Atribuição independente do cupom: o
+-- webhook usa coupon_code e, na falta dele, affiliate_ref.
+ALTER TABLE public.buyers ADD COLUMN IF NOT EXISTS affiliate_ref text;

@@ -273,11 +273,19 @@ async function processAffiliateSale(
   paymentId: string,
 ): Promise<void> {
   try {
-    if (!buyer?.coupon_code) return
-    const { data: affiliate } = await supabase.from('affiliates')
-      .select('id, name, email')
-      .eq('coupon_code', buyer.coupon_code)
-      .maybeSingle()
+    // Atribuição: primeiro pelo cupom efetivamente usado na compra; sem cupom
+    // (ou cupom que não é de afiliado), pela referência do link ?ref= guardada
+    // no navegador do indicado — cobre quem fez o teste e comprou dias depois,
+    // até sem digitar cupom nenhum.
+    let affiliate: { id: string; name: string; email: string } | null = null
+    for (const code of [buyer?.coupon_code, buyer?.affiliate_ref]) {
+      if (!code) continue
+      const { data } = await supabase.from('affiliates')
+        .select('id, name, email')
+        .eq('coupon_code', code)
+        .maybeSingle()
+      if (data) { affiliate = data as any; break }
+    }
     if (!affiliate) return
 
     const percent = AFFILIATE_COMMISSION_PERCENT[buyer.plan]

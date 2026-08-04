@@ -30,6 +30,7 @@ import {
   Crown,
 } from 'lucide-react';
 import { formatWhatsApp, extractFunctionErrorMessage } from '@/lib/utils';
+import { getAffiliateRef } from '@/lib/affiliateRef';
 import { ThemeToggle } from '@/components/ThemeToggle';
 
 const MEDUF_URL = 'https://meduf.com.br/about';
@@ -152,7 +153,10 @@ const PLANS: Record<string, {
 export default function CheckoutPage() {
   const [searchParams] = useSearchParams();
   const initialPlan = searchParams.get('plan') || 'lifetime';
-  const initialCoupon = searchParams.get('coupon') || '';
+  // Cupom explícito na URL vence; sem ele, o cupom do afiliado que indicou
+  // (guardado por 30 dias desde o clique no link ?ref=) é aplicado sozinho —
+  // é o que garante o desconto do indicado mesmo comprando dias depois.
+  const initialCoupon = searchParams.get('coupon') || getAffiliateRef() || '';
 
   const [selectedPlan, setSelectedPlan] = useState(initialPlan);
   const [loading, setLoading] = useState(false);
@@ -316,6 +320,10 @@ export default function CheckoutPage() {
         fbp: getCookie('_fbp'),
         fbc: getCookie('_fbc'),
         fbclid,
+        // Afiliado que indicou este comprador (link ?ref=). Vai gravado aqui
+        // porque a atribuição não pode depender do cupom: se o comprador
+        // trocar ou remover o cupom no checkout, a venda continua do afiliado.
+        affiliate_ref: getAffiliateRef(),
       });
       if (buyerErr) throw buyerErr;
 

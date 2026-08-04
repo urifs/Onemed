@@ -30,6 +30,7 @@ import TrialUsersPage from "./pages/TrialUsersPage";
 import CouponsPage from "./pages/CouponsPage";
 import AdminCommunityPage from "./pages/AdminCommunityPage";
 import StorePage from "./pages/StorePage";
+import { captureAffiliateRefFromUrl } from "./lib/affiliateRef";
 import AffiliateRegisterPage from "./pages/affiliate/AffiliateRegisterPage";
 import AffiliateLoginPage from "./pages/affiliate/AffiliateLoginPage";
 import AffiliatePanelPage from "./pages/affiliate/AffiliatePanelPage";
@@ -94,6 +95,9 @@ const PixelPageViews = () => {
   const firstPath = useRef(location.pathname + location.search)
 
   useEffect(() => {
+    // Referência de afiliado (?ref=CUPOM) pode chegar em qualquer rota —
+    // captura em toda navegação, inclusive na primeira.
+    captureAffiliateRefFromUrl()
     const current = location.pathname + location.search
     if (current === firstPath.current) return
     trackPageView()
