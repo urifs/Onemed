@@ -9,6 +9,7 @@ import {
   BooksSection,
   FaqSection,
   LandingFooter,
+  AffiliateSection,
   LANDING_FAQS,
 } from '@/components/landing';
 import { Seo } from '@/seo/Seo';
@@ -145,6 +146,8 @@ export default function Index() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <PillarLinks />
       </div>
+      {/* Última seção antes do rodapé: recrutamento de afiliados. */}
+      <AffiliateSection />
       </main>
       <LandingFooter />
     </div>

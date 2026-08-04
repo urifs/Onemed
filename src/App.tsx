@@ -30,8 +30,17 @@ import TrialUsersPage from "./pages/TrialUsersPage";
 import CouponsPage from "./pages/CouponsPage";
 import AdminCommunityPage from "./pages/AdminCommunityPage";
 import StorePage from "./pages/StorePage";
+import ArchivePage from "./pages/ArchivePage";
+import StudyPlanPage from "./pages/StudyPlanPage";
+import StudyPlansAdminPage from "./pages/StudyPlansAdminPage";
+import { captureAffiliateRefFromUrl } from "./lib/affiliateRef";
+import AffiliateRegisterPage from "./pages/affiliate/AffiliateRegisterPage";
+import AffiliateLoginPage from "./pages/affiliate/AffiliateLoginPage";
+import AffiliatePanelPage from "./pages/affiliate/AffiliatePanelPage";
+import AffiliatesAdminPage from "./pages/AffiliatesAdminPage";
 import StoreAdminPage from "./pages/StoreAdminPage";
 import FlashcardsAdminPage from "./pages/FlashcardsAdminPage";
+import AcervoAdminPage from "./pages/AcervoAdminPage";
 import AnnouncementsPage from "./pages/AnnouncementsPage";
 import TermsPage from "./pages/TermsPage";
 import PrivacyPage from "./pages/PrivacyPage";
@@ -50,6 +59,7 @@ import WhatsAppButton from "./components/WhatsAppButton";
 import { KickedOutModal } from "./components/member/KickedOutModal";
 import { AccessExpiredScreen } from "./components/member/AccessExpiredScreen";
 import { useMemberStatus } from "@/hooks/useMemberStatus";
+import { useIsAffiliate } from "@/hooks/useIsAffiliate";
 
 const queryClient = new QueryClient();
 
@@ -90,6 +100,9 @@ const PixelPageViews = () => {
   const firstPath = useRef(location.pathname + location.search)
 
   useEffect(() => {
+    // Referência de afiliado (?ref=CUPOM) pode chegar em qualquer rota —
+    // captura em toda navegação, inclusive na primeira.
+    captureAffiliateRefFromUrl()
     const current = location.pathname + location.search
     if (current === firstPath.current) return
     trackPageView()
@@ -112,6 +125,7 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 const MemberProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
   const { status, lastType, expiredAt, loading: statusLoading } = useMemberStatus();
+  const isAffiliate = useIsAffiliate();
 
   const spinner = (
     <div className="flex min-h-screen items-center justify-center bg-background">
@@ -123,11 +137,20 @@ const MemberProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   if (!user) return <Navigate to="/login" replace />;
   if (statusLoading) return spinner;
 
+  // Conta de afiliado é SEPARADA da de assinante — quem entrou só como
+  // afiliado não tem acesso à plataforma. Em vez da tela de "adquira acesso",
+  // manda direto pro painel de afiliado (a menos que a conta também seja
+  // assinante ativa: aí passa como assinante normal). Espera o hook resolver
+  // pra não piscar a tela de expirado antes de redirecionar.
+  const semAcesso = status === 'expired' || status === 'none';
+  if (semAcesso && isAffiliate === null) return spinner;
+  if (semAcesso && isAffiliate) return <Navigate to="/afiliado" replace />;
+
   // A sessão do navegador sobrevive ao fim do teste grátis — sem isto, o
   // aluno fica dentro de uma plataforma vazia, sem explicação nem caminho
   // pra comprar. `status` nulo é consulta que falhou: deixa passar (o
   // conteúdo continua protegido pela RLS).
-  if (status === 'expired' || status === 'none') {
+  if (semAcesso) {
     return <AccessExpiredScreen lastType={lastType} expiredAt={expiredAt} />;
   }
 
@@ -160,6 +183,11 @@ const App = () => (
             {PILLAR_HUBS.map(hub => (
               <Route key={hub.slug} path={`/${hub.slug}`} element={<PillarHubPage slug={hub.slug} />} />
             ))}
+            {/* Programa de afiliados */}
+            <Route path="/afiliado/registro" element={<AffiliateRegisterPage />} />
+            <Route path="/afiliado/login" element={<AffiliateLoginPage />} />
+            <Route path="/afiliado" element={<AffiliatePanelPage />} />
+
             <Route path="/admin/login" element={<LoginPage />} />
             <Route path="/admin/register" element={<RegisterPage />} />
 
@@ -169,6 +197,8 @@ const App = () => (
             <Route path="/membros/curso/:slug" element={<MemberProtectedRoute><CourseDetailPage /></MemberProtectedRoute>} />
             <Route path="/membros/comunidade" element={<MemberProtectedRoute><CommunityPage /></MemberProtectedRoute>} />
             <Route path="/membros/loja" element={<MemberProtectedRoute><StorePage /></MemberProtectedRoute>} />
+            <Route path="/membros/acervo" element={<MemberProtectedRoute><ArchivePage /></MemberProtectedRoute>} />
+            <Route path="/membros/cronograma" element={<MemberProtectedRoute><StudyPlanPage /></MemberProtectedRoute>} />
 
             {/* Protected admin routes */}
             <Route path="/admin" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
@@ -180,7 +210,10 @@ const App = () => (
             <Route path="/admin/coupons" element={<ProtectedRoute><CouponsPage /></ProtectedRoute>} />
             <Route path="/admin/comunidade" element={<ProtectedRoute><AdminCommunityPage /></ProtectedRoute>} />
             <Route path="/admin/loja" element={<ProtectedRoute><StoreAdminPage /></ProtectedRoute>} />
+            <Route path="/admin/afiliados" element={<ProtectedRoute><AffiliatesAdminPage /></ProtectedRoute>} />
+            <Route path="/admin/cronogramas" element={<ProtectedRoute><StudyPlansAdminPage /></ProtectedRoute>} />
             <Route path="/admin/flashcards" element={<ProtectedRoute><FlashcardsAdminPage /></ProtectedRoute>} />
+            <Route path="/admin/acervo" element={<ProtectedRoute><AcervoAdminPage /></ProtectedRoute>} />
             <Route path="/admin/avisos" element={<ProtectedRoute><AnnouncementsPage /></ProtectedRoute>} />
             <Route path="/admin/database" element={<ProtectedRoute><DatabasePage /></ProtectedRoute>} />
             <Route path="/admin/email-campaign" element={<ProtectedRoute><EmailCampaignPage /></ProtectedRoute>} />

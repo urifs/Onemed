@@ -204,18 +204,33 @@ export default function CourseDetailPage() {
           setCourse(courseRow || null);
           if (!courseRow) return;
 
+          // Os maiores cursos passam de 30 mil aulas — buscar página por página
+          // em sequência estourava o timeout e o curso aparecia vazio. Busca o
+          // total primeiro e traz as páginas em paralelo (6 por vez).
           const fetchAllLessons = async () => {
-            let items: Lesson[] = [];
-            let from = 0;
             const step = 1000;
-            while (true) {
-              const { data, error } = await supabase.from('lessons').select('*').eq('course_id', courseRow.id).order('sort_order').range(from, from + step - 1);
-              if (error) throw error;
-              if (data) items = items.concat(data);
-              if (!data || data.length < step) break;
-              from += step;
+            const { count, error: countErr } = await supabase.from('lessons')
+              .select('id', { count: 'exact', head: true })
+              .eq('course_id', courseRow.id);
+            if (countErr) throw countErr;
+            const total = count || 0;
+            if (!total) return [] as Lesson[];
+
+            const offsets: number[] = [];
+            for (let from = 0; from < total; from += step) offsets.push(from);
+
+            const pages: Lesson[][] = new Array(offsets.length);
+            for (let i = 0; i < offsets.length; i += 6) {
+              await Promise.all(offsets.slice(i, i + 6).map(async (from, k) => {
+                const { data, error } = await supabase.from('lessons').select('*')
+                  .eq('course_id', courseRow.id)
+                  .order('sort_order').order('id')
+                  .range(from, from + step - 1);
+                if (error) throw error;
+                pages[i + k] = data || [];
+              }));
             }
-            return items;
+            return pages.flat();
           };
 
           const fetchAllProgress = async () => {
@@ -471,9 +486,13 @@ export default function CourseDetailPage() {
       />
 
       <section className="relative">
+        {/* A arte do curso é uma capa autocontida — o rodapé escurece pro
+            preto no tema escuro (funde com o fundo) e pro carmim no claro
+            (a capa clara não tem preto; fundir com o fundo branco virava
+            névoa cinza por cima da arte). */}
         <div className="relative h-[220px] md:h-[280px] overflow-hidden">
           <CourseCover title={course.title} showTitle={false} />
-          <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-background/10" />
+          <div className="absolute inset-0 bg-gradient-to-t from-red-950/80 via-red-950/20 to-transparent dark:from-black/75 dark:via-black/25" />
         </div>
         <div className="max-w-[1000px] mx-auto px-4 md:px-8 -mt-16 relative">
           <div className="flex items-center justify-between gap-4 mb-4">

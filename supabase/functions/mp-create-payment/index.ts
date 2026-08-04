@@ -133,6 +133,9 @@ serve(async (req) => {
     let basePrice = PLAN_PRICES[plan]
     let discountPercent = 0
     let appliedCoupon: string | null = null
+    // Código (não id) do cupom aplicado — gravado em buyers.coupon_code para o
+    // mp-webhook atribuir a venda ao afiliado dono do cupom.
+    let appliedCouponCode: string | null = null
 
     // ── 3b. Upgrade de plano: cobra só a diferença do que a pessoa já pagou.
     // Nunca confia num "valor já pago" vindo do cliente — recalcula aqui, e só
@@ -227,6 +230,7 @@ serve(async (req) => {
         }
         discountPercent = coupon.discount_percent
         appliedCoupon   = coupon.id
+        appliedCouponCode = coupon.code
       }
     }
 
@@ -306,6 +310,7 @@ serve(async (req) => {
       amount: totalAmount,
       client_ip: clientIp,
       client_user_agent: clientUserAgent,
+      coupon_code: appliedCouponCode,
     }).eq('external_reference', externalReference)
 
     // Incrementar uso do cupom se aplicado

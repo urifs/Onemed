@@ -1126,6 +1126,345 @@ SUPABASE_MGMT_TOKEN=... SUPABASE_SECRET_KEY=... SUPABASE_SERVICE_JWT=... \
 
 ---
 
+### 2026-08-04 (sessão remota) — "nenhuma aula abre": curso inteiro em TS disfarçado + RLS por linha
+
+**Curso novo importado:** "MED 2026" (pasta compartilhada por `ufgravity@gmail.com`, atalho já
+existia na raiz da biblioteca) — 61 aulas reais em vídeo (8 GB), 35 módulos, paridade total
+arquivo a arquivo. 6 "aulas" e 11 "apostilas" da pasta eram stubs falsos de 55.855 bytes (um SVG
+com nome de `.mp4`/`.html`) — as 6 foram removidas, junto com 2 stubs idênticos que já estavam no
+`medreview-2026` (uma delas com 2 alunos que tentaram assistir).
+
+**Causa 1 do "nenhuma aula abre" — o maior curso da plataforma era 100% TS disfarçado:**
+os 10.532 vídeos do `questoes-comentadas-por-estado-instituicao-medgrup` são MPEG-TS gravados com
+nome e mime de `.mp4` (sondados um a um pela API do Drive, `Range: bytes=0-188`, sync byte 0x47
+nos offsets 0 e 188 — 10.532/10.532, zero mp4 verdadeiro, codecs internos h264/aac confirmados
+por ffprobe). O `<video>` nativo não toca o container TS → exatamente o print do cliente.
+Corrigido dos dois lados: `mime_type` trocado para `video/mp2t` no banco (o player já roteia esse
+mime pro mpegts.js) e `LessonPlayer.sondarFalha()` agora fareja os primeiros bytes na primeira
+falha do vídeo e vira `forceTs` sozinho — cobre qualquer arquivo futuro com rótulo mentiroso, sem
+depender do banco. Amostra de 3 vídeos/curso no resto da biblioteca: nenhum outro curso afetado.
+
+**Causa 2 — o mesmo curso aparecia VAZIO ("O curso está sendo sincronizado"):** as políticas RLS
+chamavam `is_member()` CRU, e o Postgres reavaliava a função POR LINHA (12.234 aulas × consulta
+interna = 99 mil buffers, 1,5s por página de 1.000; o app pagina o curso todo e estourava o
+timeout de 30s; sob paralelismo, 500). Migration `20260804040000_rls_initplan_member_checks.sql`:
+`(SELECT is_member())` vira InitPlan (1× por consulta) em `lessons`, `course_modules`, `courses`,
+`course_comments` e `community_likes`. Página caiu de 1,5s para 0,9s e as 11 páginas em paralelo
+fecham em 2,3s sem erro. **Regra pra qualquer policy nova: função de checagem SEMPRE dentro de
+`(SELECT ...)`.**
+
+> Teste de reprodução no navegador: o Chromium do Playwright deste ambiente NÃO tem decoder
+> H.264/AAC (só VP9) — nenhum vídeo da plataforma decodifica nele, mesmo os sãos. Dá pra validar
+> login/lista/player abrindo, mas a decodificação em si só por protocolo (bytes + ffprobe).
+> E o Chromium só atravessa o proxy TLS deste ambiente com as requisições interceptadas pelo lado
+> Node do Playwright (`context.route` + `route.fetch`) — o handshake direto leva RESET.
+
+---
+
+### 2026-08-04 (sessão remota) — sino editável no admin + reorganização real das categorias
+
+**Sino de notificações editável:** a lista "Cursos em processo de atualização" era hardcoded em
+`NotificationsBell.tsx`. Virou a tabela `notification_items` (label, done, sort_order — migration
+`20260804100000_notification_items.sql`) + `announcement_settings.notifications_heading` (título
+da seção). A página Avisos (`/admin/announcements`) ganhou abas **Aviso | Notificações** — a nova
+aba adiciona/renomeia/reordena/exclui itens e alterna a bolinha (verde = `done`, atualizado;
+vermelha = em atualização). Seed com a lista antiga + **MED 2026 verde no topo**. RLS: membro lê,
+trial não (mesma regra da loja), admin gerencia — checagens dentro de `(SELECT ...)`.
+
+**Categorias auditadas curso a curso (408):** 28 cursos estavam com categoria CRUA
+(`CURSO`/`QUESTAO`/`LIVRO`) do categorizador primitivo — o aluno via um chip "LIVRO" com 1 curso
+enquanto "Livros (Todos os 5.000)" morava em "Resumos, Cards & Livros". Correções:
+- Nova categoria **"Livros & Apostilas"** (ícone Library, slug SEO novo `livros-apostilas` com
+  página própria no silo): as 10 bibliotecas/coleções de apostilas, incluindo a de 5.000 livros.
+- "Resumos, Cards & Livros" → **"Resumos, Cards & Mapas Mentais"** (o slug SEO
+  `resumos-cards-livros` NÃO muda — o mapa `CATEGORY_SLUGS` é explícito exatamente pra rename não
+  mexer em URL indexada). `course_comments.category` atualizado junto.
+- Cursos com nome duplicado (turmas gêmeas da leva de colisão de slug) caíram na categoria do
+  irmão; misfits reais corrigidos (PROGEB estava em Carreira; Neuroanatomia em Especialidades;
+  Médico na Prática em Outros).
+- `categoryOf()` da `member-sync-library` e do `scripts/deep-library-sync.mjs` reescrito para
+  classificar direto na taxonomia real (sinal mais específico primeiro; default "Outros cursos") —
+  categoria crua não volta a existir em import futuro.
+
+**5 cursos sem NENHUM arquivo no Drive** (esqueleto de pastas vazias, varredura completa e sem
+erros: check-list-medcof, med-questoes-apostilas, med-banco-de-questoes-e-respostas,
+semiologia-clinica-usp, conduzindo-as-emergencias-cardiologicas) → `active=false`. Se o dono
+preencher as pastas um dia, a sincronização importa o conteúdo mas o curso continua oculto até
+reativar à mão no banco/painel.
+
+**CourseDetailPage:** busca de aulas paralelizada (COUNT primeiro, 6 páginas de 1.000 por vez,
+ordenação com desempate estável `sort_order, id` — sem o desempate, paginação paralela por offset
+pode duplicar/perder linha). Os megacursos de questões chegam a 31.612 aulas; sequencial estourava
+o timeout de 30s mesmo depois da correção de RLS.
+
+---
+
+### 2026-08-04 (sessão remota) — programa de afiliados
+
+**Fluxo completo:** cadastro próprio (email+senha, separado de assinante) em `/afiliado/registro`
+via Edge Function `affiliate-register` (cria usuário já confirmado no Auth + linha em `affiliates`
++ cupom inicial de 10% + e-mail de boas-vindas via Resend); login em `/afiliado/login`
+(`signInWithPassword` + exigência de linha em `affiliates` — sem ela, signOut na hora); painel em
+`/afiliado`. Card "Seja um afiliado" no fim da landing (após FAQ) com benefícios e botão de login.
+
+**Atribuição de venda: cupom OU referência do link.** O link de divulgação leva pra LANDING
+(`/?ref=CUPOM`) — o indicado pode fazer o trial e comprar dias depois. `captureAffiliateRefFromUrl`
+(App.tsx, roda em toda navegação) guarda o código 30 dias no localStorage (`om_affiliate_ref`,
+último clique vence); o CheckoutPage auto-aplica o cupom guardado EM SILÊNCIO (se o afiliado
+desativou o cupom, o comprador não vê erro nenhum) e grava `buyers.affiliate_ref` no insert.
+`mp-create-payment` grava `buyers.coupon_code` (código efetivamente usado) e o `mp-webhook`, no
+bloco de aprovação, chama `processAffiliateSale()` — resolve o afiliado por `coupon_code` e, na
+falta, por `affiliate_ref`; grava `affiliate_sales` (UNIQUE em `external_reference` segura webhook
+duplicado), envia e-mail "você fez uma venda" com a comissão, e na 5ª venda concede conta
+`lifetime_pro` ao e-mail do afiliado (sem rebaixar tier superior). Comissões:
+monthly 15% · annual/lifetime 20% · lifetime_plus 25% · lifetime_pro 30% (sobre o valor pago).
+
+**Painel do afiliado:** link `/?ref=CODIGO` (landing, não checkout),
+gerador/troca de cupom via `affiliate-coupon` (valida formato, colisão e reserva prefixo ONEMED;
+trocar desativa o cupom antigo), material de divulgação (pasta pública do Drive
+`1N0ZYuF7yts5l_ZtfQR17PqY5DefAMN5O`), badges hoje/7 dias/total, comissão pendente × recebida,
+extrato com o ganho por venda, e "Receber comissão" (salva chave PIX/nome/banco e abre o WhatsApp
+do suporte com a mensagem pronta).
+
+**Admin `/admin/afiliados`:** resumo geral, card "afiliados com comissão a pagar" (mostra a chave
+PIX de cada um) com botão **"Já quitado"** (marca todas as vendas pendentes do afiliado como
+`paid`), e lista completa com extrato expandível por afiliado.
+
+**Mesmo e-mail de assinante/admin PODE virar afiliado, SEM código** (decisão do dono). Três
+caminhos no `affiliate-register`: e-mail livre → usuário novo direto; e-mail existente COM sessão
+do próprio e-mail (assinante logado vindo do menu) → a sessão é a prova de posse, afiliado nasce
+no MESMO user_id e a senha passa a valer; e-mail existente SEM sessão → afiliado nasce num
+usuário-ALIAS interno (`afiliado-<rand>@alias.onemedcursos.com.br`), sem tocar na conta do
+assinante — definir senha em conta alheia é que seria roubo de conta (testado: a senha do
+"atacante" NÃO abre a conta do assinante, invalid_credentials). O login é `action=login` na mesma
+função: resolve e-mail real → user_id do afiliado → e-mail de login (real ou alias) → grant de
+senha no GoTrue server-side → devolve a sessão (rate limit 12/h por IP+e-mail). Trade-off aceito:
+sem verificação, alguém pode "ocupar" um e-mail alheio no programa (squatting) — mas nunca acessar
+a conta. Atalho no menu da área de membros ("Programa de Afiliados" → `/afiliado`); registro
+prefila o e-mail da sessão; painel redireciona logado-sem-afiliado pro cadastro. Demais travas:
+`REVOKE UPDATE` + `GRANT UPDATE (pix_key, pix_name, pix_bank)` (cupom só pela função); vendas só
+via service role; e-mails escapam HTML nos nomes interpolados; rotas `/afiliado` em
+`NOINDEX_PREFIXES`.
+
+**Auditoria de segurança 2026-08-04 (pré-lançamento), 21 sondas em produção, todas aprovadas:**
+acervo — privado invisível pra terceiros (feed/tabela/arquivos/file_token), edição/exclusão só
+dono ou admin, INSERT direto bloqueado, comentário com user_id forjado bloqueado, trial e anon
+zerados, views deduplicadas por usuário (`archive_views`), init em item alheio 404; afiliados —
+alias não vaza conta, isolamento entre afiliados, vendas só admin marca pagas, login de
+não-afiliado negado. Bug corrigido na auditoria: `ensureName` é callback-style e era aguardado
+como boolean — o botão "Publicar no acervo" morria em TypeError silencioso pra quem já tinha nome.
+Limitação do harness de teste: Playwright+route.fetch não encaminha corpo binário de XHR (PUT do
+upload chega com 0 bytes ao Google → 308) — o mesmo PUT feito direto responde 200; navegador real
+não passa pela interceptação.
+
+---
+
+### 2026-08-04 (sessão remota) — Acervo Público (materiais compartilhados entre assinantes)
+
+**Página `/membros/acervo`** ("Acervo Público" no menu da sidebar, oculto pra trial): assinantes
+sobem arquivos ou pastas completas de material de estudo pros outros assinantes. Feed com
+Recentes / Mais acessados / Mais curtidos / Meus uploads, chips com TODAS as categorias da
+plataforma, busca própria; card mostra "Upload feito por «nome»" (sem nome → `NameRequiredModal`
+via `useRequireName`); detalhe tem like, comentários PRÓPRIOS do acervo (tabelas
+`archive_likes`/`archive_comments` — nada aparece na comunidade), contador de acessos
+(`archive_register_view`), abrir/baixar, e pro dono: editar, público↔privado, excluir. Busca
+geral do dashboard ganhou a seção "Acervo da comunidade", renderizada POR ÚLTIMO.
+
+**Upload sem limite de tamanho, sem expor credencial:** Edge Function `archive-manage`
+(`init`/`finalize`/`delete`/`file_token`) cria item + pasta no Drive + arquivo só-de-metadados e
+abre uma SESSÃO RETOMÁVEL; o navegador manda os bytes DIRETO pro Google via a URI da sessão (XHR
+com progresso; o header `Origin` na abertura da sessão é o que libera o CORS). `finalize` confere
+o tamanho na API do Drive antes de publicar — cliente não vê token nem forja conteúdo. Pasta-raiz
+**"Acervo Público - OneMed"** fica FORA da biblioteca de cursos (a sync transformaria em curso);
+id salvo em `drive_config.acervo_folder_id`. Excluir apaga a pasta do item no Drive junto.
+`file_token` assina URL do worker de streaming (mesmo HMAC do member-lesson-token).
+
+**Migration `20260804200000_public_archive.sql`:** `archive_items`/`archive_files`/`archive_likes`
+/`archive_comments`; RPCs `archive_feed` (sort/categoria/busca/_item_id), `archive_my_items`,
+`toggle_archive_like`, `archive_register_view`, `archive_comments_feed` — todos SECURITY DEFINER
+com gate `assert_archive_access()` (assinante-nunca-trial ou admin). RLS nas tabelas com o padrão
+`(SELECT ...)`. Escrita de itens/arquivos só via service role. Atenção: `sum(size_bytes)` devolve
+numeric — precisa de `::bigint` pra casar com o RETURNS TABLE (deu erro 42804 em produção antes
+do cast).
+
+**Onde os bytes moram:** na CONTA DE ARMAZENAMENTO (`drive_storage_accounts` —
+`ufgravity@gmail.com`, 5 TB), nunca na conta de conteúdo (sem espaço). A pasta-raiz "Acervo
+Público - OneMed" é criada na conta de armazenamento (`acervo_folder_id` na tabela) e
+COMPARTILHADA como leitura com a conta de conteúdo — é com o token da conta de conteúdo que o
+worker de streaming serve os arquivos, e a permissão herdada na pasta é o que faz isso funcionar.
+Cada item guarda `storage_account_id` (finalize/delete usam o token da conta certa). Client OAuth
+das contas de armazenamento: `GOOGLE_STORAGE_CLIENT_ID`/`GOOGLE_STORAGE_CLIENT_SECRET` (fallback
+no client de conteúdo). Ciclo completo TESTADO em produção: init → PUT direto no Google (200) →
+finalize (1 ready) → feed → streaming via worker (bytes exatos) → like → comentário → delete
+(some do Drive junto). Detalhe do teste: o `X-Upload-Content-Length` declarado no init PRECISA
+bater com os bytes enviados — divergência dá 400 no PUT.
+
+---
+
+### 2026-08-04 (sessão remota) — banco de questões: importar banco EXISTENTE de um PDF
+
+No modal do gerador de banco de questões há agora a seção "Origem das questões", com duas opções
+mutuamente exclusivas: **"Gerar questões a partir do material"** (padrão — o fluxo de sempre) e
+**"Usar banco de questões já existente"**. Na importação, `generate-flashcards` recebe
+`importExisting: true` e TRANSCREVE o PDF em vez de criar: quantidade de questões = a do
+documento (dificuldade e quantidade somem da UI), alternativas na MESMA ordem/texto, `correct` =
+gabarito do próprio documento, e as explicações (back/why) só são geradas quando o PDF não as
+traz. Sem Fisher-Yates no modo importação — o gabarito do PDF é lei. Extração em LOTES de 20
+(multi-passada, teto 120; temperature 0.1) porque banco grande não cabe numa resposta só; lote de
+fronteira é deduplicado por `front`; falha de LLM no meio entrega o que já foi transcrito com
+aviso. Pós-processamento tira os prefixos do documento ("Questão 3.", "A)") que duplicariam a
+numeração da interface — sem mexer na ordem. Testado em produção com PDF de gabarito conhecido:
+2/2 questões, letras preservadas, gabarito exato, explicações geradas.
+
+---
+
+### 2026-08-04 (sessão remota) — acervo: upload robusto, player da plataforma, "não carrega"
+
+**"Não foi possível carregar acervo" — duas causas.** (1) O bug de `bigint` (42804) no
+`archive_feed`, corrigido no mesmo dia (cast `::bigint` no `sum(size_bytes)`). (2) "Carregar" =
+UPLOAD: o loop de upload do cliente ABORTAVA a pasta inteira se UM arquivo falhava no PUT — o
+`finalize` nunca era chamado e o item ficava preso em `pending` (some do feed, que só mostra
+`ready`). Um cliente real (`andrelins.med`) teve um upload de pasta preso assim; recuperado
+rodando `finalize` (3 arquivos com bytes viraram `ready`; o de 0 byte foi descartado).
+
+**Upload blindado:** cada arquivo tenta 2×; o `finalize` roda SEMPRE que ≥1 arquivo subiu (com
+retry), publicando o que deu certo e avisando quantos falharam ("Publicado com X de Y"). Feed com
+retry único em falha de rede/timeout antes de avisar.
+
+**Acervo usa o MESMO LessonPlayer das aulas** (pedido do dono): abrir um arquivo do acervo
+reproduz/visualiza DENTRO da plataforma (vídeo com remux TS, PDF com zoom + anotações, Office,
+imagem, áudio, velocidade) em vez de abrir aba crua. `LessonPlayer` ganhou props opcionais
+`resolveUrl` (link vem do `archive-manage` `file_token` em vez do `member-lesson-token`) e
+`bypassDownloadGate` (acervo é conteúdo entre assinantes, sem trava de plano); `fileToLesson()`
+monta uma aula sintética a partir do `archive_file` (sem `drive_file_id`/`storage_path`, então o
+fallback de cota/embed — específico da conta de conteúdo — não dispara). O player vai num
+`createPortal(document.body)` pra ficar acima do diálogo de detalhe (que também é portalizado).
+Fluxo de aulas normais intacto. Verificado em produção: PDF do acervo renderiza no visualizador
+da plataforma, streaming via worker 200.
+
+---
+
+### 2026-08-04 (sessão remota) — gerador de cronograma de estudos com IA
+
+**Página `/membros/cronograma`** ("Cronograma de Estudos" no menu da sidebar, exclusivo de
+assinante; monthly bloqueado como os outros geradores de IA): o aluno descreve o OBJETIVO (prova,
+prazo, horas/semana, pontos fracos) e a IA (Emergent + gemini-2.5-flash) monta um cronograma
+DETALHADO — semanas com temas e tarefas, marcos, dicas e um MAPA MENTAL em árvore do conteúdo.
+Fica salvo em `study_plans`; cada tarefa tem id e vira item de CHECKLIST com progresso persistido
+(barra por cronograma e por semana). Editar título/excluir do próprio dono.
+
+**Edge Function `generate-study-plan`** (migration `20260804230000_study_plans.sql`): rate limit
+10/dia, monthly 403, parser tolerante + 1 retry, ids únicos por tarefa. Normaliza tips (o modelo
+às vezes devolve `{label, description}` em vez de string), milestones e rótulos do mapa mental
+para texto — renderizar objeto cru estoura o React (#31). `MindMap.tsx` (componente reutilizável,
+árvore horizontal recolhível) coage o rótulo a texto defensivamente.
+
+**Admin `/admin/cronogramas`:** RPC `admin_study_plans_overview` (admin-only) lista todos os
+cronogramas dos alunos com nome/e-mail e progresso (feitas/total); expandível pra ver mapa mental,
+semanas/tarefas e dicas.
+
+**Segurança:** RLS dono-ou-admin; `REVOKE UPDATE` + `GRANT UPDATE (completed_tasks, title,
+updated_at)` — o cliente só mexe no checklist e no título, não na estrutura do plano (testado:
+PATCH de `objective` → 403); INSERT só via Edge Function (service role); overview só admin
+(testado: não-admin → "Apenas administradores"). Verificado em produção: geração (~35s, por isso
+`generate-study-plan` no TIMEOUT_EXEMPT do client), mapa mental renderizado, checklist marca e
+persiste (0/60 → 1/60).
+
+---
+
+### 2026-08-05 (sessão remota) — admin de questões e acervo, cupom no upgrade, modais cortados
+
+**Admin vê os bancos de questões como já via os flashcards:** migration
+`20260805000000_admin_question_banks.sql` com `admin_question_banks_overview()` /
+`admin_question_banks(_user_id)` — espelho exato das RPCs de flashcards (SECURITY DEFINER +
+gate `has_role` explícito; testado em produção: aluno recebe `Unauthorized`).
+`FlashcardsAdminPage` virou a página de abas **Flashcards | Banco de Questões** (nav renomeada
+pra "Flashcards & Questões") — a estrutura das duas abas é idêntica, então a página é
+data-driven por um config `TABS` que só troca RPCs/rótulos e normaliza os campos pro mesmo shape.
+
+**Gerenciamento do Acervo Público no admin** (`/admin/acervo`, novo item "Acervo Público" na
+nav): lista TODOS os itens direto pela tabela (a política "Admin gerencia itens" já dava SELECT
+total) — inclusive privados e uploads presos em `pending` (badge "incompleto"), que o feed dos
+alunos nunca mostra. Por item: quem enviou (join client-side com `profiles`), categoria,
+arquivos/tamanho, views/likes, alternar público↔privado (UPDATE direto, política de admin),
+**excluir** (via `archive-manage` action `delete`, que já aceitava admin — apaga a pasta do
+Drive junto) e expandir pra ver os arquivos com botão de abrir (URL assinada do worker;
+`window.open` ANTES do await, senão o bloqueador de pop-up mata a aba).
+
+**Cupom de desconto no upgrade:** `UpgradePlanModal` ganhou campo de cupom (mesma validação
+client-side do checkout: ativo/expirado/esgotado/allowed_plans) e passa `couponCode` pro
+`mp-create-payment` — que JÁ aplicava desconto em upgrades (a seção de cupom roda depois do
+cálculo da diferença de tabela), só faltava a UI enviar. Preço exibido = mesma conta do
+servidor (`round2(diff × (1-pct))`); cupom restrito a um plano só desconta (e só é enviado)
+naquele alvo.
+
+**Modal de upgrade cortado embaixo sem scroll:** faltava `max-h-[90vh] overflow-y-auto` no
+`DialogContent` — adicionado.
+
+**Busca geral acha ARQUIVOS do Acervo Público:** nova RPC `archive_search_files`
+(migration `20260805010000_archive_search_files.sql`, gate `assert_archive_access`, visibilidade
+público-ou-próprio) — a busca do dashboard, além dos itens (archive_feed), lista os arquivos
+dentro de itens/pastas, rotulados "Acervo Público · em «item» · por «nome»". Clicar navega pra
+`/membros/acervo?item=…&file=…` — o `DetailDialog` ganhou `initialFileId` e abre o item já
+tocando/visualizando o arquivo buscado no player da plataforma (auto-abre uma vez só, ref).
+`lessonTypeFromMime` exportado do ArchivePage pro ícone certo na lista de resultados.
+
+**Menu sem contagens:** os itens de função da sidebar (Favoritos, Flashcards, Banco de Questões,
+Acervo Público, Cronograma, Afiliados e "Minhas anotações") não mostram mais número — `count`
+virou opcional no `CategorySidebar` e só categoria de curso conta.
+
+**Tópico da comunidade com áreas do Menu:** o seletor de categoria do "Abrir um novo tópico"
+ganhou o grupo "Menu" (as 6 áreas da plataforma) acima do grupo "Categorias" — o valor gravado é
+o próprio rótulo, na mesma coluna `category` (o chip do feed exibe qualquer texto). Seletor de
+curso desabilita quando a categoria escolhida não tem cursos.
+
+**Modo claro — banners com "gradiente preto estranho" corrigidos:** os heróis do dashboard e da
+página de curso fundiam a arte escura do `CourseCover` com `from-background` — perfeito no
+escuro (fundo preto), mas no claro virava uma névoa cinza/rosa sobre a arte. Agora são banners
+AUTOCONTIDOS estilo capa de álbum: overlay sempre `from-black/85 (dashboard) · from-black/75
+(curso)`, título/textos brancos fixos, botão "Detalhes" branco-fantasma. No escuro fica
+visualmente idêntico ao que era (conferido por screenshot nos dois temas); no claro o banner
+vira um cartão escuro limpo com borda. Regra: arte de curso é sempre escura por design — nunca
+fundir com o fundo da página, escurecer pro preto.
+
+**Capa de curso SEM "gradiente pro preto" no modo claro (pedido do dono):** `CourseCover`
+agora gera UMA arte por tema — escuro mantém o original (vermelho afundando em `hsl(0 0% 6%)`);
+claro usa a mesma família de vermelhos indo pra um carmim profundo (`hsl(350 80% 25%)`), sem
+preto, vibrante contra o branco (duas camadas absolutas, `dark:hidden`/`hidden dark:block`).
+Todos os apoios pretos POR CIMA da arte acompanham com variantes `dark:` (senão o preto voltava):
+overlays dos heróis do dashboard/curso (`from-red-950/* dark:from-black/*`), hover/chip "N
+aulas"/botão play/trilha de progresso/estrela de favorito do `CourseCard`
+(`bg-red-950/* dark:bg-black/*`). Varredura visual completa do modo claro feita por screenshot em
+produção: landing (topo/meio/fim), checkout, /login, afiliado (login), dashboard, curso,
+comunidade, acervo (feed + detalhe), cronograma, loja, favoritos, anotações, menu da conta, sino,
+upgrade, mobile — só os banners estavam quebrados; o restante já era tokenizado. Escuro conferido
+idêntico ao original após a mudança.
+
+**🔴 Bug sistêmico: builder do supabase-js descartado com `void` NUNCA dispara.** O
+PostgrestBuilder é lazy — só executa em `await`/`.then()`. Três chamadas em produção estavam
+mortas desde o lançamento por causa disso: `archive_register_view` (contador de acessos do
+acervo sempre 0), `flashcard_sessions` insert (nenhuma sessão de estudo gravada — por isso o
+admin mostrava todo aluno "sem estudo") e `question_sessions` insert (nenhuma prova gravada).
+Corrigidas com `.then()`. **Regra: nunca descartar chamada do supabase-js com `void` puro.**
+
+**Visualizações do acervo por ABERTURA (pedido do dono):** `archive_register_view` reescrita
+(migration `20260805020000_archive_view_per_open.sql`): +1 a CADA abertura de arquivo, por
+qualquer cliente, sem dedupe (o dedupe por usuário anterior foi descartado junto com a
+semântica antiga); devolve o total novo pra UI atualizar na hora. O cliente registra no
+`openFile` (inclusive no auto-open via `?file=` da busca). Contadores zerados no lançamento da
+semântica nova. Verificado em produção: abertura real de arquivo → RPC 200 devolvendo total
+incrementado.
+
+**Formulários de flashcards/questões cortados PRA DIREITA — bug era do Dialog base:** medido em
+produção (Playwright): com `overflow-y-auto` no `DialogContent`, os filhos do grid saíam a 512px
+dentro de um content-box de ~460px (`scrollWidth` 560 × `clientWidth` 510) — a coluna implícita
+do grid é dimensionada pelo min-content dos filhos e estoura quando a barra de rolagem aparece.
+Correção de UMA linha em `ui/dialog.tsx`: `[grid-template-columns:minmax(0,1fr)]` no
+`DialogContent` (validado ao vivo: 560→510, zero overflow). Vale pra TODOS os modais com scroll
+(gerador de flashcards, cronograma, acervo…) de uma vez.
+
+---
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management

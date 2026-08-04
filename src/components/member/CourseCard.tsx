@@ -23,19 +23,21 @@ export function CourseCard({ course, progressPercent, isFavorite, onToggleFavori
         className="w-full text-left focus:outline-none relative block aspect-video rounded-xl overflow-hidden border border-border transition-all duration-200 group-hover:-translate-y-1 group-hover:border-primary/50 group-hover:shadow-[0_18px_40px_-16px_rgba(239,68,68,0.5)]"
       >
         <CourseCover title={course.title} titleClassName="text-[13px] sm:text-sm" />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+        {/* Os apoios pretos (hover, chip, play) viram carmim no modo claro —
+            a capa clara não tem preto, e preto por cima traria ele de volta. */}
+        <div className="absolute inset-0 bg-gradient-to-t from-red-950/70 dark:from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
         <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-          <div className="w-11 h-11 rounded-full bg-black/55 border border-white/25 backdrop-blur flex items-center justify-center">
+          <div className="w-11 h-11 rounded-full bg-red-950/60 dark:bg-black/55 border border-white/25 backdrop-blur flex items-center justify-center">
             <Play className="w-4 h-4 text-white ml-0.5" fill="currentColor" />
           </div>
         </div>
         {course.lesson_count > 0 && (
-          <span className="absolute top-2 left-2 text-[10px] font-semibold tracking-wide px-2 py-0.5 rounded-full bg-black/55 border border-white/15 text-white/90 backdrop-blur">
+          <span className="absolute top-2 left-2 text-[10px] font-semibold tracking-wide px-2 py-0.5 rounded-full bg-red-950/60 dark:bg-black/55 border border-white/15 text-white/90 backdrop-blur">
             {course.lesson_count} aula{course.lesson_count !== 1 ? 's' : ''}
           </span>
         )}
         {typeof progressPercent === 'number' && progressPercent > 0 && (
-          <div className="absolute left-0 right-0 bottom-0 h-[3px] bg-black/40">
+          <div className="absolute left-0 right-0 bottom-0 h-[3px] bg-red-950/50 dark:bg-black/40">
             <div className="h-full bg-primary" style={{ width: `${Math.min(100, progressPercent)}%` }} />
           </div>
         )}
@@ -51,7 +53,7 @@ export function CourseCard({ course, progressPercent, isFavorite, onToggleFavori
           className={`absolute top-2 right-2 p-1.5 rounded-full backdrop-blur z-10 transition-colors ${
             isFavorite 
               ? 'bg-yellow-500/20 text-yellow-500 hover:bg-yellow-500/30' 
-              : 'bg-black/40 text-white/70 hover:text-white hover:bg-black/60'
+              : 'bg-red-950/50 dark:bg-black/40 text-white/70 hover:text-white hover:bg-red-950/70 dark:hover:bg-black/60'
           }`}
         >
           <Star className="w-4 h-4" fill={isFavorite ? 'currentColor' : 'none'} />

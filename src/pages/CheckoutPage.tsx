@@ -30,6 +30,7 @@ import {
   Crown,
 } from 'lucide-react';
 import { formatWhatsApp, extractFunctionErrorMessage } from '@/lib/utils';
+import { getAffiliateRef } from '@/lib/affiliateRef';
 import { ThemeToggle } from '@/components/ThemeToggle';
 
 const MEDUF_URL = 'https://meduf.com.br/about';
@@ -124,6 +125,7 @@ const PLANS: Record<string, {
       'Download em massa, cursos e pastas inteiras',
       'Gerador de flashcards a partir de qualquer conteúdo da plataforma',
       'Gerador de banco de questões a partir de qualquer conteúdo da plataforma',
+      'Assistente de IA que lê em tempo real a aula ou arquivo que você está estudando e tira qualquer dúvida',
     ],
   },
   lifetime_pro: {
@@ -140,6 +142,7 @@ const PLANS: Record<string, {
       'Download em massa, cursos e pastas inteiras',
       'Gerador de flashcards a partir de qualquer conteúdo da plataforma',
       'Gerador de banco de questões a partir de qualquer conteúdo da plataforma',
+      'Assistente de IA que lê em tempo real a aula ou arquivo que você está estudando e tira qualquer dúvida',
       'Acesso a todas as atualizações sem precisar de nenhuma colaboração',
       'Acesso à IA de diagnósticos Meduf (meduf.com.br)',
     ],
@@ -150,7 +153,10 @@ const PLANS: Record<string, {
 export default function CheckoutPage() {
   const [searchParams] = useSearchParams();
   const initialPlan = searchParams.get('plan') || 'lifetime';
-  const initialCoupon = searchParams.get('coupon') || '';
+  // Cupom explícito na URL vence; sem ele, o cupom do afiliado que indicou
+  // (guardado por 30 dias desde o clique no link ?ref=) é aplicado sozinho —
+  // é o que garante o desconto do indicado mesmo comprando dias depois.
+  const initialCoupon = searchParams.get('coupon') || getAffiliateRef() || '';
 
   const [selectedPlan, setSelectedPlan] = useState(initialPlan);
   const [loading, setLoading] = useState(false);
@@ -181,15 +187,21 @@ export default function CheckoutPage() {
   // email (o formulário só é preenchido três passos adiante) — ou seja, a
   // campanha otimizava para quem abre a página, não para quem quer comprar.
   useEffect(() => {
-    if (initialCoupon) handleApplyCoupon(initialCoupon);
+    // Cupom da URL: aplicado com feedback normal. Cupom vindo só da indicação
+    // de afiliado (?ref= guardado): aplicado em silêncio — se não valer mais,
+    // o checkout segue limpo, sem erro na cara do comprador.
+    if (initialCoupon) handleApplyCoupon(initialCoupon, { silent: !searchParams.get('coupon') });
     const plan = PLANS[selectedPlan];
     if (plan) trackViewContent(selectedPlan, plan.price);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleApplyCoupon = async (code?: string) => {
+  // `silent` é para o cupom auto-aplicado da indicação de afiliado: se o
+  // afiliado trocou/desativou o cupom desde o clique no link, o comprador não
+  // pode abrir o checkout já levando um toast de erro do nada.
+  const handleApplyCoupon = async (code?: string, opts?: { silent?: boolean }) => {
     const c = (code || couponCode).trim();
-    if (!c) { toast.error('Digite um código de cupom'); return; }
+    if (!c) { if (!opts?.silent) toast.error('Digite um código de cupom'); return; }
     setCouponLoading(true);
     try {
       const { data } = await supabase
@@ -209,10 +221,12 @@ export default function CheckoutPage() {
       } else {
         setCouponApplied(null);
         setDiscountPercent(0);
-        toast.error('Cupom inválido ou expirado');
+        if (!opts?.silent) toast.error('Cupom inválido ou expirado');
+        else setCouponCode('');
       }
     } catch {
-      toast.error('Erro ao validar cupom');
+      if (!opts?.silent) toast.error('Erro ao validar cupom');
+      else { setCouponApplied(null); setDiscountPercent(0); setCouponCode(''); }
     } finally {
       setCouponLoading(false);
     }
@@ -314,6 +328,10 @@ export default function CheckoutPage() {
         fbp: getCookie('_fbp'),
         fbc: getCookie('_fbc'),
         fbclid,
+        // Afiliado que indicou este comprador (link ?ref=). Vai gravado aqui
+        // porque a atribuição não pode depender do cupom: se o comprador
+        // trocar ou remover o cupom no checkout, a venda continua do afiliado.
+        affiliate_ref: getAffiliateRef(),
       });
       if (buyerErr) throw buyerErr;
 

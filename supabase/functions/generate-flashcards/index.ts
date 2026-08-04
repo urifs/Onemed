@@ -144,10 +144,14 @@ serve(async (req) => {
     } catch { /* segue liberado */ }
 
     // ── entrada ────────────────────────────────────────────────────────────
-    const { lessonIds, difficulty, count, extraText, format, uploads, mode } = await req.json()
+    const { lessonIds, difficulty, count, extraText, format, uploads, mode, importExisting } = await req.json()
     // 'questions' = banco de questões: sempre múltipla escolha, com enunciado
     // no estilo de prova de residência. Reusa todo o pipeline dos flashcards.
     const modo = mode === 'questions' ? 'questions' : 'flashcards'
+    // Importação de banco EXISTENTE (só no modo questões): em vez de criar
+    // questões novas, TRANSCREVE as do PDF selecionado — quantidade e gabarito
+    // são os do documento; explicações só são geradas quando o PDF não traz.
+    const importar = modo === 'questions' && importExisting === true
     // Limites separados por modo — 15 gerações/dia de cada.
     const rlAction = modo === 'questions' ? 'questions' : 'flashcards'
 
@@ -311,7 +315,7 @@ serve(async (req) => {
     }
 
     // ── prompt ─────────────────────────────────────────────────────────────
-    parts.push({
+    const promptNormal = {
       type: 'text',
       text: [
         modo === 'questions'
@@ -337,6 +341,27 @@ serve(async (req) => {
           ? `- Responda APENAS um array JSON válido: [{"front":"...","options":["...","...","...","..."],"correct":0,"back":"...","why":["...","...","...","..."]}] — "correct" é o índice (0-3) da alternativa certa. Sem markdown, sem comentários.`
           : `- Responda APENAS um array JSON válido: [{"front":"...","back":"..."}] — sem markdown, sem comentários.`,
       ].filter(Boolean).join('\n'),
+    }
+
+    // Prompt de TRANSCRIÇÃO (importar banco existente): fidelidade total ao
+    // PDF — enunciados, alternativas na mesma ordem e gabarito do documento.
+    // Só as explicações podem ser geradas, e apenas quando o PDF não as tem.
+    const LOTE_IMPORT = 20
+    const promptImport = (inicio: number) => ({
+      type: 'text',
+      text: [
+        `O material acima JÁ É um banco de questões pronto. Sua tarefa é TRANSCREVÊ-LO fielmente para JSON — você NÃO deve criar questões novas.`,
+        `Transcreva as questões de número ${inicio} a ${inicio + LOTE_IMPORT - 1} do documento (na ordem em que aparecem). Se o documento tiver menos questões que isso, transcreva até a última e pare.`,
+        complemento ? `Instruções extras do aluno: ${complemento}` : '',
+        `Regras OBRIGATÓRIAS:`,
+        `- "front": o enunciado EXATAMENTE como está no documento (inclua o caso clínico se houver). Não resuma, não reescreva.`,
+        `- "options": TODAS as alternativas do documento, na MESMA ordem e com o MESMO texto. Se a questão tiver 5 alternativas, envie as 5.`,
+        `- "correct": o índice (começando em 0) da alternativa correta SEGUNDO O GABARITO do próprio documento. Nunca invente gabarito: se o documento não indicar a resposta de uma questão em lugar nenhum, resolva-a com máximo rigor técnico.`,
+        `- "back": a explicação de por que a correta está certa. Se o documento tiver comentário/explicação, use-o como base; se NÃO tiver, escreva você a explicação (2-3 frases, técnica e direta).`,
+        `- "why": array paralelo a "options" — why[i] explica em 1 frase por que a alternativa i está errada (na posição da correta, por que está certa). Use os comentários do documento quando existirem; senão, gere.`,
+        `- NÃO pule questões, NÃO mude a ordem, NÃO altere o texto das alternativas.`,
+        `- Responda APENAS um array JSON válido: [{"front":"...","options":["..."],"correct":0,"back":"...","why":["..."]}] — sem markdown, sem comentários. Se as questões pedidas não existirem no documento, responda [].`,
+      ].filter(Boolean).join('\n'),
     })
 
     // ── chama o Gemini ─────────────────────────────────────────────────────
@@ -349,33 +374,12 @@ serve(async (req) => {
       body: JSON.stringify({
         model: LLM_MODEL,
         messages: [{ role: 'user', content: conteudo }],
-        temperature: 0.4,
+        temperature: importar ? 0.1 : 0.4,
         // Sem isto, resposta longa (30 questões com justificativas) vinha
         // CORTADA no limite padrão do provedor e o JSON quebrava no meio.
         max_tokens: 16384,
       }),
     })
-
-    let llmRes = await chamarLLM(parts)
-    let llmData = await llmRes.json()
-
-    // Alguma mídia ainda pode ser recusada pelo modelo (400) por defeito que
-    // não dá pra detectar daqui. Nesse caso a geração NÃO morre: refaz só com
-    // os textos (títulos + complemento do aluno) e avisa.
-    if (!llmRes.ok && llmRes.status === 400) {
-      const soTexto = (parts as { type: string }[]).filter(p => p.type === 'text')
-      if (soTexto.length < parts.length) {
-        console.warn('LLM 400 com mídia; tentando só com texto:', JSON.stringify(llmData).slice(0, 300))
-        warnings.push('Um dos arquivos não pôde ser lido pela IA — a geração usou os títulos do conteúdo.')
-        llmRes = await chamarLLM(soTexto)
-        llmData = await llmRes.json()
-      }
-    }
-
-    if (!llmRes.ok) {
-      console.error('LLM error', llmRes.status, JSON.stringify(llmData).slice(0, 500))
-      return json(req, { error: 'A IA não conseguiu processar este conteúdo agora. Tente novamente em instantes.' }, 502)
-    }
 
     type Carta = { front: string; back: string; options?: string[]; correct?: number; why?: string[] }
 
@@ -403,28 +407,92 @@ serve(async (req) => {
       return null
     }
 
-    const validar = (lista: Carta[]): Carta[] => lista
+    const validar = (lista: Carta[], teto: number): Carta[] => lista
       .filter((c) => typeof c?.front === 'string' && typeof c?.back === 'string')
       .filter((c) =>
         formato !== 'multiple_choice'
         || (Array.isArray(c.options) && c.options.length >= 2 && c.options.every((o: unknown) => typeof o === 'string')
             && typeof c.correct === 'number' && c.correct >= 0 && c.correct < (c.options as string[]).length))
-      .slice(0, MAX_CARDS)
+      .slice(0, teto)
 
-    let cards = validar(extrairCartas(llmData.choices?.[0]?.message?.content || '') || [])
+    // Uma rodada completa: chamada + fallback sem mídia (400) + parse + uma
+    // repetição automática em resposta inválida.
+    let avisoMidiaDado = false
+    const obterCartas = async (promptFinal: unknown, teto: number): Promise<Carta[] | null> => {
+      const conteudo = [...parts, promptFinal]
+      let llmRes = await chamarLLM(conteudo)
+      let llmData = await llmRes.json()
 
-    // Resposta irrecuperável: uma repetição automática antes de desistir —
-    // a falha é intermitente do modelo, não do conteúdo.
-    if (cards.length === 0) {
-      console.warn('Resposta inválida do modelo; repetindo a chamada uma vez')
-      llmRes = await chamarLLM(parts)
-      llmData = await llmRes.json()
-      if (llmRes.ok) cards = validar(extrairCartas(llmData.choices?.[0]?.message?.content || '') || [])
+      if (!llmRes.ok && llmRes.status === 400) {
+        const soTexto = (conteudo as { type: string }[]).filter(p => p.type === 'text')
+        if (soTexto.length < conteudo.length) {
+          console.warn('LLM 400 com mídia; tentando só com texto:', JSON.stringify(llmData).slice(0, 300))
+          if (!avisoMidiaDado) {
+            warnings.push('Um dos arquivos não pôde ser lido pela IA — a geração usou os títulos do conteúdo.')
+            avisoMidiaDado = true
+          }
+          llmRes = await chamarLLM(soTexto)
+          llmData = await llmRes.json()
+        }
+      }
+      if (!llmRes.ok) {
+        console.error('LLM error', llmRes.status, JSON.stringify(llmData).slice(0, 500))
+        return null
+      }
+      let cartas = validar(extrairCartas(llmData.choices?.[0]?.message?.content || '') || [], teto)
+      if (cartas.length === 0) {
+        console.warn('Resposta inválida do modelo; repetindo a chamada uma vez')
+        llmRes = await chamarLLM(conteudo)
+        llmData = await llmRes.json()
+        if (llmRes.ok) cartas = validar(extrairCartas(llmData.choices?.[0]?.message?.content || '') || [], teto)
+      }
+      return cartas
     }
 
-    if (cards.length === 0) {
-      console.error('Resposta não-JSON do modelo (2x):', String(llmData.choices?.[0]?.message?.content || '').slice(0, 300))
-      return json(req, { error: 'A IA devolveu uma resposta inválida. Tente gerar de novo.' }, 502)
+    let cards: Carta[]
+    if (importar) {
+      // Importação: transcreve o banco inteiro em lotes até o documento
+      // acabar (lote incompleto) ou bater o teto de segurança.
+      const MAX_IMPORT = 120
+      cards = []
+      for (let inicio = 1; inicio <= MAX_IMPORT; inicio += LOTE_IMPORT) {
+        const lote = await obterCartas(promptImport(inicio), LOTE_IMPORT + 5)
+        if (lote === null) {
+          // falha de LLM no meio: entrega o que já foi transcrito, com aviso
+          if (cards.length > 0) {
+            warnings.push('A leitura parou antes do fim do documento — gere de novo se faltarem questões.')
+            break
+          }
+          return json(req, { error: 'A IA não conseguiu ler este banco de questões agora. Tente novamente em instantes.' }, 502)
+        }
+        // dedupe do lote de fronteira (o modelo às vezes repete a última questão)
+        const vistos = new Set(cards.map(c => c.front))
+        const novos = lote.filter(c => !vistos.has(c.front))
+        cards.push(...novos)
+        if (lote.length < LOTE_IMPORT) break
+        if (novos.length === 0) break
+      }
+      if (cards.length === 0) {
+        return json(req, { error: 'Não encontrei questões no documento selecionado. Confira se o PDF é mesmo um banco de questões.' }, 422)
+      }
+      // A transcrição fiel traz junto os prefixos do documento ("Questão 3.",
+      // "A)"), que duplicariam a numeração/letras da interface. Tirar o
+      // prefixo não mexe na ordem — o gabarito continua o do PDF.
+      for (const c of cards) {
+        c.front = c.front.replace(/^\s*quest[ãa]o\s*\d+\s*[\.\):\-–]?\s*/i, '')
+        if (Array.isArray(c.options)) {
+          c.options = c.options.map(o => o.replace(/^\s*[A-Ea-e]\s*[\)\.:\-–]\s+/, ''))
+        }
+      }
+    } else {
+      const geradas = await obterCartas(promptNormal, MAX_CARDS)
+      if (geradas === null) {
+        return json(req, { error: 'A IA não conseguiu processar este conteúdo agora. Tente novamente em instantes.' }, 502)
+      }
+      if (geradas.length === 0) {
+        return json(req, { error: 'A IA devolveu uma resposta inválida. Tente gerar de novo.' }, 502)
+      }
+      cards = geradas
     }
 
     // Embaralha as alternativas de cada carta AQUI, não no prompt: o modelo
@@ -432,7 +500,10 @@ serve(async (req) => {
     // "varie as letras" não conserta viés estatístico. Com Fisher-Yates por
     // carta, a letra da correta fica uniforme de verdade — why[] e correct
     // são remapeados junto.
-    for (const c of cards) {
+    //
+    // IMPORTAÇÃO NÃO EMBARALHA: as alternativas e o gabarito têm que ficar
+    // idênticos ao PDF de origem.
+    for (const c of importar ? [] : cards) {
       if (!Array.isArray(c.options) || typeof c.correct !== 'number') continue
       const n = c.options.length
       const perm = [...Array(n).keys()]

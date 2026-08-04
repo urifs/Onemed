@@ -5,3 +5,4 @@ export { default as CoursesSection } from './CoursesSection';
 export { default as BooksSection } from './BooksSection';
 export { default as FaqSection, LANDING_FAQS } from './FaqSection';
 export { default as LandingFooter } from './LandingFooter';
+export { default as AffiliateSection } from './AffiliateSection';

@@ -304,12 +304,28 @@ function slugify(text) {
     .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80) || 'curso';
 }
 
+// Mesmo classificador da Edge Function member-sync-library — categorias com os
+// nomes exibidos na plataforma (src/lib/courseCategories.ts), sinal mais
+// específico primeiro.
 function categoryOf(name) {
   const n = name.toLowerCase();
-  if (n.includes('apostila') || n.includes('livro')) return 'LIVRO';
-  if (n.includes('quest') || n.includes('simulado')) return 'QUESTAO';
-  if (n.includes('resumo') || n.includes('mapa mental')) return 'RESUMO';
-  return 'CURSO';
+  if (/(ecg|eletrocardiogram|cardio|littman|ausculta|infarto|dislipidemia)/.test(n)) return 'Cardiologia & ECG';
+  if (/(revalida|hardwork|\binep\b)/.test(n)) return 'Revalida';
+  if (/(quest|simulado|provas|\bosce\b|\btep\b)/.test(n)) return 'Banco de Questões & Simulados';
+  if (/(livro|apostila)/.test(n)) return 'Livros & Apostilas';
+  if (/(resumo|memorex|flashcard|anki|mapa[s]? menta|ficha|planner|planilha|cards)/.test(n)) return 'Resumos, Cards & Mapas Mentais';
+  if (/(prescri|antibi[oó]tic|plant[aã]o|receita)/.test(n)) return 'Prescrições & Plantão';
+  if (/(emerg|trauma|sutura|intuba|ventila|\buti\b|terapia intensiva|pronto[ -]?socorro|pronto[ -]?atendimento|\bps\b|sala de parada|\bacls\b|\batls\b)/.test(n)) return 'Emergência, PS & Trauma';
+  if (/(pediatr|neonat)/.test(n)) return 'Pediatria';
+  if (/(cirurgia|cir[uú]rgic|ginecolog|obstetr|\bgo\b)/.test(n)) return 'Cirurgia & GO';
+  if (/(radiolog|imagem|tomograf|ultrassom|ultrassonograf|\busg\b)/.test(n)) return 'Radiologia & Imagem';
+  if (/(semiolog|cl[ií]nica m[eé]dica|exame cl[ií]nico|racioc[ií]nio cl[ií]nico)/.test(n)) return 'Semiologia & Clínica';
+  if (/(farmacolog|bioqu[ií]mic)/.test(n)) return 'Farmacologia & Bioquímica';
+  if (/(anatomia|ciclo b[aá]sico|histolog|embriolog|fisiolog|internato)/.test(n)) return 'Anatomia & Ciclo Básico';
+  if (/(usmle|ingl[eê]s|exterior|\beua\b|interc[aâ]mbio|match)/.test(n)) return 'Intercâmbio & Carreira Internacional';
+  if (/(marketing|carreira|empreend|instagram|renda|gest[aã]o|per[ií]cia|legista|produtividade)/.test(n)) return 'Carreira, Gestão & Marketing';
+  if (/(extensivo|intensivo|intensiv[aã]o|resid[eê]ncia|medcof|medcurso|medcel|medway|medgrupo|sanar|estrat[eé]gia|aristo|\bmed \d{4}\b)/.test(n)) return 'Extensivo & Intensivo · Residência';
+  return 'Outros cursos';
 }
 
 async function writeCourse(course, folders, files, protectedKeys, courseIndex, usedSlugs) {

@@ -7,6 +7,7 @@ import { OfficeViewer } from './OfficeViewer';
 import { TxtViewer } from './TxtViewer';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { downloadLesson } from '@/lib/lessonDownload';
+import { downloadFilenameFor, downloadUrlFor } from '@/lib/utils';
 import { openLessonInNewTab } from '@/lib/lessonOpen';
 import { DownloadUpsellModal } from './DownloadUpsellModal';
 import { useDownloadGate } from '@/hooks/useDownloadGate';
@@ -38,13 +39,22 @@ interface LessonPlayerProps {
   hasNext?: boolean;
   onGenerateFlashcards?: () => void;
   onGenerateQuestions?: () => void;
+  // Fora da biblioteca de cursos (ex: Acervo Público), o link do arquivo vem
+  // de outra fonte que não o member-lesson-token. Passando `resolveUrl`, todo
+  // o player (vídeo/PDF/Office/imagem) reaproveita esse link; sem ele, usa o
+  // stream de aula padrão. `bypassDownloadGate` libera o download nesses
+  // contextos (o acervo já é conteúdo entre assinantes, sem trava de plano).
+  resolveUrl?: (id: string) => Promise<string>;
+  bypassDownloadGate?: boolean;
 }
 
 export function LessonPlayer({
   lesson, courseTitle, initialWatchedSeconds, onClose, onProgress, onPrev, onNext, hasPrev, hasNext,
   completed, onToggleCompleted, onGenerateFlashcards, onGenerateQuestions,
+  resolveUrl, bypassDownloadGate,
 }: LessonPlayerProps) {
-  const getUrl = useLessonStreamUrl();
+  const streamUrl = useLessonStreamUrl();
+  const getUrl = resolveUrl || streamUrl;
   const [src, setSrc] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement | HTMLAudioElement>(null);
@@ -76,6 +86,7 @@ export function LessonPlayer({
     mediaRetries.current = 0;
     quotaBlocked.current = false;
     setUsarEmbed(false);
+    setForceTs(false);
     setImgRetryCount(0);
     getUrl(lesson.id)
       .then(url => { if (alive) setSrc(url); })
@@ -97,21 +108,31 @@ export function LessonPlayer({
    * O elemento de mídia não conta: o evento `error` é o mesmo para 403, 502
    * e conexão caída. Refazendo a requisição dá pra ler o status que o worker
    * devolveu — em especial o 429, que ele usa só para a cota diária de
-   * download do arquivo no Drive.
+   * download do arquivo no Drive — e os PRIMEIROS BYTES do arquivo: cursos
+   * inteiros vieram do fornecedor como MPEG-TS gravado com nome/mime de
+   * `.mp4`, e nesse caso o rótulo mente mas o byte de sincronismo 0x47 do TS
+   * não. Detectado isso, o player troca para o caminho do mpegts.js em vez de
+   * insistir num <video src> nativo que nunca vai tocar esse container.
    *
    * Precisa ser `Range: bytes=0-` (aberto), igual ao que o navegador pede: o
    * Google só recusa quando o pedido é do arquivo todo, um range pequeno
-   * passa mesmo com a cota estourada e daria um falso "está tudo bem". O
-   * corpo é abortado assim que os cabeçalhos chegam, então nada é baixado.
+   * passa mesmo com a cota estourada e daria um falso "está tudo bem". A
+   * leitura para no primeiro pedaço do corpo, então quase nada é baixado.
    */
-  const quotaMessage = async (url: string): Promise<string | null> => {
+  const sondarFalha = async (url: string): Promise<{ quotaMsg: string | null; ehTs: boolean }> => {
     const ctrl = new AbortController();
     try {
       const res = await fetch(url, { headers: { Range: 'bytes=0-' }, signal: ctrl.signal });
-      if (res.status !== 429) return null;
-      return (await res.text()).slice(0, 300);
+      if (res.status === 429) return { quotaMsg: (await res.text()).slice(0, 300), ehTs: false };
+      if (!res.ok || !res.body) return { quotaMsg: null, ehTs: false };
+      const { value } = await res.body.getReader().read();
+      // Pacote TS: 0x47 no byte 0 e de novo 188 bytes depois (tamanho fixo do
+      // pacote). Checar os dois evita confundir com um arquivo qualquer que
+      // por acaso comece com 0x47.
+      const ehTs = !!value && value.length >= 189 && value[0] === 0x47 && value[188] === 0x47;
+      return { quotaMsg: null, ehTs };
     } catch {
-      return null; // rede caiu no meio: trata como falha comum e tenta de novo
+      return { quotaMsg: null, ehTs: false }; // rede caiu no meio: falha comum, tenta de novo
     } finally {
       ctrl.abort();
     }
@@ -123,17 +144,23 @@ export function LessonPlayer({
     if (quotaBlocked.current) return;
 
     // Sonda só no primeiro erro: se for a propagação de permissão do Drive
-    // (o caso comum), a resposta não é 429 e as tentativas seguem normais.
+    // (o caso comum), a resposta não é 429 nem TS e as tentativas seguem.
     if (src && mediaRetries.current === 0) {
-      void quotaMessage(src).then(msg => {
-        if (!msg) return;
-        quotaBlocked.current = true;
-        // Só há para onde cair se o arquivo ainda estiver no Drive de
-        // origem. Aula já migrada para o nosso armazenamento não tem
-        // drive_file_id útil — nesse caso a mensagem continua sendo a
-        // resposta certa.
-        if (lesson.drive_file_id && !lesson.storage_path) setUsarEmbed(true);
-        else setError(msg);
+      void sondarFalha(src).then(({ quotaMsg, ehTs }) => {
+        if (quotaMsg) {
+          quotaBlocked.current = true;
+          // Só há para onde cair se o arquivo ainda estiver no Drive de
+          // origem. Aula já migrada para o nosso armazenamento não tem
+          // drive_file_id útil — nesse caso a mensagem continua sendo a
+          // resposta certa.
+          if (lesson.drive_file_id && !lesson.storage_path) setUsarEmbed(true);
+          else setError(quotaMsg);
+          return;
+        }
+        if (ehTs && !isTsVideo) {
+          mediaRetries.current = 0;
+          setForceTs(true);
+        }
       });
     }
 
@@ -170,8 +197,14 @@ export function LessonPlayer({
   // Essas caíam no <video> nativo e não tocavam, exatamente o sintoma que os
   // .ts já tinham antes da correção. A extensão do arquivo é o sinal confiável
   // aqui, então vale para os dois lados.
+  //
+  // `forceTs` é o terceiro sinal: quando o <video> nativo falha e a sondagem
+  // do erro encontra pacotes TS no conteúdo (arquivo .mp4 de mentira), o
+  // player troca de caminho sozinho — cobre qualquer curso onde o fornecedor
+  // gravou TS com rótulo de mp4, sem depender do banco estar certo.
+  const [forceTs, setForceTs] = useState(false);
   const isTsVideo = lesson.type === 'video' &&
-    (lesson.mime_type === 'video/mp2t' || /\.ts$/i.test(lesson.title || ''));
+    (forceTs || lesson.mime_type === 'video/mp2t' || /\.ts$/i.test(lesson.title || ''));
   const [mpegtsLib, setMpegtsLib] = useState<typeof Mpegts | null>(null);
   const mpegtsPlayerRef = useRef<Mpegts.Player | null>(null);
 
@@ -273,7 +306,19 @@ export function LessonPlayer({
     if (opening) return;
     setOpening(true);
     try {
-      await openLessonInNewTab(lesson);
+      if (resolveUrl) {
+        // Contexto externo (acervo): abre a aba dentro do clique e navega pro
+        // link resolvido — mesmo cuidado de popup do openLessonInNewTab.
+        const tab = window.open('about:blank', '_blank');
+        if (tab) tab.opener = null;
+        try {
+          const url = await getUrl(lesson.id);
+          if (!tab) throw new Error('Seu navegador bloqueou a nova aba. Libere os pop-ups deste site e tente de novo.');
+          tab.location.replace(url);
+        } catch (e) { tab?.close(); throw e; }
+      } else {
+        await openLessonInNewTab(lesson);
+      }
     } catch (err: any) {
       toast.error(err?.message || 'Não foi possível abrir este arquivo em outra aba.');
     } finally {
@@ -282,11 +327,20 @@ export function LessonPlayer({
   };
 
   const handleDownload = async () => {
-    if (!ensureCanDownload()) return;
+    if (!bypassDownloadGate && !ensureCanDownload()) return;
     if (downloading) return;
     setDownloading(true);
     try {
-      await downloadLesson(lesson);
+      if (resolveUrl) {
+        const url = await getUrl(lesson.id);
+        const frame = document.createElement('iframe');
+        frame.style.display = 'none';
+        frame.src = downloadUrlFor(url, downloadFilenameFor(lesson));
+        document.body.appendChild(frame);
+        window.setTimeout(() => frame.remove(), 120000);
+      } else {
+        await downloadLesson(lesson);
+      }
     } catch (err) {
       console.error('Failed to download file', err);
       toast.error('Não foi possível baixar este arquivo.');
