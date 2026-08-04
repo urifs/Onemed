@@ -486,12 +486,13 @@ export default function CourseDetailPage() {
       />
 
       <section className="relative">
-        {/* A arte do curso é sempre escura (capa de álbum) — o rodapé escurece
-            pro preto em vez de fundir com o fundo da página: no modo claro o
-            from-background antigo virava uma névoa branca por cima da arte. */}
+        {/* A arte do curso é uma capa autocontida — o rodapé escurece pro
+            preto no tema escuro (funde com o fundo) e pro carmim no claro
+            (a capa clara não tem preto; fundir com o fundo branco virava
+            névoa cinza por cima da arte). */}
         <div className="relative h-[220px] md:h-[280px] overflow-hidden">
           <CourseCover title={course.title} showTitle={false} />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-t from-red-950/80 via-red-950/20 to-transparent dark:from-black/75 dark:via-black/25" />
         </div>
         <div className="max-w-[1000px] mx-auto px-4 md:px-8 -mt-16 relative">
           <div className="flex items-center justify-between gap-4 mb-4">

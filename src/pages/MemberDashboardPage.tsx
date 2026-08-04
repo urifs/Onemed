@@ -654,12 +654,14 @@ export default function MemberDashboardPage() {
             <div key={`${featured.id}-cover`} className="absolute inset-0 animate-fade-in">
               <CourseCover title={featured.title} showTitle={false} />
             </div>
-            {/* O banner é uma "capa de álbum": sempre escuro, autocontido, nos
-                DOIS temas. Fundir a arte escura com o fundo da página (o
-                from-background antigo) ficava bonito no escuro, mas no modo
-                claro virava uma fumaça cinza — a arte apagando pro branco. */}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/40 to-transparent" />
-            <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-transparent to-transparent" />
+            {/* O banner é uma "capa de álbum": autocontido nos DOIS temas.
+                Fundir a arte com o fundo da página (o from-background antigo)
+                ficava bonito no escuro, mas no claro virava fumaça cinza. No
+                escuro o rodapé escurece pro PRETO (funde com o fundo); no
+                claro escurece pro CARMIM — a capa clara não tem preto, e um
+                overlay preto traria o "gradiente pro preto" de volta. */}
+            <div className="absolute inset-0 bg-gradient-to-t from-red-950/90 via-red-950/35 to-transparent dark:from-black/85 dark:via-black/40" />
+            <div className="absolute inset-0 bg-gradient-to-r from-red-950/60 via-transparent to-transparent dark:from-black/60" />
             <div key={`${featured.id}-copy`} className="relative p-6 md:p-10 max-w-xl animate-fade-in">
               <span className="inline-flex items-center gap-1.5 text-[11px] font-bold tracking-widest uppercase text-primary mb-3">
                 <span className="w-1.5 h-1.5 rounded-full bg-primary shadow-[0_0_0_4px_rgba(239,68,68,0.2)]" />

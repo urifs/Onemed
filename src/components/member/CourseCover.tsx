@@ -15,9 +15,15 @@ interface CourseCoverProps {
 }
 
 /**
- * Brand red-gradient tile with the course name set in bold, impactful type.
- * Colors here are a per-course hashed hsl(), always dark, by design —
- * independent of the platform's light/dark theme (like an album cover).
+ * Capa gerada da marca (hsl por hash do título, como capa de álbum), com o
+ * nome do curso em tipografia forte. UMA arte por tema:
+ *
+ * - Escuro: o visual original — vermelho profundo afundando no preto, que se
+ *   funde com o fundo quase-preto da plataforma.
+ * - Claro: mesma família de vermelhos, mas SEM o mergulho no preto (pedido do
+ *   dono: "o problema nem é o vermelho, é esse gradiente pro preto") — o
+ *   gradiente vai de um vermelho médio a um carmim profundo, vibrante contra
+ *   o fundo branco. Ângulo e variação por curso continuam vindo do hash.
  */
 export function CourseCover({ title, className, showTitle = true, titleClassName }: CourseCoverProps) {
   const h = hashStr(title);
@@ -26,13 +32,13 @@ export function CourseCover({ title, className, showTitle = true, titleClassName
   const l2 = 21 + ((h >> 3) % 11);
   const hueShift = h % 8;
 
+  const darkBg = `linear-gradient(${angle}deg, hsl(0 82% ${l1}%) 0%, hsl(${356 + hueShift} 84% ${l2}%) 55%, hsl(0 0% 6%) 100%)`;
+  const lightBg = `linear-gradient(${angle}deg, hsl(0 72% ${l1 + 27}%) 0%, hsl(${356 + hueShift} 78% ${l2 + 27}%) 55%, hsl(350 80% 25%) 100%)`;
+
   return (
-    <div
-      className={cn('relative w-full h-full flex items-center justify-center overflow-hidden', className)}
-      style={{
-        background: `linear-gradient(${angle}deg, hsl(0 82% ${l1}%) 0%, hsl(${356 + hueShift} 84% ${l2}%) 55%, hsl(0 0% 6%) 100%)`,
-      }}
-    >
+    <div className={cn('relative w-full h-full flex items-center justify-center overflow-hidden', className)}>
+      <div className="absolute inset-0 dark:hidden" style={{ background: lightBg }} />
+      <div className="absolute inset-0 hidden dark:block" style={{ background: darkBg }} />
       <div
         className="absolute inset-0 opacity-30"
         style={{ backgroundImage: 'radial-gradient(circle at 85% -10%, rgba(255,255,255,.28), transparent 55%)' }}

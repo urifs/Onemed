@@ -606,10 +606,25 @@ function DetailDialog({ itemId, initialFileId, currentUserId, onClose, onChanged
   const [editCategory, setEditCategory] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
   const [playing, setPlaying] = useState<ArchiveFile | null>(null);
-  const viewed = useRef(false);
   const autoOpened = useRef(false);
 
   const isOwner = item?.user_id === currentUserId;
+
+  // Abrir = tocar/visualizar DENTRO da plataforma, com o mesmo player das
+  // aulas. CADA abertura de arquivo conta uma visualização (qualquer cliente,
+  // toda vez) — o .then é obrigatório: o builder do supabase-js é preguiçoso
+  // e descartá-lo com `void` nunca envia a requisição (foi por isso que o
+  // contador ficou meses em zero).
+  const openFile = useCallback((f: ArchiveFile) => {
+    setPlaying(f);
+    supabase.rpc('archive_register_view' as never, { _item_id: itemId } as never)
+      .then(({ data }: { data: unknown }) => {
+        if (typeof data === 'number') {
+          setItem(prev => prev ? { ...prev, views: data } : prev);
+          onChanged();
+        }
+      });
+  }, [itemId, onChanged]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -630,16 +645,12 @@ function DetailDialog({ itemId, initialFileId, currentUserId, onClose, onChanged
       if (initialFileId && !autoOpened.current) {
         autoOpened.current = true;
         const alvo = fileRows.find(f => f.id === initialFileId);
-        if (alvo) setPlaying(alvo);
-      }
-      if (!viewed.current) {
-        viewed.current = true;
-        void supabase.rpc('archive_register_view' as never, { _item_id: itemId } as never);
+        if (alvo) openFile(alvo);
       }
     } finally {
       setLoading(false);
     }
-  }, [itemId, initialFileId, onClose]);
+  }, [itemId, initialFileId, onClose, openFile]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -682,8 +693,6 @@ function DetailDialog({ itemId, initialFileId, currentUserId, onClose, onChanged
     return url;
   }, []);
 
-  // Abrir = tocar/visualizar DENTRO da plataforma, com o mesmo player das aulas.
-  const openFile = (f: ArchiveFile) => setPlaying(f);
 
   const startEdit = () => {
     if (!item) return;

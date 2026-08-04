@@ -127,7 +127,10 @@ export function FlashcardViewer({ deck, deckId, onClose, onSave, saved, saving }
   useEffect(() => {
     if (current !== null || total === 0 || recorded.current || !user) return;
     recorded.current = true;
-    void (supabase as any).from('flashcard_sessions').insert({
+    // O .then é obrigatório: o builder do supabase-js é preguiçoso — com
+    // `void` puro a requisição nunca era enviada e NENHUMA sessão foi
+    // gravada em produção até 2026-08-05.
+    (supabase as any).from('flashcard_sessions').insert({
       user_id: user.id,
       deck_id: deckId || null,
       deck_title: deck.title,
@@ -135,6 +138,8 @@ export function FlashcardViewer({ deck, deckId, onClose, onSave, saved, saving }
       correct_first_try: acertosPrimeira,
       reviews,
       duration_seconds: Math.round((Date.now() - startedAt.current) / 1000),
+    }).then(({ error }: { error: unknown }) => {
+      if (error) console.error('flashcard_sessions insert', error);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current]);

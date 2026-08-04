@@ -77,13 +77,18 @@ export function QuestionBankViewer({ bank, bankId, onClose, onSave, saved, savin
     scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
     if (!recorded.current && user) {
       recorded.current = true;
-      void (supabase as any).from('question_sessions').insert({
+      // O .then é obrigatório: o builder do supabase-js é preguiçoso — com
+      // `void` puro a requisição nunca era enviada e NENHUMA prova foi
+      // gravada em produção até 2026-08-05.
+      (supabase as any).from('question_sessions').insert({
         user_id: user.id,
         bank_id: bankId || null,
         bank_title: bank.title,
         total_questions: total,
         correct: acertos,
         duration_seconds: Math.round((Date.now() - startedAt.current) / 1000),
+      }).then(({ error }: { error: unknown }) => {
+        if (error) console.error('question_sessions insert', error);
       });
     }
   };
