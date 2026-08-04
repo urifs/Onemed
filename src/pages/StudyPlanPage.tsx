@@ -14,9 +14,10 @@ import { Seo } from '@/seo/Seo';
 interface Task { id: string; label: string; type: string; hours: number | null; }
 interface Week { week: number; theme: string; focus: string; goal: string; tasks: Task[]; }
 interface Milestone { week: number; label: string; }
+type Tip = string | { label?: string; description?: string };
 interface PlanBody {
   title: string; overview: string; durationWeeks: number; weeklyHours: number;
-  weeks: Week[]; milestones: Milestone[]; mindmap: MindNode; tips: string[];
+  weeks: Week[]; milestones: Milestone[]; mindmap: MindNode; tips: Tip[];
 }
 interface StudyPlan {
   id: string; title: string; objective: string; weekly_hours: number | null;
@@ -426,12 +427,21 @@ function PlanDetail({ plan, onChange, onDelete }: {
           <h3 className="text-sm font-semibold text-foreground flex items-center gap-2 mb-4">
             <Lightbulb className="w-4 h-4 text-primary" /> Dicas de estudo
           </h3>
-          <ul className="space-y-2">
-            {plan.plan.tips.map((t, i) => (
-              <li key={i} className="flex items-start gap-2.5 text-sm text-muted-foreground">
-                <span className="shrink-0 mt-0.5 text-primary">•</span> {t}
-              </li>
-            ))}
+          <ul className="space-y-3">
+            {plan.plan.tips.map((t, i) => {
+              // Aceita dica como texto simples ou {label, description}.
+              const label = typeof t === 'string' ? t : (t?.label || '');
+              const desc = typeof t === 'string' ? '' : (t?.description || '');
+              return (
+                <li key={i} className="flex items-start gap-2.5 text-sm">
+                  <span className="shrink-0 mt-0.5 text-primary">•</span>
+                  <span>
+                    <span className="font-medium text-foreground">{label}</span>
+                    {desc && <span className="text-muted-foreground">{label ? ' — ' : ''}{desc}</span>}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}

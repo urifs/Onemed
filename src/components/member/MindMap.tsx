@@ -17,10 +17,18 @@ const LEVEL_STYLES = [
   'bg-secondary/60 text-muted-foreground border-border',
 ];
 
+// O modelo pode devolver o rótulo como objeto — nunca renderiza objeto cru.
+function asText(v: unknown): string {
+  if (typeof v === 'string') return v;
+  if (v && typeof v === 'object') return String((v as any).label || (v as any).text || '');
+  return v == null ? '' : String(v);
+}
+
 function Node({ node, depth }: { node: MindNode; depth: number }) {
   const [open, setOpen] = useState(depth < 2);
   const kids = node.children || [];
   const style = LEVEL_STYLES[Math.min(depth, LEVEL_STYLES.length - 1)];
+  const label = asText(node.label);
 
   return (
     <li className="relative pl-6 first:pt-0">
@@ -42,7 +50,7 @@ function Node({ node, depth }: { node: MindNode; depth: number }) {
             <span className="w-1.5 h-1.5 rounded-full bg-border" />
           </span>
         )}
-        <span className={`rounded-lg border px-3 py-1.5 text-sm ${style}`}>{node.label}</span>
+        <span className={`rounded-lg border px-3 py-1.5 text-sm ${style}`}>{label}</span>
       </div>
       {kids.length > 0 && open && (
         <ul className="relative before:absolute before:left-0 before:top-0 before:bottom-4 before:w-px before:bg-border ml-2.5">

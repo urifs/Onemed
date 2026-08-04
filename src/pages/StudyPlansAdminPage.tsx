@@ -148,7 +148,7 @@ export default function StudyPlansAdminPage() {
                                 <div>
                                   <p className="text-xs font-semibold text-foreground flex items-center gap-1.5 mb-2"><Lightbulb className="w-3.5 h-3.5 text-primary" /> Dicas</p>
                                   <ul className="space-y-1 text-xs text-muted-foreground">
-                                    {d.plan.tips.map((t: string, i: number) => <li key={i}>• {t}</li>)}
+                                    {d.plan.tips.map((t: any, i: number) => <li key={i}>• {typeof t === 'string' ? t : `${t?.label || ''}${t?.description ? ' — ' + t.description : ''}`}</li>)}
                                   </ul>
                                 </div>
                               )}

@@ -158,6 +158,32 @@ serve(async (req) => {
       }
     })
 
+    // O modelo às vezes devolve dicas como objeto {label, description} em vez
+    // de string, e rótulos aninhados como objeto. Normaliza tudo pra formatos
+    // fixos, senão o React quebra ao renderizar um objeto como filho.
+    const asText = (v: any): string =>
+      typeof v === 'string' ? v : (v && typeof v === 'object' ? String(v.label || v.title || v.text || '') : '')
+
+    plano.tips = (Array.isArray(plano.tips) ? plano.tips : []).map((t: any) =>
+      typeof t === 'string'
+        ? { label: t.slice(0, 300), description: '' }
+        : { label: String(t?.label || t?.title || '').slice(0, 200), description: String(t?.description || t?.text || '').slice(0, 600) },
+    ).filter((t: any) => t.label || t.description)
+
+    plano.milestones = (Array.isArray(plano.milestones) ? plano.milestones : []).map((m: any) => ({
+      week: Number(m?.week) || null,
+      label: asText(m).slice(0, 300) || String(m?.label || '').slice(0, 300),
+    })).filter((m: any) => m.label)
+
+    const normalizarNo = (n: any, prof = 0): any => {
+      if (!n || prof > 5) return null
+      return {
+        label: asText(n).slice(0, 200),
+        children: (Array.isArray(n.children) ? n.children : []).map((c: any) => normalizarNo(c, prof + 1)).filter(Boolean),
+      }
+    }
+    plano.mindmap = plano.mindmap ? normalizarNo(plano.mindmap) : null
+
     const durationWeeks = plano.weeks.length
     const title = String(plano.title || 'Meu cronograma de estudos').slice(0, 200)
 
