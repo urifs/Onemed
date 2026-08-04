@@ -1237,6 +1237,41 @@ vendas só via service role; rotas `/afiliado` em `NOINDEX_PREFIXES`.
 
 ---
 
+### 2026-08-04 (sessão remota) — Acervo Público (materiais compartilhados entre assinantes)
+
+**Página `/membros/acervo`** ("Acervo Público" no menu da sidebar, oculto pra trial): assinantes
+sobem arquivos ou pastas completas de material de estudo pros outros assinantes. Feed com
+Recentes / Mais acessados / Mais curtidos / Meus uploads, chips com TODAS as categorias da
+plataforma, busca própria; card mostra "Upload feito por «nome»" (sem nome → `NameRequiredModal`
+via `useRequireName`); detalhe tem like, comentários PRÓPRIOS do acervo (tabelas
+`archive_likes`/`archive_comments` — nada aparece na comunidade), contador de acessos
+(`archive_register_view`), abrir/baixar, e pro dono: editar, público↔privado, excluir. Busca
+geral do dashboard ganhou a seção "Acervo da comunidade", renderizada POR ÚLTIMO.
+
+**Upload sem limite de tamanho, sem expor credencial:** Edge Function `archive-manage`
+(`init`/`finalize`/`delete`/`file_token`) cria item + pasta no Drive + arquivo só-de-metadados e
+abre uma SESSÃO RETOMÁVEL; o navegador manda os bytes DIRETO pro Google via a URI da sessão (XHR
+com progresso; o header `Origin` na abertura da sessão é o que libera o CORS). `finalize` confere
+o tamanho na API do Drive antes de publicar — cliente não vê token nem forja conteúdo. Pasta-raiz
+**"Acervo Público - OneMed"** fica FORA da biblioteca de cursos (a sync transformaria em curso);
+id salvo em `drive_config.acervo_folder_id`. Excluir apaga a pasta do item no Drive junto.
+`file_token` assina URL do worker de streaming (mesmo HMAC do member-lesson-token).
+
+**Migration `20260804200000_public_archive.sql`:** `archive_items`/`archive_files`/`archive_likes`
+/`archive_comments`; RPCs `archive_feed` (sort/categoria/busca/_item_id), `archive_my_items`,
+`toggle_archive_like`, `archive_register_view`, `archive_comments_feed` — todos SECURITY DEFINER
+com gate `assert_archive_access()` (assinante-nunca-trial ou admin). RLS nas tabelas com o padrão
+`(SELECT ...)`. Escrita de itens/arquivos só via service role. Atenção: `sum(size_bytes)` devolve
+numeric — precisa de `::bigint` pra casar com o RETURNS TABLE (deu erro 42804 em produção antes
+do cast).
+
+> ⚠️ **Uploads bloqueados até liberar espaço no Drive:** a conta `onemedcursos@gmail.com` está
+> com 18,91 GB usados de 16,11 GB — o Google recusa QUALQUER upload novo. O `init` já detecta
+> (checa `about.storageQuota` antes de criar qualquer coisa) e devolve "armazenamento lotado".
+> Basta liberar espaço ou ampliar o Google One que o acervo passa a aceitar uploads sem deploy.
+
+---
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management

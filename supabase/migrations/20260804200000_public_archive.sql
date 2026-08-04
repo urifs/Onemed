@@ -146,7 +146,7 @@ BEGIN
     EXISTS (SELECT 1 FROM archive_likes l WHERE l.item_id = i.id AND l.user_id = auth.uid()),
     (SELECT count(*) FROM archive_comments c WHERE c.item_id = i.id),
     (SELECT count(*) FROM archive_files f WHERE f.item_id = i.id AND f.status = 'ready'),
-    (SELECT COALESCE(sum(f.size_bytes), 0) FROM archive_files f WHERE f.item_id = i.id AND f.status = 'ready'),
+    (SELECT COALESCE(sum(f.size_bytes), 0)::bigint FROM archive_files f WHERE f.item_id = i.id AND f.status = 'ready'),
     (SELECT f.mime_type FROM archive_files f WHERE f.item_id = i.id AND f.status = 'ready' ORDER BY f.created_at LIMIT 1)
   FROM archive_items i
   LEFT JOIN profiles p ON p.user_id = i.user_id
@@ -177,7 +177,7 @@ BEGIN
     (SELECT count(*) FROM archive_likes l WHERE l.item_id = i.id),
     (SELECT count(*) FROM archive_comments c WHERE c.item_id = i.id),
     (SELECT count(*) FROM archive_files f WHERE f.item_id = i.id),
-    (SELECT COALESCE(sum(f.size_bytes), 0) FROM archive_files f WHERE f.item_id = i.id)
+    (SELECT COALESCE(sum(f.size_bytes), 0)::bigint FROM archive_files f WHERE f.item_id = i.id)
   FROM archive_items i
   WHERE i.user_id = auth.uid()
   ORDER BY i.created_at DESC;
