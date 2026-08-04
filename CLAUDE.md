@@ -1161,6 +1161,44 @@ fecham em 2,3s sem erro. **Regra pra qualquer policy nova: função de checagem 
 
 ---
 
+### 2026-08-04 (sessão remota) — sino editável no admin + reorganização real das categorias
+
+**Sino de notificações editável:** a lista "Cursos em processo de atualização" era hardcoded em
+`NotificationsBell.tsx`. Virou a tabela `notification_items` (label, done, sort_order — migration
+`20260804100000_notification_items.sql`) + `announcement_settings.notifications_heading` (título
+da seção). A página Avisos (`/admin/announcements`) ganhou abas **Aviso | Notificações** — a nova
+aba adiciona/renomeia/reordena/exclui itens e alterna a bolinha (verde = `done`, atualizado;
+vermelha = em atualização). Seed com a lista antiga + **MED 2026 verde no topo**. RLS: membro lê,
+trial não (mesma regra da loja), admin gerencia — checagens dentro de `(SELECT ...)`.
+
+**Categorias auditadas curso a curso (408):** 28 cursos estavam com categoria CRUA
+(`CURSO`/`QUESTAO`/`LIVRO`) do categorizador primitivo — o aluno via um chip "LIVRO" com 1 curso
+enquanto "Livros (Todos os 5.000)" morava em "Resumos, Cards & Livros". Correções:
+- Nova categoria **"Livros & Apostilas"** (ícone Library, slug SEO novo `livros-apostilas` com
+  página própria no silo): as 10 bibliotecas/coleções de apostilas, incluindo a de 5.000 livros.
+- "Resumos, Cards & Livros" → **"Resumos, Cards & Mapas Mentais"** (o slug SEO
+  `resumos-cards-livros` NÃO muda — o mapa `CATEGORY_SLUGS` é explícito exatamente pra rename não
+  mexer em URL indexada). `course_comments.category` atualizado junto.
+- Cursos com nome duplicado (turmas gêmeas da leva de colisão de slug) caíram na categoria do
+  irmão; misfits reais corrigidos (PROGEB estava em Carreira; Neuroanatomia em Especialidades;
+  Médico na Prática em Outros).
+- `categoryOf()` da `member-sync-library` e do `scripts/deep-library-sync.mjs` reescrito para
+  classificar direto na taxonomia real (sinal mais específico primeiro; default "Outros cursos") —
+  categoria crua não volta a existir em import futuro.
+
+**5 cursos sem NENHUM arquivo no Drive** (esqueleto de pastas vazias, varredura completa e sem
+erros: check-list-medcof, med-questoes-apostilas, med-banco-de-questoes-e-respostas,
+semiologia-clinica-usp, conduzindo-as-emergencias-cardiologicas) → `active=false`. Se o dono
+preencher as pastas um dia, a sincronização importa o conteúdo mas o curso continua oculto até
+reativar à mão no banco/painel.
+
+**CourseDetailPage:** busca de aulas paralelizada (COUNT primeiro, 6 páginas de 1.000 por vez,
+ordenação com desempate estável `sort_order, id` — sem o desempate, paginação paralela por offset
+pode duplicar/perder linha). Os megacursos de questões chegam a 31.612 aulas; sequencial estourava
+o timeout de 30s mesmo depois da correção de RLS.
+
+---
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
