@@ -85,13 +85,13 @@ const Split: React.FC<{ t: number; n: number; label: string; atSec: number; spli
   );
 };
 
-const Etapa: React.FC<{ t: number; range: Range; n: number; label: string; splitSec: number; src: string; startFrom: number; badge: string; badgeSub?: string }> =
-({ t, range, n, label, splitSec, src, startFrom, badge, badgeSub }) => {
+const Etapa: React.FC<{ t: number; range: Range; n: number; label: string; splitSec: number; src: string; startFrom: number; rate?: number; badge: string; badgeSub?: string }> =
+({ t, range, n, label, splitSec, src, startFrom, rate, badge, badgeSub }) => {
   const op = sceneOpacity(t, range);
   if (op <= 0) return null;
   return (
     <>
-      <OLPhone t={t} range={range} src={src} startFrom={startFrom} top={300}>
+      <OLPhone t={t} range={range} src={src} startFrom={startFrom} top={300} playbackRate={rate}>
         <OLBadge x={56} y={430} delay={Math.round((range[0] + 0.5) * FPS)} from="left" accent top={badge} bottom={badgeSub} />
       </OLPhone>
       <div style={{ opacity: op }}><Split t={t} n={n} label={label} atSec={range[0] + 0.1} splitSec={splitSec} /></div>
@@ -129,7 +129,8 @@ export const C33_Speedrun: React.FC = () => {
 
       <Etapa t={t} range={SC.f1} n={1} label="busca" splitSec={6} src="rec/ol_dash.mp4" startFrom={30}
         badge="🔎 digitei o tema" badgeSub="aula, livro e questão juntos" />
-      <Etapa t={t} range={SC.f2} n={2} label="resumo" splitSec={12} src="rec/ol_assist.mp4" startFrom={150}
+      {/* rate 0.6: a etapa fecha antes da resposta aparecer — só digitação, sem repetir a etapa 5 */}
+      <Etapa t={t} range={SC.f2} n={2} label="resumo" splitSec={12} src="rec/ol_assist.mp4" startFrom={150} rate={0.6}
         badge="📝 um clique, pronto" />
       <Etapa t={t} range={SC.f3} n={3} label="flashcards" splitSec={18} src="rec/ol_flash.mp4" startFrom={160}
         badge="🃏 baralho gerado sozinho" />
