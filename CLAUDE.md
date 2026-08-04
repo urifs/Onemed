@@ -1230,16 +1230,32 @@ do suporte com a mensagem pronta).
 PIX de cada um) com botão **"Já quitado"** (marca todas as vendas pendentes do afiliado como
 `paid`), e lista completa com extrato expandível por afiliado.
 
-**Mesmo e-mail de assinante/admin PODE virar afiliado** (pedido do dono): quando o e-mail já
-existe no Auth, o cadastro exige prova de posse — código de 6 dígitos enviado ao próprio e-mail
-(tabela `affiliate_email_codes`, hash sha256, 15 min, 5 tentativas). Confirmado o código, a senha
-informada passa a valer pro login da conta (com `email_confirm: true` junto — sem isso, conta que
-nunca redimiu magic link trava com "email_not_confirmed") e a linha de afiliado nasce no MESMO
-user_id. Sem o código, definir senha em conta alheia seria roubo de conta de assinante magic-link.
-Atalho no menu da área de membros ("Programa de Afiliados" → `/afiliado`); painel redireciona
-logado-sem-afiliado pro cadastro. Demais travas: `REVOKE UPDATE` + `GRANT UPDATE (pix_key,
-pix_name, pix_bank)` (cupom só pela função; PATCH de coupon_code → 403); vendas só via service
-role; rotas `/afiliado` em `NOINDEX_PREFIXES`.
+**Mesmo e-mail de assinante/admin PODE virar afiliado, SEM código** (decisão do dono). Três
+caminhos no `affiliate-register`: e-mail livre → usuário novo direto; e-mail existente COM sessão
+do próprio e-mail (assinante logado vindo do menu) → a sessão é a prova de posse, afiliado nasce
+no MESMO user_id e a senha passa a valer; e-mail existente SEM sessão → afiliado nasce num
+usuário-ALIAS interno (`afiliado-<rand>@alias.onemedcursos.com.br`), sem tocar na conta do
+assinante — definir senha em conta alheia é que seria roubo de conta (testado: a senha do
+"atacante" NÃO abre a conta do assinante, invalid_credentials). O login é `action=login` na mesma
+função: resolve e-mail real → user_id do afiliado → e-mail de login (real ou alias) → grant de
+senha no GoTrue server-side → devolve a sessão (rate limit 12/h por IP+e-mail). Trade-off aceito:
+sem verificação, alguém pode "ocupar" um e-mail alheio no programa (squatting) — mas nunca acessar
+a conta. Atalho no menu da área de membros ("Programa de Afiliados" → `/afiliado`); registro
+prefila o e-mail da sessão; painel redireciona logado-sem-afiliado pro cadastro. Demais travas:
+`REVOKE UPDATE` + `GRANT UPDATE (pix_key, pix_name, pix_bank)` (cupom só pela função); vendas só
+via service role; e-mails escapam HTML nos nomes interpolados; rotas `/afiliado` em
+`NOINDEX_PREFIXES`.
+
+**Auditoria de segurança 2026-08-04 (pré-lançamento), 21 sondas em produção, todas aprovadas:**
+acervo — privado invisível pra terceiros (feed/tabela/arquivos/file_token), edição/exclusão só
+dono ou admin, INSERT direto bloqueado, comentário com user_id forjado bloqueado, trial e anon
+zerados, views deduplicadas por usuário (`archive_views`), init em item alheio 404; afiliados —
+alias não vaza conta, isolamento entre afiliados, vendas só admin marca pagas, login de
+não-afiliado negado. Bug corrigido na auditoria: `ensureName` é callback-style e era aguardado
+como boolean — o botão "Publicar no acervo" morria em TypeError silencioso pra quem já tinha nome.
+Limitação do harness de teste: Playwright+route.fetch não encaminha corpo binário de XHR (PUT do
+upload chega com 0 bytes ao Google → 308) — o mesmo PUT feito direto responde 200; navegador real
+não passa pela interceptação.
 
 ---
 
