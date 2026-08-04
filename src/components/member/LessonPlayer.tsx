@@ -76,6 +76,7 @@ export function LessonPlayer({
     mediaRetries.current = 0;
     quotaBlocked.current = false;
     setUsarEmbed(false);
+    setForceTs(false);
     setImgRetryCount(0);
     getUrl(lesson.id)
       .then(url => { if (alive) setSrc(url); })
@@ -97,21 +98,31 @@ export function LessonPlayer({
    * O elemento de mídia não conta: o evento `error` é o mesmo para 403, 502
    * e conexão caída. Refazendo a requisição dá pra ler o status que o worker
    * devolveu — em especial o 429, que ele usa só para a cota diária de
-   * download do arquivo no Drive.
+   * download do arquivo no Drive — e os PRIMEIROS BYTES do arquivo: cursos
+   * inteiros vieram do fornecedor como MPEG-TS gravado com nome/mime de
+   * `.mp4`, e nesse caso o rótulo mente mas o byte de sincronismo 0x47 do TS
+   * não. Detectado isso, o player troca para o caminho do mpegts.js em vez de
+   * insistir num <video src> nativo que nunca vai tocar esse container.
    *
    * Precisa ser `Range: bytes=0-` (aberto), igual ao que o navegador pede: o
    * Google só recusa quando o pedido é do arquivo todo, um range pequeno
-   * passa mesmo com a cota estourada e daria um falso "está tudo bem". O
-   * corpo é abortado assim que os cabeçalhos chegam, então nada é baixado.
+   * passa mesmo com a cota estourada e daria um falso "está tudo bem". A
+   * leitura para no primeiro pedaço do corpo, então quase nada é baixado.
    */
-  const quotaMessage = async (url: string): Promise<string | null> => {
+  const sondarFalha = async (url: string): Promise<{ quotaMsg: string | null; ehTs: boolean }> => {
     const ctrl = new AbortController();
     try {
       const res = await fetch(url, { headers: { Range: 'bytes=0-' }, signal: ctrl.signal });
-      if (res.status !== 429) return null;
-      return (await res.text()).slice(0, 300);
+      if (res.status === 429) return { quotaMsg: (await res.text()).slice(0, 300), ehTs: false };
+      if (!res.ok || !res.body) return { quotaMsg: null, ehTs: false };
+      const { value } = await res.body.getReader().read();
+      // Pacote TS: 0x47 no byte 0 e de novo 188 bytes depois (tamanho fixo do
+      // pacote). Checar os dois evita confundir com um arquivo qualquer que
+      // por acaso comece com 0x47.
+      const ehTs = !!value && value.length >= 189 && value[0] === 0x47 && value[188] === 0x47;
+      return { quotaMsg: null, ehTs };
     } catch {
-      return null; // rede caiu no meio: trata como falha comum e tenta de novo
+      return { quotaMsg: null, ehTs: false }; // rede caiu no meio: falha comum, tenta de novo
     } finally {
       ctrl.abort();
     }
@@ -123,17 +134,23 @@ export function LessonPlayer({
     if (quotaBlocked.current) return;
 
     // Sonda só no primeiro erro: se for a propagação de permissão do Drive
-    // (o caso comum), a resposta não é 429 e as tentativas seguem normais.
+    // (o caso comum), a resposta não é 429 nem TS e as tentativas seguem.
     if (src && mediaRetries.current === 0) {
-      void quotaMessage(src).then(msg => {
-        if (!msg) return;
-        quotaBlocked.current = true;
-        // Só há para onde cair se o arquivo ainda estiver no Drive de
-        // origem. Aula já migrada para o nosso armazenamento não tem
-        // drive_file_id útil — nesse caso a mensagem continua sendo a
-        // resposta certa.
-        if (lesson.drive_file_id && !lesson.storage_path) setUsarEmbed(true);
-        else setError(msg);
+      void sondarFalha(src).then(({ quotaMsg, ehTs }) => {
+        if (quotaMsg) {
+          quotaBlocked.current = true;
+          // Só há para onde cair se o arquivo ainda estiver no Drive de
+          // origem. Aula já migrada para o nosso armazenamento não tem
+          // drive_file_id útil — nesse caso a mensagem continua sendo a
+          // resposta certa.
+          if (lesson.drive_file_id && !lesson.storage_path) setUsarEmbed(true);
+          else setError(quotaMsg);
+          return;
+        }
+        if (ehTs && !isTsVideo) {
+          mediaRetries.current = 0;
+          setForceTs(true);
+        }
       });
     }
 
@@ -170,8 +187,14 @@ export function LessonPlayer({
   // Essas caíam no <video> nativo e não tocavam, exatamente o sintoma que os
   // .ts já tinham antes da correção. A extensão do arquivo é o sinal confiável
   // aqui, então vale para os dois lados.
+  //
+  // `forceTs` é o terceiro sinal: quando o <video> nativo falha e a sondagem
+  // do erro encontra pacotes TS no conteúdo (arquivo .mp4 de mentira), o
+  // player troca de caminho sozinho — cobre qualquer curso onde o fornecedor
+  // gravou TS com rótulo de mp4, sem depender do banco estar certo.
+  const [forceTs, setForceTs] = useState(false);
   const isTsVideo = lesson.type === 'video' &&
-    (lesson.mime_type === 'video/mp2t' || /\.ts$/i.test(lesson.title || ''));
+    (forceTs || lesson.mime_type === 'video/mp2t' || /\.ts$/i.test(lesson.title || ''));
   const [mpegtsLib, setMpegtsLib] = useState<typeof Mpegts | null>(null);
   const mpegtsPlayerRef = useRef<Mpegts.Player | null>(null);
 
