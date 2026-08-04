@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Play, Info, FileText, File, Music, Image as ImageIcon, Loader2, FileSpreadsheet, FileType, Megaphone, Star, Highlighter, Trash2, SquareStack, ClipboardList, FileDown } from 'lucide-react';
+import { Play, Info, FileText, File, Music, Image as ImageIcon, Loader2, FileSpreadsheet, FileType, Megaphone, Star, Highlighter, Trash2, SquareStack, ClipboardList, FileDown, FolderUp } from 'lucide-react';
 import { useAnnouncementSettings } from '@/hooks/useAnnouncementSettings';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
@@ -32,6 +32,7 @@ interface AnnotatedLesson {
 }
 
 const ANNOTATIONS_TAB = 'Minhas anotações';
+const ACERVO_TAB = 'Acervo Público';
 const FLASHCARDS_TAB = 'Flashcards';
 const QUESTIONS_TAB = 'Banco de Questões';
 
@@ -123,7 +124,7 @@ export default function MemberDashboardPage() {
   const [banksLoading, setBanksLoading] = useState(false);
   const [openBank, setOpenBank] = useState<SavedBank | null>(null);
   const [qbCreateOpen, setQbCreateOpen] = useState(false);
-  const { plan: memberPlan } = useMemberStatus();
+  const { plan: memberPlan, status: memberStatus } = useMemberStatus();
   const podeGerarIa = memberPlan !== 'monthly';
   const [aiUpsell, setAiUpsell] = useState<null | 'flashcards' | 'questoes'>(null);
   const [qbNew, setQbNew] = useState<GeneratedDeck | null>(null);
@@ -208,6 +209,7 @@ export default function MemberDashboardPage() {
   };
 
   const handleSelectCategory = (category: string | null) => {
+    if (category === ACERVO_TAB) { navigate('/membros/acervo'); return; }
     setActiveCategory(category);
     setQuery('');
   };
@@ -426,6 +428,20 @@ export default function MemberDashboardPage() {
     return () => { alive = false; clearTimeout(timer); };
   }, [query, searchContents, contentTypeFilter]);
 
+  // Busca geral também olha o Acervo da comunidade — por último e em seção
+  // própria. Trial não tem acesso (o RPC recusa; o erro vira lista vazia).
+  const [archiveResults, setArchiveResults] = useState<{ id: string; title: string; uploader_name: string; category: string; first_mime: string | null; kind: string }[]>([]);
+  useEffect(() => {
+    if (!query.trim() || memberStatus === 'trial') { setArchiveResults([]); return; }
+    let alive = true;
+    const timer = setTimeout(() => {
+      supabase.rpc('archive_feed' as never, { _search: query.trim(), _limit: 12 } as never)
+        .then(({ data }) => { if (alive) setArchiveResults((data || []) as never[]); })
+        .catch(() => { if (alive) setArchiveResults([]); });
+    }, 400);
+    return () => { alive = false; clearTimeout(timer); };
+  }, [query, memberStatus]);
+
   const filtered = useMemo(() => {
     if (!query.trim()) return courses;
     return courses.filter(c => matchesSearch(c.title, query) || matchesSearch(c.category, query));
@@ -467,7 +483,10 @@ export default function MemberDashboardPage() {
     { name: 'Favoritos', count: favorites.size },
     { name: FLASHCARDS_TAB, count: decks.length },
     { name: QUESTIONS_TAB, count: banks.length },
-  ], [favorites.size, decks.length, banks.length]);
+    // Acervo Público é página própria (rota /membros/acervo) e é exclusivo de
+    // assinante — trial nem vê a opção.
+    ...(memberStatus !== 'trial' ? [{ name: ACERVO_TAB, count: 0 }] : []),
+  ], [favorites.size, decks.length, banks.length, memberStatus]);
 
   const categoryCourses = useMemo(() => {
     if (!activeCategory) return [];
@@ -741,6 +760,31 @@ export default function MemberDashboardPage() {
                         })}
                       </div>
                     )}
+                  </div>
+                )}
+
+                {archiveResults.length > 0 && (
+                  <div>
+                    <p className="text-sm text-muted-foreground mb-5">
+                      Acervo da comunidade · {archiveResults.length} resultado{archiveResults.length !== 1 ? 's' : ''}
+                    </p>
+                    <div className="rounded-xl border border-border overflow-hidden divide-y divide-border">
+                      {archiveResults.map(r => (
+                        <button
+                          key={r.id}
+                          onClick={() => navigate(`/membros/acervo?item=${r.id}`)}
+                          className="w-full flex items-center gap-3.5 px-4 py-3.5 bg-card hover:bg-secondary text-left transition-colors group"
+                        >
+                          <div className="w-9 h-9 rounded-full bg-secondary group-hover:bg-primary/15 flex items-center justify-center shrink-0 transition-colors">
+                            <FolderUp className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-foreground truncate">{r.title}</p>
+                            <p className="text-xs text-muted-foreground truncate">Acervo Público · por {r.uploader_name} · {r.category}</p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 )}
               </section>
