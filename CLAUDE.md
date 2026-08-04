@@ -1503,6 +1503,14 @@ Público" no gerador; `selected` virou Map de objetos). Testado em produção de
 geração real de questões a partir de PDF do acervo (~110s), fonte gravada como "«nome» (Acervo
 Público)".
 
+**Favoritar materiais do Acervo Público:** tabela `user_archive_favorites` (migration
+`20260805030000_user_archive_favorites.sql`, mesmo padrão dos favoritos de curso/aula: RLS de
+dono, toggle otimista direto na tabela, sem RPC). Estrela no canto dos cards do feed (irmã do
+card — botão dentro de botão é HTML inválido) e botão "Favoritar" no detalhe do item; a aba
+Favoritos da página inicial ganhou a seção "Acervo Público favoritado" (join com `archive_items`
+passa pela RLS do acervo — item que virou privado some da lista sozinho; clicar navega pro item).
+Verificado em produção: favoritar no card → badge no detalhe → seção na aba → navegação.
+
 ---
 
 ## Meta Ads — Contexto Geral
