@@ -1199,6 +1199,39 @@ o timeout de 30s mesmo depois da correção de RLS.
 
 ---
 
+### 2026-08-04 (sessão remota) — programa de afiliados
+
+**Fluxo completo:** cadastro próprio (email+senha, separado de assinante) em `/afiliado/registro`
+via Edge Function `affiliate-register` (cria usuário já confirmado no Auth + linha em `affiliates`
++ cupom inicial de 10% + e-mail de boas-vindas via Resend); login em `/afiliado/login`
+(`signInWithPassword` + exigência de linha em `affiliates` — sem ela, signOut na hora); painel em
+`/afiliado`. Card "Seja um afiliado" no fim da landing (após FAQ) com benefícios e botão de login.
+
+**Atribuição de venda é pelo CUPOM:** `mp-create-payment` grava `buyers.coupon_code` (código, não
+id) e o `mp-webhook`, no bloco de aprovação, chama `processAffiliateSale()` — resolve o afiliado
+por `affiliates.coupon_code`, grava `affiliate_sales` (UNIQUE em `external_reference` segura
+webhook duplicado), envia e-mail "você fez uma venda" com a comissão, e na 5ª venda concede conta
+`lifetime_pro` ao e-mail do afiliado (sem rebaixar tier superior). Comissões:
+monthly 15% · annual/lifetime 20% · lifetime_plus 25% · lifetime_pro 30% (sobre o valor pago).
+
+**Painel do afiliado:** link `checkout?coupon=CODIGO` (o CheckoutPage já auto-aplica cupom de URL),
+gerador/troca de cupom via `affiliate-coupon` (valida formato, colisão e reserva prefixo ONEMED;
+trocar desativa o cupom antigo), material de divulgação (pasta pública do Drive
+`1N0ZYuF7yts5l_ZtfQR17PqY5DefAMN5O`), badges hoje/7 dias/total, comissão pendente × recebida,
+extrato com o ganho por venda, e "Receber comissão" (salva chave PIX/nome/banco e abre o WhatsApp
+do suporte com a mensagem pronta).
+
+**Admin `/admin/afiliados`:** resumo geral, card "afiliados com comissão a pagar" (mostra a chave
+PIX de cada um) com botão **"Já quitado"** (marca todas as vendas pendentes do afiliado como
+`paid`), e lista completa com extrato expandível por afiliado.
+
+**Segurança:** e-mail já existente no Auth → 409 (impede tomar conta de assinante magic-link
+definindo senha); `REVOKE UPDATE` + `GRANT UPDATE (pix_key, pix_name, pix_bank)` — afiliado só
+edita os campos de PIX direto no banco (cupom só pela função; testado: PATCH de coupon_code → 403);
+vendas só via service role; rotas `/afiliado` em `NOINDEX_PREFIXES`.
+
+---
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
