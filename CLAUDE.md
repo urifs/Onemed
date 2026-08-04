@@ -1207,14 +1207,19 @@ via Edge Function `affiliate-register` (cria usuário já confirmado no Auth + l
 (`signInWithPassword` + exigência de linha em `affiliates` — sem ela, signOut na hora); painel em
 `/afiliado`. Card "Seja um afiliado" no fim da landing (após FAQ) com benefícios e botão de login.
 
-**Atribuição de venda é pelo CUPOM:** `mp-create-payment` grava `buyers.coupon_code` (código, não
-id) e o `mp-webhook`, no bloco de aprovação, chama `processAffiliateSale()` — resolve o afiliado
-por `affiliates.coupon_code`, grava `affiliate_sales` (UNIQUE em `external_reference` segura
-webhook duplicado), envia e-mail "você fez uma venda" com a comissão, e na 5ª venda concede conta
+**Atribuição de venda: cupom OU referência do link.** O link de divulgação leva pra LANDING
+(`/?ref=CUPOM`) — o indicado pode fazer o trial e comprar dias depois. `captureAffiliateRefFromUrl`
+(App.tsx, roda em toda navegação) guarda o código 30 dias no localStorage (`om_affiliate_ref`,
+último clique vence); o CheckoutPage auto-aplica o cupom guardado EM SILÊNCIO (se o afiliado
+desativou o cupom, o comprador não vê erro nenhum) e grava `buyers.affiliate_ref` no insert.
+`mp-create-payment` grava `buyers.coupon_code` (código efetivamente usado) e o `mp-webhook`, no
+bloco de aprovação, chama `processAffiliateSale()` — resolve o afiliado por `coupon_code` e, na
+falta, por `affiliate_ref`; grava `affiliate_sales` (UNIQUE em `external_reference` segura webhook
+duplicado), envia e-mail "você fez uma venda" com a comissão, e na 5ª venda concede conta
 `lifetime_pro` ao e-mail do afiliado (sem rebaixar tier superior). Comissões:
 monthly 15% · annual/lifetime 20% · lifetime_plus 25% · lifetime_pro 30% (sobre o valor pago).
 
-**Painel do afiliado:** link `checkout?coupon=CODIGO` (o CheckoutPage já auto-aplica cupom de URL),
+**Painel do afiliado:** link `/?ref=CODIGO` (landing, não checkout),
 gerador/troca de cupom via `affiliate-coupon` (valida formato, colisão e reserva prefixo ONEMED;
 trocar desativa o cupom antigo), material de divulgação (pasta pública do Drive
 `1N0ZYuF7yts5l_ZtfQR17PqY5DefAMN5O`), badges hoje/7 dias/total, comissão pendente × recebida,
