@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import {
   ArrowLeft, FolderUp, Upload, Search, Loader2, Eye, Heart, MessageSquare,
   FileText, PlayCircle, File as FileIcon, Image as ImageIcon, FolderOpen,
-  Globe, Lock, Pencil, Trash2, ExternalLink, Download, Send, X, Clock, Flame, ThumbsUp, User,
+  Globe, Lock, Pencil, Trash2, Send, Clock, Flame, ThumbsUp, User,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useMemberStatus } from '@/hooks/useMemberStatus';
@@ -13,7 +13,51 @@ import { useRequireName } from '@/hooks/useRequireName';
 import { NameRequiredModal } from '@/components/member/NameRequiredModal';
 import { CATEGORY_ORDER } from '@/lib/courseCategories';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { LessonPlayer } from '@/components/member/LessonPlayer';
 import { Seo } from '@/seo/Seo';
+import type { Database } from '@/integrations/supabase/types';
+
+type LessonRow = Database['public']['Tables']['lessons']['Row'];
+
+// Tipo de aula a partir do mime, para o LessonPlayer escolher o visualizador
+// certo (mesma lógica do member-sync-library).
+function lessonTypeFromMime(mime: string | null | undefined, name: string): string {
+  const m = (mime || '').toLowerCase();
+  const n = name.toLowerCase();
+  if (m.startsWith('video/') || /\.(mp4|mkv|avi|mov|ts|wmv|webm|flv|mpg)$/.test(n)) return 'video';
+  if (m === 'application/pdf' || n.endsWith('.pdf')) return 'pdf';
+  if (m.includes('word') || /\.(doc|docx)$/.test(n)) return 'doc';
+  if (m.includes('spreadsheet') || m.includes('ms-excel') || /\.(xls|xlsx)$/.test(n)) return 'sheet';
+  if (m === 'text/plain' || n.endsWith('.txt')) return 'txt';
+  if (m.startsWith('audio/') || /\.(mp3|wav|ogg|m4a)$/.test(n)) return 'audio';
+  if (m.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|svg)$/.test(n)) return 'image';
+  return 'other';
+}
+
+// Monta uma "aula" sintética a partir de um arquivo do acervo, para reusar o
+// LessonPlayer (vídeo com remux TS, PDF com zoom, Office, imagem…). O id é o
+// do archive_file; a URL vem do archive-manage file_token via resolveUrl.
+function fileToLesson(f: ArchiveFile): LessonRow {
+  return {
+    id: f.id,
+    title: f.name,
+    type: lessonTypeFromMime(f.mime_type, f.name),
+    mime_type: f.mime_type,
+    // sem drive_file_id/storage_path: o player usa só o resolveUrl e não tenta
+    // o fallback de cota/embed (que é específico da conta de conteúdo).
+    drive_file_id: null,
+    storage_path: null,
+    size_bytes: f.size_bytes,
+    course_id: null as never,
+    module_id: null,
+    duration_seconds: null,
+    sort_order: null,
+    created_at: null as never,
+    drive_path: null,
+    last_seen_at: null,
+    missing_since: null,
+  } as unknown as LessonRow;
+}
 
 interface FeedItem {
   id: string;
@@ -124,22 +168,37 @@ export default function ArchivePage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    try {
+    const buscar = async () => {
       if (sort === 'mine') {
         const { data, error } = await supabase.rpc('archive_my_items' as never);
         if (error) throw error;
-        setItems(((data || []) as any[]).map(r => ({
+        return ((data || []) as any[]).map(r => ({
           ...r, user_id: user?.id, uploader_name: 'Você', liked_by_me: false, first_mime: null,
-        })) as FeedItem[]);
-      } else {
-        const { data, error } = await supabase.rpc('archive_feed' as never, {
-          _sort: sort, _category: category, _search: query.trim() || null, _limit: 60, _offset: 0,
-        } as never);
-        if (error) throw error;
-        setItems((data || []) as FeedItem[]);
+        })) as FeedItem[];
       }
+      const { data, error } = await supabase.rpc('archive_feed' as never, {
+        _sort: sort, _category: category, _search: query.trim() || null, _limit: 60, _offset: 0,
+      } as never);
+      if (error) throw error;
+      return (data || []) as FeedItem[];
+    };
+    try {
+      let resultado: FeedItem[];
+      try {
+        resultado = await buscar();
+      } catch (e1: any) {
+        // Trial nunca tem acesso — não adianta repetir. Qualquer outra falha
+        // (rede/timeout passageiro) ganha uma segunda tentativa antes de avisar.
+        if (/assinantes/i.test(String(e1?.message))) throw e1;
+        await new Promise(r => setTimeout(r, 800));
+        resultado = await buscar();
+      }
+      setItems(resultado);
     } catch (err: any) {
-      if (!/assinantes/i.test(String(err?.message))) toast.error('Não foi possível carregar o acervo.');
+      const msg = String(err?.message || '');
+      if (!/assinantes/i.test(msg)) {
+        toast.error('Não foi possível carregar o acervo agora. Verifique sua conexão e tente novamente.');
+      }
       setItems([]);
     } finally {
       setLoading(false);
@@ -374,32 +433,61 @@ function UploadDialog({ onClose, onDone, ensureName }: {
   const reallyStart = async () => {
     setSending(true);
     setProgress({ done: 0, total: files.length, pct: 0, current: files[0].name });
+    let itemId: string | null = null;
+    let enviados = 0;
+    let falhados = 0;
     try {
-      let itemId: string | null = null;
       for (let i = 0; i < files.length; i++) {
         const f = files[i];
         const rel = (f as any).webkitRelativePath as string | undefined;
         setProgress(p => ({ ...p, current: f.name, pct: 0 }));
-        const init = await invokeArchive({
-          action: 'init',
-          itemId,
-          title: title.trim(),
-          description: description.trim(),
-          category,
-          isPublic,
-          kind: isFolder || files.length > 1 ? 'folder' : 'file',
-          file: { name: f.name, mime: f.type || 'application/octet-stream', size: f.size, path: rel || null },
-        });
-        itemId = init.itemId;
-        await uploadToSession(init.sessionUri, f, pct => setProgress(p => ({ ...p, pct })));
+        // Um arquivo com problema NÃO derruba a pasta inteira: registra a
+        // falha e segue. Uma tentativa extra cobre queda passageira de rede.
+        let feito = false;
+        for (let tentativa = 0; tentativa < 2 && !feito; tentativa++) {
+          try {
+            const init = await invokeArchive({
+              action: 'init',
+              itemId,
+              title: title.trim(),
+              description: description.trim(),
+              category,
+              isPublic,
+              kind: isFolder || files.length > 1 ? 'folder' : 'file',
+              file: { name: f.name, mime: f.type || 'application/octet-stream', size: f.size, path: rel || null },
+            });
+            itemId = init.itemId;
+            await uploadToSession(init.sessionUri, f, pct => setProgress(p => ({ ...p, pct })));
+            feito = true;
+            enviados++;
+          } catch {
+            if (tentativa === 1) falhados++;
+          }
+        }
         setProgress(p => ({ ...p, done: i + 1 }));
       }
-      await invokeArchive({ action: 'finalize', itemId });
-      toast.success('Material publicado no acervo!');
+
+      // finalize SEMPRE que o item foi criado — mesmo com falhas parciais ele
+      // publica o que subiu (e a tentativa extra cobre um finalize passageiro).
+      if (itemId && enviados > 0) {
+        let finalizado = false;
+        for (let tentativa = 0; tentativa < 2 && !finalizado; tentativa++) {
+          try { await invokeArchive({ action: 'finalize', itemId }); finalizado = true; }
+          catch { if (tentativa === 0) await new Promise(r => setTimeout(r, 1500)); }
+        }
+        if (!finalizado) throw new Error('Os arquivos subiram, mas a publicação falhou. Tente publicar de novo.');
+      } else {
+        throw new Error('Nenhum arquivo pôde ser enviado. Confira sua conexão e tente de novo.');
+      }
+
+      if (falhados > 0) {
+        toast.warning(`Publicado com ${enviados} de ${files.length} arquivos — ${falhados} falharam. Você pode editar o material e reenviar os que faltaram.`);
+      } else {
+        toast.success('Material publicado no acervo!');
+      }
       onDone();
     } catch (err: any) {
       toast.error(err.message || 'Falha no upload.');
-    } finally {
       setSending(false);
     }
   };
@@ -514,7 +602,7 @@ function DetailDialog({ itemId, currentUserId, onClose, onChanged, ensureName }:
   const [editDesc, setEditDesc] = useState('');
   const [editCategory, setEditCategory] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
-  const [openingFile, setOpeningFile] = useState<string | null>(null);
+  const [playing, setPlaying] = useState<ArchiveFile | null>(null);
   const viewed = useRef(false);
 
   const isOwner = item?.user_id === currentUserId;
@@ -575,26 +663,15 @@ function DetailDialog({ itemId, currentUserId, onClose, onChanged, ensureName }:
     }
   };
 
-  const openFile = async (f: ArchiveFile, download = false) => {
-    setOpeningFile(f.id);
-    // aba antes do await: bloqueador de popup mata window.open pós-async
-    const tab = download ? null : window.open('about:blank', '_blank');
-    try {
-      const { url } = await invokeArchive({ action: 'file_token', fileId: f.id });
-      if (download) {
-        const a = document.createElement('a');
-        a.href = url; a.download = f.name;
-        document.body.appendChild(a); a.click(); a.remove();
-      } else if (tab) {
-        tab.location.replace(url);
-      }
-    } catch (err: any) {
-      tab?.close();
-      toast.error(err.message || 'Não foi possível abrir o arquivo.');
-    } finally {
-      setOpeningFile(null);
-    }
-  };
+  // Link do arquivo do acervo (worker de streaming), do mesmo jeito que a aula.
+  // Usado pelo LessonPlayer (reprodução/visualização) e pelo download.
+  const resolveArchiveUrl = useCallback(async (fileId: string): Promise<string> => {
+    const { url } = await invokeArchive({ action: 'file_token', fileId });
+    return url;
+  }, []);
+
+  // Abrir = tocar/visualizar DENTRO da plataforma, com o mesmo player das aulas.
+  const openFile = (f: ArchiveFile) => setPlaying(f);
 
   const startEdit = () => {
     if (!item) return;
@@ -716,21 +793,17 @@ function DetailDialog({ itemId, currentUserId, onClose, onChanged, ensureName }:
               {files.map(f => {
                 const Icon = mimeIcon(f.mime_type);
                 return (
-                  <div key={f.id} className="flex items-center gap-3 px-4 py-3 bg-card">
+                  <button key={f.id} onClick={() => openFile(f)}
+                    className="w-full flex items-center gap-3 px-4 py-3 bg-card hover:bg-secondary text-left transition-colors group">
                     <Icon className="w-4 h-4 text-primary shrink-0" />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm text-foreground truncate">{f.path || f.name}</p>
                       <p className="text-[11px] text-muted-foreground">{fmtSize(f.size_bytes)}</p>
                     </div>
-                    <button onClick={() => openFile(f)} disabled={openingFile === f.id} title="Abrir"
-                      className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
-                      {openingFile === f.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <ExternalLink className="w-4 h-4" />}
-                    </button>
-                    <button onClick={() => openFile(f, true)} title="Baixar"
-                      className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
-                      <Download className="w-4 h-4" />
-                    </button>
-                  </div>
+                    <span className="p-2 rounded-lg text-muted-foreground group-hover:text-primary transition-colors" title="Abrir na plataforma">
+                      <PlayCircle className="w-4 h-4" />
+                    </span>
+                  </button>
                 );
               })}
               {files.length === 0 && (
@@ -770,6 +843,19 @@ function DetailDialog({ itemId, currentUserId, onClose, onChanged, ensureName }:
           </div>
         )}
       </DialogContent>
+
+      {/* Reprodução/visualização com o MESMO player das aulas (vídeo com remux
+          TS, PDF com zoom, Office, imagem, áudio). z acima do diálogo. */}
+      {playing && (
+        <LessonPlayer
+          lesson={fileToLesson(playing)}
+          courseTitle={item?.title || 'Acervo Público'}
+          onClose={() => setPlaying(null)}
+          onProgress={() => { /* acervo não registra progresso de aula */ }}
+          resolveUrl={resolveArchiveUrl}
+          bypassDownloadGate
+        />
+      )}
     </Dialog>
   );
 }
