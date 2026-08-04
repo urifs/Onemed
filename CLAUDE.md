@@ -1465,6 +1465,24 @@ Correção de UMA linha em `ui/dialog.tsx`: `[grid-template-columns:minmax(0,1fr
 
 ---
 
+### 2026-08-05 (sessão remota) — benefício de cronograma nos planos, pulo de 10s no player
+
+**Benefício novo no Plus e Pro:** "Gerador de cronograma de estudos e mapa mental personalizados
+para o seu interesse de estudo" adicionado a `PLAN_FEATURES` (plans.ts) e aos cards do checkout —
+SÓ nesses dois planos (o dono vai restringir a função a eles futuramente; hoje o
+`generate-study-plan` ainda bloqueia só o Mensal). Mesmo texto literal nos dois planos de
+propósito (o diff do UpgradePlanModal esconde benefícios repetidos entre origem e destino).
+
+**Pulo fixo de 10 segundos no player:** cliente reclamou que "adiantar/voltar pula tempo demais" —
+não existiam botões próprios; só a barra nativa do `<video>`, que pula pro ponto clicado.
+`LessonPlayer` ganhou botões laterais de −10s/+10s no vídeo (círculos com RotateCcw/RotateCw e o
+rótulo "10"), botões equivalentes ao lado do `<audio>`, e as setas ← → do teclado fazem o mesmo
+pulo (com `preventDefault` pra sobrepor o seek nativo de 5s; ignoradas dentro de
+input/textarea/select). `skip()` trava em 0 e na duração. Verificado em produção: clique →
+`currentTime` 0→10→0 exato.
+
+---
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
