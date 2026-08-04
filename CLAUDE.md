@@ -1481,6 +1481,16 @@ pulo (com `preventDefault` pra sobrepor o seek nativo de 5s; ignoradas dentro de
 input/textarea/select). `skip()` trava em 0 e na duração. Verificado em produção: clique →
 `currentTime` 0→10→0 exato.
 
+**Cliente sem conseguir logar ("Failed to send a request to the Edge Function"):** o app era
+servido INTEIRO também em `onemed-jade.vercel.app` (domínio automático da Vercel), mas as Edge
+Functions só liberam `onemedcursos.com.br` no CORS — quem entrava pelo domínio da Vercel tinha
+TODO chamado de função bloqueado pelo navegador, com esse erro cru no login (pro dono "funcionava"
+porque ele testa no domínio oficial). Corrigido no `vercel.json`: redirect permanente por host —
+qualquer `*.vercel.app` → `onemedcursos.com.br` preservando caminho e query (a raiz `/` precisa de
+regra própria; `/:path*` sozinho não casa com ela). A tela de login também troca os erros de rede
+(Failed to send/fetch/NetworkError) por mensagem em português com o que fazer. Verificado: `/`,
+`/login`, `/membros` e `/checkout` no domínio vercel.app respondem 308 pro oficial.
+
 ---
 
 ## Meta Ads — Contexto Geral
