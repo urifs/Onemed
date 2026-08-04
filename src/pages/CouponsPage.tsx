@@ -90,7 +90,22 @@ export default function CouponsPage() {
     finally { setSubmitting(false); }
   };
 
+  // Cupom de AFILIADO nunca pode ser apagado por aqui: o link de divulgação
+  // (?ref=CUPOM) e a atribuição de comissão dependem dele — apagar quebra o
+  // checkout de todo indicado ("Cupom inválido ou expirado"). Foi exatamente
+  // o que derrubou 18 cupons de afiliados em 04/08. Pra tirar de circulação,
+  // desative — o afiliado troca o código pelo painel dele.
   const deleteCoupon = async (id: string) => {
+    const alvo = coupons.find(c => c.id === id);
+    if (alvo) {
+      const { data: dono } = await supabase.from('affiliates' as never)
+        .select('email').eq('coupon_code', alvo.code).maybeSingle() as any;
+      if (dono) {
+        toast.error(`Este é o cupom do afiliado ${dono.email} — apagar quebraria o link de divulgação dele. Desative em vez de excluir.`);
+        return;
+      }
+    }
+    if (!confirm('Excluir este cupom de vez? Quem tentar usá-lo verá "cupom inválido". Para só tirar de circulação, prefira desativar.')) return;
     await supabase.from('coupons').delete().eq('id', id);
     toast.success('Cupom deletado');
     fetchCoupons();
