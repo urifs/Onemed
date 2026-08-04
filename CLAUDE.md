@@ -1372,6 +1372,45 @@ persiste (0/60 → 1/60).
 
 ---
 
+### 2026-08-05 (sessão remota) — admin de questões e acervo, cupom no upgrade, modais cortados
+
+**Admin vê os bancos de questões como já via os flashcards:** migration
+`20260805000000_admin_question_banks.sql` com `admin_question_banks_overview()` /
+`admin_question_banks(_user_id)` — espelho exato das RPCs de flashcards (SECURITY DEFINER +
+gate `has_role` explícito; testado em produção: aluno recebe `Unauthorized`).
+`FlashcardsAdminPage` virou a página de abas **Flashcards | Banco de Questões** (nav renomeada
+pra "Flashcards & Questões") — a estrutura das duas abas é idêntica, então a página é
+data-driven por um config `TABS` que só troca RPCs/rótulos e normaliza os campos pro mesmo shape.
+
+**Gerenciamento do Acervo Público no admin** (`/admin/acervo`, novo item "Acervo Público" na
+nav): lista TODOS os itens direto pela tabela (a política "Admin gerencia itens" já dava SELECT
+total) — inclusive privados e uploads presos em `pending` (badge "incompleto"), que o feed dos
+alunos nunca mostra. Por item: quem enviou (join client-side com `profiles`), categoria,
+arquivos/tamanho, views/likes, alternar público↔privado (UPDATE direto, política de admin),
+**excluir** (via `archive-manage` action `delete`, que já aceitava admin — apaga a pasta do
+Drive junto) e expandir pra ver os arquivos com botão de abrir (URL assinada do worker;
+`window.open` ANTES do await, senão o bloqueador de pop-up mata a aba).
+
+**Cupom de desconto no upgrade:** `UpgradePlanModal` ganhou campo de cupom (mesma validação
+client-side do checkout: ativo/expirado/esgotado/allowed_plans) e passa `couponCode` pro
+`mp-create-payment` — que JÁ aplicava desconto em upgrades (a seção de cupom roda depois do
+cálculo da diferença de tabela), só faltava a UI enviar. Preço exibido = mesma conta do
+servidor (`round2(diff × (1-pct))`); cupom restrito a um plano só desconta (e só é enviado)
+naquele alvo.
+
+**Modal de upgrade cortado embaixo sem scroll:** faltava `max-h-[90vh] overflow-y-auto` no
+`DialogContent` — adicionado.
+
+**Formulários de flashcards/questões cortados PRA DIREITA — bug era do Dialog base:** medido em
+produção (Playwright): com `overflow-y-auto` no `DialogContent`, os filhos do grid saíam a 512px
+dentro de um content-box de ~460px (`scrollWidth` 560 × `clientWidth` 510) — a coluna implícita
+do grid é dimensionada pelo min-content dos filhos e estoura quando a barra de rolagem aparece.
+Correção de UMA linha em `ui/dialog.tsx`: `[grid-template-columns:minmax(0,1fr)]` no
+`DialogContent` (validado ao vivo: 560→510, zero overflow). Vale pra TODOS os modais com scroll
+(gerador de flashcards, cronograma, acervo…) de uma vez.
+
+---
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management

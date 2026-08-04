@@ -24,6 +24,7 @@ import {
   Layers,
   Handshake,
   CalendarClock,
+  FolderUp,
 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -43,7 +44,8 @@ const navItems = [
   { path: '/admin/loja', label: 'Loja', icon: ShoppingBag },
   { path: '/admin/afiliados', label: 'Afiliados', icon: Handshake },
   { path: '/admin/cronogramas', label: 'Cronogramas', icon: CalendarClock },
-  { path: '/admin/flashcards', label: 'Flashcards', icon: Layers },
+  { path: '/admin/flashcards', label: 'Flashcards & Questões', icon: Layers },
+  { path: '/admin/acervo', label: 'Acervo Público', icon: FolderUp },
   { path: '/admin/drive', label: 'Google Drive', icon: FolderOpen },
   { path: '/admin/email-campaign', label: 'Campanha Email', icon: Mail },
   { path: '/admin/sms', label: 'SMS', icon: Smartphone },
