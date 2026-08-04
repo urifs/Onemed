@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -845,8 +846,9 @@ function DetailDialog({ itemId, currentUserId, onClose, onChanged, ensureName }:
       </DialogContent>
 
       {/* Reprodução/visualização com o MESMO player das aulas (vídeo com remux
-          TS, PDF com zoom, Office, imagem, áudio). z acima do diálogo. */}
-      {playing && (
+          TS, PDF com zoom, Office, imagem, áudio). Vai num portal no body pra
+          ficar ACIMA do diálogo de detalhe (que também é portalizado). */}
+      {playing && createPortal(
         <LessonPlayer
           lesson={fileToLesson(playing)}
           courseTitle={item?.title || 'Acervo Público'}
@@ -854,7 +856,8 @@ function DetailDialog({ itemId, currentUserId, onClose, onChanged, ensureName }:
           onProgress={() => { /* acervo não registra progresso de aula */ }}
           resolveUrl={resolveArchiveUrl}
           bypassDownloadGate
-        />
+        />,
+        document.body,
       )}
     </Dialog>
   );
