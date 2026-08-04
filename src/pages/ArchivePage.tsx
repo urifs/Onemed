@@ -21,8 +21,9 @@ import type { Database } from '@/integrations/supabase/types';
 type LessonRow = Database['public']['Tables']['lessons']['Row'];
 
 // Tipo de aula a partir do mime, para o LessonPlayer escolher o visualizador
-// certo (mesma lógica do member-sync-library).
-function lessonTypeFromMime(mime: string | null | undefined, name: string): string {
+// certo (mesma lógica do member-sync-library). Exportado: a busca geral do
+// dashboard usa pra escolher o ícone dos arquivos do acervo.
+export function lessonTypeFromMime(mime: string | null | undefined, name: string): string {
   const m = (mime || '').toLowerCase();
   const n = name.toLowerCase();
   if (m.startsWith('video/') || /\.(mp4|mkv|avi|mov|ts|wmv|webm|flv|mpg)$/.test(n)) return 'video';
@@ -379,6 +380,7 @@ export default function ArchivePage() {
       {detailId && (
         <DetailDialog
           itemId={detailId}
+          initialFileId={searchParams.get('file')}
           currentUserId={user?.id || ''}
           onClose={closeDetail}
           onChanged={load}
@@ -588,8 +590,8 @@ function UploadDialog({ onClose, onDone, ensureName }: {
 }
 
 // ─── DETALHE ─────────────────────────────────────────────────────────────────
-function DetailDialog({ itemId, currentUserId, onClose, onChanged, ensureName }: {
-  itemId: string; currentUserId: string; onClose: () => void; onChanged: () => void;
+function DetailDialog({ itemId, initialFileId, currentUserId, onClose, onChanged, ensureName }: {
+  itemId: string; initialFileId?: string | null; currentUserId: string; onClose: () => void; onChanged: () => void;
   ensureName: (action: () => void) => void;
 }) {
   const [item, setItem] = useState<FeedItem | null>(null);
@@ -605,6 +607,7 @@ function DetailDialog({ itemId, currentUserId, onClose, onChanged, ensureName }:
   const [savingEdit, setSavingEdit] = useState(false);
   const [playing, setPlaying] = useState<ArchiveFile | null>(null);
   const viewed = useRef(false);
+  const autoOpened = useRef(false);
 
   const isOwner = item?.user_id === currentUserId;
 
@@ -619,8 +622,16 @@ function DetailDialog({ itemId, currentUserId, onClose, onChanged, ensureName }:
       const row = ((feedRes.data || []) as FeedItem[])[0];
       if (!row) { toast.error('Material não encontrado.'); onClose(); return; }
       setItem(row);
-      setFiles((filesRes.data || []) as unknown as ArchiveFile[]);
+      const fileRows = (filesRes.data || []) as unknown as ArchiveFile[];
+      setFiles(fileRows);
       setComments((commentsRes.data || []) as unknown as ArchiveComment[]);
+      // Chegou da busca geral apontando um arquivo específico (?file=…):
+      // abre o item já tocando/visualizando esse arquivo, uma vez só.
+      if (initialFileId && !autoOpened.current) {
+        autoOpened.current = true;
+        const alvo = fileRows.find(f => f.id === initialFileId);
+        if (alvo) setPlaying(alvo);
+      }
       if (!viewed.current) {
         viewed.current = true;
         void supabase.rpc('archive_register_view' as never, { _item_id: itemId } as never);
@@ -628,7 +639,7 @@ function DetailDialog({ itemId, currentUserId, onClose, onChanged, ensureName }:
     } finally {
       setLoading(false);
     }
-  }, [itemId, onClose]);
+  }, [itemId, initialFileId, onClose]);
 
   useEffect(() => { load(); }, [load]);
 

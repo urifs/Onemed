@@ -19,6 +19,7 @@ import { exportQuestionBankPdf } from '@/lib/questionBankPdf';
 import { useMemberStatus } from '@/hooks/useMemberStatus';
 import { AiUpsellModal } from '@/components/member/AiUpsellModal';
 import { CATEGORY_ORDER } from '@/lib/courseCategories';
+import { lessonTypeFromMime } from './ArchivePage';
 import { formatDateTimeSP, formatDuration, matchesSearch, stripYearFromTitle, withTimeout, withRetry, describeLoadError } from '@/lib/utils';
 import type { Database } from '@/integrations/supabase/types';
 
@@ -432,16 +433,23 @@ export default function MemberDashboardPage() {
     return () => { alive = false; clearTimeout(timer); };
   }, [query, searchContents, contentTypeFilter]);
 
-  // Busca geral também olha o Acervo da comunidade — por último e em seção
-  // própria. Trial não tem acesso (o RPC recusa; o erro vira lista vazia).
+  // Busca geral também olha o Acervo Público — por último e em seção própria:
+  // os ITENS (título/descrição, via archive_feed) e os ARQUIVOS dentro de cada
+  // item/pasta (via archive_search_files) — quem busca "ATLS" acha o PDF mesmo
+  // que o item se chame "Livros de Med". Trial não tem acesso (o RPC recusa;
+  // o erro vira lista vazia).
   const [archiveResults, setArchiveResults] = useState<{ id: string; title: string; uploader_name: string; category: string; first_mime: string | null; kind: string }[]>([]);
+  const [archiveFileResults, setArchiveFileResults] = useState<{ file_id: string; file_name: string; path: string | null; mime_type: string | null; item_id: string; item_title: string; uploader_name: string }[]>([]);
   useEffect(() => {
-    if (!query.trim() || memberStatus === 'trial') { setArchiveResults([]); return; }
+    if (!query.trim() || memberStatus === 'trial') { setArchiveResults([]); setArchiveFileResults([]); return; }
     let alive = true;
     const timer = setTimeout(() => {
       supabase.rpc('archive_feed' as never, { _search: query.trim(), _limit: 12 } as never)
         .then(({ data }) => { if (alive) setArchiveResults((data || []) as never[]); })
         .catch(() => { if (alive) setArchiveResults([]); });
+      supabase.rpc('archive_search_files' as never, { _query: query.trim(), _limit: 20 } as never)
+        .then(({ data }) => { if (alive) setArchiveFileResults((data || []) as never[]); })
+        .catch(() => { if (alive) setArchiveFileResults([]); });
     }, 400);
     return () => { alive = false; clearTimeout(timer); };
   }, [query, memberStatus]);
@@ -475,26 +483,28 @@ export default function MemberDashboardPage() {
     const cats = order.filter(cat => counts.has(cat)).map(cat => ({ name: cat, count: counts.get(cat)! }));
 
     // Sempre visível, junto das categorias: o aluno precisa descobrir que
-    // pode anotar, não só encontrar a aba depois de já ter anotado.
-    cats.unshift({ name: ANNOTATIONS_TAB, count: annotated.length });
+    // pode anotar, não só encontrar a aba depois de já ter anotado. É item de
+    // função (não categoria de curso), então fica sem contagem.
+    cats.unshift({ name: ANNOTATIONS_TAB });
 
     return cats;
-  }, [courses, favorites.size, annotated.length]);
+  }, [courses]);
 
   // Seção "Menu" da barra lateral: as áreas do aluno, acima das categorias.
-  // Sempre visíveis, mesmo zeradas — é assim que se descobre que existem.
+  // Sempre visíveis, mesmo vazias — é assim que se descobre que existem.
+  // SEM contagem de propósito (pedido do dono): número só nas categorias.
   const menuList = useMemo(() => [
-    { name: 'Favoritos', count: favorites.size },
-    { name: FLASHCARDS_TAB, count: decks.length },
-    { name: QUESTIONS_TAB, count: banks.length },
+    { name: 'Favoritos' },
+    { name: FLASHCARDS_TAB },
+    { name: QUESTIONS_TAB },
     // Acervo Público é página própria (rota /membros/acervo) e é exclusivo de
     // assinante — trial nem vê a opção.
-    ...(memberStatus !== 'trial' ? [{ name: ACERVO_TAB, count: 0 }] : []),
+    ...(memberStatus !== 'trial' ? [{ name: ACERVO_TAB }] : []),
     // Gerador de cronograma de estudos por IA (exclusivo de assinante).
-    ...(memberStatus !== 'trial' ? [{ name: CRONOGRAMA_TAB, count: 0 }] : []),
+    ...(memberStatus !== 'trial' ? [{ name: CRONOGRAMA_TAB }] : []),
     // Atalho pro painel/cadastro de afiliado sem passar pela landing.
-    { name: AFILIADO_TAB, count: 0 },
-  ], [favorites.size, decks.length, banks.length, memberStatus]);
+    { name: AFILIADO_TAB },
+  ], [memberStatus]);
 
   const categoryCourses = useMemo(() => {
     if (!activeCategory) return [];
@@ -644,17 +654,21 @@ export default function MemberDashboardPage() {
             <div key={`${featured.id}-cover`} className="absolute inset-0 animate-fade-in">
               <CourseCover title={featured.title} showTitle={false} />
             </div>
-            <div className="absolute inset-0 bg-gradient-to-t from-background via-background/55 to-transparent" />
-            <div className="absolute inset-0 bg-gradient-to-r from-background/70 via-transparent to-transparent" />
+            {/* O banner é uma "capa de álbum": sempre escuro, autocontido, nos
+                DOIS temas. Fundir a arte escura com o fundo da página (o
+                from-background antigo) ficava bonito no escuro, mas no modo
+                claro virava uma fumaça cinza — a arte apagando pro branco. */}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/40 to-transparent" />
+            <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-transparent to-transparent" />
             <div key={`${featured.id}-copy`} className="relative p-6 md:p-10 max-w-xl animate-fade-in">
               <span className="inline-flex items-center gap-1.5 text-[11px] font-bold tracking-widest uppercase text-primary mb-3">
                 <span className="w-1.5 h-1.5 rounded-full bg-primary shadow-[0_0_0_4px_rgba(239,68,68,0.2)]" />
                 {isContinuing ? 'Continue de onde parou' : 'Destaque'}
               </span>
-              <h1 className="font-secondary text-2xl md:text-4xl font-bold text-foreground leading-tight mb-3">
+              <h1 className="font-secondary text-2xl md:text-4xl font-bold text-white leading-tight mb-3 [text-shadow:0_2px_16px_rgba(0,0,0,0.45)]">
                 {stripYearFromTitle(featured.title)}
               </h1>
-              <p className="text-muted-foreground text-sm md:text-base mb-6 line-clamp-2">
+              <p className="text-white/75 text-sm md:text-base mb-6 line-clamp-2">
                 {featured.description || `${featured.lesson_count} aulas · ${formatDuration(featured.total_duration_seconds) || `${featured.material_count} materiais`}`}
               </p>
               <div className="flex items-center gap-3">
@@ -666,17 +680,17 @@ export default function MemberDashboardPage() {
                 </button>
                 <button
                   onClick={() => navigate(`/membros/curso/${featured.slug}`)}
-                  className="inline-flex items-center gap-2 bg-foreground/10 hover:bg-foreground/15 text-foreground font-semibold px-5 py-3 rounded-xl border border-foreground/15 transition-colors backdrop-blur"
+                  className="inline-flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white font-semibold px-5 py-3 rounded-xl border border-white/20 transition-colors backdrop-blur"
                 >
                   <Info className="w-4 h-4" /> Detalhes
                 </button>
               </div>
               {featuredProgressPct > 0 && (
                 <div className="mt-5 max-w-xs">
-                  <div className="h-1.5 rounded-full bg-foreground/15 overflow-hidden">
+                  <div className="h-1.5 rounded-full bg-white/20 overflow-hidden">
                     <div className="h-full bg-primary rounded-full" style={{ width: `${featuredProgressPct}%` }} />
                   </div>
-                  <p className="text-xs text-muted-foreground mt-1.5">{Math.round(featuredProgressPct)}% concluído</p>
+                  <p className="text-xs text-white/70 mt-1.5">{Math.round(featuredProgressPct)}% concluído</p>
                 </div>
               )}
             </div>
@@ -771,10 +785,10 @@ export default function MemberDashboardPage() {
                   </div>
                 )}
 
-                {archiveResults.length > 0 && (
+                {(archiveResults.length > 0 || archiveFileResults.length > 0) && (
                   <div>
                     <p className="text-sm text-muted-foreground mb-5">
-                      Acervo da comunidade · {archiveResults.length} resultado{archiveResults.length !== 1 ? 's' : ''}
+                      Acervo Público · {archiveResults.length + archiveFileResults.length} resultado{archiveResults.length + archiveFileResults.length !== 1 ? 's' : ''}
                     </p>
                     <div className="rounded-xl border border-border overflow-hidden divide-y divide-border">
                       {archiveResults.map(r => (
@@ -792,6 +806,28 @@ export default function MemberDashboardPage() {
                           </div>
                         </button>
                       ))}
+                      {/* arquivos DENTRO dos itens/pastas do acervo — abre o
+                          item já tocando/visualizando o arquivo buscado */}
+                      {archiveFileResults.map(f => {
+                        const Icon = CONTENT_TYPE_ICON[lessonTypeFromMime(f.mime_type, f.file_name)] || File;
+                        return (
+                          <button
+                            key={f.file_id}
+                            onClick={() => navigate(`/membros/acervo?item=${f.item_id}&file=${f.file_id}`)}
+                            className="w-full flex items-center gap-3.5 px-4 py-3.5 bg-card hover:bg-secondary text-left transition-colors group"
+                          >
+                            <div className="w-9 h-9 rounded-full bg-secondary group-hover:bg-primary/15 flex items-center justify-center shrink-0 transition-colors">
+                              <Icon className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-foreground truncate">{f.file_name}</p>
+                              <p className="text-xs text-muted-foreground truncate">
+                                Acervo Público · em «{f.item_title}» · por {f.uploader_name}
+                              </p>
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 )}

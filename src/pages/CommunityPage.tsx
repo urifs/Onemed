@@ -15,7 +15,7 @@ import { CommentThread } from '@/components/member/CommentThread';
 import { PlanAvatarRing, PlanBadge } from '@/components/member/PlanBadge';
 import { LikeButton } from '@/components/member/LikeButton';
 import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { withTimeout, stripYearFromTitle } from '@/lib/utils';
 import { CATEGORY_ORDER } from '@/lib/courseCategories';
 import type { Database } from '@/integrations/supabase/types';
@@ -291,6 +291,14 @@ export default function CommunityPage() {
     () => CATEGORY_ORDER.filter(cat => courses.some(c => c.category === cat)).sort((a, b) => a.localeCompare(b, 'pt-BR')),
     [courses],
   );
+  // Além das categorias de curso, o tópico pode ser sobre uma ÁREA da
+  // plataforma (os itens do Menu da barra lateral) — dúvida sobre flashcards,
+  // material do acervo, cronograma… O valor gravado é o próprio rótulo, na
+  // mesma coluna `category` (o chip do feed exibe qualquer texto).
+  const MENU_TOPIC_AREAS = [
+    'Favoritos', 'Flashcards', 'Banco de Questões', 'Acervo Público',
+    'Cronograma de Estudos', 'Programa de Afiliados',
+  ];
   const coursesInCategory = useMemo(
     () => (newCategory === 'none' ? [] : courses.filter(c => c.category === newCategory)),
     [courses, newCategory],
@@ -381,12 +389,21 @@ export default function CommunityPage() {
               </SelectTrigger>
               <SelectContent className="bg-background-paper border-border">
                 <SelectItem value="none">Sem categoria</SelectItem>
-                {categoriesPresent.map(cat => (
-                  <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                ))}
+                <SelectGroup>
+                  <SelectLabel className="text-[11px] uppercase tracking-wider text-muted-foreground">Menu</SelectLabel>
+                  {MENU_TOPIC_AREAS.map(area => (
+                    <SelectItem key={area} value={area}>{area}</SelectItem>
+                  ))}
+                </SelectGroup>
+                <SelectGroup>
+                  <SelectLabel className="text-[11px] uppercase tracking-wider text-muted-foreground">Categorias</SelectLabel>
+                  {categoriesPresent.map(cat => (
+                    <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                  ))}
+                </SelectGroup>
               </SelectContent>
             </Select>
-            <Select value={newCourseId} onValueChange={setNewCourseId} disabled={newCategory === 'none'}>
+            <Select value={newCourseId} onValueChange={setNewCourseId} disabled={newCategory === 'none' || coursesInCategory.length === 0}>
               <SelectTrigger className="flex-1 bg-secondary border-border text-foreground">
                 <SelectValue placeholder="Curso (opcional)" />
               </SelectTrigger>

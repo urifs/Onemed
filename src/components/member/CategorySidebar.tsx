@@ -5,7 +5,9 @@ import { cn } from '@/lib/utils';
 
 interface CategoryEntry {
   name: string;
-  count: number;
+  // Sem count = sem badge de contagem (itens de função do Menu não contam nada;
+  // só categoria de curso mostra número).
+  count?: number;
 }
 
 interface CategorySidebarProps {
@@ -139,7 +141,7 @@ export function CategorySidebar({ menuItems, categories, active, onSelect, total
 
 function SidebarItem({
   label, count, icon: Icon, isActive, highlight, onClick,
-}: { label: string; count: number; icon: LucideIcon; isActive: boolean; highlight?: boolean; onClick: () => void }) {
+}: { label: string; count?: number; icon: LucideIcon; isActive: boolean; highlight?: boolean; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
@@ -152,7 +154,7 @@ function SidebarItem({
     >
       <Icon className={cn('w-4 h-4 shrink-0', isActive ? 'text-primary' : highlight && 'text-primary')} />
       <span className="flex-1 truncate">{label}</span>
-      <span className="text-[11px] tabular-nums opacity-70">{count}</span>
+      {count !== undefined && <span className="text-[11px] tabular-nums opacity-70">{count}</span>}
     </button>
   );
 }
