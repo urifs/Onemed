@@ -7,7 +7,13 @@ import {
   ArrowLeft, FolderUp, Upload, Search, Loader2, Eye, Heart, MessageSquare,
   FileText, PlayCircle, File as FileIcon, Image as ImageIcon, FolderOpen,
   Globe, Lock, Pencil, Trash2, Send, Clock, Flame, ThumbsUp, User,
+  ChevronDown, SquareStack, ClipboardList,
 } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { FlashcardGeneratorModal, type FlashcardSource, type GeneratedDeck, type GeneratorMode } from '@/components/member/FlashcardGeneratorModal';
+import { FlashcardViewer } from '@/components/member/FlashcardViewer';
+import { QuestionBankViewer } from '@/components/member/QuestionBankViewer';
+import { AiUpsellModal } from '@/components/member/AiUpsellModal';
 import { useAuth } from '@/context/AuthContext';
 import { useMemberStatus } from '@/hooks/useMemberStatus';
 import { useRequireName } from '@/hooks/useRequireName';
@@ -608,6 +614,62 @@ function DetailDialog({ itemId, initialFileId, currentUserId, onClose, onChanged
   const [playing, setPlaying] = useState<ArchiveFile | null>(null);
   const autoOpened = useRef(false);
 
+  // Gerador de flashcards/banco de questões a partir de um arquivo do acervo
+  // (dropdown na linha do arquivo) — mesmo fluxo das aulas dos cursos.
+  const { plan: memberPlan } = useMemberStatus();
+  const podeGerarIa = memberPlan !== 'monthly';
+  const [aiUpsell, setAiUpsell] = useState<null | 'flashcards' | 'questoes'>(null);
+  const [genMode, setGenMode] = useState<GeneratorMode | null>(null);
+  const [genSources, setGenSources] = useState<FlashcardSource[]>([]);
+  const [fcDeck, setFcDeck] = useState<GeneratedDeck | null>(null);
+  const [fcSaved, setFcSaved] = useState(false);
+  const [fcSavedId, setFcSavedId] = useState<string | null>(null);
+  const [fcSaving, setFcSaving] = useState(false);
+  const [qbBank, setQbBank] = useState<GeneratedDeck | null>(null);
+  const [qbSaved, setQbSaved] = useState(false);
+  const [qbSavedId, setQbSavedId] = useState<string | null>(null);
+  const [qbSaving, setQbSaving] = useState(false);
+
+  const abrirGerador = (f: ArchiveFile, modo: GeneratorMode) => {
+    if (!podeGerarIa) { setAiUpsell(modo === 'questions' ? 'questoes' : 'flashcards'); return; }
+    setGenSources([{ id: f.id, title: f.name, archive: true }]);
+    setGenMode(modo);
+  };
+
+  const saveDeck = async () => {
+    if (!fcDeck || fcSaved || fcSaving) return;
+    setFcSaving(true);
+    const { data: savedRow, error } = await (supabase as any).from('flashcard_decks').insert({
+      user_id: currentUserId,
+      title: fcDeck.title,
+      difficulty: fcDeck.difficulty,
+      cards: fcDeck.cards,
+      source: fcDeck.source,
+    }).select('id').single();
+    setFcSaving(false);
+    if (error) { toast.error('Não foi possível salvar o baralho'); return; }
+    setFcSavedId(savedRow?.id || null);
+    setFcSaved(true);
+    toast.success('Baralho salvo! Ele fica na aba Flashcards, na página inicial.');
+  };
+
+  const saveBank = async () => {
+    if (!qbBank || qbSaved || qbSaving) return;
+    setQbSaving(true);
+    const { data: savedRow, error } = await (supabase as any).from('question_banks').insert({
+      user_id: currentUserId,
+      title: qbBank.title,
+      difficulty: qbBank.difficulty,
+      questions: qbBank.cards,
+      source: qbBank.source,
+    }).select('id').single();
+    setQbSaving(false);
+    if (error) { toast.error('Não foi possível salvar o banco de questões'); return; }
+    setQbSavedId(savedRow?.id || null);
+    setQbSaved(true);
+    toast.success('Banco salvo! Ele fica na aba Banco de Questões, na página inicial.');
+  };
+
   const isOwner = item?.user_id === currentUserId;
 
   // Abrir = tocar/visualizar DENTRO da plataforma, com o mesmo player das
@@ -814,17 +876,46 @@ function DetailDialog({ itemId, initialFileId, currentUserId, onClose, onChanged
               {files.map(f => {
                 const Icon = mimeIcon(f.mime_type);
                 return (
-                  <button key={f.id} onClick={() => openFile(f)}
-                    className="w-full flex items-center gap-3 px-4 py-3 bg-card hover:bg-secondary text-left transition-colors group">
-                    <Icon className="w-4 h-4 text-primary shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-foreground truncate">{f.path || f.name}</p>
-                      <p className="text-[11px] text-muted-foreground">{fmtSize(f.size_bytes)}</p>
-                    </div>
-                    <span className="p-2 rounded-lg text-muted-foreground group-hover:text-primary transition-colors" title="Abrir na plataforma">
-                      <PlayCircle className="w-4 h-4" />
-                    </span>
-                  </button>
+                  <div key={f.id} className="flex items-center gap-1 pr-2 bg-card hover:bg-secondary transition-colors group">
+                    <button onClick={() => openFile(f)}
+                      className="flex-1 min-w-0 flex items-center gap-3 pl-4 pr-1 py-3 text-left">
+                      <Icon className="w-4 h-4 text-primary shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-foreground truncate">{f.path || f.name}</p>
+                        <p className="text-[11px] text-muted-foreground">{fmtSize(f.size_bytes)}</p>
+                      </div>
+                      <span className="p-2 rounded-lg text-muted-foreground group-hover:text-primary transition-colors" title="Abrir na plataforma">
+                        <PlayCircle className="w-4 h-4" />
+                      </span>
+                    </button>
+                    {/* Seta com as opções de IA — gera flashcards ou banco de
+                        questões a partir DESTE arquivo do acervo. */}
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <button
+                          title="Gerar com IA"
+                          aria-label={`Opções de IA para ${f.name}`}
+                          className="shrink-0 p-2 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                        >
+                          <ChevronDown className="w-4 h-4" />
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent align="end" className="w-72 p-1.5 bg-background-paper border-border z-[95]">
+                        <button
+                          onClick={() => abrirGerador(f, 'flashcards')}
+                          className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm text-foreground hover:bg-secondary transition-colors text-left"
+                        >
+                          <SquareStack className="w-4 h-4 text-primary shrink-0" /> Gerar flashcards deste arquivo
+                        </button>
+                        <button
+                          onClick={() => abrirGerador(f, 'questions')}
+                          className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm text-foreground hover:bg-secondary transition-colors text-left"
+                        >
+                          <ClipboardList className="w-4 h-4 text-primary shrink-0" /> Gerar banco de questões deste arquivo
+                        </button>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
                 );
               })}
               {files.length === 0 && (
@@ -878,6 +969,42 @@ function DetailDialog({ itemId, initialFileId, currentUserId, onClose, onChanged
           bypassDownloadGate
         />,
         document.body,
+      )}
+
+      {/* geradores de IA a partir de arquivos do acervo */}
+      {aiUpsell && (
+        <AiUpsellModal open onOpenChange={(o) => { if (!o) setAiUpsell(null); }} feature={aiUpsell} />
+      )}
+      <FlashcardGeneratorModal
+        mode={genMode === 'questions' ? 'questions' : 'flashcards'}
+        open={genMode !== null}
+        onOpenChange={(o) => { if (!o) setGenMode(null); }}
+        initialSources={genSources}
+        onGenerated={(deck) => {
+          if (genMode === 'questions') { setQbBank(deck); setQbSaved(false); setQbSavedId(null); }
+          else { setFcDeck(deck); setFcSaved(false); setFcSavedId(null); }
+          setGenMode(null);
+        }}
+      />
+      {qbBank && (
+        <QuestionBankViewer
+          bank={{ title: qbBank.title, difficulty: qbBank.difficulty, questions: qbBank.cards }}
+          bankId={qbSavedId}
+          onClose={() => setQbBank(null)}
+          onSave={saveBank}
+          saved={qbSaved}
+          saving={qbSaving}
+        />
+      )}
+      {fcDeck && (
+        <FlashcardViewer
+          deck={fcDeck}
+          deckId={fcSavedId}
+          onClose={() => setFcDeck(null)}
+          onSave={saveDeck}
+          saved={fcSaved}
+          saving={fcSaving}
+        />
       )}
     </Dialog>
   );

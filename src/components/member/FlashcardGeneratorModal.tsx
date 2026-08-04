@@ -9,6 +9,8 @@ import type { FlashcardDeck } from './FlashcardViewer';
 export interface FlashcardSource {
   id: string;
   title: string;
+  // true = arquivo do Acervo Público (vai em archiveFileIds, não em lessonIds).
+  archive?: boolean;
 }
 
 export interface GeneratedDeck extends FlashcardDeck {
@@ -90,7 +92,7 @@ interface SearchResult {
 // expandir um curso busca os módulos e as aulas soltas dele; expandir um
 // módulo busca as aulas daquele módulo.
 function ContentTree({ selected, onToggle }: {
-  selected: Map<string, string>;
+  selected: Map<string, FlashcardSource>;
   onToggle: (lesson: FlashcardSource) => void;
 }) {
   const [courses, setCourses] = useState<CourseNode[] | null>(null);
@@ -287,7 +289,7 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
 }) {
   const ehQuestoes = mode === 'questions';
   const ModeIcon = ehQuestoes ? ClipboardList : SquareStack;
-  const [selected, setSelected] = useState<Map<string, string>>(new Map());
+  const [selected, setSelected] = useState<Map<string, FlashcardSource>>(new Map());
   const [difficulty, setDifficulty] = useState('intermediario');
   const [format, setFormat] = useState<'classic' | 'multiple_choice'>('classic');
   const [count, setCount] = useState(10);
@@ -341,7 +343,7 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
   // Reabrir o modal para outra aula recomeça do zero, com a aula clicada.
   useEffect(() => {
     if (!open) return;
-    setSelected(new Map(initialSources.map(s => [s.id, s.title])));
+    setSelected(new Map(initialSources.map(s => [s.id, s])));
     setUploads([]);
     // Aberto pela aba Flashcards (sem aula pré-selecionada), a árvore já
     // aparece — escolher o conteúdo é o primeiro passo, não um opcional.
@@ -354,7 +356,7 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
     setSelected(prev => {
       const next = new Map(prev);
       if (next.has(lesson.id)) next.delete(lesson.id);
-      else if (next.size < MAX_SOURCES) next.set(lesson.id, lesson.title);
+      else if (next.size < MAX_SOURCES) next.set(lesson.id, lesson);
       return next;
     });
   };
@@ -363,9 +365,11 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
     if (selected.size === 0 && uploads.length === 0) { toast.error('Selecione um conteúdo ou envie um arquivo'); return; }
     setGenerating(true);
     try {
+      const fontes = [...selected.values()];
       const { data, error } = await supabase.functions.invoke('generate-flashcards', {
         body: {
-          lessonIds: [...selected.keys()],
+          lessonIds: fontes.filter(s => !s.archive).map(s => s.id),
+          archiveFileIds: fontes.filter(s => s.archive).map(s => s.id),
           difficulty,
           format: ehQuestoes ? 'multiple_choice' : format,
           mode,
@@ -418,13 +422,18 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
                 Conteúdo ({selected.size}/{MAX_SOURCES})
               </p>
               <div className="space-y-1.5">
-                {[...selected.entries()].map(([id, title]) => (
-                  <div key={id} className="flex items-center gap-2 text-sm bg-secondary border border-border rounded-lg px-3 py-1.5">
-                    <span className="flex-1 truncate text-foreground/90">{title}</span>
+                {[...selected.values()].map(s => (
+                  <div key={s.id} className="flex items-center gap-2 text-sm bg-secondary border border-border rounded-lg px-3 py-1.5">
+                    <span className="flex-1 truncate text-foreground/90">{s.title}</span>
+                    {s.archive && (
+                      <span className="shrink-0 text-[10px] uppercase font-semibold text-primary bg-primary/10 border border-primary/25 rounded px-1.5 py-0.5">
+                        Acervo Público
+                      </span>
+                    )}
                     <button
-                      onClick={() => setSelected(prev => { const n = new Map(prev); n.delete(id); return n; })}
+                      onClick={() => setSelected(prev => { const n = new Map(prev); n.delete(s.id); return n; })}
                       className="text-muted-foreground hover:text-foreground shrink-0"
-                      aria-label={`Remover ${title}`}
+                      aria-label={`Remover ${s.title}`}
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>

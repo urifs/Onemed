@@ -144,7 +144,7 @@ serve(async (req) => {
     } catch { /* segue liberado */ }
 
     // ── entrada ────────────────────────────────────────────────────────────
-    const { lessonIds, difficulty, count, extraText, format, uploads, mode, importExisting } = await req.json()
+    const { lessonIds, archiveFileIds, difficulty, count, extraText, format, uploads, mode, importExisting } = await req.json()
     // 'questions' = banco de questões: sempre múltipla escolha, com enunciado
     // no estilo de prova de residência. Reusa todo o pipeline dos flashcards.
     const modo = mode === 'questions' ? 'questions' : 'flashcards'
@@ -174,7 +174,10 @@ serve(async (req) => {
         )
       }
     } catch { /* tabela indisponível não pode derrubar a geração */ }
-    const ids: string[] = Array.isArray(lessonIds) ? lessonIds.slice(0, MAX_LESSONS) : []
+    // Fontes: aulas da biblioteca E/OU arquivos do Acervo Público — o teto de
+    // 8 fontes vale pro conjunto.
+    const archIds: string[] = Array.isArray(archiveFileIds) ? archiveFileIds.slice(0, MAX_LESSONS) : []
+    const ids: string[] = Array.isArray(lessonIds) ? lessonIds.slice(0, Math.max(MAX_LESSONS - archIds.length, 0)) : []
 
     const enviados: { name: string; mime: string; data: string }[] = (Array.isArray(uploads) ? uploads : [])
       .slice(0, MAX_UPLOADS)
@@ -184,7 +187,7 @@ serve(async (req) => {
         name: u.name.slice(0, 120), mime: u.mime, data: u.data,
       }))
 
-    if (ids.length === 0 && enviados.length === 0) {
+    if (ids.length === 0 && archIds.length === 0 && enviados.length === 0) {
       return json(req, { error: 'Selecione ao menos uma aula, arquivo ou envie um arquivo seu' }, 400)
     }
     const nCards = Math.min(Math.max(Number(count) || 10, 1), MAX_CARDS)
@@ -201,6 +204,29 @@ serve(async (req) => {
         .in('id', ids)
       : { data: [] as never[] }
     if (ids.length > 0 && !lessons?.length) return json(req, { error: 'Conteúdo não encontrado' }, 404)
+
+    // Arquivos do Acervo Público: consultados com o JWT DO ALUNO — a RLS do
+    // acervo (assinante-nunca-trial + item público-ou-próprio) decide o que
+    // ele pode usar; nada de service role aqui.
+    let archFiles: { id: string; name: string; mime_type: string | null; size_bytes: number | null; drive_file_id: string; item_title: string }[] = []
+    if (archIds.length > 0) {
+      const anonKey = Deno.env.get('SUPABASE_ANON_KEY') || ''
+      const asUser = createClient(supabaseUrl, anonKey, {
+        global: { headers: { Authorization: `Bearer ${jwt}` } },
+      })
+      const { data: rows } = await asUser
+        .from('archive_files')
+        .select('id, name, mime_type, size_bytes, drive_file_id, archive_items(title)')
+        .in('id', archIds)
+        .eq('status', 'ready')
+      archFiles = (rows || []).map((r: { id: string; name: string; mime_type: string | null; size_bytes: number | null; drive_file_id: string; archive_items?: { title?: string } }) => ({
+        id: r.id, name: r.name, mime_type: r.mime_type, size_bytes: r.size_bytes,
+        drive_file_id: r.drive_file_id, item_title: r.archive_items?.title || '',
+      }))
+      if (!archFiles.length && ids.length === 0 && enviados.length === 0) {
+        return json(req, { error: 'Conteúdo do acervo não encontrado' }, 404)
+      }
+    }
 
     // ── monta as partes multimodais dentro do orçamento ────────────────────
     const warnings: string[] = []
@@ -311,6 +337,63 @@ serve(async (req) => {
 
       budget -= bytes.length
       parts.push({ type: 'text', text: `Material: "${lesson.title}" (curso: ${courseTitle})${isAv ? ' — trecho inicial da aula em vídeo/áudio' : ''}:` })
+      parts.push({ type: 'file', file: { file_data: `data:${mime};base64,${b64(bytes)}` } })
+    }
+
+    // ── arquivos do Acervo Público (mesma régua das aulas) ─────────────────
+    // Os bytes moram no Drive da conta de armazenamento, mas a pasta-raiz do
+    // acervo é compartilhada como leitura com a conta de conteúdo — o mesmo
+    // token do drive-access-token que serve o streaming lê esses arquivos.
+    for (const af of archFiles) {
+      sourceTitles.push(af.name)
+      const mime = af.mime_type || 'application/octet-stream'
+      const isAv = /^(video|audio)\//i.test(mime)
+
+      if (!GEMINI_OK.test(mime)) {
+        warnings.push(`"${af.name}" tem um formato que a IA não lê direto — usado só o nome.`)
+        parts.push({ type: 'text', text: `Material do Acervo Público (somente nome): "${af.name}" (em «${af.item_title}»)` })
+        continue
+      }
+
+      const want = isAv ? Math.min(VIDEO_CHUNK, budget) : (af.size_bytes || 0)
+      if (!isAv && want > budget) {
+        warnings.push(`"${af.name}" é grande demais para esta geração — usado só o nome.`)
+        parts.push({ type: 'text', text: `Material do Acervo Público (somente nome): "${af.name}" (em «${af.item_title}»)` })
+        continue
+      }
+      if (want <= 0) continue
+
+      let bytes: Uint8Array | null = null
+      try {
+        const tok = await getDriveToken()
+        if (tok) {
+          const res = await fetch(
+            `https://www.googleapis.com/drive/v3/files/${af.drive_file_id}?alt=media`,
+            {
+              headers: {
+                Authorization: `Bearer ${tok}`,
+                ...(isAv ? { Range: `bytes=0-${want - 1}` } : {}),
+              },
+            },
+          )
+          if (res.ok || res.status === 206) bytes = new Uint8Array(await res.arrayBuffer())
+        }
+      } catch { /* cai no aviso abaixo */ }
+
+      if (!bytes || bytes.length === 0) {
+        warnings.push(`Não foi possível ler "${af.name}" — usado só o nome.`)
+        parts.push({ type: 'text', text: `Material do Acervo Público (somente nome): "${af.name}" (em «${af.item_title}»)` })
+        continue
+      }
+
+      if (isAv && bytes.length < (af.size_bytes || Infinity) && MP4_FAMILY.test(mime) && !mp4TemMoov(bytes)) {
+        warnings.push(`"${af.name}" é um vídeo num formato que a IA não lê em trecho — usado só o nome.`)
+        parts.push({ type: 'text', text: `Material do Acervo Público (somente nome): "${af.name}" (em «${af.item_title}»)` })
+        continue
+      }
+
+      budget -= bytes.length
+      parts.push({ type: 'text', text: `Material do Acervo Público: "${af.name}" (em «${af.item_title}»)${isAv ? ' — trecho inicial do vídeo/áudio' : ''}:` })
       parts.push({ type: 'file', file: { file_data: `data:${mime};base64,${b64(bytes)}` } })
     }
 
@@ -532,6 +615,7 @@ serve(async (req) => {
       warnings,
       source: [
         ...(lessons || []).map((l: { id: string; title: string }) => ({ id: l.id, title: l.title })),
+        ...archFiles.map(af => ({ id: af.id, title: `${af.name} (Acervo Público)` })),
         ...enviados.map(u => ({ id: null, title: `${u.name} (arquivo enviado)` })),
       ],
     })
