@@ -1126,6 +1126,41 @@ SUPABASE_MGMT_TOKEN=... SUPABASE_SECRET_KEY=... SUPABASE_SERVICE_JWT=... \
 
 ---
 
+### 2026-08-04 (sessão remota) — "nenhuma aula abre": curso inteiro em TS disfarçado + RLS por linha
+
+**Curso novo importado:** "MED 2026" (pasta compartilhada por `ufgravity@gmail.com`, atalho já
+existia na raiz da biblioteca) — 61 aulas reais em vídeo (8 GB), 35 módulos, paridade total
+arquivo a arquivo. 6 "aulas" e 11 "apostilas" da pasta eram stubs falsos de 55.855 bytes (um SVG
+com nome de `.mp4`/`.html`) — as 6 foram removidas, junto com 2 stubs idênticos que já estavam no
+`medreview-2026` (uma delas com 2 alunos que tentaram assistir).
+
+**Causa 1 do "nenhuma aula abre" — o maior curso da plataforma era 100% TS disfarçado:**
+os 10.532 vídeos do `questoes-comentadas-por-estado-instituicao-medgrup` são MPEG-TS gravados com
+nome e mime de `.mp4` (sondados um a um pela API do Drive, `Range: bytes=0-188`, sync byte 0x47
+nos offsets 0 e 188 — 10.532/10.532, zero mp4 verdadeiro, codecs internos h264/aac confirmados
+por ffprobe). O `<video>` nativo não toca o container TS → exatamente o print do cliente.
+Corrigido dos dois lados: `mime_type` trocado para `video/mp2t` no banco (o player já roteia esse
+mime pro mpegts.js) e `LessonPlayer.sondarFalha()` agora fareja os primeiros bytes na primeira
+falha do vídeo e vira `forceTs` sozinho — cobre qualquer arquivo futuro com rótulo mentiroso, sem
+depender do banco. Amostra de 3 vídeos/curso no resto da biblioteca: nenhum outro curso afetado.
+
+**Causa 2 — o mesmo curso aparecia VAZIO ("O curso está sendo sincronizado"):** as políticas RLS
+chamavam `is_member()` CRU, e o Postgres reavaliava a função POR LINHA (12.234 aulas × consulta
+interna = 99 mil buffers, 1,5s por página de 1.000; o app pagina o curso todo e estourava o
+timeout de 30s; sob paralelismo, 500). Migration `20260804040000_rls_initplan_member_checks.sql`:
+`(SELECT is_member())` vira InitPlan (1× por consulta) em `lessons`, `course_modules`, `courses`,
+`course_comments` e `community_likes`. Página caiu de 1,5s para 0,9s e as 11 páginas em paralelo
+fecham em 2,3s sem erro. **Regra pra qualquer policy nova: função de checagem SEMPRE dentro de
+`(SELECT ...)`.**
+
+> Teste de reprodução no navegador: o Chromium do Playwright deste ambiente NÃO tem decoder
+> H.264/AAC (só VP9) — nenhum vídeo da plataforma decodifica nele, mesmo os sãos. Dá pra validar
+> login/lista/player abrindo, mas a decodificação em si só por protocolo (bytes + ffprobe).
+> E o Chromium só atravessa o proxy TLS deste ambiente com as requisições interceptadas pelo lado
+> Node do Playwright (`context.route` + `route.fetch`) — o handshake direto leva RESET.
+
+---
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
