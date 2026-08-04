@@ -1344,6 +1344,34 @@ da plataforma, streaming via worker 200.
 
 ---
 
+### 2026-08-04 (sessão remota) — gerador de cronograma de estudos com IA
+
+**Página `/membros/cronograma`** ("Cronograma de Estudos" no menu da sidebar, exclusivo de
+assinante; monthly bloqueado como os outros geradores de IA): o aluno descreve o OBJETIVO (prova,
+prazo, horas/semana, pontos fracos) e a IA (Emergent + gemini-2.5-flash) monta um cronograma
+DETALHADO — semanas com temas e tarefas, marcos, dicas e um MAPA MENTAL em árvore do conteúdo.
+Fica salvo em `study_plans`; cada tarefa tem id e vira item de CHECKLIST com progresso persistido
+(barra por cronograma e por semana). Editar título/excluir do próprio dono.
+
+**Edge Function `generate-study-plan`** (migration `20260804230000_study_plans.sql`): rate limit
+10/dia, monthly 403, parser tolerante + 1 retry, ids únicos por tarefa. Normaliza tips (o modelo
+às vezes devolve `{label, description}` em vez de string), milestones e rótulos do mapa mental
+para texto — renderizar objeto cru estoura o React (#31). `MindMap.tsx` (componente reutilizável,
+árvore horizontal recolhível) coage o rótulo a texto defensivamente.
+
+**Admin `/admin/cronogramas`:** RPC `admin_study_plans_overview` (admin-only) lista todos os
+cronogramas dos alunos com nome/e-mail e progresso (feitas/total); expandível pra ver mapa mental,
+semanas/tarefas e dicas.
+
+**Segurança:** RLS dono-ou-admin; `REVOKE UPDATE` + `GRANT UPDATE (completed_tasks, title,
+updated_at)` — o cliente só mexe no checklist e no título, não na estrutura do plano (testado:
+PATCH de `objective` → 403); INSERT só via Edge Function (service role); overview só admin
+(testado: não-admin → "Apenas administradores"). Verificado em produção: geração (~35s, por isso
+`generate-study-plan` no TIMEOUT_EXEMPT do client), mapa mental renderizado, checklist marca e
+persiste (0/60 → 1/60).
+
+---
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
