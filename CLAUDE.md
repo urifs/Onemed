@@ -1401,6 +1401,32 @@ naquele alvo.
 **Modal de upgrade cortado embaixo sem scroll:** faltava `max-h-[90vh] overflow-y-auto` no
 `DialogContent` — adicionado.
 
+**Busca geral acha ARQUIVOS do Acervo Público:** nova RPC `archive_search_files`
+(migration `20260805010000_archive_search_files.sql`, gate `assert_archive_access`, visibilidade
+público-ou-próprio) — a busca do dashboard, além dos itens (archive_feed), lista os arquivos
+dentro de itens/pastas, rotulados "Acervo Público · em «item» · por «nome»". Clicar navega pra
+`/membros/acervo?item=…&file=…` — o `DetailDialog` ganhou `initialFileId` e abre o item já
+tocando/visualizando o arquivo buscado no player da plataforma (auto-abre uma vez só, ref).
+`lessonTypeFromMime` exportado do ArchivePage pro ícone certo na lista de resultados.
+
+**Menu sem contagens:** os itens de função da sidebar (Favoritos, Flashcards, Banco de Questões,
+Acervo Público, Cronograma, Afiliados e "Minhas anotações") não mostram mais número — `count`
+virou opcional no `CategorySidebar` e só categoria de curso conta.
+
+**Tópico da comunidade com áreas do Menu:** o seletor de categoria do "Abrir um novo tópico"
+ganhou o grupo "Menu" (as 6 áreas da plataforma) acima do grupo "Categorias" — o valor gravado é
+o próprio rótulo, na mesma coluna `category` (o chip do feed exibe qualquer texto). Seletor de
+curso desabilita quando a categoria escolhida não tem cursos.
+
+**Modo claro — banners com "gradiente preto estranho" corrigidos:** os heróis do dashboard e da
+página de curso fundiam a arte escura do `CourseCover` com `from-background` — perfeito no
+escuro (fundo preto), mas no claro virava uma névoa cinza/rosa sobre a arte. Agora são banners
+AUTOCONTIDOS estilo capa de álbum: overlay sempre `from-black/85 (dashboard) · from-black/75
+(curso)`, título/textos brancos fixos, botão "Detalhes" branco-fantasma. No escuro fica
+visualmente idêntico ao que era (conferido por screenshot nos dois temas); no claro o banner
+vira um cartão escuro limpo com borda. Regra: arte de curso é sempre escura por design — nunca
+fundir com o fundo da página, escurecer pro preto.
+
 **Formulários de flashcards/questões cortados PRA DIREITA — bug era do Dialog base:** medido em
 produção (Playwright): com `overflow-y-auto` no `DialogContent`, os filhos do grid saíam a 512px
 dentro de um content-box de ~460px (`scrollWidth` 560 × `clientWidth` 510) — a coluna implícita
