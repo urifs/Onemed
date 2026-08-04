@@ -1301,6 +1301,23 @@ bater com os bytes enviados — divergência dá 400 no PUT.
 
 ---
 
+### 2026-08-04 (sessão remota) — banco de questões: importar banco EXISTENTE de um PDF
+
+No modal do gerador de banco de questões há agora a seção "Origem das questões", com duas opções
+mutuamente exclusivas: **"Gerar questões a partir do material"** (padrão — o fluxo de sempre) e
+**"Usar banco de questões já existente"**. Na importação, `generate-flashcards` recebe
+`importExisting: true` e TRANSCREVE o PDF em vez de criar: quantidade de questões = a do
+documento (dificuldade e quantidade somem da UI), alternativas na MESMA ordem/texto, `correct` =
+gabarito do próprio documento, e as explicações (back/why) só são geradas quando o PDF não as
+traz. Sem Fisher-Yates no modo importação — o gabarito do PDF é lei. Extração em LOTES de 20
+(multi-passada, teto 120; temperature 0.1) porque banco grande não cabe numa resposta só; lote de
+fronteira é deduplicado por `front`; falha de LLM no meio entrega o que já foi transcrito com
+aviso. Pós-processamento tira os prefixos do documento ("Questão 3.", "A)") que duplicariam a
+numeração da interface — sem mexer na ordem. Testado em produção com PDF de gabarito conhecido:
+2/2 questões, letras preservadas, gabarito exato, explicações geradas.
+
+---
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management

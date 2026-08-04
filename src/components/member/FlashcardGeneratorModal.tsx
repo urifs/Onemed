@@ -296,6 +296,10 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
   const [generating, setGenerating] = useState(false);
   const [uploads, setUploads] = useState<UploadedFile[]>([]);
   const [reading, setReading] = useState(false);
+  // Só no modo questões: em vez de GERAR questões novas (padrão), importar um
+  // banco de questões que já existe em PDF — quantidade e gabarito vêm do
+  // documento; explicações são geradas apenas quando o PDF não as traz.
+  const [importExisting, setImportExisting] = useState(false);
 
   const handleFiles = async (files: FileList | null) => {
     if (!files?.length) return;
@@ -368,6 +372,7 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
           count,
           extraText: extraText.trim() || undefined,
           uploads: uploads.map(u => ({ name: u.name, mime: u.mime, data: u.data })),
+          importExisting: ehQuestoes && importExisting ? true : undefined,
         },
       });
       if (error || data?.error) throw new Error(data?.error || error?.message);
@@ -496,7 +501,35 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
             </div>
             )}
 
-            {/* dificuldade */}
+            {/* origem das questões (só no banco de questões) */}
+            {ehQuestoes && (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Origem das questões</p>
+                <div className="space-y-2">
+                  <label className={`flex items-start gap-2.5 rounded-lg border px-3 py-2.5 cursor-pointer transition-colors ${!importExisting ? 'bg-primary/10 border-primary/40' : 'bg-secondary border-border'}`}>
+                    <input type="checkbox" checked={!importExisting} onChange={() => setImportExisting(false)} className="mt-0.5 accent-[#e11d2e]" />
+                    <span>
+                      <span className={`block text-sm font-medium ${!importExisting ? 'text-primary' : 'text-foreground'}`}>Gerar questões a partir do material</span>
+                      <span className="block text-[11px] text-muted-foreground mt-0.5">A IA cria questões novas com base no conteúdo selecionado.</span>
+                    </span>
+                  </label>
+                  <label className={`flex items-start gap-2.5 rounded-lg border px-3 py-2.5 cursor-pointer transition-colors ${importExisting ? 'bg-primary/10 border-primary/40' : 'bg-secondary border-border'}`}>
+                    <input type="checkbox" checked={importExisting} onChange={() => setImportExisting(v => !v)} className="mt-0.5 accent-[#e11d2e]" />
+                    <span>
+                      <span className={`block text-sm font-medium ${importExisting ? 'text-primary' : 'text-foreground'}`}>Usar banco de questões já existente</span>
+                      <span className="block text-[11px] text-muted-foreground mt-0.5">
+                        Selecione o PDF de um banco pronto (da plataforma ou do seu upload). As questões, alternativas
+                        e gabarito ficam idênticos ao documento — a IA só escreve as explicações quando o PDF não tem.
+                        Bancos grandes podem levar alguns minutos.
+                      </span>
+                    </span>
+                  </label>
+                </div>
+              </div>
+            )}
+
+            {/* dificuldade (não se aplica à importação: as questões já existem) */}
+            {!(ehQuestoes && importExisting) && (
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Dificuldade</p>
               <div className="grid grid-cols-3 gap-2">
@@ -516,8 +549,10 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
                 ))}
               </div>
             </div>
+            )}
 
-            {/* quantidade */}
+            {/* quantidade (na importação, é a quantidade do próprio PDF) */}
+            {!(ehQuestoes && importExisting) && (
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
                 {ehQuestoes ? 'Quantidade de questões' : 'Quantidade de flashcards'}
@@ -532,6 +567,7 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
               />
               <span className="text-xs text-muted-foreground ml-2">máx. 30 por geração</span>
             </div>
+            )}
 
             {/* complemento */}
             <div>
@@ -550,7 +586,10 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
             </div>
 
             <Button className="w-full" onClick={generate} disabled={selected.size === 0 && uploads.length === 0}>
-              <ModeIcon className="w-4 h-4" /> Gerar {count} {ehQuestoes ? (count !== 1 ? 'questões' : 'questão') : `flashcard${count !== 1 ? 's' : ''}`}
+              <ModeIcon className="w-4 h-4" />
+              {ehQuestoes && importExisting
+                ? 'Importar banco de questões do PDF'
+                : `Gerar ${count} ${ehQuestoes ? (count !== 1 ? 'questões' : 'questão') : `flashcard${count !== 1 ? 's' : ''}`}`}
             </Button>
           </div>
         )}
