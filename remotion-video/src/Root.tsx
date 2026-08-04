@@ -47,6 +47,16 @@ import { C27_Equacao, C27_DURATION } from './creatives/C27_Equacao';
 import { C28_Verdades, C28_DURATION } from './creatives/C28_Verdades';
 import { C29_Caderno, C29_DURATION } from './creatives/C29_Caderno';
 import { C30_Rotina, C30_DURATION } from './creatives/C30_Rotina';
+import { C31_Mapa, C31_DURATION } from './creatives/C31_Mapa';
+import { C32_Mesa, C32_DURATION } from './creatives/C32_Mesa';
+import { C33_Speedrun, C33_DURATION } from './creatives/C33_Speedrun';
+import { C34_Acervo, C34_DURATION } from './creatives/C34_Acervo';
+import { C35_Dueto, C35_DURATION } from './creatives/C35_Dueto';
+import { C36_AZ, C36_DURATION } from './creatives/C36_AZ';
+import { C37_Horas, C37_DURATION } from './creatives/C37_Horas';
+import { C38_Toques, C38_DURATION } from './creatives/C38_Toques';
+import { C39_Esquecer, C39_DURATION } from './creatives/C39_Esquecer';
+import { C40_Tabuleiro, C40_DURATION } from './creatives/C40_Tabuleiro';
 
 const CREATIVES: Array<[string, React.FC, number]> = [
   ['C01-NovaEra', C01_NovaEra, C01_DURATION],
@@ -90,6 +100,16 @@ const CREATIVES: Array<[string, React.FC, number]> = [
   ['C28-Verdades', C28_Verdades, C28_DURATION],
   ['C29-Caderno', C29_Caderno, C29_DURATION],
   ['C30-Rotina', C30_Rotina, C30_DURATION],
+  ['C31-Mapa', C31_Mapa, C31_DURATION],
+  ['C32-Mesa', C32_Mesa, C32_DURATION],
+  ['C33-Speedrun', C33_Speedrun, C33_DURATION],
+  ['C34-Acervo', C34_Acervo, C34_DURATION],
+  ['C35-Dueto', C35_Dueto, C35_DURATION],
+  ['C36-AZ', C36_AZ, C36_DURATION],
+  ['C37-Horas', C37_Horas, C37_DURATION],
+  ['C38-Toques', C38_Toques, C38_DURATION],
+  ['C39-Esquecer', C39_Esquecer, C39_DURATION],
+  ['C40-Tabuleiro', C40_Tabuleiro, C40_DURATION],
 ];
 
 export const RemotionRoot: React.FC = () => {
