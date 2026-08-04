@@ -34,7 +34,8 @@ export const CATEGORY_SLUGS: Record<string, string> = {
   'Farmacologia & Bioquímica': 'farmacologia-bioquimica',
   'Especialidades': 'especialidades',
   'Anatomia & Ciclo Básico': 'anatomia-ciclo-basico',
-  'Resumos, Cards & Livros': 'resumos-cards-livros',
+  'Livros & Apostilas': 'livros-apostilas',
+  'Resumos, Cards & Mapas Mentais': 'resumos-cards-livros',
   'Banco de Questões & Simulados': 'banco-questoes-simulados',
   'Extensivo & Intensivo · Residência': 'extensivo-intensivo-residencia',
   'Revalida': 'revalida',
@@ -305,22 +306,46 @@ export const CATEGORY_SEO: CategorySeo[] = [
     ],
   },
   {
-    name: 'Resumos, Cards & Livros',
-    slug: 'resumos-cards-livros',
-    h1: 'Resumos Médicos, Flashcards e Livros de Medicina',
-    title: 'Resumos, Flashcards e Livros de Medicina | OneMed',
+    name: 'Livros & Apostilas',
+    slug: 'livros-apostilas',
+    h1: 'Livros de Medicina e Apostilas Médicas em PDF',
+    title: 'Livros de Medicina e Apostilas Médicas | OneMed',
     description:
-      'Mais de 9.000 livros médicos, resumos e flashcards de Anki para revisão rápida e memorização de longo prazo.',
+      'Biblioteca com mais de 9.000 livros médicos e apostilas completas dos principais cursos de residência, organizadas por área.',
     intro:
-      'Material de revisão para consolidar o que foi estudado: resumos objetivos, baralhos de flashcards para repetição espaçada e uma biblioteca com mais de 9.000 livros médicos.',
+      'Uma biblioteca médica inteira: milhares de livros de referência e as apostilas completas dos principais preparatórios de residência, organizadas por área para consulta e estudo.',
     topics: [
       {
         heading: 'Biblioteca com mais de 9.000 livros médicos',
         body: 'Referências clássicas e atualizadas, organizadas por área, para consulta e estudo.',
       },
       {
+        heading: 'Apostilas dos grandes preparatórios',
+        body: 'Material teórico completo em PDF, dividido por bloco e por especialidade.',
+      },
+      {
+        heading: 'Leitura em qualquer dispositivo',
+        body: 'PDFs abertos direto na plataforma, com anotações que ficam salvas na sua conta.',
+      },
+    ],
+  },
+  {
+    name: 'Resumos, Cards & Mapas Mentais',
+    slug: 'resumos-cards-livros',
+    h1: 'Resumos Médicos, Flashcards e Mapas Mentais',
+    title: 'Resumos, Flashcards e Mapas Mentais | OneMed',
+    description:
+      'Resumos objetivos, mapas mentais e flashcards de Anki para revisão rápida e memorização de longo prazo.',
+    intro:
+      'Material de revisão para consolidar o que foi estudado: resumos objetivos, mapas mentais e baralhos de flashcards para repetição espaçada.',
+    topics: [
+      {
         heading: 'Flashcards e repetição espaçada',
         body: 'Baralhos prontos de Anki para fixar o conteúdo que mais cai em prova.',
+      },
+      {
+        heading: 'Mapas mentais por especialidade',
+        body: 'O conteúdo inteiro em uma página, para enxergar as conexões antes da prova.',
       },
       {
         heading: 'Resumos para revisão de véspera',
@@ -610,6 +635,7 @@ export const PILLAR_HUBS: PillarHub[] = [
       'farmacologia-bioquimica',
       'semiologia-clinica',
       'resumos-cards-livros',
+      'livros-apostilas',
     ],
     topics: [
       {

@@ -1,28 +1,46 @@
+import { useEffect, useState } from 'react';
 import { Bell, MessagesSquare, ExternalLink } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useCommunitySettings } from '@/hooks/useCommunitySettings';
+import { supabase } from '@/integrations/supabase/client';
 
-const COURSES_UPDATING = [
-  { name: 'MedReview 2026', done: true },
-  { name: 'Apostilas EstratégiaMed 2026', done: true },
-  { name: 'Casal MED 2026', done: true },
-  { name: 'Medcurso 2026', done: false },
-  { name: 'Medcel 2026', done: false },
-  { name: 'Estratégia MED 2026', done: false },
-  { name: 'Casal MED Resumos 2026', done: false },
-  { name: 'Medcof USA 2026', done: false },
-  { name: 'MEDgrupo 2026', done: false },
-  { name: 'Eu Médico Residente 2026', done: false },
-  { name: 'MedCards 2026', done: false },
-  { name: 'MedWay 2026', done: false },
-  { name: 'PS Zerado 2026', done: false },
-  { name: 'HardWork Revalida 2026', done: false },
-  { name: 'TEPs Medcof 2026', done: false },
-];
+interface NotificationItem {
+  id: string;
+  label: string;
+  done: boolean;
+}
 
+const DEFAULT_HEADING = 'Cursos em processo de atualização:';
+
+// A lista e o título vêm do banco (notification_items +
+// announcement_settings.notifications_heading) e são editados no painel admin
+// em /admin/announcements — nada de hardcode: mudar notificação não pode
+// exigir deploy.
 export function NotificationsBell() {
   const { whatsappGroupUrl } = useCommunitySettings();
-  const badgeCount = whatsappGroupUrl ? 2 : 1;
+  const [items, setItems] = useState<NotificationItem[]>([]);
+  const [heading, setHeading] = useState(DEFAULT_HEADING);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      supabase.from('notification_items' as never)
+        .select('id, label, done')
+        .order('sort_order')
+        .then(res => (res.data || []) as unknown as NotificationItem[]),
+      supabase.from('announcement_settings')
+        .select('notifications_heading')
+        .maybeSingle()
+        .then(res => (res.data as { notifications_heading?: string | null } | null)?.notifications_heading || null),
+    ]).then(([rows, head]) => {
+      if (cancelled) return;
+      setItems(rows);
+      if (head?.trim()) setHeading(head);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  const badgeCount = (whatsappGroupUrl ? 1 : 0) + (items.length > 0 ? 1 : 0);
 
   return (
     <Popover>
@@ -32,9 +50,11 @@ export function NotificationsBell() {
           title="Notificações"
         >
           <Bell className="w-4 h-4" />
-          <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-primary text-white text-[10px] font-bold flex items-center justify-center">
-            {badgeCount}
-          </span>
+          {badgeCount > 0 && (
+            <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-primary text-white text-[10px] font-bold flex items-center justify-center">
+              {badgeCount}
+            </span>
+          )}
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-80 bg-background-paper border-border space-y-4">
@@ -55,16 +75,18 @@ export function NotificationsBell() {
             <ExternalLink className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
           </a>
         )}
-        <div>
-          <p className="text-sm font-semibold text-foreground mb-2.5">Cursos em processo de atualização:</p>
-          <ul className="space-y-1.5">
-            {COURSES_UPDATING.map(({ name, done }) => (
-              <li key={name} className="text-sm text-muted-foreground flex items-start gap-2">
-                <span className={`mt-0.5 ${done ? 'text-accent-success' : 'text-primary'}`}>•</span> {name}
-              </li>
-            ))}
-          </ul>
-        </div>
+        {items.length > 0 && (
+          <div>
+            <p className="text-sm font-semibold text-foreground mb-2.5">{heading}</p>
+            <ul className="space-y-1.5">
+              {items.map(({ id, label, done }) => (
+                <li key={id} className="text-sm text-muted-foreground flex items-start gap-2">
+                  <span className={`mt-0.5 ${done ? 'text-accent-success' : 'text-primary'}`}>•</span> {label}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </PopoverContent>
     </Popover>
   );

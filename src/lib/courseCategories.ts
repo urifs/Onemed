@@ -1,6 +1,6 @@
 import {
   HeartPulse, Siren, Pill, Baby, Scissors, ScanLine, Stethoscope, FlaskConical,
-  Layers, Bone, BookMarked, ListChecks, GraduationCap, BadgeCheck, Plane, Briefcase, FolderOpen,
+  Layers, Bone, Library, BookMarked, ListChecks, GraduationCap, BadgeCheck, Plane, Briefcase, FolderOpen,
   Star, SquareStack, ClipboardList,
   type LucideIcon,
 } from 'lucide-react';
@@ -18,7 +18,8 @@ export const CATEGORY_ORDER = [
   'Farmacologia & Bioquímica',
   'Especialidades',
   'Anatomia & Ciclo Básico',
-  'Resumos, Cards & Livros',
+  'Livros & Apostilas',
+  'Resumos, Cards & Mapas Mentais',
   'Banco de Questões & Simulados',
   'Extensivo & Intensivo · Residência',
   'Revalida',
@@ -38,7 +39,8 @@ export const CATEGORY_ICON: Record<string, LucideIcon> = {
   'Farmacologia & Bioquímica': FlaskConical,
   'Especialidades': Layers,
   'Anatomia & Ciclo Básico': Bone,
-  'Resumos, Cards & Livros': BookMarked,
+  'Livros & Apostilas': Library,
+  'Resumos, Cards & Mapas Mentais': BookMarked,
   'Banco de Questões & Simulados': ListChecks,
   'Extensivo & Intensivo · Residência': GraduationCap,
   'Revalida': BadgeCheck,

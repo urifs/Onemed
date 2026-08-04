@@ -204,18 +204,33 @@ export default function CourseDetailPage() {
           setCourse(courseRow || null);
           if (!courseRow) return;
 
+          // Os maiores cursos passam de 30 mil aulas — buscar página por página
+          // em sequência estourava o timeout e o curso aparecia vazio. Busca o
+          // total primeiro e traz as páginas em paralelo (6 por vez).
           const fetchAllLessons = async () => {
-            let items: Lesson[] = [];
-            let from = 0;
             const step = 1000;
-            while (true) {
-              const { data, error } = await supabase.from('lessons').select('*').eq('course_id', courseRow.id).order('sort_order').range(from, from + step - 1);
-              if (error) throw error;
-              if (data) items = items.concat(data);
-              if (!data || data.length < step) break;
-              from += step;
+            const { count, error: countErr } = await supabase.from('lessons')
+              .select('id', { count: 'exact', head: true })
+              .eq('course_id', courseRow.id);
+            if (countErr) throw countErr;
+            const total = count || 0;
+            if (!total) return [] as Lesson[];
+
+            const offsets: number[] = [];
+            for (let from = 0; from < total; from += step) offsets.push(from);
+
+            const pages: Lesson[][] = new Array(offsets.length);
+            for (let i = 0; i < offsets.length; i += 6) {
+              await Promise.all(offsets.slice(i, i + 6).map(async (from, k) => {
+                const { data, error } = await supabase.from('lessons').select('*')
+                  .eq('course_id', courseRow.id)
+                  .order('sort_order').order('id')
+                  .range(from, from + step - 1);
+                if (error) throw error;
+                pages[i + k] = data || [];
+              }));
             }
-            return items;
+            return pages.flat();
           };
 
           const fetchAllProgress = async () => {
