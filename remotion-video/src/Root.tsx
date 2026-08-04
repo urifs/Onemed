@@ -57,6 +57,8 @@ import { C37_Horas, C37_DURATION } from './creatives/C37_Horas';
 import { C38_Toques, C38_DURATION } from './creatives/C38_Toques';
 import { C39_Esquecer, C39_DURATION } from './creatives/C39_Esquecer';
 import { C40_Tabuleiro, C40_DURATION } from './creatives/C40_Tabuleiro';
+import { C41_Linhas, C41_DURATION } from './creatives/C41_Linhas';
+import { C42_Pilha, C42_DURATION } from './creatives/C42_Pilha';
 
 const CREATIVES: Array<[string, React.FC, number]> = [
   ['C01-NovaEra', C01_NovaEra, C01_DURATION],
@@ -110,6 +112,8 @@ const CREATIVES: Array<[string, React.FC, number]> = [
   ['C38-Toques', C38_Toques, C38_DURATION],
   ['C39-Esquecer', C39_Esquecer, C39_DURATION],
   ['C40-Tabuleiro', C40_Tabuleiro, C40_DURATION],
+  ['C41-Linhas', C41_Linhas, C41_DURATION],
+  ['C42-Pilha', C42_Pilha, C42_DURATION],
 ];
 
 export const RemotionRoot: React.FC = () => {
