@@ -1491,6 +1491,18 @@ regra própria; `/:path*` sozinho não casa com ela). A tela de login também tr
 (Failed to send/fetch/NetworkError) por mensagem em português com o que fazer. Verificado: `/`,
 `/login`, `/membros` e `/checkout` no domínio vercel.app respondem 308 pro oficial.
 
+**Gerador de flashcards/banco de questões com arquivos do Acervo Público:** cada arquivo no
+detalhe do item ganhou a seta de dropdown com "Gerar flashcards deste arquivo" e "Gerar banco de
+questões deste arquivo" (Popover; mesmo fluxo/viewers/salvamento das aulas, replicado no
+`DetailDialog`; Mensal cai no AiUpsellModal). `generate-flashcards` aceita `archiveFileIds` junto
+de `lessonIds` (teto conjunto de 8 fontes): a consulta dos arquivos roda com o JWT DO ALUNO — a
+RLS do acervo decide acesso (testado: arquivo privado alheio → "não encontrado") — e os bytes
+saem com o token da conta de conteúdo, que lê a pasta compartilhada do acervo (mesmo caminho do
+worker de streaming). `FlashcardSource` ganhou `archive?: boolean` (chip com badge "Acervo
+Público" no gerador; `selected` virou Map de objetos). Testado em produção de ponta a ponta:
+geração real de questões a partir de PDF do acervo (~110s), fonte gravada como "«nome» (Acervo
+Público)".
+
 ---
 
 ## Meta Ads — Contexto Geral
