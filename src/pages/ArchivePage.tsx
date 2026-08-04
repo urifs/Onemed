@@ -7,7 +7,7 @@ import {
   ArrowLeft, FolderUp, Upload, Search, Loader2, Eye, Heart, MessageSquare,
   FileText, PlayCircle, File as FileIcon, Image as ImageIcon, FolderOpen,
   Globe, Lock, Pencil, Trash2, Send, Clock, Flame, ThumbsUp, User,
-  ChevronDown, SquareStack, ClipboardList,
+  ChevronDown, SquareStack, ClipboardList, Star,
 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { FlashcardGeneratorModal, type FlashcardSource, type GeneratedDeck, type GeneratorMode } from '@/components/member/FlashcardGeneratorModal';
@@ -174,6 +174,30 @@ export default function ArchivePage() {
 
   const isTrial = status === 'trial';
 
+  // Favoritar materiais do acervo — mesmo padrão dos favoritos de curso/aula
+  // (tabela própria com RLS de dono, toggle otimista). Aparece também na aba
+  // Favoritos da página inicial.
+  const [favIds, setFavIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (!user?.id || isTrial) return;
+    supabase.from('user_archive_favorites' as never).select('item_id').eq('user_id', user.id)
+      .then(({ data }: { data: unknown }) =>
+        setFavIds(new Set(((data || []) as { item_id: string }[]).map(r => r.item_id))));
+  }, [user?.id, isTrial]);
+
+  const toggleFavorite = async (itemId: string) => {
+    if (!user?.id) return;
+    const fav = favIds.has(itemId);
+    setFavIds(prev => { const n = new Set(prev); if (fav) n.delete(itemId); else n.add(itemId); return n; });
+    if (fav) {
+      await supabase.from('user_archive_favorites' as never).delete().match({ user_id: user.id, item_id: itemId } as never);
+    } else {
+      const { error } = await supabase.from('user_archive_favorites' as never)
+        .insert({ user_id: user.id, item_id: itemId } as never);
+      if (error) setFavIds(prev => { const n = new Set(prev); n.delete(itemId); return n; });
+    }
+  };
+
   const load = useCallback(async () => {
     setLoading(true);
     const buscar = async () => {
@@ -339,13 +363,14 @@ export default function ArchivePage() {
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {items.map(item => {
               const Icon = mimeIcon(item.first_mime, item.kind);
+              const isFav = favIds.has(item.id);
               return (
+                <div key={item.id} className="relative">
                 <button
-                  key={item.id}
                   onClick={() => openDetail(item.id)}
-                  className="rounded-2xl border border-border bg-card hover:border-primary/40 p-5 text-left transition-colors flex flex-col gap-3"
+                  className="w-full h-full rounded-2xl border border-border bg-card hover:border-primary/40 p-5 text-left transition-colors flex flex-col gap-3"
                 >
-                  <div className="flex items-start gap-3">
+                  <div className="flex items-start gap-3 pr-8">
                     <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
                       <Icon className="w-5 h-5 text-primary" />
                     </div>
@@ -369,6 +394,19 @@ export default function ArchivePage() {
                     {Number(item.total_size) > 0 && <span>{fmtSize(item.total_size)}</span>}
                   </div>
                 </button>
+                {/* estrela de favoritar — irmã do card (botão dentro de botão
+                    é HTML inválido), no canto que o pr-8 do cabeçalho reserva */}
+                <button
+                  onClick={() => toggleFavorite(item.id)}
+                  title={isFav ? 'Remover dos favoritos' : 'Adicionar aos favoritos'}
+                  aria-label={isFav ? `Remover ${item.title} dos favoritos` : `Favoritar ${item.title}`}
+                  className={`absolute top-3.5 right-3.5 p-1.5 rounded-full transition-colors ${
+                    isFav ? 'text-accent-warning hover:text-accent-warning/70' : 'text-muted-foreground/60 hover:text-accent-warning hover:bg-secondary'
+                  }`}
+                >
+                  <Star className="w-4 h-4" fill={isFav ? 'currentColor' : 'none'} />
+                </button>
+                </div>
               );
             })}
           </div>
@@ -391,6 +429,8 @@ export default function ArchivePage() {
           onClose={closeDetail}
           onChanged={load}
           ensureName={ensureName}
+          favorited={favIds.has(detailId)}
+          onToggleFavorite={() => toggleFavorite(detailId)}
         />
       )}
 
@@ -596,9 +636,10 @@ function UploadDialog({ onClose, onDone, ensureName }: {
 }
 
 // ─── DETALHE ─────────────────────────────────────────────────────────────────
-function DetailDialog({ itemId, initialFileId, currentUserId, onClose, onChanged, ensureName }: {
+function DetailDialog({ itemId, initialFileId, currentUserId, onClose, onChanged, ensureName, favorited, onToggleFavorite }: {
   itemId: string; initialFileId?: string | null; currentUserId: string; onClose: () => void; onChanged: () => void;
   ensureName: (action: () => void) => void;
+  favorited: boolean; onToggleFavorite: () => void;
 }) {
   const [item, setItem] = useState<FeedItem | null>(null);
   const [files, setFiles] = useState<ArchiveFile[]>([]);
@@ -853,6 +894,13 @@ function DetailDialog({ itemId, initialFileId, currentUserId, onClose, onChanged
                   item.liked_by_me ? 'bg-primary/15 text-primary border-primary/40' : 'bg-secondary text-muted-foreground border-border hover:border-primary/40'
                 }`}>
                 <Heart className={`w-4 h-4 ${item.liked_by_me ? 'fill-primary' : ''}`} /> {item.like_count}
+              </button>
+              <button onClick={onToggleFavorite}
+                title={favorited ? 'Remover dos favoritos' : 'Adicionar aos favoritos'}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
+                  favorited ? 'bg-accent-warning/15 text-accent-warning border-accent-warning/40' : 'bg-secondary text-muted-foreground border-border hover:border-accent-warning/40'
+                }`}>
+                <Star className="w-4 h-4" fill={favorited ? 'currentColor' : 'none'} /> {favorited ? 'Favoritado' : 'Favoritar'}
               </button>
               <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"><Eye className="w-3.5 h-3.5" /> {item.views} acessos</span>
               {isOwner && (

@@ -328,6 +328,31 @@ export default function MemberDashboardPage() {
     return () => { alive = false; };
   }, [activeCategory, userId]);
 
+  // Materiais do Acervo Público favoritados — mesma receita: busca só quando
+  // a aba Favoritos abre. O join com archive_items passa pela RLS do acervo,
+  // então item que virou privado (de outro dono) some da lista sozinho.
+  const [favoriteArchive, setFavoriteArchive] = useState<{ item_id: string; title: string; kind: string; category: string }[]>([]);
+  useEffect(() => {
+    if (activeCategory !== 'Favoritos' || !userId || memberStatus === 'trial') { return; }
+    let alive = true;
+    supabase
+      .from('user_archive_favorites' as never)
+      .select('item_id, archive_items(id, title, kind, category)')
+      .eq('user_id', userId)
+      .then(({ data }: { data: unknown }) => {
+        if (!alive) return;
+        setFavoriteArchive(((data || []) as any[])
+          .filter(r => r.archive_items)
+          .map(r => ({ item_id: r.item_id, title: r.archive_items.title, kind: r.archive_items.kind, category: r.archive_items.category })));
+      });
+    return () => { alive = false; };
+  }, [activeCategory, userId, memberStatus]);
+
+  const handleUnfavoriteArchive = async (itemId: string) => {
+    setFavoriteArchive(prev => prev.filter(f => f.item_id !== itemId));
+    await supabase.from('user_archive_favorites' as never).delete().match({ user_id: userId, item_id: itemId } as never);
+  };
+
   // Mesma ideia da aba Favoritos: só busca as anotações quando o aluno abre a
   // aba. A RPC já devolve ordenado pela anotação mais recente.
   useEffect(() => {
@@ -990,6 +1015,43 @@ export default function MemberDashboardPage() {
                     <p className="text-sm text-muted-foreground">Nenhum arquivo favoritado ainda.</p>
                   )}
                 </div>
+
+                {memberStatus !== 'trial' && (
+                  <div>
+                    <p className="text-sm font-semibold text-foreground mb-3">
+                      Acervo Público favoritado {favoriteArchive.length > 0 && `(${favoriteArchive.length})`}
+                    </p>
+                    {favoriteArchive.length > 0 ? (
+                      <div className="rounded-xl border border-border overflow-hidden divide-y divide-border">
+                        {favoriteArchive.map(f => (
+                          <div key={f.item_id} className="w-full flex items-center gap-3.5 px-4 py-3.5 bg-card hover:bg-secondary transition-colors group">
+                            <button
+                              onClick={() => navigate(`/membros/acervo?item=${f.item_id}`)}
+                              className="flex-1 min-w-0 flex items-center gap-3.5 text-left"
+                            >
+                              <div className="w-9 h-9 rounded-full bg-secondary group-hover:bg-primary/15 flex items-center justify-center shrink-0 transition-colors">
+                                <FolderUp className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-foreground truncate">{f.title}</p>
+                                <p className="text-xs text-muted-foreground truncate">Acervo Público · {f.category}</p>
+                              </div>
+                            </button>
+                            <button
+                              onClick={() => handleUnfavoriteArchive(f.item_id)}
+                              className="shrink-0 p-1.5 rounded-lg text-accent-warning hover:text-accent-warning/70 transition-colors"
+                              title="Remover dos favoritos"
+                            >
+                              <Star className="w-4 h-4" fill="currentColor" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">Nenhum material do acervo favoritado ainda.</p>
+                    )}
+                  </div>
+                )}
               </section>
             ) : activeCategory ? (
               <section>
