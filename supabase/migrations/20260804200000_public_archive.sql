@@ -227,3 +227,25 @@ END $$;
 -- cada item lembra em qual conta mora (pra apagar/verificar com o token certo).
 ALTER TABLE public.drive_storage_accounts ADD COLUMN IF NOT EXISTS acervo_folder_id text;
 ALTER TABLE public.archive_items ADD COLUMN IF NOT EXISTS storage_account_id uuid;
+
+-- Views sem inflação: cada usuário conta 1 acesso por item (recarregar a
+-- página não empurra o item pro topo de "mais acessados").
+CREATE TABLE IF NOT EXISTS public.archive_views (
+  user_id uuid NOT NULL,
+  item_id uuid NOT NULL REFERENCES public.archive_items(id) ON DELETE CASCADE,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, item_id)
+);
+ALTER TABLE public.archive_views ENABLE ROW LEVEL SECURITY;
+
+CREATE OR REPLACE FUNCTION public.archive_register_view(_item_id uuid)
+RETURNS void
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  PERFORM assert_archive_access();
+  INSERT INTO archive_views (user_id, item_id) VALUES (auth.uid(), _item_id)
+  ON CONFLICT DO NOTHING;
+  IF FOUND THEN
+    UPDATE archive_items SET views = views + 1 WHERE id = _item_id;
+  END IF;
+END $$;

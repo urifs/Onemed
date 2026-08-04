@@ -1,14 +1,22 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// OneMed · affiliate-register
+// OneMed · affiliate-register — cadastro E login de afiliado (sem código)
 //
-// Cadastro de afiliado: cria o usuário no Auth (email+senha, já confirmado —
-// o frontend faz signInWithPassword logo em seguida), a linha em `affiliates`,
-// um cupom inicial de 10% exclusivo, e envia o e-mail de boas-vindas com o
-// botão do painel.
+// A conta de afiliado é independente da de assinante/admin e o MESMO e-mail
+// pode ter as duas. Sem código de verificação, a segurança vem do desenho:
 //
-// Segurança: se o e-mail já tem conta na plataforma (assinante, admin ou outro
-// afiliado), recusa com 409 — definir senha num usuário existente seria
-// permitir tomar a conta de um assinante que só usa magic link.
+//   • e-mail livre no Auth        → cria o usuário direto com a senha.
+//   • e-mail existente + LOGADO   → a sessão é a prova de posse: o afiliado
+//     (JWT do próprio e-mail)       nasce no MESMO usuário e a senha passa a
+//                                   valer pro login dele.
+//   • e-mail existente, deslogado → o afiliado nasce num usuário-ALIAS
+//                                   interno (email aleatório @alias), sem
+//                                   tocar na conta do assinante — definir
+//                                   senha na conta de outra pessoa é que
+//                                   seria o roubo de conta.
+//
+// action=login: resolve o e-mail REAL do afiliado pro usuário certo (direto ou
+// alias) e faz o grant de senha no GoTrue por aqui — o cliente nunca precisa
+// saber se existe alias.
 // ─────────────────────────────────────────────────────────────────────────────
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -28,23 +36,26 @@ function getCorsHeaders(req: Request) {
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
 
-async function checkRateLimit(supabase: ReturnType<typeof createClient>, identifier: string): Promise<boolean> {
+function escapeHtml(v: string): string {
+  return v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
+async function checkRateLimit(supabase: ReturnType<typeof createClient>, identifier: string, action: string, max: number): Promise<boolean> {
   const windowStart = new Date(Date.now() - 60 * 60 * 1000).toISOString()
   const { data } = await supabase.from('rate_limits')
     .select('attempts, window_start')
     .eq('identifier', identifier)
-    .eq('action', 'affiliate_register')
+    .eq('action', action)
     .maybeSingle()
-  if (data && data.window_start >= windowStart && (data.attempts ?? 0) >= 10) return false
+  if (data && data.window_start >= windowStart && (data.attempts ?? 0) >= max) return false
   await supabase.from('rate_limits').upsert({
-    identifier, action: 'affiliate_register',
+    identifier, action,
     attempts: data && data.window_start >= windowStart ? (data.attempts ?? 0) + 1 : 1,
     window_start: data && data.window_start >= windowStart ? data.window_start : new Date().toISOString(),
   }, { onConflict: 'identifier,action' })
   return true
 }
 
-// Cupom inicial: primeiro nome + 2 dígitos, tentando até achar código livre.
 async function generateInitialCoupon(supabase: ReturnType<typeof createClient>, name: string): Promise<string | null> {
   const base = (name.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-zA-Z]/g, '').slice(0, 10) || 'AFILIADO').toUpperCase()
   for (let i = 0; i < 12; i++) {
@@ -58,7 +69,7 @@ async function generateInitialCoupon(supabase: ReturnType<typeof createClient>, 
 }
 
 function welcomeEmailHtml(name: string): string {
-  const firstName = name.split(' ')[0]
+  const firstName = escapeHtml(name.split(' ')[0])
   return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,Helvetica,sans-serif;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:32px 16px;"><tr><td align="center">
     <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:12px;overflow:hidden;">
@@ -94,6 +105,25 @@ function welcomeEmailHtml(name: string): string {
 </body></html>`
 }
 
+async function sendWelcome(email: string, name: string) {
+  try {
+    const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')!
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: `OneMed <${FROM_EMAIL}>`,
+        to: [email],
+        subject: 'Sua conta de afiliado OneMed foi criada!',
+        html: welcomeEmailHtml(name),
+      }),
+    })
+    if (!res.ok) console.error('welcome email failed', await res.text())
+  } catch (e) {
+    console.error('welcome email error', e)
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: getCorsHeaders(req) })
@@ -102,187 +132,130 @@ serve(async (req) => {
     new Response(JSON.stringify(payload), { status, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } })
 
   try {
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    )
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    const supabase = createClient(supabaseUrl, serviceKey)
 
     const body = await req.json().catch(() => ({}))
-    const { name, email, password } = body
-    const cleanName = String(name || '').trim()
-    const cleanEmail = String(email || '').toLowerCase().trim()
+    const action = String(body.action || 'register')
+    const cleanEmail = String(body.email || '').toLowerCase().trim()
 
-    if (cleanName.length < 3) return json({ error: 'Informe seu nome completo.' }, 400)
+    const clientIp = (req.headers.get('x-forwarded-for') || '').split(',')[0].trim()
+      || req.headers.get('x-real-ip') || 'unknown'
+
     if (!EMAIL_REGEX.test(cleanEmail)) return json({ error: 'E-mail inválido.' }, 400)
+    const password = body.password
     if (typeof password !== 'string' || password.length < 8) {
       return json({ error: 'A senha precisa ter pelo menos 8 caracteres.' }, 400)
     }
 
-    const clientIp = (req.headers.get('x-forwarded-for') || '').split(',')[0].trim()
-      || req.headers.get('x-real-ip') || 'unknown'
-    if (!(await checkRateLimit(supabase, clientIp))) {
+    // ── LOGIN ────────────────────────────────────────────────────────────────
+    if (action === 'login') {
+      if (!(await checkRateLimit(supabase, `${clientIp}:${cleanEmail}`, 'affiliate_login', 12))) {
+        return json({ error: 'Muitas tentativas. Aguarde alguns minutos.' }, 429)
+      }
+      const { data: aff } = await supabase.from('affiliates')
+        .select('user_id').eq('email', cleanEmail).maybeSingle()
+      if (!aff) return json({ error: 'E-mail ou senha incorretos.' }, 401)
+
+      // e-mail de LOGIN do usuário do afiliado (pode ser o real ou um alias)
+      const { data: authUser } = await supabase.auth.admin.getUserById(aff.user_id)
+      const loginEmail = authUser?.user?.email
+      if (!loginEmail) return json({ error: 'E-mail ou senha incorretos.' }, 401)
+
+      const tokenRes = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
+        method: 'POST',
+        headers: { apikey: Deno.env.get('SUPABASE_ANON_KEY') || '', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: loginEmail, password }),
+      })
+      const tokenData = await tokenRes.json()
+      if (!tokenRes.ok || !tokenData?.access_token) {
+        return json({ error: 'E-mail ou senha incorretos.' }, 401)
+      }
+      return json({
+        success: true,
+        access_token: tokenData.access_token,
+        refresh_token: tokenData.refresh_token,
+      })
+    }
+
+    // ── REGISTER ─────────────────────────────────────────────────────────────
+    const cleanName = String(body.name || '').trim()
+    if (cleanName.length < 3) return json({ error: 'Informe seu nome completo.' }, 400)
+    if (!(await checkRateLimit(supabase, clientIp, 'affiliate_register', 10))) {
       return json({ error: 'Muitas tentativas. Aguarde alguns minutos e tente de novo.' }, 429)
     }
 
-    // E-mail novo → cria direto. E-mail que JÁ tem conta (assinante/admin) →
-    // a conta de afiliado é permitida sobre o mesmo e-mail, mas exige prova de
-    // posse: um código de 6 dígitos enviado ao próprio e-mail. Sem isso,
-    // qualquer um definiria senha na conta de um assinante que só usa magic
-    // link e a tomaria.
-    const providedCode = String(body?.code || '').trim()
+    // um afiliado por e-mail
+    const { data: alreadyAff } = await supabase.from('affiliates')
+      .select('id').eq('email', cleanEmail).maybeSingle()
+    if (alreadyAff) {
+      return json({ error: 'Este e-mail já é afiliado. Use o botão Entrar para acessar o painel.' }, 409)
+    }
 
-    const { data: created, error: createErr } = await supabase.auth.admin.createUser({
-      email: cleanEmail,
-      password,
-      email_confirm: true,
-      user_metadata: { affiliate: true, name: cleanName },
-    })
-    if (createErr || !created?.user) {
-      const msg = String(createErr?.message || '')
-      if (!/already|registered|exists/i.test(msg)) {
+    // sessão do próprio e-mail = prova de posse (assinante logado no menu)
+    const jwt = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
+    let sessionUser: any = null
+    if (jwt) {
+      const { data: u } = await supabase.auth.getUser(jwt)
+      if (u?.user && (u.user.email || '').toLowerCase() === cleanEmail) sessionUser = u.user
+    }
+
+    let userId: string
+    let mode: 'new' | 'self' | 'alias'
+
+    if (sessionUser) {
+      // mesmo usuário da sessão: senha passa a valer pro login dele
+      const { error: pwErr } = await supabase.auth.admin.updateUserById(sessionUser.id, {
+        password, email_confirm: true,
+      })
+      if (pwErr) {
+        console.error('updateUser password error', pwErr)
+        return json({ error: 'Não foi possível criar a conta agora. Tente novamente.' }, 500)
+      }
+      userId = sessionUser.id
+      mode = 'self'
+    } else {
+      const { data: created, error: createErr } = await supabase.auth.admin.createUser({
+        email: cleanEmail, password, email_confirm: true,
+        user_metadata: { affiliate: true, name: cleanName },
+      })
+      if (created?.user) {
+        userId = created.user.id
+        mode = 'new'
+      } else if (/already|registered|exists/i.test(String(createErr?.message || ''))) {
+        // e-mail já é de um assinante/admin e a pessoa NÃO está logada nele:
+        // o afiliado nasce num usuário-alias, sem tocar na conta existente.
+        const alias = `afiliado-${crypto.randomUUID().slice(0, 12)}@alias.onemedcursos.com.br`
+        const { data: aliasCreated, error: aliasErr } = await supabase.auth.admin.createUser({
+          email: alias, password, email_confirm: true,
+          user_metadata: { affiliate: true, name: cleanName, real_email: cleanEmail },
+        })
+        if (aliasErr || !aliasCreated?.user) {
+          console.error('alias createUser error', aliasErr)
+          return json({ error: 'Não foi possível criar a conta agora. Tente novamente.' }, 500)
+        }
+        userId = aliasCreated.user.id
+        mode = 'alias'
+      } else {
         console.error('createUser error', createErr)
         return json({ error: 'Não foi possível criar a conta agora. Tente novamente.' }, 500)
       }
-
-      // conta existente: acha o usuário e checa se já é afiliado
-      const usersRes = await fetch(`${Deno.env.get('SUPABASE_URL')}/auth/v1/admin/users?filter=${encodeURIComponent(cleanEmail)}`, {
-        headers: {
-          apikey: Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-          Authorization: `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
-        },
-      })
-      const usersData = await usersRes.json()
-      const existing = (usersData?.users || []).find((u: any) => (u.email || '').toLowerCase() === cleanEmail)
-      if (!existing) return json({ error: 'Não foi possível criar a conta agora. Tente novamente.' }, 500)
-
-      const { data: alreadyAff } = await supabase.from('affiliates')
-        .select('id').eq('user_id', existing.id).maybeSingle()
-      if (alreadyAff) {
-        return json({ error: 'Este e-mail já é afiliado. Use o botão Entrar para acessar o painel.' }, 409)
-      }
-
-      const sha = async (v: string) => {
-        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(v))
-        return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('')
-      }
-
-      if (!providedCode) {
-        // 1ª etapa: gera e envia o código de confirmação
-        const code = String(Math.floor(100000 + Math.random() * 900000))
-        await supabase.from('affiliate_email_codes').upsert({
-          email: cleanEmail, code_hash: await sha(code), attempts: 0,
-          expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-          created_at: new Date().toISOString(),
-        }, { onConflict: 'email' })
-        try {
-          const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')!
-          await fetch('https://api.resend.com/emails', {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              from: `OneMed <${FROM_EMAIL}>`,
-              to: [cleanEmail],
-              subject: `${code} é o seu código de confirmação — Afiliados OneMed`,
-              html: `<!DOCTYPE html><html><body style="margin:0;padding:32px 16px;background:#f4f4f5;font-family:Arial,sans-serif;">
-                <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;">
-                  <tr><td style="background:#e11d2e;padding:20px 32px;"><span style="color:#fff;font-size:20px;font-weight:bold;">OneMed</span></td></tr>
-                  <tr><td style="padding:32px;">
-                    <h1 style="margin:0 0 12px;font-size:20px;color:#18181b;">Confirme que este e-mail é seu</h1>
-                    <p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:#3f3f46;">
-                      Este e-mail já tem uma conta na OneMed. Para criar também a sua conta de
-                      <b>afiliado</b> com ele, digite o código abaixo na tela de cadastro:
-                    </p>
-                    <p style="margin:0 0 20px;font-size:34px;letter-spacing:8px;font-weight:bold;color:#e11d2e;text-align:center;">${code}</p>
-                    <p style="margin:0;font-size:12px;color:#a1a1aa;">O código vale por 15 minutos. Se não foi você, ignore este e-mail — nada muda na sua conta.</p>
-                  </td></tr>
-                </table></body></html>`,
-            }),
-          })
-        } catch (e) { console.error('code email error', e) }
-        return json({ needsVerification: true })
-      }
-
-      // 2ª etapa: valida o código e cria o afiliado sobre a conta existente
-      const { data: codeRow } = await supabase.from('affiliate_email_codes')
-        .select('*').eq('email', cleanEmail).maybeSingle()
-      if (!codeRow || new Date(codeRow.expires_at) < new Date() || codeRow.attempts >= 5) {
-        return json({ error: 'Código expirado. Peça um novo código.' }, 400)
-      }
-      if ((await sha(providedCode)) !== codeRow.code_hash) {
-        await supabase.from('affiliate_email_codes').update({ attempts: codeRow.attempts + 1 }).eq('email', cleanEmail)
-        return json({ error: 'Código incorreto. Confira o e-mail e tente de novo.' }, 400)
-      }
-      await supabase.from('affiliate_email_codes').delete().eq('email', cleanEmail)
-
-      // posse comprovada: a senha passa a valer pro login desta conta — e o
-      // e-mail é confirmado junto (o código É a confirmação; sem isso, conta
-      // criada mas nunca logada por magic link travaria no login com
-      // "email_not_confirmed").
-      const { error: pwErr } = await supabase.auth.admin.updateUserById(existing.id, { password, email_confirm: true })
-      if (pwErr) {
-        console.error('updateUser password error', pwErr)
-        return json({ error: 'Não foi possível definir a senha. Tente novamente.' }, 500)
-      }
-
-      const couponCodeExisting = await generateInitialCoupon(supabase, cleanName)
-      const { error: affExistingErr } = await supabase.from('affiliates').insert({
-        user_id: existing.id, name: cleanName, email: cleanEmail, coupon_code: couponCodeExisting,
-      })
-      if (affExistingErr) {
-        console.error('affiliates insert (existing user) error', affExistingErr)
-        return json({ error: 'Não foi possível criar a conta agora. Tente novamente.' }, 500)
-      }
-      try {
-        const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')!
-        await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            from: `OneMed <${FROM_EMAIL}>`,
-            to: [cleanEmail],
-            subject: 'Sua conta de afiliado OneMed foi criada!',
-            html: welcomeEmailHtml(cleanName),
-          }),
-        })
-      } catch (e) { console.error('welcome email error', e) }
-      return json({ success: true, couponCode: couponCodeExisting })
     }
 
     const couponCode = await generateInitialCoupon(supabase, cleanName)
-
     const { error: affErr } = await supabase.from('affiliates').insert({
-      user_id: created.user.id,
-      name: cleanName,
-      email: cleanEmail,
-      coupon_code: couponCode,
+      user_id: userId, name: cleanName, email: cleanEmail, coupon_code: couponCode,
     })
     if (affErr) {
-      // Sem a linha de afiliado a conta não serve pra nada — desfaz o usuário
-      // pra pessoa poder tentar de novo do zero.
       console.error('affiliates insert error', affErr)
-      await supabase.auth.admin.deleteUser(created.user.id)
+      // usuário criado só pra isto (novo/alias) não pode ficar órfão
+      if (mode !== 'self') await supabase.auth.admin.deleteUser(userId)
       return json({ error: 'Não foi possível criar a conta agora. Tente novamente.' }, 500)
     }
 
-    // Boas-vindas: falha de e-mail não pode derrubar o cadastro.
-    try {
-      const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')!
-      const emailRes = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          from: `OneMed <${FROM_EMAIL}>`,
-          to: [cleanEmail],
-          subject: 'Sua conta de afiliado OneMed foi criada!',
-          html: welcomeEmailHtml(cleanName),
-        }),
-      })
-      if (!emailRes.ok) console.error('welcome email failed', await emailRes.text())
-    } catch (e) {
-      console.error('welcome email error', e)
-    }
-
-    return json({ success: true, couponCode })
+    await sendWelcome(cleanEmail, cleanName)
+    return json({ success: true, couponCode, mode })
   } catch (err: any) {
     console.error('affiliate-register error', err)
     return new Response(JSON.stringify({ error: err?.message || 'Internal error' }), {

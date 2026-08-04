@@ -333,7 +333,7 @@ export default function ArchivePage() {
 
 // ─── UPLOAD ──────────────────────────────────────────────────────────────────
 function UploadDialog({ onClose, onDone, ensureName }: {
-  onClose: () => void; onDone: () => void; ensureName: () => Promise<boolean>;
+  onClose: () => void; onDone: () => void; ensureName: (action: () => void) => void;
 }) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -363,10 +363,15 @@ function UploadDialog({ onClose, onDone, ensureName }: {
 
   const totalSize = useMemo(() => files.reduce((a, f) => a + f.size, 0), [files]);
 
-  const start = async () => {
+  // ensureName é callback-style: com nome definido roda a ação na hora; sem
+  // nome, abre o modal e roda a ação depois que a pessoa salvar o nome.
+  const start = () => {
     if (!files.length) { toast.error('Escolha um arquivo ou uma pasta.'); return; }
     if (!title.trim()) { toast.error('Dê um título ao material.'); return; }
-    if (!(await ensureName())) return;
+    ensureName(() => { void reallyStart(); });
+  };
+
+  const reallyStart = async () => {
     setSending(true);
     setProgress({ done: 0, total: files.length, pct: 0, current: files[0].name });
     try {
@@ -496,7 +501,7 @@ function UploadDialog({ onClose, onDone, ensureName }: {
 // ─── DETALHE ─────────────────────────────────────────────────────────────────
 function DetailDialog({ itemId, currentUserId, onClose, onChanged, ensureName }: {
   itemId: string; currentUserId: string; onClose: () => void; onChanged: () => void;
-  ensureName: () => Promise<boolean>;
+  ensureName: (action: () => void) => void;
 }) {
   const [item, setItem] = useState<FeedItem | null>(null);
   const [files, setFiles] = useState<ArchiveFile[]>([]);
@@ -547,10 +552,13 @@ function DetailDialog({ itemId, currentUserId, onClose, onChanged, ensureName }:
     onChanged();
   };
 
-  const sendComment = async () => {
+  const sendComment = () => {
     const body = commentText.trim();
     if (!body || !item) return;
-    if (!(await ensureName())) return;
+    ensureName(() => { void reallySendComment(body); });
+  };
+
+  const reallySendComment = async (body: string) => {
     setSendingComment(true);
     try {
       const { error } = await supabase.from('archive_comments' as never)

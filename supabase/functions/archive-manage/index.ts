@@ -340,8 +340,10 @@ serve(async (req) => {
       if (!f || f.status !== 'ready') return json({ error: 'Arquivo não encontrado.' }, 404)
       const { data: item } = await supabase.from('archive_items')
         .select('id, user_id, is_public, status').eq('id', f.item_id).maybeSingle()
-      if (!item || item.status !== 'ready' || (!item.is_public && item.user_id !== user.id)) {
-        return json({ error: 'Arquivo não encontrado.' }, 404)
+      if (!item || item.status !== 'ready') return json({ error: 'Arquivo não encontrado.' }, 404)
+      if (!item.is_public && item.user_id !== user.id) {
+        const { data: isAdmin } = await supabase.rpc('has_role', { _user_id: user.id, _role: 'admin' })
+        if (!isAdmin) return json({ error: 'Arquivo não encontrado.' }, 404)
       }
 
       const streamSecret = Deno.env.get('LESSON_STREAM_SECRET')!

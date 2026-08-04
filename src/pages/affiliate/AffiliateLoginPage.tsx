@@ -16,20 +16,23 @@ export default function AffiliateLoginPage() {
     if (loading) return;
     setLoading(true);
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.toLowerCase().trim(),
-        password,
+      // O login passa pelo servidor: quando o mesmo e-mail é de assinante e de
+      // afiliado, a conta de afiliado pode viver num usuário interno próprio —
+      // o servidor resolve isso e devolve a sessão certa.
+      const { data, error } = await supabase.functions.invoke('affiliate-register', {
+        body: { action: 'login', email: email.toLowerCase().trim(), password },
       });
-      if (error || !data?.user) throw new Error('E-mail ou senha incorretos.');
-
-      // Login por senha só serve pro painel de afiliado — se a conta não é de
-      // afiliado, encerra a sessão pra não deixar um login "solto".
-      const { data: aff } = await supabase.from('affiliates' as never)
-        .select('id').eq('user_id', data.user.id).maybeSingle();
-      if (!aff) {
-        await supabase.auth.signOut();
-        throw new Error('Esta conta não é de afiliado. Cadastre-se para participar do programa.');
+      if (error || data?.error || !data?.access_token) {
+        let msg = data?.error;
+        if (!msg && error && 'context' in (error as any)) {
+          try { msg = (await (error as any).context.json())?.error; } catch { /* não-json */ }
+        }
+        throw new Error(msg || 'E-mail ou senha incorretos.');
       }
+      await supabase.auth.setSession({
+        access_token: data.access_token,
+        refresh_token: data.refresh_token,
+      });
       navigate('/afiliado');
     } catch (err: any) {
       toast.error(err.message || 'Não foi possível entrar.');

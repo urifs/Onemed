@@ -226,10 +226,14 @@ const AFFILIATE_COMMISSION_PERCENT: Record<string, number> = {
 // A partir de 5 vendas o afiliado ganha a conta Vitalício Pro na plataforma.
 const AFFILIATE_PRO_THRESHOLD = 5
 
+function escapeHtml(v: string): string {
+  return v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
 function affiliateSaleEmailHtml(affiliateName: string, saleInfo: {
   planLabel: string; amount: number; commission: number; buyerName: string; proUnlocked: boolean; totalSales: number
 }): string {
-  const firstName = affiliateName.split(' ')[0]
+  const firstName = escapeHtml(affiliateName.split(' ')[0])
   const brl = (v: number) => `R$ ${v.toFixed(2).replace('.', ',')}`
   return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,Helvetica,sans-serif;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:32px 16px;"><tr><td align="center">
@@ -245,7 +249,7 @@ function affiliateSaleEmailHtml(affiliateName: string, saleInfo: {
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fafafa;border:1px solid #e4e4e7;border-radius:8px;">
           <tr><td style="padding:16px 20px;font-size:14px;color:#3f3f46;line-height:2;">
             <b>Plano:</b> ${saleInfo.planLabel}<br/>
-            <b>Comprador:</b> ${saleInfo.buyerName || '—'}<br/>
+            <b>Comprador:</b> ${escapeHtml(saleInfo.buyerName || '—')}<br/>
             <b>Valor da venda:</b> ${brl(saleInfo.amount)}<br/>
             <b style="color:#16a34a;">Sua comissão: ${brl(saleInfo.commission)}</b><br/>
             <b>Total de vendas:</b> ${saleInfo.totalSales}

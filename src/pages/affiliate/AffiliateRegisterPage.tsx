@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -14,27 +14,25 @@ export default function AffiliateRegisterPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  // E-mail que já tem conta na plataforma (assinante/admin) pode virar
-  // afiliado também — mas só depois de confirmar a posse com o código de 6
-  // dígitos que o servidor manda pro próprio e-mail.
-  const [needsCode, setNeedsCode] = useState(false);
-  const [code, setCode] = useState('');
+
+  // Assinante logado que veio pelo menu: preenche o e-mail da sessão — com a
+  // sessão do próprio e-mail, o servidor cria o afiliado na mesma conta.
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (data?.user?.email && !email) setEmail(data.user.email);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (loading) return;
     if (name.trim().length < 3) { toast.error('Informe seu nome completo.'); return; }
     if (password.length < 8) { toast.error('A senha precisa ter pelo menos 8 caracteres.'); return; }
-    if (needsCode && code.trim().length !== 6) { toast.error('Digite o código de 6 dígitos enviado ao seu e-mail.'); return; }
     setLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke('affiliate-register', {
-        body: {
-          name: name.trim(),
-          email: email.toLowerCase().trim(),
-          password,
-          code: needsCode ? code.trim() : undefined,
-        },
+        body: { name: name.trim(), email: email.toLowerCase().trim(), password },
       });
       if (error || data?.error) {
         let msg = data?.error;
@@ -44,20 +42,22 @@ export default function AffiliateRegisterPage() {
         throw new Error(msg || 'Não foi possível criar a conta. Tente novamente.');
       }
 
-      if (data?.needsVerification) {
-        setNeedsCode(true);
-        toast.info('Este e-mail já tem conta na OneMed. Enviamos um código de confirmação para ele.');
-        return;
-      }
-
-      const { error: loginErr } = await supabase.auth.signInWithPassword({
-        email: email.toLowerCase().trim(),
-        password,
-      });
-      if (loginErr) {
-        toast.success('Conta criada! Faça login para acessar seu painel.');
-        navigate('/afiliado/login');
-        return;
+      // 'self': a sessão atual já é a conta do afiliado — vai direto.
+      // 'new'/'alias': o servidor resolve o usuário certo e devolve a sessão.
+      if (data?.mode !== 'self') {
+        const { data: loginData, error: loginErr } = await supabase.functions.invoke('affiliate-register', {
+          body: { action: 'login', email: email.toLowerCase().trim(), password },
+        });
+        if (!loginErr && loginData?.access_token) {
+          await supabase.auth.setSession({
+            access_token: loginData.access_token,
+            refresh_token: loginData.refresh_token,
+          });
+        } else {
+          toast.success('Conta criada! Faça login para acessar seu painel.');
+          navigate('/afiliado/login');
+          return;
+        }
       }
       toast.success('Conta de afiliado criada com sucesso!');
       navigate('/afiliado');
@@ -108,29 +108,12 @@ export default function AffiliateRegisterPage() {
             />
           </div>
 
-          {needsCode && (
-            <div className="rounded-xl border border-primary/30 bg-primary/[0.06] p-4 space-y-2">
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                Este e-mail já tem conta na OneMed — enviamos um <b className="text-foreground">código de 6 dígitos</b> para
-                ele. Digite abaixo para confirmar que é você. A senha informada passará a valer para o login desta conta.
-              </p>
-              <input
-                value={code}
-                onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                inputMode="numeric"
-                placeholder="000000"
-                autoFocus
-                className="w-full rounded-xl bg-secondary border border-border px-4 py-3 text-center text-lg tracking-[8px] font-bold text-foreground placeholder:text-muted-foreground placeholder:tracking-[8px] focus:outline-none focus:border-primary/50"
-              />
-            </div>
-          )}
-
           <button
             type="submit" disabled={loading}
             className="w-full rounded-xl bg-primary hover:bg-primary-hover disabled:opacity-60 text-primary-foreground font-semibold py-3.5 transition-colors flex items-center justify-center gap-2"
           >
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-            {loading ? 'Criando conta…' : needsCode ? 'Confirmar código e criar conta' : 'Criar minha conta de afiliado'}
+            {loading ? 'Criando conta…' : 'Criar minha conta de afiliado'}
           </button>
           <p className="text-center text-sm text-muted-foreground">
             Já tem conta?{' '}
