@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type Mpegts from 'mpegts.js';
-import { X, ChevronLeft, ChevronRight, Loader2, ExternalLink, Download, Printer, Gauge, Check, SquareStack, ClipboardList } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Loader2, ExternalLink, Download, Printer, Gauge, Check, SquareStack, ClipboardList, RotateCcw, RotateCw } from 'lucide-react';
 import { useLessonStreamUrl } from '@/hooks/useLessonStream';
 import { PdfViewer } from './PdfViewer';
 import { OfficeViewer } from './OfficeViewer';
@@ -275,10 +275,28 @@ export function LessonPlayer({
     if (v) v.playbackRate = rate;
   };
 
+  // Pular EXATAMENTE 10 segundos, pra frente ou pra trás — o único jeito de
+  // andar no tempo além da barra de progresso (que pula pro ponto clicado).
+  const skip = (delta: number) => {
+    const v = videoRef.current;
+    if (!v) return;
+    const alvo = Math.max(v.currentTime + delta, 0);
+    v.currentTime = isFinite(v.duration) ? Math.min(alvo, v.duration) : alvo;
+  };
+
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { onClose(); return; }
+      // Setas ← → também pulam 10s (fora de campos de texto). preventDefault
+      // impede o controle nativo do <video> de aplicar o pulo dele por cima.
+      const t = e.target as HTMLElement | null;
+      if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+      if (e.key === 'ArrowLeft') { e.preventDefault(); skip(-10); }
+      if (e.key === 'ArrowRight') { e.preventDefault(); skip(10); }
+    };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onClose]);
 
   const handleTimeUpdate = () => {
@@ -526,19 +544,41 @@ export function LessonPlayer({
         ) : isTsVideo && !mpegtsLib ? (
           <Loader2 className="w-8 h-8 text-primary animate-spin" />
         ) : lesson.type === 'video' ? (
-          <video
-            ref={videoRef}
-            {...(useMpegts ? {} : { src })}
-            controls
-            controlsList="nodownload noremoteplayback"
-            disablePictureInPicture
-            autoPlay
-            className="max-w-full max-h-full rounded-lg bg-black"
-            onTimeUpdate={handleTimeUpdate}
-            onEnded={handleEnded}
-            onError={useMpegts ? undefined : handleMediaError}
-            onContextMenu={e => e.preventDefault()}
-          />
+          <div className="relative w-full h-full flex items-center justify-center">
+            <video
+              ref={videoRef}
+              {...(useMpegts ? {} : { src })}
+              controls
+              controlsList="nodownload noremoteplayback"
+              disablePictureInPicture
+              autoPlay
+              className="max-w-full max-h-full rounded-lg bg-black"
+              onTimeUpdate={handleTimeUpdate}
+              onEnded={handleEnded}
+              onError={useMpegts ? undefined : handleMediaError}
+              onContextMenu={e => e.preventDefault()}
+            />
+            {/* Pulo fixo de 10s — botões nas laterais, sem depender do
+                controle nativo (cuja barra pula pro ponto clicado). */}
+            <button
+              onClick={() => skip(-10)}
+              title="Voltar 10 segundos"
+              aria-label="Voltar 10 segundos"
+              className="absolute left-2 md:left-5 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-black/50 hover:bg-black/70 border border-white/20 backdrop-blur flex flex-col items-center justify-center text-white transition-colors"
+            >
+              <RotateCcw className="w-4 h-4" />
+              <span className="text-[9px] font-bold leading-none mt-0.5">10</span>
+            </button>
+            <button
+              onClick={() => skip(10)}
+              title="Adiantar 10 segundos"
+              aria-label="Adiantar 10 segundos"
+              className="absolute right-2 md:right-5 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-black/50 hover:bg-black/70 border border-white/20 backdrop-blur flex flex-col items-center justify-center text-white transition-colors"
+            >
+              <RotateCw className="w-4 h-4" />
+              <span className="text-[9px] font-bold leading-none mt-0.5">10</span>
+            </button>
+          </div>
         ) : lesson.type === 'pdf' ? (
           <PdfViewer url={src} title={lesson.title} lessonId={lesson.id} />
         ) : lesson.type === 'doc' || lesson.type === 'sheet' ? (
@@ -555,18 +595,38 @@ export function LessonPlayer({
             draggable={false}
           />
         ) : lesson.type === 'audio' ? (
-          <audio
-            ref={videoRef as React.RefObject<HTMLAudioElement>}
-            src={src}
-            controls
-            controlsList="nodownload"
-            autoPlay
-            className="w-full max-w-md"
-            onTimeUpdate={handleTimeUpdate}
-            onEnded={handleEnded}
-            onError={handleMediaError}
-            onContextMenu={e => e.preventDefault()}
-          />
+          <div className="w-full max-w-md flex items-center gap-2">
+            <button
+              onClick={() => skip(-10)}
+              title="Voltar 10 segundos"
+              aria-label="Voltar 10 segundos"
+              className="shrink-0 w-11 h-11 rounded-full bg-white/10 hover:bg-white/15 flex flex-col items-center justify-center text-white transition-colors"
+            >
+              <RotateCcw className="w-4 h-4" />
+              <span className="text-[9px] font-bold leading-none mt-0.5">10</span>
+            </button>
+            <audio
+              ref={videoRef as React.RefObject<HTMLAudioElement>}
+              src={src}
+              controls
+              controlsList="nodownload"
+              autoPlay
+              className="flex-1 min-w-0"
+              onTimeUpdate={handleTimeUpdate}
+              onEnded={handleEnded}
+              onError={handleMediaError}
+              onContextMenu={e => e.preventDefault()}
+            />
+            <button
+              onClick={() => skip(10)}
+              title="Adiantar 10 segundos"
+              aria-label="Adiantar 10 segundos"
+              className="shrink-0 w-11 h-11 rounded-full bg-white/10 hover:bg-white/15 flex flex-col items-center justify-center text-white transition-colors"
+            >
+              <RotateCw className="w-4 h-4" />
+              <span className="text-[9px] font-bold leading-none mt-0.5">10</span>
+            </button>
+          </div>
         ) : (
           <div className="text-center">
             <p className="text-white/70 text-sm mb-4">Pré-visualização não disponível para este tipo de arquivo.</p>
