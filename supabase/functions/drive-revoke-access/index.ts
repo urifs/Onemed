@@ -182,6 +182,12 @@ serve(async (req) => {
         .eq('access_type', 'trial')
         .eq('status', 'active')
         .lte('expires_at', now)
+        // Lote limitado: depois de um backlog (cron parado, Drive fora), o
+        // lote sem teto estourava o tempo de execução e morria no meio. O
+        // cron roda a cada 5 min — os mais antigos primeiro, o resto fica
+        // pras próximas rodadas.
+        .order('expires_at', { ascending: true })
+        .limit(300)
       if (error) throw error
       targets = (data || []) as Access[]
     }

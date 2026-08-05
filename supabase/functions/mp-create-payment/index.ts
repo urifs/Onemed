@@ -231,6 +231,12 @@ serve(async (req) => {
         discountPercent = coupon.discount_percent
         appliedCoupon   = coupon.id
         appliedCouponCode = coupon.code
+      } else {
+        // Cupom inexistente/inativo NÃO pode passar em silêncio: a UI mostrou
+        // um total com desconto e o cliente seria cobrado no preço cheio.
+        return new Response(JSON.stringify({ error: 'Cupom inválido ou expirado' }), {
+          status: 400, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
+        })
       }
     }
 
@@ -305,13 +311,29 @@ serve(async (req) => {
       || null
     const clientUserAgent = req.headers.get('user-agent') || null
 
-    await supabase.from('buyers').update({
+    // `plan` entra AQUI de propósito, com o valor já validado pela tabela de
+    // preços: a linha de buyers é inserida pelo NAVEGADOR (RLS permite), então
+    // sem sobrescrever o plano validado um cliente malicioso podia gravar
+    // plan:'lifetime_pro' na linha, pagar o preço do mensal e o webhook — que
+    // concede acesso pelo buyers.plan — liberaria o plano caro.
+    const { data: updatedBuyers, error: buyerUpdateErr } = await supabase.from('buyers').update({
+      plan,
       payment_id: mpData.id,
       amount: totalAmount,
       client_ip: clientIp,
       client_user_agent: clientUserAgent,
       coupon_code: appliedCouponCode,
-    }).eq('external_reference', externalReference)
+    }).eq('external_reference', externalReference).select('id')
+
+    // Se nenhuma linha casou, o webhook nunca vai achar esse comprador e o
+    // pagamento aprovado ficaria sem acesso — melhor falhar agora, antes do
+    // cliente pagar, do que depois.
+    if (buyerUpdateErr || !updatedBuyers || updatedBuyers.length === 0) {
+      console.error('Buyer row missing for external_reference', externalReference, buyerUpdateErr?.message)
+      return new Response(JSON.stringify({ error: 'Registro da compra não encontrado. Recarregue a página e tente novamente.' }), {
+        status: 400, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
+      })
+    }
 
     // Incrementar uso do cupom se aplicado
     if (appliedCoupon) {

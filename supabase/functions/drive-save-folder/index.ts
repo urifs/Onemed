@@ -37,6 +37,20 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabase = createClient(supabaseUrl, supabaseKey)
 
+    // Só admin: isto grava a pasta-raiz que a sync varre e que o
+    // drive-share-folder compartilha — o verify_jwt padrão só exige um JWT
+    // válido, então qualquer conta de trial passava sem esta checagem.
+    const jwt = (req.headers.get('Authorization') || '').replace('Bearer ', '')
+    const { data: { user } } = await supabase.auth.getUser(jwt)
+    const { data: roleData } = user
+      ? await supabase.from('user_roles').select('role').eq('user_id', user.id).eq('role', 'admin').maybeSingle()
+      : { data: null }
+    if (!roleData) {
+      return new Response(JSON.stringify({ error: 'Apenas administradores' }), {
+        status: 403, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
+      })
+    }
+
     const { folder_id, target } = await req.json()
     const trimmedId = folder_id?.trim()
     // 'backup' salva a pasta de backup exclusivo (planos Vitalício Plus/Pro)

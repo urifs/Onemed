@@ -500,8 +500,11 @@ serve(async (req) => {
     console.log('MP payment status:', payment.status, 'external_ref:', payment.external_reference)
 
     if (!mpRes.ok) {
+      // 500 de propósito: responder 'ok' marcava a notificação como entregue
+      // e o MP nunca reenviava — uma falha passageira da API do MP virava
+      // pagamento aprovado sem acesso, pra sempre.
       console.error('Failed to fetch payment from MP:', JSON.stringify(payment))
-      return new Response('ok', { headers: getCorsHeaders(req) })
+      return new Response('retry', { status: 500, headers: getCorsHeaders(req) })
     }
 
     const externalRef = payment.external_reference
@@ -519,7 +522,11 @@ serve(async (req) => {
       .eq('external_reference', externalRef)
 
     if (fetchErr) {
+      // Erro de consulta ≠ comprador inexistente: seguir adiante com buyer
+      // nulo caía no caminho de "sem comprador" e devolvia 200 — o MP não
+      // reenviava e o acesso nunca era concedido. 500 força o retry.
       console.error('Error fetching buyer:', fetchErr.message)
+      return new Response('retry', { status: 500, headers: getCorsHeaders(req) })
     }
 
     const buyer = buyerRows?.[0] || null
@@ -618,11 +625,17 @@ serve(async (req) => {
         const { error: updateErr } = await supabase.from('accesses').update({
           access_type: accessType, status: 'active', expires_at: expiresAt, whatsapp: buyer.whatsapp,
         }).eq('id', existingAccess.id)
-        if (updateErr) console.error('Error renewing access:', updateErr.message)
-        else {
-          console.log('Access renewed for:', buyer.email)
-          if (BACKUP_FOLDER_PLANS.has(accessType)) await shareBackupFolder(supabase, buyer.email)
+        if (updateErr) {
+          // A flag de idempotência já foi tomada lá em cima; se a concessão
+          // falhou, ela PRECISA voltar pra false — senão todo retry do MP
+          // bate no "already granted" e o cliente pago fica sem acesso pra
+          // sempre. Devolve 500 pra o MP tentar de novo.
+          console.error('Error renewing access:', updateErr.message)
+          await supabase.from('buyers').update({ access_granted: false }).eq('id', buyer.id)
+          return new Response('retry', { status: 500, headers: getCorsHeaders(req) })
         }
+        console.log('Access renewed for:', buyer.email)
+        if (BACKUP_FOLDER_PLANS.has(accessType)) await shareBackupFolder(supabase, buyer.email)
       } else {
         const { error: accessErr } = await supabase.from('accesses').insert({
           email: buyer.email,
@@ -633,11 +646,13 @@ serve(async (req) => {
         })
 
         if (accessErr) {
+          // Mesmo caso do update acima: libera a flag e força o retry do MP.
           console.error('Error inserting access:', accessErr.message)
-        } else {
-          console.log('Access granted for:', buyer.email)
-          if (BACKUP_FOLDER_PLANS.has(accessType)) await shareBackupFolder(supabase, buyer.email)
+          await supabase.from('buyers').update({ access_granted: false }).eq('id', buyer.id)
+          return new Response('retry', { status: 500, headers: getCorsHeaders(req) })
         }
+        console.log('Access granted for:', buyer.email)
+        if (BACKUP_FOLDER_PLANS.has(accessType)) await shareBackupFolder(supabase, buyer.email)
       }
 
       // Send Meta CAPI Purchase event (server-side — independente de cookies do browser)

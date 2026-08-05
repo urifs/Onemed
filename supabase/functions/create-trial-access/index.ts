@@ -241,12 +241,19 @@ serve(async (req) => {
     }
 
     // ── Se já tem trial, devolve sessão (ativo) ou bloqueia (expirado) ──
-    const { data: existing } = await supabase
+    // NUNCA maybeSingle aqui: não existe UNIQUE em (email, access_type), e se
+    // dois pedidos simultâneos criarem duas linhas, o maybeSingle passa a dar
+    // erro com data=null — que era lido como "sem trial" e concedia um trial
+    // NOVO a cada chamada, pra sempre. limit(1) + array não tem esse buraco.
+    const { data: existingRows, error: existingErr } = await supabase
       .from('accesses')
       .select('id, status, expires_at')
       .eq('email', normalizedEmail)
       .eq('access_type', 'trial')
-      .maybeSingle()
+      .order('created_at', { ascending: false })
+      .limit(1)
+    if (existingErr) throw existingErr
+    const existing = existingRows?.[0] || null
 
     if (existing) {
       if (existing.status === 'active' && existing.expires_at) {
@@ -310,12 +317,24 @@ serve(async (req) => {
       return jsonResponse(req, { error: 'Acesso criado, mas não foi possível iniciar a sessão. Tente entrar em /login.' }, 500)
     }
 
-    // ── Side-effects fire-and-forget ──
-    supabase.from('visits').insert({ page: 'trial', user_agent: '' }).then(() => {}).catch(() => {})
-
-    supabase.functions.invoke('send-access-email', {
-      body: { to: normalizedEmail, type: 'trial_access' },
-    }).then(() => {}).catch((e: any) => console.warn('Trial email falhou:', e))
+    // ── Side-effects em waitUntil ──
+    // O comentário do recordIpTrial acima explica o porquê: o isolate pode
+    // morrer assim que a resposta sai, e promessa solta é descartada junto —
+    // o email de boas-vindas do trial sumia em silêncio. waitUntil mantém o
+    // isolate vivo até terminar, sem atrasar a resposta.
+    const sideEffects = Promise.allSettled([
+      supabase.from('visits').insert({ page: 'trial', user_agent: '' }),
+      supabase.functions.invoke('send-access-email', {
+        body: { to: normalizedEmail, type: 'trial_access' },
+      }),
+    ]).then(results => {
+      const emailResult = results[1]
+      if (emailResult.status === 'rejected') console.warn('Trial email falhou:', emailResult.reason)
+    })
+    // deno-lint-ignore no-explicit-any
+    const runtime = (globalThis as any).EdgeRuntime
+    if (runtime?.waitUntil) runtime.waitUntil(sideEffects)
+    else await sideEffects
 
     return jsonResponse(req, {
       success: true,
