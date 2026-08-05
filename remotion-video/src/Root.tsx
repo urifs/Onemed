@@ -195,7 +195,7 @@ export const RemotionRoot: React.FC = () => {
           durationInFrames={1}
           fps={30}
           width={1080}
-          height={1350}
+          height={1920}
         />
       ))}
       {ADS.map(([id, component]) => (

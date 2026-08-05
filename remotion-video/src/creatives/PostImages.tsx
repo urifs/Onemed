@@ -88,7 +88,7 @@ const Body: React.FC<{ post: Post }> = ({ post }) => {
   const it = post.items;
   if (post.layout === 'lista') {
     return (
-      <div style={{ position: 'absolute', left: 90, right: 90, top: 385 }}>
+      <div style={{ width: '100%', paddingLeft: 20, paddingRight: 20 }}>
         {it.map((x, i) => {
           const [emoji, ...rest] = x.split('|');
           return <Row key={i} p={p}><span style={{ fontSize: 34 }}>{emoji.trim()}</span>{rest.join('|').trim()}</Row>;
@@ -98,7 +98,7 @@ const Body: React.FC<{ post: Post }> = ({ post }) => {
   }
   if (post.layout === 'checklist') {
     return (
-      <div style={{ position: 'absolute', left: 90, right: 90, top: 385 }}>
+      <div style={{ width: '100%', paddingLeft: 20, paddingRight: 20 }}>
         {it.map((x, i) => {
           const t = x.includes('|') ? x.split('|').slice(1).join('|').trim() : x;
           return (
@@ -117,7 +117,7 @@ const Body: React.FC<{ post: Post }> = ({ post }) => {
   }
   if (post.layout === 'passos') {
     return (
-      <div style={{ position: 'absolute', left: 90, right: 90, top: 385 }}>
+      <div style={{ width: '100%', paddingLeft: 20, paddingRight: 20 }}>
         {it.map((x, i) => {
           const t = x.includes('|') ? x.split('|').slice(1).join('|').trim() : x;
           return (
@@ -138,7 +138,7 @@ const Body: React.FC<{ post: Post }> = ({ post }) => {
     const [hA, hB] = (post.layout === 'mito_verdade' ? 'MITO|VERDADE' : it[0]).split('|');
     const rows = post.layout === 'mito_verdade' ? it : it.slice(1);
     return (
-      <div style={{ position: 'absolute', left: 70, right: 70, top: 385 }}>
+      <div style={{ width: '100%' }}>
         <div style={{ display: 'flex', gap: 16, marginBottom: 16 }}>
           {[[hA, post.layout === 'mito_verdade' ? '#8a8f98' : p.mut], [hB, O_RED]].map(([h, c], i) => (
             <div key={i} style={{
@@ -169,7 +169,7 @@ const Body: React.FC<{ post: Post }> = ({ post }) => {
   }
   if (post.layout === 'diagrama') {
     return (
-      <div style={{ position: 'absolute', left: 120, right: 120, top: 385 }}>
+      <div style={{ width: '100%', paddingLeft: 50, paddingRight: 50 }}>
         {it.map((x, i) => (
           <React.Fragment key={i}>
             {i > 0 && (
@@ -191,7 +191,7 @@ const Body: React.FC<{ post: Post }> = ({ post }) => {
   /* bigstat */
   const [num, leg, ...apoio] = it;
   return (
-    <div style={{ position: 'absolute', left: 90, right: 90, top: 400, textAlign: 'center' }}>
+    <div style={{ width: '100%', paddingLeft: 20, paddingRight: 20, textAlign: 'center' }}>
       <div style={{ fontFamily: HEAD, fontWeight: 900, fontSize: 200, color: p.ink, letterSpacing: -8, lineHeight: 1 }}>
         {num}
       </div>
@@ -215,10 +215,10 @@ export const PostImage: React.FC<{ post: Post }> = ({ post }) => {
   return (
     <AbsoluteFill style={{ overflow: 'hidden' }}>
       {post.theme === 'light' ? <OLightBg /> : <DarkBg />}
-      <div style={{ position: 'absolute', top: 48, left: 0, right: 0 }}>
+      <div style={{ position: 'absolute', top: 100, left: 0, right: 0 }}>
         <Logo dark={post.theme === 'dark'} />
       </div>
-      <div style={{ position: 'absolute', left: 70, right: 70, top: 150 }}>
+      <div style={{ position: 'absolute', left: 70, right: 70, top: 240 }}>
         <Hl text={post.headline} color={p.ink} />
         {post.sub && (
           <div style={{ fontFamily: BODY, fontSize: 27, color: p.mut, textAlign: 'center', marginTop: 16, lineHeight: 1.4 }}>
@@ -226,8 +226,10 @@ export const PostImage: React.FC<{ post: Post }> = ({ post }) => {
           </div>
         )}
       </div>
-      <Body post={post} />
-      <div style={{ position: 'absolute', left: 70, right: 70, bottom: 108 }}>
+      <div style={{ position: 'absolute', left: 70, right: 70, top: 470, bottom: 360, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+        <Body post={post} />
+      </div>
+      <div style={{ position: 'absolute', left: 70, right: 70, bottom: 200 }}>
         <div style={{
           background: O_RED, borderRadius: 20, padding: '22px 30px', textAlign: 'center',
           boxShadow: '0 18px 46px -14px rgba(224,45,45,0.5)',
@@ -235,7 +237,7 @@ export const PostImage: React.FC<{ post: Post }> = ({ post }) => {
         }}>{post.takeaway}</div>
       </div>
       <div style={{
-        position: 'absolute', left: 0, right: 0, bottom: 44, textAlign: 'center',
+        position: 'absolute', left: 0, right: 0, bottom: 120, textAlign: 'center',
         fontFamily: MONO, fontWeight: 700, fontSize: 22, color: post.theme === 'dark' ? '#98a1b0' : '#6b7280',
       }}>
         onemedcursos.com.br · teste grátis
