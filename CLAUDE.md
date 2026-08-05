@@ -1545,6 +1545,25 @@ dos vídeos sem conversão: mp4 (99k, nativo), mp2t (12k, mpegts.js), quicktime 
 
 ---
 
+### 2026-08-05 (sessão remota) — conta VISUALIZADORA do painel admin
+
+**Papel `viewer`** (pedido do dono): conta `medestudosplusmedicina@gmail.com` (senha definida
+pelo dono) entra no painel `/admin` inteiro em modo leitura; edição SÓ na **Loja** (criar/gerir
+produtos) e na **Área de Membros** (conceder/renovar/revogar acesso — sem DELETE de linha).
+Migration `20260805040000_viewer_role.sql`: valor `viewer` no enum `app_role` (ALTER TYPE em
+statement separado!); policies de SELECT pra viewer em accesses/buyers/coupons/visits/affiliates/
+affiliate_sales/email_followups/user_roles/store_orders; FOR ALL em `store_products`; INSERT+
+UPDATE em `accesses`. `is_member()` e `can_read_library_audit()` ganharam bypass do viewer (o
+painel de comunidade/acervo/biblioteca lê por eles); RPCs admin_* de leitura re-gateadas pra
+admin-OU-viewer via `pg_get_functiondef` + replace direto em produção. `AuthContext` expõe
+`isViewer` (admin OU viewer abrem o painel); `AdminLayout` mostra faixa fixa "Modo visualização".
+**`drive_config` fica FORA do viewer de propósito** (tokens OAuth do Drive — a página Google
+Drive aparece como desconectada pra ele). Enforcement é NO BANCO: sondas confirmaram leitura ok,
+criar produto ok, conceder acesso ok, e PATCH em coupons/buyers e DELETE em accesses afetando 0
+linhas. Login real testado no navegador em produção (dashboard + faixa + loja + membros).
+
+---
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
