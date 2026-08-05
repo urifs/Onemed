@@ -41,6 +41,7 @@ import AffiliatesAdminPage from "./pages/AffiliatesAdminPage";
 import StoreAdminPage from "./pages/StoreAdminPage";
 import FlashcardsAdminPage from "./pages/FlashcardsAdminPage";
 import AcervoAdminPage from "./pages/AcervoAdminPage";
+import PanelAccountsPage from "./pages/PanelAccountsPage";
 import AnnouncementsPage from "./pages/AnnouncementsPage";
 import TermsPage from "./pages/TermsPage";
 import PrivacyPage from "./pages/PrivacyPage";
@@ -214,6 +215,7 @@ const App = () => (
             <Route path="/admin/cronogramas" element={<ProtectedRoute><StudyPlansAdminPage /></ProtectedRoute>} />
             <Route path="/admin/flashcards" element={<ProtectedRoute><FlashcardsAdminPage /></ProtectedRoute>} />
             <Route path="/admin/acervo" element={<ProtectedRoute><AcervoAdminPage /></ProtectedRoute>} />
+            <Route path="/admin/contas" element={<ProtectedRoute><PanelAccountsPage /></ProtectedRoute>} />
             <Route path="/admin/avisos" element={<ProtectedRoute><AnnouncementsPage /></ProtectedRoute>} />
             <Route path="/admin/database" element={<ProtectedRoute><DatabasePage /></ProtectedRoute>} />
             <Route path="/admin/email-campaign" element={<ProtectedRoute><EmailCampaignPage /></ProtectedRoute>} />

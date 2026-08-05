@@ -25,6 +25,7 @@ import {
   Handshake,
   CalendarClock,
   FolderUp,
+  UserCog,
 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -51,6 +52,9 @@ const navItems = [
   { path: '/admin/sms', label: 'SMS', icon: Smartphone },
   { path: '/admin/whatsapp', label: 'WhatsApp Business', icon: MessageCircle },
   { path: '/admin/database', label: 'Database', icon: Database },
+  // Gestão das contas do painel — só admin de verdade vê (o item some pro
+  // visualizador; a RPC e a Edge Function também recusam por trás).
+  { path: '/admin/contas', label: 'Contas do Painel', icon: UserCog, adminOnly: true },
 ];
 
 export const AdminLayout = ({ children }: { children: React.ReactNode }) => {
@@ -111,7 +115,7 @@ export const AdminLayout = ({ children }: { children: React.ReactNode }) => {
 
         {/* Navigation */}
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-          {navItems.map(item => (
+          {navItems.filter(item => !(item as { adminOnly?: boolean }).adminOnly || !isViewer).map(item => (
             <Link
               key={item.path}
               to={item.path}
