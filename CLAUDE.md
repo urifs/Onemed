@@ -1545,6 +1545,71 @@ dos vídeos sem conversão: mp4 (99k, nativo), mp2t (12k, mpegts.js), quicktime 
 
 ---
 
+### 2026-08-05 (sessão remota) — auditoria completa de desempenho, segurança e UX (branch `claude/performance-audit-complete-7g5y9n`)
+
+**Auditoria de ponta a ponta** (frontend, Edge Functions, SQL/RLS, build) com correções na
+branch acima. **Nada foi deployado em produção nesta sessão** — deploy só depois do merge:
+frontend sobe sozinho com o push na `main`; as ~10 Edge Functions alteradas precisam de
+redeploy multipart; a migration `20260805120000_perf_indexes_rls_initplan.sql` precisa ser
+aplicada. Detalhe no relatório da sessão. Destaques:
+
+**Bundle:** `App.tsx` importava as ~40 páginas estaticamente — TODO visitante da landing
+baixava 1.949 kB (537 kB gzip) com painel admin, Leaflet e player dentro. Rotas de
+membro/admin/checkout/afiliado viraram `lazy()` (públicas prerenderizadas continuam
+estáticas de propósito, senão o HTML do prerender piscava); `PdfViewer` (pdfjs, ~376 kB +
+worker 1,4 MB) só baixa ao abrir um PDF. Bundle inicial: **690 kB (205 kB gzip), −62%**.
+Chunk 404 pós-deploy recarrega a página uma vez em vez de tela branca.
+
+**Segurança (CRÍTICOS, corrigidos):** `mp-create-payment` não regravava o `plan` validado —
+como a linha de `buyers` é inserida pelo navegador, dava pra gravar `plan:'lifetime_pro'`,
+pagar R$49,90 e o webhook liberava o Pro; `drive-share-folder` autorizava requisição SEM
+header (com `verify_jwt=false`, qualquer curl compartilhava a biblioteca);
+`drive-oauth-callback` não exigia auth nenhuma pra sobrescrever a conexão do Drive (e apagava
+o `refresh_token` na reconexão — Google só o devolve na 1ª autorização);
+`drive-save-folder`/`drive-list-folders`/`whatsapp-manager` aceitavam qualquer JWT logado
+(trial lia a `evolution_api_key` e mensagens de clientes). Todos exigem admin agora.
+
+**Pagamento confiável:** `mp-webhook` devolvia 200 em falha transitória (MP não reenviava →
+cliente pago sem acesso pra sempre) — agora 500 força retry; se a concessão falha depois de
+tomar a flag `access_granted`, a flag volta e o retry refaz (antes batia em "already granted"
+e pulava tudo). `send-followup-emails`: janela de ±2h só cobria 4/24h do dia — a maioria dos
+trials NUNCA recebia follow-up; agora 26h com dedupe pela tabela.
+
+**Área de membros:** lista de aulas renderiza em lotes de 200 + "Mostrar mais" (megacurso de
+31k aulas congelava a aba por segundos); progresso de vídeo acumula em ref e só vira estado ao
+fechar/trocar de aula (re-render da página INTEIRA a cada 5s de reprodução); busca do curso com
+`useDeferredValue`; timers de retry do player cancelados na troca de aula (retry da aula
+anterior reiniciava a nova do zero); `member-account-info` em cache react-query compartilhado
+(era 1 chamada de Edge Function POR NAVEGAÇÃO pra todo aluno, via TrialCountdownBar).
+
+**Banco (migration 20260805120000, ⏳ aplicar):** índices funcionais `lower(email)` em
+accesses/buyers/profiles (`is_trial_member()`/`my_member_status()` faziam 3 seq scans por
+consulta em quase toda página); `lessons(course_id, sort_order, id)` (cada página do curso
+reordenava 30k linhas); índices de FK cascade, archive_likes/views(item_id), etc.; ~30
+políticas RLS com `has_role()`/`auth.uid()` cru embrulhadas em `(SELECT ...)` — inclui as 5
+políticas admin FOR ALL que a 20260804040000 não cobriu (o has_role cru continuava rodando
+POR LINHA em lessons via OR de política permissiva); RPC `increment_coupon_use` atômica.
+
+**UX/erros silenciosos:** excluir comprador e "Sincronizar" trials pedem confirmação (eram
+DELETEs permanentes de 1 clique); `ClaimAccessPage` distinguia falha de rede de "compra não
+encontrada" (cliente que ACABOU de pagar via erro falso, sem retry); StudyPlan/StorageAccounts
+com estado de erro (falha mostrava "vazio" como se os dados tivessem sumido); "Carregar mais"
+da comunidade não apaga mais o feed; digitar na busca do acervo com material aberto não refaz
+mais 3 consultas; F5 no /payment/success não perde mais plano/email; dropdowns de país fecham
+ao clicar fora; rollback+aviso em favoritos/exclusões que falham; carrossel do dashboard 6s
+com pausa por toque/foco e `prefers-reduced-motion`.
+
+**Pendências documentadas (não corrigidas nesta sessão, por risco/escopo):** rewrites dos
+feeds `community_feed`/`archive_feed` (subqueries correlacionadas por linha computadas antes
+do LIMIT — os índices novos amortecem; rewrite exige cuidado com `_sort='relevant'`);
+rate-limits não-atômicos das Edge Functions (RPC única resolveria os 7); `search_lessons` com
+`unaccent` por linha (precisa de índice trigram + wrapper IMMUTABLE); cache de token do Google
+no worker de streaming (hoje 1 chamada de Edge Function por range request); `types.ts` gerado
+do Supabase desatualizado (16 tabelas de ~40 — regenerar com
+`supabase gen types typescript --project-id jrrybiohwqabsdurqudc`).
+
+---
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
