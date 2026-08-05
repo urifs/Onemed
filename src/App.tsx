@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { Suspense, lazy, useEffect, useRef } from "react";
 import { ThemeProvider } from "next-themes";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Route, Routes, Navigate, useLocation } from "react-router-dom";
@@ -8,51 +8,75 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { trackPageView } from "@/lib/pixel";
 
-// Pages
+// Rotas públicas prerenderizadas ficam ESTÁTICAS: o HTML delas já vem pronto
+// do build (scripts/prerender.mjs) e um chunk lazy trocaria esse conteúdo por
+// um spinner até o download terminar — pior pra SEO e pra primeira visita.
 import Index from "./pages/Index";
-import LoginPage from "./pages/LoginPage";
-import RegisterPage from "./pages/RegisterPage";
-import MemberLoginPage from "./pages/MemberLoginPage";
-import MemberDashboardPage from "./pages/MemberDashboardPage";
-import CourseDetailPage from "./pages/CourseDetailPage";
-import CommunityPage from "./pages/CommunityPage";
-import Dashboard from "./pages/Dashboard";
-import AccessManagement from "./pages/AccessManagement";
-import MembersPage from "./pages/MembersPage";
-import DriveSettings from "./pages/DriveSettings";
-import CheckoutPage from "./pages/CheckoutPage";
-import PaymentSuccessPage from "./pages/PaymentSuccessPage";
-import PaymentErrorPage from "./pages/PaymentErrorPage";
-import PaymentPendingPage from "./pages/PaymentPendingPage";
-import ClaimAccessPage from "./pages/ClaimAccessPage";
-import BuyersPage from "./pages/BuyersPage";
-import TrialUsersPage from "./pages/TrialUsersPage";
-import CouponsPage from "./pages/CouponsPage";
-import AdminCommunityPage from "./pages/AdminCommunityPage";
-import StorePage from "./pages/StorePage";
-import ArchivePage from "./pages/ArchivePage";
-import StudyPlanPage from "./pages/StudyPlanPage";
-import StudyPlansAdminPage from "./pages/StudyPlansAdminPage";
-import { captureAffiliateRefFromUrl } from "./lib/affiliateRef";
-import AffiliateRegisterPage from "./pages/affiliate/AffiliateRegisterPage";
-import AffiliateLoginPage from "./pages/affiliate/AffiliateLoginPage";
-import AffiliatePanelPage from "./pages/affiliate/AffiliatePanelPage";
-import AffiliatesAdminPage from "./pages/AffiliatesAdminPage";
-import StoreAdminPage from "./pages/StoreAdminPage";
-import FlashcardsAdminPage from "./pages/FlashcardsAdminPage";
-import AcervoAdminPage from "./pages/AcervoAdminPage";
-import AnnouncementsPage from "./pages/AnnouncementsPage";
 import TermsPage from "./pages/TermsPage";
 import PrivacyPage from "./pages/PrivacyPage";
-import DatabasePage from "./pages/DatabasePage";
-import EmailCampaignPage from "./pages/EmailCampaignPage";
-import SMSPage from "./pages/SMSPage";
-import WhatsAppPage from "./pages/WhatsAppPage";
 import NotFound from "./pages/NotFound";
 import CoursesIndexPage from "./pages/public/CoursesIndexPage";
 import CategoryPage from "./pages/public/CategoryPage";
 import PillarHubPage from "./pages/public/PillarHubPage";
 import PlansPage from "./pages/public/PlansPage";
+import { captureAffiliateRefFromUrl } from "./lib/affiliateRef";
+
+// Todo o resto (área de membros, admin, checkout, afiliados) é carregado sob
+// demanda — sem isto o visitante da landing baixava um bundle único de ~1,9MB
+// com painel admin, player de aula, Leaflet e tudo mais dentro.
+//
+// Depois de um deploy, quem ficou com a aba aberta pode pedir um chunk que já
+// não existe no servidor (hash antigo → 404). Nesse caso recarrega a página
+// UMA vez pra pegar o index novo, em vez de estourar tela branca; a trava em
+// sessionStorage impede loop de reload se o erro persistir.
+const lazyPage = (loader: () => Promise<{ default: React.ComponentType }>) =>
+  lazy(() =>
+    loader().catch((err) => {
+      const key = "om_chunk_reload";
+      if (!sessionStorage.getItem(key)) {
+        sessionStorage.setItem(key, "1");
+        window.location.reload();
+        return new Promise<never>(() => {});
+      }
+      throw err;
+    }),
+  );
+
+const LoginPage = lazyPage(() => import("./pages/LoginPage"));
+const RegisterPage = lazyPage(() => import("./pages/RegisterPage"));
+const MemberLoginPage = lazyPage(() => import("./pages/MemberLoginPage"));
+const MemberDashboardPage = lazyPage(() => import("./pages/MemberDashboardPage"));
+const CourseDetailPage = lazyPage(() => import("./pages/CourseDetailPage"));
+const CommunityPage = lazyPage(() => import("./pages/CommunityPage"));
+const Dashboard = lazyPage(() => import("./pages/Dashboard"));
+const AccessManagement = lazyPage(() => import("./pages/AccessManagement"));
+const MembersPage = lazyPage(() => import("./pages/MembersPage"));
+const DriveSettings = lazyPage(() => import("./pages/DriveSettings"));
+const CheckoutPage = lazyPage(() => import("./pages/CheckoutPage"));
+const PaymentSuccessPage = lazyPage(() => import("./pages/PaymentSuccessPage"));
+const PaymentErrorPage = lazyPage(() => import("./pages/PaymentErrorPage"));
+const PaymentPendingPage = lazyPage(() => import("./pages/PaymentPendingPage"));
+const ClaimAccessPage = lazyPage(() => import("./pages/ClaimAccessPage"));
+const BuyersPage = lazyPage(() => import("./pages/BuyersPage"));
+const TrialUsersPage = lazyPage(() => import("./pages/TrialUsersPage"));
+const CouponsPage = lazyPage(() => import("./pages/CouponsPage"));
+const AdminCommunityPage = lazyPage(() => import("./pages/AdminCommunityPage"));
+const StorePage = lazyPage(() => import("./pages/StorePage"));
+const ArchivePage = lazyPage(() => import("./pages/ArchivePage"));
+const StudyPlanPage = lazyPage(() => import("./pages/StudyPlanPage"));
+const StudyPlansAdminPage = lazyPage(() => import("./pages/StudyPlansAdminPage"));
+const AffiliateRegisterPage = lazyPage(() => import("./pages/affiliate/AffiliateRegisterPage"));
+const AffiliateLoginPage = lazyPage(() => import("./pages/affiliate/AffiliateLoginPage"));
+const AffiliatePanelPage = lazyPage(() => import("./pages/affiliate/AffiliatePanelPage"));
+const AffiliatesAdminPage = lazyPage(() => import("./pages/AffiliatesAdminPage"));
+const StoreAdminPage = lazyPage(() => import("./pages/StoreAdminPage"));
+const FlashcardsAdminPage = lazyPage(() => import("./pages/FlashcardsAdminPage"));
+const AcervoAdminPage = lazyPage(() => import("./pages/AcervoAdminPage"));
+const AnnouncementsPage = lazyPage(() => import("./pages/AnnouncementsPage"));
+const DatabasePage = lazyPage(() => import("./pages/DatabasePage"));
+const EmailCampaignPage = lazyPage(() => import("./pages/EmailCampaignPage"));
+const SMSPage = lazyPage(() => import("./pages/SMSPage"));
+const WhatsAppPage = lazyPage(() => import("./pages/WhatsAppPage"));
 import { PILLAR_HUBS, isNoIndexPath } from "@/seo/siteConfig";
 import { Seo } from "@/seo/Seo";
 import WhatsAppButton from "./components/WhatsAppButton";
@@ -168,6 +192,13 @@ const App = () => (
             <FbclidCapture />
             <PixelPageViews />
             <PrivateRouteSeo />
+            <Suspense
+              fallback={
+                <div className="flex min-h-screen items-center justify-center bg-background">
+                  <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                </div>
+              }
+            >
             <Routes>
             {/* Public routes */}
             <Route path="/" element={<Index />} />
@@ -233,6 +264,7 @@ const App = () => (
 
             <Route path="*" element={<NotFound />} />
           </Routes>
+          </Suspense>
           <WhatsAppButton />
           <KickedOutModal />
         </BrowserRouter>

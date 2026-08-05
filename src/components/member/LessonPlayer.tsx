@@ -1,8 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import type Mpegts from 'mpegts.js';
 import { X, ChevronLeft, ChevronRight, Loader2, ExternalLink, Download, Printer, Gauge, Check, SquareStack, ClipboardList, RotateCcw, RotateCw } from 'lucide-react';
 import { useLessonStreamUrl } from '@/hooks/useLessonStream';
-import { PdfViewer } from './PdfViewer';
+
+// O PdfViewer arrasta o pdfjs-dist inteiro (centenas de KB + worker de 1,4MB).
+// Carregado sob demanda: quem só assiste vídeo nunca baixa nada disso.
+const PdfViewer = lazy(() =>
+  import('./PdfViewer').then(m => ({ default: m.PdfViewer })),
+);
 import { OfficeViewer } from './OfficeViewer';
 import { TxtViewer } from './TxtViewer';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -592,7 +597,15 @@ export function LessonPlayer({
             </button>
           </div>
         ) : lesson.type === 'pdf' ? (
-          <PdfViewer url={src} title={lesson.title} lessonId={lesson.id} />
+          <Suspense
+            fallback={
+              <div className="flex h-full w-full items-center justify-center">
+                <Loader2 className="w-8 h-8 animate-spin text-white/70" />
+              </div>
+            }
+          >
+            <PdfViewer url={src} title={lesson.title} lessonId={lesson.id} />
+          </Suspense>
         ) : lesson.type === 'doc' || lesson.type === 'sheet' ? (
           <OfficeViewer url={src} title={lesson.title} />
         ) : lesson.type === 'txt' ? (
