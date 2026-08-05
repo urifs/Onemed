@@ -61,6 +61,13 @@ import { C41_Linhas, C41_DURATION } from './creatives/C41_Linhas';
 import { C42_Pilha, C42_DURATION } from './creatives/C42_Pilha';
 import { MB01_Linhas, MB01_DURATION } from './creatives/MB01_Linhas';
 import { MB02_Pilha, MB02_DURATION } from './creatives/MB02_Pilha';
+import { AD01, AD02, AD03, AD04, AD05, AD06, AD07, AD08, AD09, AD10 } from './creatives/AdImages';
+
+const ADS: Array<[string, React.FC]> = [
+  ['AD01-Mapa', AD01], ['AD02-Mesa', AD02], ['AD03-Toques', AD03], ['AD04-Acervo', AD04],
+  ['AD05-Horas', AD05], ['AD06-Curva', AD06], ['AD07-Tabuleiro', AD07], ['AD08-Speedrun', AD08],
+  ['AD09-Numeros', AD09], ['AD10-Assistente', AD10],
+];
 
 const CREATIVES: Array<[string, React.FC, number]> = [
   ['C01-NovaEra', C01_NovaEra, C01_DURATION],
@@ -179,6 +186,17 @@ export const RemotionRoot: React.FC = () => {
         width={1080}
         height={1920}
       />
+      {ADS.map(([id, component]) => (
+        <Composition
+          key={id}
+          id={id}
+          component={component}
+          durationInFrames={1}
+          fps={30}
+          width={1080}
+          height={1350}
+        />
+      ))}
       {CREATIVES.map(([id, component, duration]) => (
         <Composition
           key={id}
