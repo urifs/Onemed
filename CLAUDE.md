@@ -1522,6 +1522,17 @@ recusa excluir cupom que pertence a um afiliado (orienta desativar; confirmaçã
 exclusões) e `affiliate-coupon` recria/reativa a linha se o afiliado re-salvar o próprio código.
 Detalhe do fluxo: o checkout exige e-mail @gmail.com na etapa de dados (por design).
 
+**Aulas .mov sem conversão abrem no player do Google (imediato) + lote de conversão retomado:**
+cliente reportou "Não há nenhum vídeo com formato ou tipo MIME suportados" no medcof-2026 — era
+uma das 46 aulas `.mov` (93 GB) que ficaram pendentes em 31/07 pela cota de download do Drive.
+Solução imediata (pedido do dono): `LessonPlayer` ganhou `formatoSemSuporte` — vídeo com mime
+quicktime/wmv/msvideo SEM `storage_path` vai DIRETO pro embed oficial do Drive (mesmo iframe do
+fallback de cota; o Google transcodifica no servidor). Quando a conversão preenche `storage_path`,
+o player próprio assume sozinho. Verificado em produção na aula exata do print (iframe carregou e
+reproduz). Em paralelo, a cota resetou (sonda barata com Range aberto → 206) e o lote
+`fix-unplayable-videos.mjs --ext=mov` foi relançado em produção (setsid/nohup + checagem agendada
+via send_later) — idempotente, filtra `storage_path IS NULL`.
+
 ---
 
 ## Meta Ads — Contexto Geral
