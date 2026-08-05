@@ -64,6 +64,7 @@ import { MB02_Pilha, MB02_DURATION } from './creatives/MB02_Pilha';
 import { AD01, AD02, AD03, AD04, AD05, AD06, AD07, AD08, AD09, AD10 } from './creatives/AdImages';
 import { POSTS, makePostComp } from './creatives/PostImages';
 import { PROMOS } from './creatives/PromoImages';
+import { MEDUF_PROMOS, makeMedufPromo } from './creatives/MedufPromos';
 
 const ADS: Array<[string, React.FC]> = [
   ['AD01-Mapa', AD01], ['AD02-Mesa', AD02], ['AD03-Toques', AD03], ['AD04-Acervo', AD04],
@@ -188,6 +189,17 @@ export const RemotionRoot: React.FC = () => {
         width={1080}
         height={1920}
       />
+      {MEDUF_PROMOS.map(p => (
+        <Composition
+          key={p.id}
+          id={p.id}
+          component={makeMedufPromo(p)}
+          durationInFrames={1}
+          fps={30}
+          width={1080}
+          height={1350}
+        />
+      ))}
       {PROMOS.map(([id, component]) => (
         <Composition
           key={id}
