@@ -1545,6 +1545,17 @@ dos vídeos sem conversão: mp4 (99k, nativo), mp2t (12k, mpegts.js), quicktime 
 
 ---
 
+**Área "Contas do Painel" (`/admin/contas`, só admin):** gestão de quem entra no painel.
+RPC `admin_panel_accounts` (migration `20260805050000_admin_panel_accounts.sql`; user_roles
+admin/viewer × auth.users com último login) + Edge Function `admin-panel-accounts` (service
+role): `create` (e-mail já existente ganha o papel SEM trocar a senha — senão seria roubo de
+conta de assinante), `set_role`, `reset_password`, `remove` (tira só o papel; a conta de usuário
+fica). Trava: recusa demover/remover o ÚLTIMO admin. Visualizador não vê o item de nav
+(`adminOnly` no navItems) e é recusado na RPC e na função (testado em produção: lista admin ok,
+viewer barrado nos dois caminhos, criar/remover conta ok, UI conferida logada como viewer).
+
+---
+
 ### 2026-08-05 (sessão remota) — conta VISUALIZADORA do painel admin
 
 **Papel `viewer`** (pedido do dono): conta `medestudosplusmedicina@gmail.com` (senha definida
