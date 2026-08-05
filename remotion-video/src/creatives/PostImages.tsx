@@ -245,7 +245,293 @@ export const PostImage: React.FC<{ post: Post }> = ({ post }) => {
 };
 
 /* dados preenchidos a partir do júri (workflow) */
-export const POSTS: Post[] = [];
+export const POSTS: Post[] = [
+  {
+    "id": "P01",
+    "theme": "light",
+    "layout": "diagrama",
+    "headline": "A curva do *esquecimento* em 3 fatos",
+    "sub": "Por que a aula de ontem já sumiu",
+    "items": [
+      "Fato 1: você esquece mais nas primeiras horas",
+      "Fato 2: reler não segura a memória",
+      "Fato 3: revisão espaçada achata a curva"
+    ],
+    "takeaway": "Na OneMed, flashcards gerados por IA do seu próprio material fazem a revisão espaçada por você."
+  },
+  {
+    "id": "P02",
+    "theme": "dark",
+    "layout": "duascolunas",
+    "headline": "Revisão passiva × revisão *ativa*",
+    "sub": "Mesmo tempo de estudo, resultado muito diferente",
+    "items": [
+      "Reler o resumo|Fechar e tentar lembrar",
+      "Grifar o livro|Explicar em voz alta",
+      "Assistir a aula de novo|Responder questões do tema",
+      "Sensação de domínio|Prova real do que sabe"
+    ],
+    "takeaway": "Terminou a aula na OneMed? Um clique gera resumo, flashcards e questões pra revisar ativo."
+  },
+  {
+    "id": "P03",
+    "theme": "light",
+    "layout": "passos",
+    "headline": "Como dividir um bloco de *2h* de estudo",
+    "sub": "120 minutos com começo, meio e fim",
+    "items": [
+      "🎯|5 min: defina o que quer sair sabendo",
+      "📖|50 min: conteúdo novo, celular em outro cômodo",
+      "☕|10 min: pausa de verdade, longe da tela",
+      "✍️|40 min: questões e resumo ativo do tema",
+      "🔁|15 min: revise os erros, anote as dúvidas"
+    ],
+    "takeaway": "Na OneMed o bloco fecha redondo: aula, resumo em 1 clique e questões comentadas no mesmo lugar."
+  },
+  {
+    "id": "P04",
+    "theme": "dark",
+    "layout": "checklist",
+    "headline": "Faltam 7 dias: o *checklist* final",
+    "sub": "Semana final é pra consolidar, não descobrir",
+    "items": [
+      "📵|D-7: pare de caçar material novo",
+      "❌|D-6: refaça só as questões que errou",
+      "⚖️|D-5: priorize os temas de maior peso",
+      "⏱️|D-3: simulado cronometrado, condição real de prova",
+      "🃏|D-2: revisão leve — flashcards e resumos",
+      "😴|D-1: logística pronta e sono cedo"
+    ],
+    "takeaway": "O cronograma por IA da OneMed já distribui esses 7 dias com marcos e checklist."
+  },
+  {
+    "id": "P05",
+    "theme": "light",
+    "layout": "passos",
+    "headline": "3 perguntas antes de montar o *cronograma*",
+    "sub": "Responda antes de abrir a agenda",
+    "items": [
+      "🎯|Objetivo: qual prova e qual banca você mira",
+      "⏰|Horas: quantas horas reais sobram por semana",
+      "📅|Data: quantas semanas faltam até o dia D",
+      "🧮|Divida o conteúdo pelo tempo — nunca o contrário"
+    ],
+    "takeaway": "Responda as 3 na OneMed e a IA monta o cronograma com mapa mental navegável."
+  },
+  {
+    "id": "P06",
+    "theme": "dark",
+    "layout": "lista",
+    "headline": "Pomodoro adaptado pra quem dá *plantão*",
+    "sub": "A escala manda — o método se adapta",
+    "items": [
+      "⏱️|Troque 25/5 por ciclos de 45/10",
+      "🌙|Pós-plantão: revisão leve, nunca conteúdo novo",
+      "🃏|Fila do corredor vira ciclo curto de flashcards",
+      "🗓️|Planeje pela escala do mês, não pelo relógio",
+      "😴|Dormiu depois do plantão? Também é método"
+    ],
+    "takeaway": "Na OneMed o cronograma por IA aceita sua escala — e os flashcards cabem no corredor."
+  },
+  {
+    "id": "P07",
+    "theme": "light",
+    "layout": "lista",
+    "headline": "4 regras do *flashcard* bem feito",
+    "sub": "Card ruim vira decoreba; card bom vira memória",
+    "items": [
+      "1️⃣|Uma pergunta, uma resposta — nunca duas ideias",
+      "2️⃣|Pergunte 'por quê', não só 'o quê'",
+      "3️⃣|Escreva com suas palavras, não copie o livro",
+      "4️⃣|Card que você errou volta primeiro na fila"
+    ],
+    "takeaway": "Na OneMed os cards por IA já seguem as regras — e a fila prioriza o que você errou."
+  },
+  {
+    "id": "P08",
+    "theme": "dark",
+    "layout": "passos",
+    "headline": "*Anatomia* de uma questão: aprenda com o erro",
+    "sub": "O erro certo ensina mais que o acerto por sorte",
+    "items": [
+      "🔍|Releia o enunciado: qual palavra te derrubou",
+      "🏷️|Nomeie o erro: conteúdo, leitura ou pressa",
+      "📖|Volte à fonte e feche a lacuna hoje",
+      "🃏|Transforme o erro em flashcard ou nota",
+      "🔁|Refaça a mesma questão em três dias"
+    ],
+    "takeaway": "No banco de questões da OneMed toda resposta vem comentada: o erro já sai explicado."
+  },
+  {
+    "id": "P09",
+    "theme": "light",
+    "layout": "duascolunas",
+    "headline": "O que rende quando você estuda *cansado*",
+    "sub": "Com sono, escolha a coluna da esquerda",
+    "items": [
+      "Flashcards de temas vistos|Capítulo novo e denso",
+      "Questões comentadas em dose curta|Videoaula de duas horas",
+      "Organizar o dia seguinte|Decorar do zero",
+      "Revisar seus próprios resumos|Texto novo e difícil"
+    ],
+    "takeaway": "Cansado? Abre a OneMed, roda flashcards prontos e fecha o dia sem culpa."
+  },
+  {
+    "id": "P10",
+    "theme": "dark",
+    "layout": "lista",
+    "headline": "5 sinais de que você só *relê*",
+    "sub": "Reconhecer não é saber",
+    "items": [
+      "🚩|Reconhece a página, mas não explica sem olhar",
+      "🚩|Grifou tanto que virou livro de colorir",
+      "🚩|Nunca fecha o material pra se testar",
+      "🚩|Questão nova do mesmo tema ainda te surpreende",
+      "🚩|Sensação de 'já sei' sem nenhum erro registrado"
+    ],
+    "takeaway": "Prova real: gere questões do capítulo na OneMed e veja o placar honesto."
+  },
+  {
+    "id": "P11",
+    "theme": "light",
+    "layout": "mito_verdade",
+    "headline": "Estudar com *IA*: mito × verdade",
+    "sub": "O que ela faz — e o que continua sendo com você",
+    "items": [
+      "IA estuda por você|IA acelera; quem aprende é você",
+      "Resumo pronto basta|Resumo abre caminho, questão fixa o conteúdo",
+      "Flashcard genérico serve|Flashcard do SEU material rende mais",
+      "IA nunca erra|Confira no material: você é o filtro"
+    ],
+    "takeaway": "Na OneMed a IA encurta o caminho — responder, conferir e fixar segue sendo seu papel."
+  },
+  {
+    "id": "P12",
+    "theme": "dark",
+    "layout": "bigstat",
+    "headline": "As *168h* que você já tem",
+    "sub": "Não falta tempo, falta mapa",
+    "items": [
+      "168",
+      "horas na sua semana, todas as semanas",
+      "mapeie as fixas: o que sobrar é estudo"
+    ],
+    "takeaway": "Ache seus blocos livres e trave-os no cronograma gerado por IA da OneMed."
+  },
+  {
+    "id": "P13",
+    "theme": "light",
+    "layout": "passos",
+    "headline": "O método dos 3 *toques*",
+    "sub": "Fricção pequena mata sessão de estudo grande",
+    "items": [
+      "📌|Liste o que você abre todo dia",
+      "⭐|Favorite: aula, livro e banco de questões",
+      "🔍|Busque o tema: um toque, sem menus",
+      "✂️|Mais de 3 toques? Corte o caminho"
+    ],
+    "takeaway": "Na OneMed, busca unificada + favoritos deixam qualquer material a até 3 toques."
+  },
+  {
+    "id": "P14",
+    "theme": "dark",
+    "layout": "passos",
+    "headline": "Acervo Público explicado em 4 *passos*",
+    "sub": "Materiais compartilhados entre +10.000 médicos e estudantes",
+    "items": [
+      "🌐|Abra o Acervo Público no menu",
+      "🔍|Busque o tema: acha arquivos DENTRO dos materiais",
+      "⭐|Salve nos favoritos o que servir",
+      "🤝|Suba seu material e ajude o próximo"
+    ],
+    "takeaway": "O resumo que você procura talvez já exista — busque no Acervo antes de garimpar fora."
+  },
+  {
+    "id": "P15",
+    "theme": "light",
+    "layout": "lista",
+    "headline": "3 usos da IA que *lê* sua tela",
+    "sub": "O assistente enxerga a aula que está aberta",
+    "items": [
+      "❓|Travou num termo? Pergunte sem pausar a aula",
+      "🗣️|Peça: explica mais simples, com exemplo clínico",
+      "📝|Peça perguntas sobre a tela pra se testar"
+    ],
+    "takeaway": "Na OneMed, o assistente responde no contexto do que você está vendo — dúvida morre na hora."
+  },
+  {
+    "id": "P16",
+    "theme": "dark",
+    "layout": "diagrama",
+    "headline": "Do material ao *baralho* em minutos",
+    "sub": "Nada de flashcard genérico de internet",
+    "items": [
+      "Seu material aberto",
+      "IA extrai os pontos-chave",
+      "Flashcards prontos pra revisar",
+      "Questões com resposta comentada",
+      "Você responde e fixa"
+    ],
+    "takeaway": "Esse fluxo inteiro é 1 clique na OneMed — sem montar card, sem sair da aula."
+  },
+  {
+    "id": "P17",
+    "theme": "light",
+    "layout": "checklist",
+    "headline": "Checklist do seu *primeiro* dia",
+    "sub": "Meia hora que organiza todo o resto",
+    "items": [
+      "🎯|Defina sua prova-alvo antes de abrir cursos",
+      "🔍|Teste a busca com um tema que domina",
+      "⭐|Favorite 1 curso, 1 livro, 1 banco",
+      "🗓️|Gere seu cronograma por IA com prazo real",
+      "👥|Entre na comunidade e se apresente"
+    ],
+    "takeaway": "Comece pelo teste grátis da OneMed e rode esse checklist ainda hoje."
+  },
+  {
+    "id": "P18",
+    "theme": "dark",
+    "layout": "diagrama",
+    "headline": "Revisar em *24h* muda tudo",
+    "sub": "O calendário de revisões que segura o conteúdo",
+    "items": [
+      "Aula hoje",
+      "Revisão rápida em 24h",
+      "Questões do tema em 3 dias",
+      "Flashcards na semana",
+      "Revisão leve antes da prova",
+      "Memória de longo prazo"
+    ],
+    "takeaway": "Feche o dia respondendo os flashcards que a IA gerou da aula de hoje."
+  },
+  {
+    "id": "P19",
+    "theme": "light",
+    "layout": "lista",
+    "headline": "+530 cursos: 3 jeitos de não se *perder*",
+    "sub": "+9.000 livros também moram aqui",
+    "items": [
+      "🔍|Comece pela busca unificada: aula, livro e questão",
+      "⭐|Favoritos: sua estante enxuta da semana",
+      "🗓️|Deixe o cronograma dizer o que abrir hoje"
+    ],
+    "takeaway": "Acervo grande sem método vira ansiedade; com busca, favoritos e cronograma vira arsenal."
+  },
+  {
+    "id": "P20",
+    "theme": "dark",
+    "layout": "bigstat",
+    "headline": "A pergunta que organiza *tudo*",
+    "sub": "Antes do cronograma, antes de qualquer curso",
+    "items": [
+      "1 pergunta",
+      "o que cai na SUA prova?",
+      "ela decide curso, livro, questão e ordem"
+    ],
+    "takeaway": "Definiu a prova? Na busca unificada da OneMed, ache só o que cai nela — aula, livro e questão."
+  }
+];
 
 export const makePostComp = (post: Post): React.FC => {
   const C: React.FC = () => <PostImage post={post} />;
