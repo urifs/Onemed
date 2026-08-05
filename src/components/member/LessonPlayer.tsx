@@ -70,16 +70,18 @@ export function LessonPlayer({
   // não gasta a franquia de download. É o mesmo player que abre ao clicar no
   // arquivo no Drive.
   const [usarEmbed, setUsarEmbed] = useState(false);
-  // Formato que NENHUM navegador toca nativo (ex: .mov QuickTime ProRes,
-  // .wmv) e que ainda não foi convertido pro Storage: vai DIRETO pro player
-  // oficial do Google embutido — ele transcodifica no servidor e reproduz
-  // qualquer formato. Assim a aula abre imediatamente; quando a conversão
-  // termina (storage_path preenchido), o player próprio assume sozinho.
+  // Vídeo em formato que o navegador NÃO toca nativo (ex: .mov QuickTime,
+  // .wmv) e sem conversão pro Storage: vai DIRETO pro player oficial do
+  // Google embutido — ele transcodifica no servidor e reproduz qualquer
+  // formato. Lista de PERMITIDOS invertida de propósito: qualquer formato
+  // exótico futuro cai no embed sozinho, sem esperar ninguém reclamar.
+  // mp4/webm/ogg tocam nativo; mp2t vai pro mpegts.js (remux no navegador).
+  // Se um dia a aula for convertida (storage_path), o player próprio assume.
   const formatoSemSuporte =
     lesson.type === 'video' &&
     !lesson.storage_path &&
     !!lesson.drive_file_id &&
-    /^video\/(quicktime|x-ms-wmv|x-msvideo)/i.test(lesson.mime_type || '');
+    !/^video\/(mp4|webm|ogg|mp2t)/i.test(lesson.mime_type || 'video/mp4');
   const [downloading, setDownloading] = useState(false);
   const [opening, setOpening] = useState(false);
   const { upsellOpen, setUpsellOpen, ensureCanDownload, reason: downloadReason, plan: downloadPlan } = useDownloadGate();
