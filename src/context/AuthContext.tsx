@@ -7,7 +7,11 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   loading: boolean;
+  // true para admin E para visualizador — é o que abre o painel (/admin/*).
   isAdmin: boolean;
+  // true só para a conta VISUALIZADORA: painel em modo leitura (a escrita é
+  // barrada no banco; edição de verdade só na Loja e na Área de Membros).
+  isViewer: boolean;
   kickedOut: boolean;
   dismissKickedOut: () => void;
   login: (email: string, password: string) => Promise<void>;
@@ -22,17 +26,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isViewer, setIsViewer] = useState(false);
   const [kickedOut, setKickedOut] = useState(false);
   const initialized = useRef(false);
   const hadSession = useRef(false);
   const manualSignOut = useRef(false);
 
-  const checkAdmin = async (userId: string): Promise<boolean> => {
+  // admin OU visualizador entram no painel; o papel exato decide o aviso de
+  // modo leitura (e o banco decide o que cada um pode escrever).
+  const checkAdmin = async (userId: string): Promise<{ admin: boolean; viewer: boolean }> => {
     try {
-      const { data } = await supabase.rpc('has_role', { _user_id: userId, _role: 'admin' });
-      return !!data;
+      const { data: admin } = await supabase.rpc('has_role', { _user_id: userId, _role: 'admin' });
+      if (admin) return { admin: true, viewer: false };
+      const { data: viewer } = await supabase.rpc('has_role', { _user_id: userId, _role: 'viewer' as never });
+      return { admin: !!viewer, viewer: !!viewer };
     } catch {
-      return false;
+      return { admin: false, viewer: false };
     }
   };
 
@@ -51,8 +60,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setUser(session?.user ?? null);
         hadSession.current = !!session?.user;
         if (session?.user) {
-          const admin = await checkAdmin(session.user.id);
-          setIsAdmin(admin);
+          const papel = await checkAdmin(session.user.id);
+          setIsAdmin(papel.admin);
+          setIsViewer(papel.viewer);
         }
       } catch (err) {
         console.error('getSession failed', err);
@@ -83,10 +93,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setSession(session);
         setUser(session?.user ?? null);
         if (session?.user) {
-          const admin = await checkAdmin(session.user.id);
-          setIsAdmin(admin);
+          const papel = await checkAdmin(session.user.id);
+          setIsAdmin(papel.admin);
+          setIsViewer(papel.viewer);
         } else {
           setIsAdmin(false);
+          setIsViewer(false);
         }
       }
     );
@@ -127,7 +139,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const dismissKickedOut = () => setKickedOut(false);
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, isAdmin, kickedOut, dismissKickedOut, login, register, logout }}>
+    <AuthContext.Provider value={{ user, session, loading, isAdmin, isViewer, kickedOut, dismissKickedOut, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );

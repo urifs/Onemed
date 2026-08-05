@@ -56,7 +56,7 @@ const navItems = [
 export const AdminLayout = ({ children }: { children: React.ReactNode }) => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user, logout, isViewer } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const handleLogout = async () => {
@@ -73,6 +73,13 @@ export const AdminLayout = ({ children }: { children: React.ReactNode }) => {
   return (
     <div className="flex min-h-screen bg-background">
       <AdminPWAHead />
+      {/* Conta visualizadora: aviso fixo — só Loja e Área de Membros editam;
+          o resto é leitura (imposto no banco, não só na interface). */}
+      {isViewer && (
+        <div className="fixed bottom-0 left-0 right-0 z-[60] bg-accent-warning/95 text-black text-center text-xs font-semibold py-1.5 px-4">
+          Modo visualização — você pode editar apenas Loja e Área de Membros. O restante é somente leitura.
+        </div>
+      )}
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div
