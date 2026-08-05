@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
@@ -56,29 +57,22 @@ function subscribeShared(listener: (ids: Set<string>) => void) {
 // tempo real (Supabase Realtime, instantâneo — pega quem está online AGORA,
 // sem precisar esperar o próximo poll pra saber que alguém entrou/saiu).
 export function useOnlineMembers() {
-  const [roster, setRoster] = useState<RosterRow[]>([]);
   const [onlineIds, setOnlineIds] = useState<Set<string>>(sharedOnlineIds);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState(false);
 
-  const fetchRoster = useCallback(async () => {
-    try {
+  // Assim como o canal de presença, o roster também é consumido por mais de
+  // um card do dashboard ao mesmo tempo — react-query com chave única faz as
+  // instâncias dividirem UMA chamada e UM polling, em vez de cada uma bater
+  // na RPC por conta própria a cada minuto.
+  const { data: roster = [], isLoading: loading, isError: loadError, refetch } = useQuery({
+    queryKey: ['member-presence-roster'],
+    refetchInterval: ROSTER_POLL_MS,
+    staleTime: ROSTER_POLL_MS - 5000,
+    queryFn: async (): Promise<RosterRow[]> => {
       const { data, error } = await supabase.rpc('get_member_presence_roster', { _limit: ROSTER_LIMIT });
       if (error) throw error;
-      setRoster((data || []) as RosterRow[]);
-      setLoadError(false);
-    } catch {
-      setLoadError(true);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchRoster();
-    const interval = setInterval(fetchRoster, ROSTER_POLL_MS);
-    return () => clearInterval(interval);
-  }, [fetchRoster]);
+      return (data || []) as RosterRow[];
+    },
+  });
 
   useEffect(() => subscribeShared(setOnlineIds), []);
 

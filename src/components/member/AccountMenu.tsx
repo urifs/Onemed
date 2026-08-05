@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { User, LogOut, MessageCircle, RefreshCw, Loader2, Save, Smartphone, Crown, FileText } from 'lucide-react';
+import { useAccountInfo } from '@/hooks/useAccountInfo';
 import { AddToHomeScreenModal } from './AddToHomeScreenModal';
 import { UpgradePlanModal, upgradeTargetsFor } from './UpgradePlanModal';
 import { PlanDetailsModal } from './PlanDetailsModal';
@@ -19,23 +20,14 @@ const PLAN_LABELS: Record<string, string> = {
   annual: 'Anual', monthly: 'Mensal', paid: 'Pago', trial: 'Teste Grátis (10 min)', admin: 'Administrador',
 };
 
-interface AccountInfo {
-  email: string;
-  plan: string | null;
-  isLifetime: boolean;
-  isAdmin: boolean;
-  expiresAt: string | null;
-  amountPaid: number | null;
-  whatsapp: string | null;
-  grantedAt: string | null;
-}
-
 export function AccountMenu() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-  const [info, setInfo] = useState<AccountInfo | null>(null);
-  const [loadingInfo, setLoadingInfo] = useState(false);
+  // Cache compartilhado com o TrialCountdownBar (useAccountInfo): abrir e
+  // fechar o menu não refaz a chamada nem pisca o spinner — só busca de novo
+  // quando o cache de 1 min vence.
+  const { info, loading: loadingInfo, error: infoError, refetch: loadInfo } = useAccountInfo(open);
   const [name, setName] = useState('');
   const [savingName, setSavingName] = useState(false);
   const [renewing, setRenewing] = useState(false);
@@ -43,25 +35,17 @@ export function AccountMenu() {
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [planDetailsOpen, setPlanDetailsOpen] = useState(false);
 
-  const loadInfo = useCallback(async () => {
-    if (!user) return;
-    setLoadingInfo(true);
-    try {
-      const [{ data: accountData, error: accountErr }, { data: profile }] = await Promise.all([
-        supabase.functions.invoke('member-account-info'),
-        supabase.from('profiles').select('name').eq('user_id', user.id).maybeSingle(),
-      ]);
-      if (accountErr || accountData?.error) throw new Error(accountData?.error || accountErr?.message);
-      setInfo(accountData);
-      setName(profile?.name || '');
-    } catch (err: any) {
-      toast.error(err.message || 'Erro ao carregar dados da conta');
-    } finally {
-      setLoadingInfo(false);
-    }
-  }, [user]);
+  useEffect(() => {
+    if (infoError && open) toast.error(infoError.message || 'Erro ao carregar dados da conta');
+  }, [infoError, open]);
 
-  useEffect(() => { if (open) loadInfo(); }, [open, loadInfo]);
+  useEffect(() => {
+    if (!open || !user) return;
+    let alive = true;
+    supabase.from('profiles').select('name').eq('user_id', user.id).maybeSingle()
+      .then(({ data: profile }) => { if (alive) setName(profile?.name || ''); });
+    return () => { alive = false; };
+  }, [open, user?.id]);
 
   useEffect(() => {
     if (!open || info?.plan !== 'trial') return;

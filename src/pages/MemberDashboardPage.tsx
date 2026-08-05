@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { toast } from 'sonner';
 import { Play, Info, FileText, File, Music, Image as ImageIcon, Loader2, FileSpreadsheet, FileType, Megaphone, Star, Highlighter, Trash2, SquareStack, ClipboardList, FileDown, FolderUp } from 'lucide-react';
 import { useAnnouncementSettings } from '@/hooks/useAnnouncementSettings';
 import { supabase } from '@/integrations/supabase/client';
@@ -292,10 +293,19 @@ export default function MemberDashboardPage() {
       return next;
     });
 
-    if (currentStatus) {
-      await supabase.from('user_favorites').delete().match({ user_id: userId, course_id: courseId });
-    } else {
-      await supabase.from('user_favorites').insert({ user_id: userId, course_id: courseId });
+    // Se a gravação falhar (rede, RLS), desfaz a estrela e avisa — sem isso
+    // ela ficava acesa na tela e sumia sozinha no próximo reload.
+    const { error } = currentStatus
+      ? await supabase.from('user_favorites').delete().match({ user_id: userId, course_id: courseId })
+      : await supabase.from('user_favorites').insert({ user_id: userId, course_id: courseId });
+    if (error) {
+      setFavorites(prev => {
+        const next = new Set(prev);
+        if (currentStatus) next.add(courseId);
+        else next.delete(courseId);
+        return next;
+      });
+      toast.error('Não foi possível salvar o favorito. Tente novamente.');
     }
   };
 
@@ -309,9 +319,9 @@ export default function MemberDashboardPage() {
       .from('user_lesson_favorites')
       .select('lesson_id, lessons(id, title, type, duration_seconds, size_bytes, courses(title, slug))')
       .eq('user_id', userId)
-      .then(({ data }) => {
+      .then(({ data }: { data: unknown }) => {
         if (!alive) return;
-        const rows: FavoriteLesson[] = (data || [])
+        const rows: FavoriteLesson[] = ((data || []) as unknown[])
           .map((r: any) => r.lessons && r.lessons.courses ? {
             lesson_id: r.lessons.id as string,
             title: r.lessons.title as string,
@@ -323,8 +333,9 @@ export default function MemberDashboardPage() {
           } : null)
           .filter((r: FavoriteLesson | null): r is FavoriteLesson => r !== null);
         setFavoriteLessons(rows);
-        setFavoriteLessonsLoading(false);
-      });
+      })
+      .catch(() => { /* rede caiu: sai do spinner */ })
+      .finally(() => { if (alive) setFavoriteLessonsLoading(false); });
     return () => { alive = false; };
   }, [activeCategory, userId]);
 
@@ -359,11 +370,10 @@ export default function MemberDashboardPage() {
     if (activeCategory !== ANNOTATIONS_TAB || !userId) return;
     let alive = true;
     setAnnotatedLoading(true);
-    supabase.rpc('my_annotated_lessons' as never).then(({ data }) => {
-      if (!alive) return;
-      setAnnotated(((data || []) as unknown as AnnotatedLesson[]));
-      setAnnotatedLoading(false);
-    });
+    supabase.rpc('my_annotated_lessons' as never)
+      .then(({ data }) => { if (alive) setAnnotated(((data || []) as unknown as AnnotatedLesson[])); })
+      .catch(() => { /* rede caiu: sai do spinner */ })
+      .finally(() => { if (alive) setAnnotatedLoading(false); });
     return () => { alive = false; };
   }, [activeCategory, userId]);
 
@@ -375,7 +385,8 @@ export default function MemberDashboardPage() {
     Promise.all([
       (supabase as any).from('flashcard_decks')
         .select('id, title, difficulty, cards, source, created_at')
-        .order('created_at', { ascending: false }),
+        .order('created_at', { ascending: false })
+        .limit(200),
       (supabase as any).from('flashcard_sessions')
         .select('id, deck_id, deck_title, total_cards, correct_first_try, reviews, duration_seconds, created_at')
         .order('created_at', { ascending: false })
@@ -384,8 +395,8 @@ export default function MemberDashboardPage() {
       if (!alive) return;
       setDecks(((decksData || []) as SavedDeck[]));
       setSessions(((sessData || []) as StudySession[]));
-      setDecksLoading(false);
-    });
+    }).catch(() => { /* rede caiu: sai do spinner e mantém o que tinha */ })
+      .finally(() => { if (alive) setDecksLoading(false); });
     return () => { alive = false; };
   }, [activeCategory, userId, sessionsTick]);
 
@@ -396,7 +407,8 @@ export default function MemberDashboardPage() {
     Promise.all([
       (supabase as any).from('question_banks')
         .select('id, title, difficulty, questions, source, created_at')
-        .order('created_at', { ascending: false }),
+        .order('created_at', { ascending: false })
+        .limit(200),
       (supabase as any).from('question_sessions')
         .select('id, bank_id, bank_title, total_questions, correct, duration_seconds, created_at')
         .order('created_at', { ascending: false })
@@ -405,21 +417,31 @@ export default function MemberDashboardPage() {
       if (!alive) return;
       setBanks(((banksData || []) as SavedBank[]));
       setBankSessions(((sessData || []) as BankSession[]));
-      setBanksLoading(false);
-    });
+    }).catch(() => { /* rede caiu: sai do spinner e mantém o que tinha */ })
+      .finally(() => { if (alive) setBanksLoading(false); });
     return () => { alive = false; };
   }, [activeCategory, userId, sessionsTick]);
 
   const deleteBank = async (bank: SavedBank) => {
     if (!confirm(`Excluir o banco "${bank.title}"? O histórico de provas fica.`)) return;
     setBanks(prev => prev.filter(b => b.id !== bank.id));
-    await (supabase as any).from('question_banks').delete().eq('id', bank.id);
+    const { error } = await (supabase as any).from('question_banks').delete().eq('id', bank.id);
+    if (error) {
+      // Sem o rollback, o aluno via o banco "excluído" e ele reaparecia no
+      // próximo reload.
+      setBanks(prev => [bank, ...prev]);
+      toast.error('Não foi possível excluir o banco. Tente novamente.');
+    }
   };
 
   const deleteDeck = async (deck: SavedDeck) => {
     if (!confirm(`Excluir o baralho "${deck.title}"?`)) return;
     setDecks(prev => prev.filter(d => d.id !== deck.id));
-    await (supabase as any).from('flashcard_decks').delete().eq('id', deck.id);
+    const { error } = await (supabase as any).from('flashcard_decks').delete().eq('id', deck.id);
+    if (error) {
+      setDecks(prev => [deck, ...prev]);
+      toast.error('Não foi possível excluir o baralho. Tente novamente.');
+    }
   };
 
   const handleUnfavoriteLesson = async (lessonId: string) => {
@@ -435,7 +457,7 @@ export default function MemberDashboardPage() {
   // JS — a busca de conteúdo roda no banco (search_lessons), com debounce
   // pra não disparar uma consulta a cada tecla.
   useEffect(() => {
-    if (!searchContents || !query.trim()) { setContentResults([]); return; }
+    if (!searchContents || !query.trim()) { setContentResults([]); setContentLoading(false); return; }
     let alive = true;
     setContentLoading(true);
     const timer = setTimeout(() => {
@@ -614,9 +636,14 @@ export default function MemberDashboardPage() {
 
   useEffect(() => {
     if (heroPaused || featuredPool.length < 2) return;
+    // Quem prefere menos movimento (ajuste do sistema) não ganha carrossel
+    // girando sozinho — os CTAs do banner trocariam embaixo do cursor.
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    // 3s era rápido demais pra um banner com dois botões de ação: o alvo
+    // mudava embaixo do dedo antes de o aluno terminar de ler.
     const id = setInterval(() => {
       setFeaturedIndex(i => (i + 1) % featuredPool.length);
-    }, 3000);
+    }, 6000);
     return () => clearInterval(id);
   }, [heroPaused, featuredPool.length]);
 
@@ -675,6 +702,9 @@ export default function MemberDashboardPage() {
             className="relative rounded-2xl overflow-hidden border border-border min-h-[280px] md:min-h-[340px] flex items-end shadow-[0_30px_70px_-40px_rgba(239,68,68,0.4)]"
             onMouseEnter={() => setHeroPaused(true)}
             onMouseLeave={() => setHeroPaused(false)}
+            onTouchStart={() => setHeroPaused(true)}
+            onFocus={() => setHeroPaused(true)}
+            onBlur={() => setHeroPaused(false)}
           >
             <div key={`${featured.id}-cover`} className="absolute inset-0 animate-fade-in">
               <CourseCover title={featured.title} showTitle={false} />

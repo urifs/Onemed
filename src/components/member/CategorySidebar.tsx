@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { LayoutGrid, Menu, PanelsTopLeft, X, type LucideIcon } from 'lucide-react';
 import { CATEGORY_ICON } from '@/lib/courseCategories';
 import { cn } from '@/lib/utils';
@@ -24,7 +24,26 @@ export function CategorySidebar({ menuItems, categories, active, onSelect, total
   // Mobile: dois gatilhos lado a lado — "Menu" e "Categorias" — cada um abre
   // a gaveta na própria seção.
   const [mobileOpen, setMobileOpen] = useState<null | 'menu' | 'categorias'>(null);
-  const sorted = [...categories].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  // localeCompare é caro e a sidebar re-renderiza junto com cada tecla da
+  // busca do dashboard — sem memo, a ordenação inteira rodava de novo a toa.
+  const sorted = useMemo(
+    () => [...categories].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')),
+    [categories],
+  );
+
+  // Gaveta mobile: Escape fecha e o fundo não rola atrás dela (o Sheet do
+  // Radix que ela substituiu fazia os dois).
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMobileOpen(null); };
+    document.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [mobileOpen]);
 
   const handleSelect = (category: string | null) => {
     onSelect(category);

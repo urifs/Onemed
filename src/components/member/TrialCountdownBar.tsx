@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/context/AuthContext';
+import { useAccountInfo } from '@/hooks/useAccountInfo';
 import { Clock, ShoppingCart } from 'lucide-react';
 
 // Floating countdown for trial members — /membros itself doesn't otherwise
@@ -10,23 +9,17 @@ import { Clock, ShoppingCart } from 'lucide-react';
 // without this a trial user has no idea their time is running out until
 // they're suddenly locked out.
 export function TrialCountdownBar() {
-  const { user } = useAuth();
   const navigate = useNavigate();
-  const [expiresAt, setExpiresAt] = useState<string | null>(null);
+  // Cache compartilhado (useAccountInfo): o header remonta a cada navegação
+  // e este widget disparava uma chamada de Edge Function por página aberta,
+  // pra TODO aluno — só pra decidir se o contador de trial aparece.
+  const { info } = useAccountInfo();
   const [remainingMs, setRemainingMs] = useState<number | null>(null);
   const redirectedRef = useRef(false);
 
-  useEffect(() => {
-    if (!user) return;
-    let alive = true;
-    supabase.functions.invoke('member-account-info').then(({ data }) => {
-      if (!alive) return;
-      if (data?.plan === 'trial' && !data.isLifetime && !data.isAdmin && data.expiresAt) {
-        setExpiresAt(data.expiresAt);
-      }
-    }).catch(() => {});
-    return () => { alive = false; };
-  }, [user]);
+  const expiresAt = info?.plan === 'trial' && !info.isLifetime && !info.isAdmin && info.expiresAt
+    ? info.expiresAt
+    : null;
 
   useEffect(() => {
     if (!expiresAt) return;

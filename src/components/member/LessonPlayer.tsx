@@ -95,6 +95,15 @@ export function LessonPlayer({
     return PLAYBACK_RATES.includes(stored) ? stored : 1;
   });
 
+  // Timers de retry de mídia/imagem pendentes — cancelados na troca de aula
+  // e no unmount, senão continuam disparando contra a aula errada (ou contra
+  // um componente já desmontado).
+  const retryTimers = useRef<number[]>([]);
+  const clearRetryTimers = () => {
+    for (const t of retryTimers.current) clearTimeout(t);
+    retryTimers.current = [];
+  };
+
   useEffect(() => {
     let alive = true;
     setSrc(null);
@@ -105,10 +114,11 @@ export function LessonPlayer({
     setUsarEmbed(false);
     setForceTs(false);
     setImgRetryCount(0);
+    clearRetryTimers();
     getUrl(lesson.id)
       .then(url => { if (alive) setSrc(url); })
       .catch(err => { if (alive) setError(err.message); });
-    return () => { alive = false; };
+    return () => { alive = false; clearRetryTimers(); };
   }, [lesson.id, getUrl]);
 
   // A permissão do arquivo no Drive é concedida por trás, mas propaga pelos
@@ -187,7 +197,10 @@ export function LessonPlayer({
     }
     const delay = RETRY_DELAYS_MS[mediaRetries.current];
     mediaRetries.current += 1;
-    setTimeout(() => {
+    // Guardado para poder cancelar: os atrasos chegam a 13s e, sem cancelar
+    // na troca de aula, um retry da aula ANTERIOR disparava `.load()` na
+    // aula nova — reiniciando a reprodução do zero no meio do vídeo.
+    retryTimers.current.push(window.setTimeout(() => {
       if (quotaBlocked.current) return;
       if (mpegtsPlayerRef.current) {
         mpegtsPlayerRef.current.unload();
@@ -195,7 +208,7 @@ export function LessonPlayer({
       } else {
         videoRef.current?.load();
       }
-    }, delay);
+    }, delay));
   };
 
   // Arquivos .ts (MPEG Transport Stream — comuns nas aulas "#Aprenda") não
@@ -257,7 +270,7 @@ export function LessonPlayer({
       setError('Não foi possível carregar este arquivo. Tente novamente em instantes.');
       return;
     }
-    setTimeout(() => setImgRetryCount(c => c + 1), RETRY_DELAYS_MS[imgRetryCount]);
+    retryTimers.current.push(window.setTimeout(() => setImgRetryCount(c => c + 1), RETRY_DELAYS_MS[imgRetryCount]));
   };
 
   useEffect(() => {
@@ -399,13 +412,17 @@ export function LessonPlayer({
       const res = await fetch(src);
       const blob = await res.blob();
       const blobUrl = URL.createObjectURL(blob);
-      if (!win) return;
+      if (!win) { URL.revokeObjectURL(blobUrl); return; }
       win.location.href = blobUrl;
       const tryPrint = () => { try { win.print(); } catch { /* ignore */ } };
       win.addEventListener('load', tryPrint);
       // Fallback: o visualizador nativo de PDF do navegador às vezes não
       // dispara 'load' no window pai.
       setTimeout(tryPrint, 1200);
+      // Sem revogar, cada impressão prendia o arquivo inteiro na memória
+      // pela vida útil da aba. 5 min dão folga de sobra pra aba nova
+      // carregar o blob e imprimir.
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 5 * 60 * 1000);
     } catch (err) {
       console.error('Failed to open file for printing', err);
       win?.close();
