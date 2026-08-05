@@ -79,6 +79,10 @@ export default function BuyersPage() {
   };
 
   const deleteBuyer = async (id: string) => {
+    const buyer = buyers.find(b => b.id === id);
+    // Registro de pagamento é histórico financeiro (e atribuição do pixel) —
+    // um clique errado no ícone da lixeira não pode apagar sem perguntar.
+    if (!confirm(`Excluir permanentemente o comprador ${buyer?.email || ''}? O registro do pagamento se perde.`)) return;
     const { error } = await supabase.from('buyers').delete().eq('id', id);
     if (error) toast.error('Erro ao deletar');
     else { toast.success('Deletado'); fetchData(); }

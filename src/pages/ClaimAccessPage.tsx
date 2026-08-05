@@ -17,18 +17,32 @@ export default function ClaimAccessPage() {
   const [registered, setRegistered] = useState(false);
   const [purchaseInfo, setPurchaseInfo] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [canRetry, setCanRetry] = useState(false);
+  const [retryTick, setRetryTick] = useState(0);
 
   useEffect(() => {
     const check = async () => {
-      if (!externalReference) { setError('Link inválido.'); setChecking(false); return; }
-      const { data } = await supabase.from('buyers').select('*').eq('external_reference', externalReference).single();
-      if (!data) { setError('Compra não encontrada.'); setChecking(false); return; }
+      setChecking(true);
+      setError(null);
+      if (!externalReference) { setError('Link inválido.'); setCanRetry(false); setChecking(false); return; }
+      // Falha de consulta ≠ compra inexistente: um timeout de rede no celular
+      // de quem ACABOU de pagar não pode virar "Compra não encontrada" sem
+      // botão de tentar de novo.
+      const { data, error: fetchErr } = await supabase
+        .from('buyers').select('*').eq('external_reference', externalReference).maybeSingle();
+      if (fetchErr) {
+        setError('Não foi possível verificar sua compra agora. Verifique sua conexão e tente novamente.');
+        setCanRetry(true);
+        setChecking(false);
+        return;
+      }
+      if (!data) { setError('Compra não encontrada.'); setCanRetry(false); setChecking(false); return; }
       setPurchaseInfo(data);
       if (data.access_granted) { setRegistered(true); setEmail(data.email || ''); }
       setChecking(false);
     };
     check();
-  }, [externalReference]);
+  }, [externalReference, retryTick]);
 
   const handleClaim = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -95,6 +109,14 @@ export default function ClaimAccessPage() {
               <AlertCircle className="w-12 h-12 text-primary mx-auto mb-4" />
               <p className="text-foreground font-medium mb-2">Erro</p>
               <p className="text-muted-foreground text-sm">{error}</p>
+              {canRetry && (
+                <button
+                  onClick={() => setRetryTick(t => t + 1)}
+                  className="mt-5 inline-flex items-center gap-2 bg-primary hover:bg-primary-hover text-primary-foreground font-semibold px-5 py-2.5 rounded-xl transition-colors"
+                >
+                  Tentar novamente
+                </button>
+              )}
             </div>
           ) : registered ? (
             <div className="text-center">

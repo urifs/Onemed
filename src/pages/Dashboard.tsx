@@ -71,7 +71,10 @@ export default function Dashboard() {
     }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData, location]);
+  // location.key muda a cada NAVEGAÇÃO de verdade; o objeto `location`
+  // inteiro é recriado até em mudança de hash/query e refazia as 4 consultas
+  // do dashboard à toa.
+  useEffect(() => { fetchData(); }, [fetchData, location.key]);
 
   const statusBadge = (status: string) => {
     const classes: Record<string, string> = {

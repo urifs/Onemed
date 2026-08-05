@@ -25,7 +25,15 @@ export default function PaymentSuccessPage() {
       try {
         const info = JSON.parse(pending);
         setPurchaseInfo(info);
-        if (status === 'approved') {
+        // O pending_purchase NÃO é removido aqui de propósito: apagar na
+        // primeira passada fazia um simples F5 nesta página perder o nome do
+        // plano e o prefill de email do botão de login. A trava anti-duplo
+        // disparo é a chave abaixo por payment_id (e a Meta ainda deduplica
+        // pelo event_id de qualquer forma); o checkout sobrescreve o
+        // pending_purchase na próxima compra.
+        const trackedKey = paymentId ? `om_purchase_tracked_${paymentId}` : 'om_purchase_tracked';
+        if (status === 'approved' && !localStorage.getItem(trackedKey)) {
+          localStorage.setItem(trackedKey, '1');
           // O email vai junto pra correspondência avançada: nesta página não
           // existe formulário, então sem isso o Purchase chegava só com IP,
           // user-agent e fbp (EMQ 6.1, contra 8.7 do Lead).
@@ -37,7 +45,6 @@ export default function PaymentSuccessPage() {
             { email: info.email ?? null }
           );
         }
-        localStorage.removeItem('pending_purchase');
       } catch { /* ignore */ }
     }
   }, [status, paymentId]);

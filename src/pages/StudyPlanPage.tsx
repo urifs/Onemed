@@ -44,11 +44,16 @@ export default function StudyPlanPage() {
   const isTrial = status === 'trial';
   const isMonthly = memberPlan === 'monthly';
 
+  const [loadError, setLoadError] = useState(false);
+
   const load = useCallback(async () => {
     setLoading(true);
     const { data, error } = await supabase.from('study_plans' as never)
       .select('*').order('created_at', { ascending: false });
-    if (!error) setPlans((data || []) as unknown as StudyPlan[]);
+    // Engolir o erro mostrava "Monte seu primeiro cronograma" pra quem TEM
+    // cronogramas salvos — como se tivessem sumido.
+    if (!error) { setPlans((data || []) as unknown as StudyPlan[]); setLoadError(false); }
+    else setLoadError(true);
     setLoading(false);
   }, []);
 
@@ -123,6 +128,15 @@ export default function StudyPlanPage() {
           <PlanDetail plan={selected} onChange={updatePlanLocal} onDelete={removePlan} />
         ) : loading ? (
           <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 text-primary animate-spin" /></div>
+        ) : loadError && plans.length === 0 ? (
+          <div className="rounded-2xl border border-border bg-card px-6 py-14 text-center">
+            <h2 className="font-secondary text-lg font-bold text-foreground mb-1">Não foi possível carregar seus cronogramas</h2>
+            <p className="text-sm text-muted-foreground mb-5">Verifique sua conexão e tente novamente.</p>
+            <button onClick={load}
+              className="inline-flex items-center gap-2 rounded-xl bg-primary hover:bg-primary-hover text-primary-foreground font-semibold px-6 py-3 transition-colors">
+              Tentar novamente
+            </button>
+          </div>
         ) : plans.length === 0 ? (
           <div className="rounded-2xl border border-border bg-card px-6 py-14 text-center">
             <CalendarClock className="w-9 h-9 text-primary mx-auto mb-3" />

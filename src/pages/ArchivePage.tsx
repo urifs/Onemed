@@ -180,9 +180,12 @@ export default function ArchivePage() {
   const [favIds, setFavIds] = useState<Set<string>>(new Set());
   useEffect(() => {
     if (!user?.id || isTrial) return;
+    let alive = true;
     supabase.from('user_archive_favorites' as never).select('item_id').eq('user_id', user.id)
-      .then(({ data }: { data: unknown }) =>
-        setFavIds(new Set(((data || []) as { item_id: string }[]).map(r => r.item_id))));
+      .then(({ data }: { data: unknown }) => {
+        if (alive) setFavIds(new Set(((data || []) as { item_id: string }[]).map(r => r.item_id)));
+      });
+    return () => { alive = false; };
   }, [user?.id, isTrial]);
 
   const toggleFavorite = async (itemId: string) => {
@@ -740,6 +743,11 @@ function DetailDialog({ itemId, initialFileId, currentUserId, onClose, onChanged
       const row = ((feedRes.data || []) as FeedItem[])[0];
       if (!row) { toast.error('Material não encontrado.'); onClose(); return; }
       setItem(row);
+      // Erro na consulta de arquivos ≠ "ainda processando": sem esta checagem
+      // uma falha de rede renderizava a mensagem de processamento, que engana.
+      if (filesRes.error) {
+        toast.error('Não foi possível carregar os arquivos deste material. Tente novamente.');
+      }
       const fileRows = (filesRes.data || []) as unknown as ArchiveFile[];
       setFiles(fileRows);
       setComments((commentsRes.data || []) as unknown as ArchiveComment[]);
@@ -753,7 +761,12 @@ function DetailDialog({ itemId, initialFileId, currentUserId, onClose, onChanged
     } finally {
       setLoading(false);
     }
-  }, [itemId, initialFileId, onClose, openFile]);
+    // onClose/openFile ficam FORA das deps de propósito: o pai recria essas
+    // funções a cada render (digitar UMA letra na busca com o material aberto
+    // refazia as 3 consultas e piscava o diálogo de volta pro spinner). Só a
+    // troca de item deve recarregar o detalhe.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [itemId, initialFileId]);
 
   useEffect(() => { load(); }, [load]);
 
