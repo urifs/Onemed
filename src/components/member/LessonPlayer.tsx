@@ -70,6 +70,16 @@ export function LessonPlayer({
   // não gasta a franquia de download. É o mesmo player que abre ao clicar no
   // arquivo no Drive.
   const [usarEmbed, setUsarEmbed] = useState(false);
+  // Formato que NENHUM navegador toca nativo (ex: .mov QuickTime ProRes,
+  // .wmv) e que ainda não foi convertido pro Storage: vai DIRETO pro player
+  // oficial do Google embutido — ele transcodifica no servidor e reproduz
+  // qualquer formato. Assim a aula abre imediatamente; quando a conversão
+  // termina (storage_path preenchido), o player próprio assume sozinho.
+  const formatoSemSuporte =
+    lesson.type === 'video' &&
+    !lesson.storage_path &&
+    !!lesson.drive_file_id &&
+    /^video\/(quicktime|x-ms-wmv|x-msvideo)/i.test(lesson.mime_type || '');
   const [downloading, setDownloading] = useState(false);
   const [opening, setOpening] = useState(false);
   const { upsellOpen, setUpsellOpen, ensureCanDownload, reason: downloadReason, plan: downloadPlan } = useDownloadGate();
@@ -526,7 +536,7 @@ export function LessonPlayer({
       </div>
 
       <div className="flex-1 flex items-center justify-center p-3 md:p-6 min-h-0">
-        {usarEmbed && lesson.drive_file_id ? (
+        {(usarEmbed || formatoSemSuporte) && lesson.drive_file_id ? (
           // `rm=minimal` tira a barra de ferramentas do Drive e deixa só o
           // vídeo. O arquivo já é compartilhado por link, então o embed abre
           // sem pedir login — não estamos afrouxando nada aqui.
