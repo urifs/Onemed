@@ -153,9 +153,29 @@ ALTER POLICY "Users can view their own profile" ON public.profiles
   USING ((SELECT auth.uid()) = user_id);
 ALTER POLICY "Users can update their own profile" ON public.profiles
   USING ((SELECT auth.uid()) = user_id);
-ALTER POLICY "Users can manage their own favorites" ON public.user_favorites
-  USING ((SELECT auth.uid()) = user_id)
-  WITH CHECK ((SELECT auth.uid()) = user_id);
+-- user_favorites divergiu entre repo e produção: a migration original criou
+-- UMA política FOR ALL, mas produção tem TRÊS (view/insert/delete) criadas à
+-- mão. O bloco cobre os dois formatos — altera as que existirem.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'user_favorites' AND policyname = 'Users can manage their own favorites') THEN
+    ALTER POLICY "Users can manage their own favorites" ON public.user_favorites
+      USING ((SELECT auth.uid()) = user_id)
+      WITH CHECK ((SELECT auth.uid()) = user_id);
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'user_favorites' AND policyname = 'Users can view their own favorites') THEN
+    ALTER POLICY "Users can view their own favorites" ON public.user_favorites
+      USING ((SELECT auth.uid()) = user_id);
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'user_favorites' AND policyname = 'Users can insert their own favorites') THEN
+    ALTER POLICY "Users can insert their own favorites" ON public.user_favorites
+      WITH CHECK ((SELECT auth.uid()) = user_id);
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'user_favorites' AND policyname = 'Users can delete their own favorites') THEN
+    ALTER POLICY "Users can delete their own favorites" ON public.user_favorites
+      USING ((SELECT auth.uid()) = user_id);
+  END IF;
+END $$;
 ALTER POLICY "Users can manage their own lesson favorites" ON public.user_lesson_favorites
   USING ((SELECT auth.uid()) = user_id)
   WITH CHECK ((SELECT auth.uid()) = user_id);

@@ -38,8 +38,8 @@
 
 | Serviço | Token / Valor |
 |---------|--------------|
-| **Supabase Management API** | `sbp_0e4b7bf71a6909b65e1d928af78863a35e811ee8` |
-| **Vercel API Token** | `vcp_20YyrugF3ObL0f1W9bMxIOCgwWOduJ0euny7PuYBfC3HMeY4lV0K9wOb` |
+| **Supabase Management API** | `sbp_d4e0be5b7dd285b557fb136fdb2ab65045ef74a1` |
+| **Vercel API Token** | `vcp_1flOV1BNzH45cGJZWrbWBntxpTiKK7a9OEq7BbNwpqcHH4fAmX16x8u1` |
 | **Cloudflare API Token** | `cfut_U6GR6uJmiuON1dNVvBCra46fNVpy4H2d4OO6dq4Mb9b7ed40` |
 
 ### IDs e Referências dos Projetos
@@ -77,7 +77,7 @@
 
 ```bash
 # Autenticar Supabase CLI
-export SUPABASE_ACCESS_TOKEN="sbp_0e4b7bf71a6909b65e1d928af78863a35e811ee8"
+export SUPABASE_ACCESS_TOKEN="sbp_d4e0be5b7dd285b557fb136fdb2ab65045ef74a1"
 
 # Deploy de uma Edge Function específica
 supabase functions deploy <nome> --project-ref jrrybiohwqabsdurqudc --use-api
@@ -1598,6 +1598,17 @@ da comunidade não apaga mais o feed; digitar na busca do acervo com material ab
 mais 3 consultas; F5 no /payment/success não perde mais plano/email; dropdowns de país fecham
 ao clicar fora; rollback+aviso em favoritos/exclusões que falham; carrossel do dashboard 6s
 com pausa por toque/foco e `prefers-reduced-motion`.
+
+**Deploy em produção (feito nesta sessão, depois do relatório):** a migration
+`20260805120000_perf_indexes_rls_initplan.sql` foi aplicada via Management API (19 índices
+criados, 36 políticas com has_role/is_member agora em InitPlan, RPC `increment_coupon_use`
+com EXECUTE só pra service_role) e as 10 Edge Functions alteradas foram redeployadas via
+multipart preservando o `verify_jwt` de cada uma (8 false, 2 true — drive-save-folder e
+drive-list-folders), todas com OPTIONS 200 (sem BOOT_ERROR). Verificação adversarial em
+produção confirmou os gates de auth recusando (drive-share-folder sem header → 401 etc.) e o
+planner usando os índices novos. **O frontend NÃO foi deployado** — depende do merge da branch
+na `main` (Vercel detecta o push). Tokens do Supabase Management e do Vercel foram rotacionados
+nesta sessão; a tabela de credenciais no topo já reflete os valores novos.
 
 **Pendências documentadas (não corrigidas nesta sessão, por risco/escopo):** rewrites dos
 feeds `community_feed`/`archive_feed` (subqueries correlacionadas por linha computadas antes
