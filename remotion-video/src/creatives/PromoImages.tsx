@@ -255,7 +255,7 @@ export const PR09: React.FC = () => (
     <Head2 dark l1={<>anote <span style={{ color: O_RED }}>em cima</span> da apostila.</>}
       sub="caneta, marca-texto e borracha — direto na plataforma, salvo na sua conta" />
     <div style={{ position: 'absolute', left: '50%', top: 640, transform: 'translateX(-50%) rotate(-2deg)', zIndex: 4 }}>
-      <TabletFrame src="rec/n_annot_tab.mp4" width={700} startFrom={160} />
+      <TabletFrame src="rec/n_annot_tab.mp4" width={700} startFrom={430} />
     </div>
     <Selo x={80} y={780} text="🖊 grife como no papel" dark />
     <Selo x={640} y={1150} text="☁ salvo na sua conta" dark rot={2} />
