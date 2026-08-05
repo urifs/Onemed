@@ -335,18 +335,24 @@ serve(async (req) => {
       })
     }
 
-    // Incrementar uso do cupom se aplicado
+    // Incrementar uso do cupom se aplicado — atômico no banco: o
+    // SELECT-depois-UPDATE antigo perdia incrementos com checkouts
+    // simultâneos e deixava max_uses ser ultrapassado. Se a RPC ainda não
+    // existir (migration pendente), cai no caminho antigo.
     if (appliedCoupon) {
-      const { data: couponRow } = await supabase
-        .from('coupons')
-        .select('times_used')
-        .eq('id', appliedCoupon)
-        .maybeSingle()
+      const { error: incErr } = await supabase.rpc('increment_coupon_use', { _coupon_id: appliedCoupon })
+      if (incErr) {
+        const { data: couponRow } = await supabase
+          .from('coupons')
+          .select('times_used')
+          .eq('id', appliedCoupon)
+          .maybeSingle()
 
-      await supabase
-        .from('coupons')
-        .update({ times_used: (couponRow?.times_used ?? 0) + 1 })
-        .eq('id', appliedCoupon)
+        await supabase
+          .from('coupons')
+          .update({ times_used: (couponRow?.times_used ?? 0) + 1 })
+          .eq('id', appliedCoupon)
+      }
     }
 
     return new Response(JSON.stringify({
