@@ -226,7 +226,7 @@ export const PostImage: React.FC<{ post: Post }> = ({ post }) => {
           </div>
         )}
       </div>
-      <div style={{ position: 'absolute', left: 70, right: 70, top: 470, bottom: 360, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+      <div style={{ position: 'absolute', left: 70, right: 70, top: 440, bottom: 500, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
         <Body post={post} />
       </div>
       <div style={{ position: 'absolute', left: 70, right: 70, bottom: 200 }}>
