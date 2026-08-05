@@ -1533,6 +1533,16 @@ reproduz). Em paralelo, a cota resetou (sonda barata com Range aberto → 206) e
 `fix-unplayable-videos.mjs --ext=mov` foi relançado em produção (setsid/nohup + checagem agendada
 via send_later) — idempotente, filtra `storage_path IS NULL`.
 
+**Embed do Google promovido a solução DEFINITIVA para vídeo em formato sem suporte (decisão do
+dono — lote de conversão dos 46 .mov encerrado):** a regra do `LessonPlayer` virou lista de
+PERMITIDOS invertida — qualquer `video/*` fora de mp4/webm/ogg/mp2t, sem `storage_path` e com
+`drive_file_id`, abre direto no player embutido do Drive; formato exótico futuro cai lá sozinho.
+De quebra, a varredura achou **134 aulas com mime `text/texmacs`** (rótulo do Drive pra arquivos
+`.ts`) que eram MPEG-TS disfarçado (sondagem por bytes 0x47 em 0/188): mime corrigido pra
+`video/mp2t` no banco — essas tocam no player PRÓPRIO via mpegts.js, não no embed. Estado final
+dos vídeos sem conversão: mp4 (99k, nativo), mp2t (12k, mpegts.js), quicktime (46, embed), webm
+(3, nativo) — zero formatos sem tratamento. Áudios conferidos: só mpeg/ogg, todos nativos.
+
 ---
 
 ## Meta Ads — Contexto Geral
