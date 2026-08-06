@@ -56,7 +56,7 @@ async function checkRateLimit(
 
 // ─── Preços canônicos definidos SERVER-SIDE ───────────────────────────────────
 const PLAN_PRICES: Record<string, number> = {
-  monthly:       49.00,
+  monthly:       99.00,
   annual:        199.00,
   lifetime:      299.90,
   lifetime_plus: 599.00,

@@ -75,7 +75,7 @@ describe('upgradePriceFor', () => {
     expect(upgradePriceFor('lifetime_plus', 'lifetime_pro')).toBe(398);
     expect(upgradePriceFor('lifetime', 'lifetime_plus')).toBeCloseTo(299.10, 2);
     expect(upgradePriceFor('annual', 'lifetime')).toBeCloseTo(100.90, 2);
-    expect(upgradePriceFor('monthly', 'annual')).toBe(150);
+    expect(upgradePriceFor('monthly', 'annual')).toBe(100);
   });
 
   it('não depende de quanto a pessoa pagou (cupom não muda o degrau)', () => {

@@ -13,7 +13,7 @@ const ALLOWED_ORIGINS = ['https://onemedcursos.com.br', 'http://localhost:5173',
 // acesso concedido manualmente pelo admin, sem linha em buyers) — conta
 // como se já tivesse "pago" o preço de tabela do plano atual, não zero.
 const PLAN_PRICES: Record<string, number> = {
-  monthly: 49.00,
+  monthly: 99.00,
   annual: 199.00,
   lifetime: 299.90,
   lifetime_plus: 599.00,

@@ -3,7 +3,7 @@
 // (supabase/functions/mp-create-payment) — este arquivo não valida nada,
 // só evita repetir os mesmos valores em CheckoutPage/PaymentSuccessPage/pixel.
 export const PLAN_PRICES: Record<string, number> = {
-  monthly: 49.00,
+  monthly: 99.00,
   annual: 199.00,
   lifetime: 299.90,
   lifetime_plus: 599.00,
