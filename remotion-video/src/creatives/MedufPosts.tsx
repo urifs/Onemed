@@ -246,7 +246,328 @@ export const MedufPost: React.FC<{ post: MPost }> = ({ post }) => {
   );
 };
 
-export const MEDUF_POSTS: MPost[] = [];
+export const MEDUF_POSTS: MPost[] = [
+  {
+    "id": "N01",
+    "theme": "light",
+    "layout": "passos",
+    "kicker": "METODO",
+    "headline": "Descreva o caso *como no round*",
+    "sub": "A qualidade da resposta começa na forma da pergunta.",
+    "items": [
+      "Comece por idade, sexo e tempo de evolução",
+      "Descreva a queixa com início, ritmo e fatores",
+      "Liste comorbidades, medicações em uso e alergias",
+      "Informe sinais vitais e achados do exame físico",
+      "Anexe os exames já feitos antes de perguntar",
+      "Diga o que quer: diferencial, revisão ou registro"
+    ],
+    "takeaway": "No chat clínico da MEDUF, caso bem descrito rende resposta útil."
+  },
+  {
+    "id": "N02",
+    "theme": "dark",
+    "layout": "lista",
+    "kicker": "PRONTUARIO",
+    "headline": "O que o prontuário longo *esconde*",
+    "sub": "Paciente transferido chega com anos de registro para revisar.",
+    "items": [
+      "Medicações ativas repetidas com nomes comerciais diferentes",
+      "Alergia anotada uma única vez, anos atrás",
+      "Exame alterado que ninguém reavaliou depois"
+    ],
+    "takeaway": "A análise de prontuário da MEDUF destaca o que revisar; a conferência é sua."
+  },
+  {
+    "id": "N03",
+    "theme": "light",
+    "layout": "checklist",
+    "kicker": "ANAMNESE",
+    "headline": "A anamnese que *sustenta a conduta*",
+    "sub": "Roteiro que evita voltar ao leito por informação faltando.",
+    "items": [
+      "Queixa principal na fala do próprio paciente",
+      "História atual com início, evolução e fatores",
+      "Antecedentes pessoais, cirúrgicos e familiares relevantes",
+      "Medicações em uso, doses e adesão real",
+      "Alergias, hábitos, ocupação e contexto social",
+      "Revisão de sistemas dirigida às hipóteses levantadas"
+    ],
+    "takeaway": "A estruturação de anamnese da MEDUF organiza; o registro final é seu."
+  },
+  {
+    "id": "N04",
+    "theme": "dark",
+    "layout": "duascolunas",
+    "kicker": "DIFERENCIAL",
+    "headline": "Diferencial rápido ou *detalhado*: quando usar",
+    "sub": "O mesmo paciente pede profundidades diferentes conforme a hora.",
+    "items": [
+      "Paciente instável, decisão em minutos|Caso ambulatorial que não fecha",
+      "Poucas hipóteses, ordenadas por gravidade|Lista ampla, com prevalência e contexto",
+      "Confirma o que não pode passar|Explora o que ainda não pensou",
+      "À beira do leito, na emergência|Revisão do caso depois do plantão",
+      "Serve para agir agora|Serve para destrinchar o caso"
+    ],
+    "takeaway": "Os dois modos existem na MEDUF; a hipótese que você segue é sua."
+  },
+  {
+    "id": "N05",
+    "theme": "light",
+    "layout": "checklist",
+    "kicker": "SEGURANCA",
+    "headline": "Antes de prescrever ao *idoso polimedicado*",
+    "sub": "Cada droga nova entra num sistema que já está cheio.",
+    "items": [
+      "Levantar tudo que ele usa, incluindo automedicação",
+      "Rever função renal e hepática antes da dose",
+      "Checar interações com o que já está prescrito",
+      "Procurar cascata: sintoma que é efeito adverso",
+      "Perguntar o que dá para suspender agora",
+      "Simplificar a posologia para favorecer a adesão"
+    ],
+    "takeaway": "Interação medicamentosa e cálculo de dose na mesma tela da MEDUF; quem prescreve é você."
+  },
+  {
+    "id": "N06",
+    "theme": "dark",
+    "layout": "fluxo",
+    "kicker": "REAVALIACAO",
+    "headline": "Não melhorou: *revise antes de trocar*",
+    "sub": "Falha de tratamento raramente começa na escolha do fármaco.",
+    "items": [
+      "Confirme se o diagnóstico ainda explica tudo",
+      "Cheque a adesão real ao que foi prescrito",
+      "Revise dose, via e tempo de tratamento",
+      "Procure interação que reduza o efeito esperado",
+      "Considere complicação ou segunda doença associada",
+      "Só então reveja a escolha terapêutica"
+    ],
+    "takeaway": "A MEDUF ajuda a revisar o caso inteiro; a troca de conduta é sua."
+  },
+  {
+    "id": "N07",
+    "theme": "light",
+    "layout": "duascolunas",
+    "kicker": "LIMITES",
+    "headline": "O que a tela *não examina*",
+    "sub": "Duas colunas para separar apoio de exame clínico.",
+    "items": [
+      "Organizar um diferencial amplo|Palpar o abdome e sentir a defesa",
+      "Revisar interações da prescrição|Medir pressão e perfusão à beira do leito",
+      "Recuperar evidência no PubMed|Perceber o paciente que mudou de aspecto",
+      "Estruturar anamnese e registro|Ausculta, fundo de olho, exame neurológico",
+      "Sugerir exames a considerar|Decidir urgência olhando para o paciente"
+    ],
+    "takeaway": "A MEDUF cobre a coluna da esquerda; a da direita é presencial e sua."
+  },
+  {
+    "id": "N08",
+    "theme": "dark",
+    "layout": "lista",
+    "kicker": "ALTA",
+    "headline": "Antes da alta, *três perguntas*",
+    "sub": "A porta de saída é onde o erro aparece depois.",
+    "items": [
+      "O que ainda pode piorar nas próximas horas",
+      "As hipóteses graves foram afastadas ou apenas adiadas",
+      "O paciente entendeu quando precisa retornar"
+    ],
+    "takeaway": "Na MEDUF você revisa sinais de alarme; a alta continua sendo decisão sua."
+  },
+  {
+    "id": "N09",
+    "theme": "light",
+    "layout": "passos",
+    "kicker": "FERRAMENTA",
+    "headline": "Dite o caso de *mãos ocupadas*",
+    "sub": "Consulta por voz para quem não pode parar de atender.",
+    "items": [
+      "Dite o caso como você passa no round",
+      "Fale números e unidades com pausa",
+      "Soletre nomes de medicações pouco comuns",
+      "Peça o formato desejado antes de encerrar",
+      "Revise a transcrição antes de usar qualquer trecho",
+      "Leve o resumo revisado para o prontuário"
+    ],
+    "takeaway": "A consulta por voz da MEDUF escreve; a revisão final é sua."
+  },
+  {
+    "id": "N10",
+    "theme": "dark",
+    "layout": "checklist",
+    "kicker": "REVISAO",
+    "headline": "Seis conferências antes de *aceitar a sugestão*",
+    "sub": "O intervalo entre ler a sugestão e assumir a conduta.",
+    "items": [
+      "A sugestão bate com o paciente à sua frente",
+      "Há fonte citada e ela sustenta aquilo",
+      "Dose, via e intervalo conferem para este paciente",
+      "Alergias, função renal e gestação foram considerados",
+      "Algum sinal de alarme ficou sem resposta",
+      "Você assinaria isso e defenderia depois"
+    ],
+    "takeaway": "A MEDUF entrega a sugestão organizada; a última checagem é do médico."
+  },
+  {
+    "id": "N11",
+    "theme": "light",
+    "layout": "lista",
+    "kicker": "ECG",
+    "headline": "O ECG diz *mais que o ritmo*",
+    "sub": "O que a análise devolve, ponto a ponto.",
+    "items": [
+      "Frequência, eixo e intervalos revisados um a um",
+      "Sinais de sobrecarga e distúrbios de condução",
+      "Alterações de repolarização destacadas para conferência",
+      "Achados que pedem atenção imediata sinalizados",
+      "Correlação com o quadro clínico que você informou"
+    ],
+    "takeaway": "A MEDUF organiza o que olhar no traçado; a leitura final é sua."
+  },
+  {
+    "id": "N12",
+    "theme": "dark",
+    "layout": "fluxo",
+    "kicker": "LABORATORIO",
+    "headline": "Do resultado bruto ao *raciocínio organizado*",
+    "sub": "O que entra e o que sai na análise laboratorial.",
+    "items": [
+      "Entra: o exame em foto, PDF ou texto",
+      "Entra: idade, sexo, quadro clínico e medicações",
+      "Sai: valores fora da faixa agrupados por eixo",
+      "Sai: hipóteses que explicam o conjunto, não o isolado",
+      "Sai: o que confirmar e o que repetir"
+    ],
+    "takeaway": "Na MEDUF o resultado é lido no contexto; a conduta continua sendo sua."
+  },
+  {
+    "id": "N13",
+    "theme": "light",
+    "layout": "lista",
+    "kicker": "DOSE",
+    "headline": "Quando a dose *precisa de ajuste*",
+    "sub": "Situações em que a conta padrão não serve.",
+    "items": [
+      "Função renal reduzida em fármaco de eliminação renal",
+      "Peso extremo: neonato, criança, obesidade grave",
+      "Hepatopatia em fármaco de metabolismo hepático",
+      "Interação que altera o metabolismo do fármaco",
+      "Janela terapêutica estreita, com pouca margem"
+    ],
+    "takeaway": "A calculadora de dose da MEDUF faz a conta; quem prescreve é o médico."
+  },
+  {
+    "id": "N14",
+    "theme": "dark",
+    "layout": "passos",
+    "kicker": "TOXICOLOGIA",
+    "headline": "Intoxicação: os *primeiros minutos* mandam",
+    "sub": "A sequência que a ferramenta ajuda a manter.",
+    "items": [
+      "Estabilize primeiro: via aérea, respiração e circulação",
+      "Levante agente, dose estimada e tempo de exposição",
+      "Reconheça a síndrome tóxica pelos sinais vitais e pupilas",
+      "Revise antídoto e medidas de descontaminação cabíveis",
+      "Acione o centro de informação toxicológica da região"
+    ],
+    "takeaway": "A MEDUF sustenta o roteiro enquanto você conduz o atendimento."
+  },
+  {
+    "id": "N15",
+    "theme": "light",
+    "layout": "duascolunas",
+    "kicker": "EXAMES",
+    "headline": "Pedir *menos exames*, pedir melhor",
+    "sub": "Pedido no automático de um lado, pedido com hipótese do outro.",
+    "items": [
+      "Painel amplo por reflexo|Exame guiado pela hipótese",
+      "Resultado que não muda conduta|Resultado que confirma ou afasta",
+      "Achado incidental sem contexto|Menos ruído, menos repetição",
+      "Custo e tempo do paciente|Espera menor, resposta antes",
+      "Lista decorada da residência|Racional revisado a cada caso"
+    ],
+    "takeaway": "A sugestão de exames da MEDUF vem fundamentada; quem assina o pedido é você."
+  },
+  {
+    "id": "N16",
+    "theme": "dark",
+    "layout": "mito_verdade",
+    "kicker": "GESTACAO",
+    "headline": "Gestação: *suspender tudo* não é seguro",
+    "sub": "O que se repete no corredor e o que se confere na fonte.",
+    "items": [
+      "Na dúvida, suspenda tudo|Doença materna sem tratamento também tem risco",
+      "Nenhum fármaco é seguro na gestação|Muitos têm uso consolidado e bem estudado",
+      "Amamentar impede qualquer tratamento|Boa parte dos fármacos é compatível",
+      "A categoria de risco resolve sozinha|Trimestre, dose e alternativa também pesam",
+      "Basta lembrar da faculdade|Recomendações mudam e precisam ser conferidas"
+    ],
+    "takeaway": "O guia de medicação da MEDUF mostra as opções; a escolha é sua."
+  },
+  {
+    "id": "N17",
+    "theme": "light",
+    "layout": "lista",
+    "kicker": "IMAGEM",
+    "headline": "Imagem sem contexto rende *leitura pobre*",
+    "sub": "O que enviar junto para a análise valer alguma coisa.",
+    "items": [
+      "Envie a imagem com a indicação do exame",
+      "Diga o quadro clínico e o tempo de evolução",
+      "Aponte a região que motivou o pedido",
+      "Informe exames anteriores disponíveis para comparação",
+      "Confronte os achados com o laudo do radiologista"
+    ],
+    "takeaway": "A análise de RX e tomografia da MEDUF apoia sua leitura; o laudo é do radiologista."
+  },
+  {
+    "id": "N18",
+    "theme": "dark",
+    "layout": "fluxo",
+    "kicker": "ENCAMINHAMENTO",
+    "headline": "Do seu limite ao *encaminhamento certo*",
+    "sub": "Encaminhar bem é entregar o caso já organizado.",
+    "items": [
+      "Defina a pergunta que motiva o encaminhamento",
+      "Reúna história, exames e tratamentos já tentados",
+      "Verifique o que o serviço de destino exige",
+      "Registre a hipótese e o grau de urgência",
+      "Oriente o paciente sobre prazo e sinais de alarme"
+    ],
+    "takeaway": "A MEDUF organiza o resumo do caso; o encaminhamento é decisão sua."
+  },
+  {
+    "id": "N19",
+    "theme": "light",
+    "layout": "lista",
+    "kicker": "ESTUDANTE",
+    "headline": "Estude com IA sem *terceirizar o raciocínio*",
+    "sub": "Como usar a ferramenta e continuar pensando.",
+    "items": [
+      "Formule sua hipótese antes de abrir o chat",
+      "Peça o raciocínio, não só a resposta final",
+      "Compare o que você pensou com o que veio",
+      "Abra a referência citada e confira",
+      "Leve ao caso real com supervisão do preceptor"
+    ],
+    "takeaway": "A MEDUF acelera o estudo; o raciocínio clínico continua sendo seu."
+  },
+  {
+    "id": "N20",
+    "theme": "dark",
+    "layout": "bigstat",
+    "kicker": "EVIDENCIA",
+    "headline": "O que *nenhuma memória* comporta",
+    "sub": "O tamanho real da literatura que sustenta a clínica.",
+    "items": [
+      "35 milhões+",
+      "artigos indexados no PubMed",
+      "Nenhuma memória guarda isso; a busca guarda"
+    ],
+    "takeaway": "Na MEDUF a pergunta em português chega ao PubMed; a leitura crítica é sua."
+  }
+];
 
 export const makeMedufPost = (post: MPost): React.FC => {
   const C: React.FC = () => <MedufPost post={post} />;
