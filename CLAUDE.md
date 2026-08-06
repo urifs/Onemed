@@ -1545,6 +1545,22 @@ dos vídeos sem conversão: mp4 (99k, nativo), mp2t (12k, mpegts.js), quicktime 
 
 ---
 
+**"SEMANA 10 aparecendo junto com a 1" — ordenação alfabética virou NATURAL:** o dono viu no
+mapa do MEDCURSO 2026 que a Semana 10 caía entre a 1 e a 2. Causa: `recalc_course_totals`
+numerava módulos e aulas com `ORDER BY` de TEXTO, e em texto "SEMANA 10" < "SEMANA 2". Não era
+específico desse curso — **8.960 módulos em 82 cursos** e **108.641 aulas** estavam fora de ordem
+("Aula 2" × "Aula 10", "Bloco 3" × "Bloco 12"). Migration `20260805060000_natural_sort_modules.sql`:
+nova função `natural_key(texto)` (quebra em pedaços dígito/não-dígito e zera à esquerda os
+números em 12 casas, então a comparação de texto respeita o valor numérico) usada nos dois
+`ORDER BY` do recalc. Reordenação aplicada em produção em TODOS os cursos (módulos de uma vez,
+aulas curso a curso pra não estourar o timeout da API).
+**Desempate obrigatório:** 18 cursos têm pastas de nome idêntico (ex: dois "Gastrologia" no
+MEDCurso) — sem `id` no fim do `ORDER BY` o `row_number()` alternava a cada recálculo e a
+verificação nunca convergia. Com o desempate, converge em zero. Correção é 100% de banco:
+nenhum deploy de frontend foi necessário (a UI já lia `sort_order`).
+
+---
+
 ### 2026-08-05 (sessão remota) — MEDCURSO 2026: semanas 8, 9, 10 e a 6 completa
 
 **Pedido:** sincronizar o MEDCURSO com a pasta `1aWl1UsFms5_W9n1rAkRY_yWGBL8Ug515` (plataforma
