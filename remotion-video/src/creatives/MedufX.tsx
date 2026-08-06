@@ -112,8 +112,8 @@ export const MX03: React.FC = () => (
       antes de assinar, <span style={{ color: '#6ea8ff' }}>cheque.</span>
     </div>
     <div style={{
-      position: 'absolute', left: '50%', top: 170, width: 780, transform: 'translateX(-50%) rotate(-2.5deg)',
-      background: '#fdfcf8', borderRadius: 8, padding: '54px 60px 46px',
+      position: 'absolute', left: '50%', top: '50%', width: 860, transform: 'translate(-50%, -50%) rotate(-2.5deg)',
+      background: '#fdfcf8', borderRadius: 8, padding: '64px 68px 54px',
       boxShadow: '0 60px 120px -30px rgba(0,0,0,0.6)',
     }}>
       <div style={{ borderBottom: '3px solid #16223a', paddingBottom: 18 }}>
@@ -168,13 +168,17 @@ export const MX04: React.FC = () => (
         TUDO.<br />COM IA.
       </div>
     </div>
-    <div style={{ position: 'absolute', right: 64, top: 96, transform: 'rotate(90deg)', transformOrigin: 'right top', fontFamily: HEAD, fontWeight: 900, fontSize: 27, color: M_NAVY, letterSpacing: 3 }}>
+    <div style={{ position: 'absolute', right: 44, top: 90, writingMode: 'vertical-rl', fontFamily: HEAD, fontWeight: 900, fontSize: 27, color: M_NAVY, letterSpacing: 3 }}>
       MEDUF AI
     </div>
-    <div style={{ position: 'absolute', left: 90, right: 70, bottom: 66, display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: `3px solid ${M_NAVY}`, paddingTop: 24 }}>
-      <span style={{ fontFamily: BODY, fontWeight: 600, fontSize: 22, color: M_NAVY }}>17 ferramentas · apoio à sua decisão — a conduta é sua</span>
-      <span style={{ fontFamily: BODY, fontWeight: 600, fontSize: 24, color: M_NAVY }}>teste 30 min grátis</span>
-      <span style={{ fontFamily: MONO, fontWeight: 700, fontSize: 24, color: M_BLUE }}>meduf.com.br</span>
+    <div style={{ position: 'absolute', left: 90, right: 70, bottom: 66, borderTop: `3px solid ${M_NAVY}`, paddingTop: 22 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+        <span style={{ fontFamily: BODY, fontWeight: 600, fontSize: 24, color: M_NAVY, whiteSpace: 'nowrap' }}>17 ferramentas · teste 30 min grátis</span>
+        <span style={{ fontFamily: MONO, fontWeight: 700, fontSize: 24, color: M_BLUE, whiteSpace: 'nowrap' }}>meduf.com.br</span>
+      </div>
+      <div style={{ marginTop: 10, fontFamily: BODY, fontWeight: 500, fontSize: 21, color: '#5b6b85' }}>
+        apoio à sua decisão — a conduta é sempre sua
+      </div>
     </div>
   </AbsoluteFill>
 );
@@ -306,8 +310,8 @@ export const MX08: React.FC = () => (
       background: 'radial-gradient(circle, rgba(21,96,232,0.22), transparent 62%)',
     }} />
     <div style={{
-      position: 'absolute', left: '50%', top: 120, transform: 'translateX(-50%) rotate(0.8deg)',
-      width: 840, background: '#fbf9f3', borderRadius: 10, padding: '80px 76px 60px',
+      position: 'absolute', left: '50%', top: '48%', transform: 'translate(-50%, -50%) rotate(0.8deg)',
+      width: 880, background: '#fbf9f3', borderRadius: 10, padding: '86px 80px 66px',
       boxShadow: '0 60px 130px -30px rgba(0,0,0,0.65)',
       backgroundImage: 'repeating-linear-gradient(transparent, transparent 62px, rgba(21,96,232,0.16) 63px)',
     }}>
@@ -369,7 +373,7 @@ export const MX10: React.FC = () => (
     }} />
     <div style={{ position: 'absolute', left: '50%', top: '52%', transform: 'translate(-50%, -50%) rotate(-24deg)', zIndex: 4 }}>
       <div style={{ position: 'relative', boxShadow: '0 70px 140px -30px rgba(0,0,0,0.7)' }}>
-        <Screen src="mg_ecg" startFrom={730} style={{ width: 1720, height: 480 }} pos="center 30%" />
+        <Screen src="mfd_home" startFrom={210} style={{ width: 1760, height: 520 }} pos="center 62%" />
         <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(90deg, rgba(14,27,51,0.85) 0%, transparent 18%, transparent 82%, rgba(14,27,51,0.85) 100%)' }} />
         <div style={{ position: 'absolute', left: 0, right: 0, top: -3, height: 6, background: M_BLUE }} />
         <div style={{ position: 'absolute', left: 0, right: 0, bottom: -3, height: 6, background: M_BLUE }} />
