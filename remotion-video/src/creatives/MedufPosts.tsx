@@ -46,14 +46,22 @@ const Hl: React.FC<{ text: string; color: string; size: number }> = ({ text, col
   </div>
 );
 
-const Card: React.FC<{ p: typeof PAL.light; children: React.ReactNode; pad?: string }> = ({ p, children, pad = '22px 28px' }) => (
-  <div style={{
-    background: p.card, border: `1.5px solid ${p.line}`, borderRadius: 18, padding: pad,
-    marginBottom: 14, display: 'flex', alignItems: 'center', gap: 20,
-    boxShadow: `0 12px 30px -14px ${p.shadow}`,
-    fontFamily: HEAD, fontWeight: 700, fontSize: 28, color: p.ink, lineHeight: 1.32,
-  }}>{children}</div>
-);
+/* densidade: com poucos itens o card cresce para ocupar bem o quadro */
+const dens = (n: number) => (n <= 3 ? { pad: '38px 34px', fs: 33, gap: 24, mb: 20 }
+  : n === 4 ? { pad: '30px 30px', fs: 30, gap: 22, mb: 17 }
+  : { pad: '22px 28px', fs: 28, gap: 20, mb: 14 });
+
+const Card: React.FC<{ p: typeof PAL.light; children: React.ReactNode; n: number }> = ({ p, children, n }) => {
+  const d = dens(n);
+  return (
+    <div style={{
+      background: p.card, border: `1.5px solid ${p.line}`, borderRadius: 18, padding: d.pad,
+      marginBottom: d.mb, display: 'flex', alignItems: 'center', gap: d.gap,
+      boxShadow: `0 12px 30px -14px ${p.shadow}`,
+      fontFamily: HEAD, fontWeight: 700, fontSize: d.fs, color: p.ink, lineHeight: 1.32,
+    }}>{children}</div>
+  );
+};
 
 const Body: React.FC<{ post: MPost }> = ({ post }) => {
   const p = PAL[post.theme];
@@ -62,7 +70,7 @@ const Body: React.FC<{ post: MPost }> = ({ post }) => {
   if (post.layout === 'lista') {
     return (
       <>{it.map((x, i) => (
-        <Card key={i} p={p}>
+        <Card key={i} p={p} n={it.length}>
           <span style={{
             width: 12, height: 12, borderRadius: 3, background: M_BLUE, flexShrink: 0,
             transform: 'rotate(45deg)',
@@ -76,7 +84,7 @@ const Body: React.FC<{ post: MPost }> = ({ post }) => {
   if (post.layout === 'passos') {
     return (
       <>{it.map((x, i) => (
-        <Card key={i} p={p}>
+        <Card key={i} p={p} n={it.length}>
           <span style={{
             width: 46, height: 46, borderRadius: 12, background: M_BLUE, flexShrink: 0,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -91,7 +99,7 @@ const Body: React.FC<{ post: MPost }> = ({ post }) => {
   if (post.layout === 'checklist') {
     return (
       <>{it.map((x, i) => (
-        <Card key={i} p={p}>
+        <Card key={i} p={p} n={it.length}>
           <span style={{
             width: 40, height: 40, borderRadius: 10, border: `3px solid ${M_BLUE}`, flexShrink: 0,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -171,7 +179,11 @@ const Body: React.FC<{ post: MPost }> = ({ post }) => {
   const [num, leg, ...apoio] = it;
   return (
     <div style={{ textAlign: 'center' }}>
-      <div style={{ fontFamily: HEAD, fontWeight: 900, fontSize: 210, color: p.ink, letterSpacing: -9, lineHeight: 1 }}>{num}</div>
+      <div style={{
+        fontFamily: HEAD, fontWeight: 900,
+        fontSize: num.length <= 4 ? 210 : num.length <= 7 ? 150 : 104,
+        color: p.ink, letterSpacing: num.length <= 4 ? -9 : -4, lineHeight: 1.02,
+      }}>{num}</div>
       <div style={{ fontFamily: BODY, fontWeight: 600, fontSize: 27, color: p.mut, letterSpacing: 4, textTransform: 'uppercase', marginTop: 10 }}>{leg}</div>
       <div style={{ marginTop: 46 }}>
         {apoio.map((x, i) => (
