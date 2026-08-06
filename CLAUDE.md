@@ -657,7 +657,7 @@ na API mas falhava ao subir). Corrigido redeployando todas via multipart
 aprovado foi perdido no incidente — todos os `buyers` afetados estavam `status:'pending'` sem
 `payment_id`.
 
-**3 novos planos:** `monthly` (R$49,90/30 dias), `lifetime_plus` (R$599 — vitalício + backup no
+**3 novos planos:** `monthly` (R$99/30 dias — era R$49,90 no lançamento, subiu para R$49 e depois R$99 em 05/08), `lifetime_plus` (R$599 — vitalício + backup no
 Drive do usuário + 4 telas), `lifetime_pro` (R$997 — tudo do Plus + IA Meduf + download em massa
 na plataforma). Preços/labels/features centralizados em `src/lib/plans.ts`; `mp-create-payment` e
 `mp-webhook` reescritos com lookups por tabela (`PLAN_PRICES`, `LIFETIME_TIER_RANK`) em vez de
@@ -1542,6 +1542,19 @@ De quebra, a varredura achou **134 aulas com mime `text/texmacs`** (rótulo do D
 `video/mp2t` no banco — essas tocam no player PRÓPRIO via mpegts.js, não no embed. Estado final
 dos vídeos sem conversão: mp4 (99k, nativo), mp2t (12k, mpegts.js), quicktime (46, embed), webm
 (3, nativo) — zero formatos sem tratamento. Áudios conferidos: só mpeg/ogg, todos nativos.
+
+---
+
+**Plano Mensal: R$49 → R$99.** Preço vive em 4 fontes de verdade que precisam andar juntas
+(`src/lib/plans.ts` PLAN_PRICES · `CheckoutPage` PLANS · `mp-create-payment` PLAN_PRICES, que é
+quem realmente cobra · `member-account-info` PLAN_PRICES, usado no desconto do upgrade de quem
+não tem linha em `buyers`). Citações que precisaram acompanhar: rótulo "Só Plano Mensal (R$ 99)"
+no seletor de cupom, prompt do `member-assistant` (a IA respondia o preço antigo) e o teste
+`upgradePriceFor('monthly','annual')` (150 → 100). Herdam sozinhos: JSON-LD de SEO, pixel/CAPI e
+UpgradePlanModal (todos leem PLAN_PRICES). Verificado em produção: `mp-create-payment` gravou
+`amount: 99.00` numa preferência real do Mercado Pago e o checkout exibe R$99,00.
+⚠️ **Efeito colateral aceito:** o upgrade é diferença de TABELA, então quem pagou R$49 no Mensal
+passa a receber R$99 de crédito ao subir para o Anual (paga R$100 em vez de R$150).
 
 ---
 
