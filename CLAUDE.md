@@ -1545,6 +1545,22 @@ dos vídeos sem conversão: mp4 (99k, nativo), mp2t (12k, mpegts.js), quicktime 
 
 ---
 
+**Arquivo do acervo abria mas NÃO rolava e o clique "saía do documento"** (cliente com PDF de
+apostila): o `LessonPlayer` do acervo é portalizado no `document.body`, ou seja, FORA do
+`DialogContent` do detalhe do item. Com o diálogo em modo **modal**, o Radix aplica
+`react-remove-scroll` + `pointer-events: none` em tudo que está fora do content — o PDF renderiza
+mas fica inerte. Reproduzido em produção antes de mexer (`body` com `pointer-events: none`,
+`scrollTop` preso em 0). Correção: `<Dialog modal={!sobreposto}>` no `DetailDialog`, onde
+`sobreposto` = player OU FlashcardViewer OU QuestionBankViewer aberto (os dois últimos são irmãos
+do diálogo e sofriam o mesmo), mais `onInteractOutside`/`onEscapeKeyDown` bloqueados nesse período
+— sem isso um clique dentro do player contaria como "fora" e fecharia o detalhe junto. Verificado
+em produção no MESMO arquivo do print do cliente: rolagem 0 → 2.740px de 8.202px, clique na página
+e na margem sem fechar, e ao fechar o player o detalhe volta a ser modal normalmente.
+**Regra:** overlay em portal + Radix Dialog modal não convivem — quando um sobe, o diálogo de trás
+tem que sair do modo modal.
+
+---
+
 **"SEMANA 10 aparecendo junto com a 1" — ordenação alfabética virou NATURAL:** o dono viu no
 mapa do MEDCURSO 2026 que a Semana 10 caía entre a 1 e a 2. Causa: `recalc_course_totals`
 numerava módulos e aulas com `ORDER BY` de TEXTO, e em texto "SEMANA 10" < "SEMANA 2". Não era
