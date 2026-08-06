@@ -66,6 +66,7 @@ import { POSTS, makePostComp } from './creatives/PostImages';
 import { PROMOS } from './creatives/PromoImages';
 import { MEDUF_PROMOS, makeMedufPromo } from './creatives/MedufPromos';
 import { MEDUF_X } from './creatives/MedufX';
+import { MEDUF_POSTS, makeMedufPost } from './creatives/MedufPosts';
 
 const ADS: Array<[string, React.FC]> = [
   ['AD01-Mapa', AD01], ['AD02-Mesa', AD02], ['AD03-Toques', AD03], ['AD04-Acervo', AD04],
@@ -190,6 +191,17 @@ export const RemotionRoot: React.FC = () => {
         width={1080}
         height={1920}
       />
+      {MEDUF_POSTS.map(post => (
+        <Composition
+          key={post.id}
+          id={post.id}
+          component={makeMedufPost(post)}
+          durationInFrames={1}
+          fps={30}
+          width={1080}
+          height={1350}
+        />
+      ))}
       {MEDUF_X.map(([id, component]) => (
         <Composition
           key={id}
