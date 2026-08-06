@@ -1545,6 +1545,40 @@ dos vídeos sem conversão: mp4 (99k, nativo), mp2t (12k, mpegts.js), quicktime 
 
 ---
 
+### 2026-08-05 (sessão remota) — MEDCURSO 2026: semanas 8, 9, 10 e a 6 completa
+
+**Pedido:** sincronizar o MEDCURSO com a pasta `1aWl1UsFms5_W9n1rAkRY_yWGBL8Ug515` (plataforma
+tinha até a Semana 6 parcial; a pasta tem 6, 8, 9 e 10 — **não existe Semana 7** na origem).
+
+**Descoberta que destravou tudo:** a pasta nova ("MED Curso 2026") é da PRÓPRIA conta de
+armazenamento da plataforma (`ufgravity@gmail.com`), mas não estava compartilhada com a conta de
+CONTEÚDO (`onemedcursos@gmail.com`) — que é justamente quem o worker de streaming usa pra servir
+os bytes. Daí o 404 na API. Compartilhada como leitura (permissão criada com o token da conta de
+armazenamento, via função temporária depois removida); sem isso as aulas importariam mas NÃO
+tocariam.
+
+**Importação (62 arquivos, 19,3 GB, 35 módulos):** Semana 6 ganhou a estrutura completa
+(Ped 1 · Preventiva, com Video Aulas / Aula Bônus / No Papo) dentro do módulo `SEMANA 6` que já
+existia; Semanas 8, 9 e 10 viraram módulos novos, nomeados em CAIXA ALTA (`SEMANA 8`) pra casar
+com as 1-6. Curso foi de 123 → **185 aulas**. Script `scratchpad/importar.mjs` espelha o
+`member-sync-library` (mesmo `lessonType`, `path`, `depth`, `parent_module_id`, `drive_path`,
+`last_seen_at`), com simulação por padrão e `--aplicar` pra gravar.
+
+**Duplicata conhecida e deliberada:** "AULA ESPECIAL- TRIAGEM NEONATAL" existe duas vezes na
+Semana 6 — a antiga (2,15 GB, solta na raiz do módulo, vinda da pasta do `medbrasil31`, com
+**13 alunos com progresso**) e a nova (442 MB, dentro de `Ped 1/Video Aulas`). Não apaguei a
+antiga porque `lesson_progress` cai por CASCADE; a nova, muito mais leve, é a que menos sofre com
+a cota de download do Drive.
+
+⚠️ **Duas fontes no mesmo curso:** `courses.drive_folder_id` continua apontando pra pasta ANTIGA
+(`medbrasil31`, semanas 1-6 + banco de questões). As semanas novas moram na pasta do ufgravity.
+Consequência: `scripts/deep-library-sync.mjs` rodado SEM `--only` marcaria as 62 aulas novas com
+`missing_since` (não apaga, e o aluno continua vendo — a página do curso não filtra por esse
+campo; o botão "Sincronizar biblioteca" do painel também nunca marca). Se for rodar o script
+completo, restaure o `missing_since = null` dessas aulas depois.
+
+---
+
 **Plano Mensal: R$49 → R$99.** Preço vive em 4 fontes de verdade que precisam andar juntas
 (`src/lib/plans.ts` PLAN_PRICES · `CheckoutPage` PLANS · `mp-create-payment` PLAN_PRICES, que é
 quem realmente cobra · `member-account-info` PLAN_PRICES, usado no desconto do upgrade de quem
