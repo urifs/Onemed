@@ -850,8 +850,19 @@ function DetailDialog({ itemId, initialFileId, currentUserId, onClose, onChanged
   };
 
   return (
-    <Dialog open onOpenChange={v => { if (!v) onClose(); }}>
-      <DialogContent className="bg-background-paper border-border sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+    // `modal={!playing}`: enquanto o player está aberto, o diálogo de detalhe
+    // precisa DEIXAR de ser modal. Modal do Radix trava a rolagem da página e
+    // põe `pointer-events: none` em tudo que está fora do DialogContent — e o
+    // player mora num portal no body, ou seja, FORA. Era exatamente o que o
+    // cliente via: o PDF abria mas não rolava e o clique não pegava.
+    <Dialog open modal={!playing} onOpenChange={v => { if (!v) onClose(); }}>
+      <DialogContent
+        className="bg-background-paper border-border sm:max-w-2xl max-h-[90vh] overflow-y-auto"
+        // Sem o modo modal, um clique dentro do player conta como "fora" do
+        // diálogo — sem isso o detalhe fecharia junto e levaria o player.
+        onInteractOutside={e => { if (playing) e.preventDefault(); }}
+        onEscapeKeyDown={e => { if (playing) e.preventDefault(); }}
+      >
         {loading || !item ? (
           <div className="py-16 flex justify-center"><Loader2 className="w-6 h-6 text-primary animate-spin" /></div>
         ) : (
