@@ -27,13 +27,13 @@ vi.mock('@/integrations/supabase/client', () => ({
 vi.mock('@/context/AuthContext', () => ({
   useAuth: () => ({ user: { id: 'u1', email: 'a@a.com' }, session: { access_token: 't' }, isAdmin: true, isViewer: false, loading: false }),
 }));
-// AdminLayout e os cards NÃO são mockados de propósito: eles renderizam em
-// TODAS as páginas admin, então um TDZ neles precisa ser exercido de verdade.
-// Só mockamos o que quebra no jsdom por motivo alheio ao TDZ: o mapa Leaflet.
+// AdminLayout, os cards E OS HOOKS de realtime (useOnlineMembers,
+// useVisibleMemberLocations, useMemberLocationsMap) NÃO são mockados de
+// propósito: eles rodam em TODAS as páginas admin. Mockar esses hooks foi o
+// ponto cego que deixou passar o "fetchRoster is not defined" (referência
+// morta deixada na migração pra react-query). Agora rodam de verdade.
+// Só mockamos o que quebra no jsdom por motivo alheio ao bug: o mapa Leaflet.
 vi.mock('@/components/admin/MemberLocationsMap', () => ({ MemberLocationsMap: () => null }));
-vi.mock('@/hooks/useOnlineMembers', () => ({ useOnlineMembers: () => ({ members: [], onlineIds: new Set(), onlineCount: 0, loading: false, loadError: false, refetch: () => {} }) }));
-vi.mock('@/hooks/useVisibleMemberLocations', () => ({ useVisibleMemberLocations: () => ({ visible: [], online: [], offline: [], totalOnlineCount: 0, locationGroups: [], loading: false, loadError: false }) }));
-vi.mock('@/hooks/useMemberLocationsMap', () => ({ useMemberLocationsMap: () => ({ points: [], loading: false, loadError: false, refetch: () => {} }) }));
 
 // ── Páginas admin ────────────────────────────────────────────────────────────
 import Dashboard from '@/pages/Dashboard';
@@ -92,9 +92,14 @@ describe('Páginas admin — regressão de TDZ no render (incidente 2026-08-07)'
           </QueryClientProvider>,
         );
       } catch (e) { err = e; }
-      // Só reprovamos o TDZ especificamente — outros erros de mock não contam.
+      // Reprova QUALQUER ReferenceError (TDZ "before initialization" OU
+      // "X is not defined", como a referência morta fetchRoster) — são bugs
+      // de código de verdade. Erros de mock (TypeError por dado ausente) não
+      // contam, pois dependem do ambiente de teste.
+      const name = err instanceof Error ? err.name : '';
       const msg = err instanceof Error ? err.message : String(err ?? '');
-      expect(msg).not.toMatch(/before initialization|Cannot access/i);
+      const ehReferenceError = name === 'ReferenceError' || /before initialization|is not defined|Cannot access/i.test(msg);
+      expect(ehReferenceError, `Página quebrou no render: ${msg}`).toBe(false);
     });
   }
 });

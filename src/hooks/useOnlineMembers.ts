@@ -83,5 +83,8 @@ export function useOnlineMembers() {
       return new Date(b.last_active).getTime() - new Date(a.last_active).getTime();
     });
 
-  return { members, onlineIds, onlineCount: onlineIds.size, loading, loadError, refetch: fetchRoster };
+  // refetch vem do próprio useQuery — a antiga fetchRoster foi removida na
+  // migração pra react-query; deixar a referência morta aqui estourava
+  // "fetchRoster is not defined" ao montar o dashboard admin.
+  return { members, onlineIds, onlineCount: onlineIds.size, loading, loadError, refetch };
 }
