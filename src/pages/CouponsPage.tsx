@@ -98,21 +98,31 @@ export default function CouponsPage() {
   const deleteCoupon = async (id: string) => {
     const alvo = coupons.find(c => c.id === id);
     if (alvo) {
-      const { data: dono } = await supabase.from('affiliates' as never)
+      const { data: dono, error: donoErr } = await supabase.from('affiliates' as never)
         .select('email').eq('coupon_code', alvo.code).maybeSingle() as any;
+      // FAIL-CLOSED: se a checagem de afiliado FALHAR (rede/RLS), não dá pra
+      // afirmar que o cupom é seguro pra apagar — bloqueia. Sem isto, um erro
+      // transitório pulava a guarda e deixava apagar o cupom de um afiliado
+      // (foi o que derrubou 18 cupons em 04/08).
+      if (donoErr) {
+        toast.error('Não foi possível verificar se este cupom é de afiliado. Tente de novo antes de excluir.');
+        return;
+      }
       if (dono) {
         toast.error(`Este é o cupom do afiliado ${dono.email} — apagar quebraria o link de divulgação dele. Desative em vez de excluir.`);
         return;
       }
     }
     if (!confirm('Excluir este cupom de vez? Quem tentar usá-lo verá "cupom inválido". Para só tirar de circulação, prefira desativar.')) return;
-    await supabase.from('coupons').delete().eq('id', id);
+    const { error } = await supabase.from('coupons').delete().eq('id', id);
+    if (error) { toast.error('Erro ao excluir: ' + error.message); return; }
     toast.success('Cupom deletado');
     fetchCoupons();
   };
 
   const toggleActive = async (id: string, active: boolean) => {
-    await supabase.from('coupons').update({ active: !active }).eq('id', id);
+    const { error } = await supabase.from('coupons').update({ active: !active }).eq('id', id);
+    if (error) { toast.error('Erro ao atualizar: ' + error.message); return; }
     fetchCoupons();
   };
 

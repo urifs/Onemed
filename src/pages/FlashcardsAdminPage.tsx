@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { toast } from 'sonner';
 import { Layers, ChevronDown, ClipboardList, Loader2, Users } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { AdminLayout } from '@/components/AdminLayout';
@@ -125,10 +126,13 @@ export default function FlashcardsAdminPage() {
   useEffect(() => {
     if (overviews[tab]) { setLoading(false); return; }
     setLoading(true);
+    // .catch obrigatório: sem ele, uma RPC que rejeita (rede) nunca chamava
+    // setLoading(false) e o skeleton girava pra sempre.
     TABS[tab].loadOverview().then(rows => {
       setOverviews(prev => ({ ...prev, [tab]: rows }));
-      setLoading(false);
-    });
+    }).catch(() => {
+      toast.error('Não foi possível carregar os dados. Tente novamente.');
+    }).finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
 
@@ -138,9 +142,14 @@ export default function FlashcardsAdminPage() {
     setExpanded(key);
     if (!itemsByUser[key]) {
       setLoadingItems(key);
-      const items = await cfg.loadItems(row.user_id);
-      setItemsByUser(prev => ({ ...prev, [key]: items }));
-      setLoadingItems(null);
+      try {
+        const items = await cfg.loadItems(row.user_id);
+        setItemsByUser(prev => ({ ...prev, [key]: items }));
+      } catch {
+        toast.error('Não foi possível carregar os itens deste aluno.');
+      } finally {
+        setLoadingItems(null);
+      }
     }
   };
 

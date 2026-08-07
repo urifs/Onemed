@@ -35,11 +35,16 @@ export default function AccessManagement() {
     setLoading(true);
     setLoadError(false);
     try {
-      const [all, { data: buyers }] = await Promise.all([
+      const [all, buyers] = await Promise.all([
         fetchAllRows((from, to) =>
           supabase.from('accesses').select('*').order('created_at', { ascending: false }).range(from, to)
         ),
-        supabase.from('buyers').select('email, payment_id').not('payment_id', 'is', null),
+        // Paginado: o select simples parava nas primeiras 1000 linhas
+        // (max_rows do PostgREST) — com a base crescendo, parte dos
+        // pagamentos ficava sem mapear e o email não aparecia.
+        fetchAllRows((from, to) =>
+          supabase.from('buyers').select('email, payment_id').not('payment_id', 'is', null).range(from, to)
+        ),
       ]);
       setAccesses(all);
       const map: Record<string, string> = {};

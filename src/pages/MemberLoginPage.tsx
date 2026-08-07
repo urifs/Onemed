@@ -63,6 +63,12 @@ export default function MemberLoginPage() {
         const msg = data?.error || await extractFunctionErrorMessage(error, 'Erro ao entrar');
         throw new Error(msg);
       }
+      // Sem esta checagem, um retorno sem tokens (data nulo, ou 200 sem
+      // access_token) caía num TypeError cru dentro do setSession, que
+      // aparecia como a mensagem genérica do catch em vez de algo claro.
+      if (!data?.access_token || !data?.refresh_token) {
+        throw new Error('Não foi possível concluir o login. Tente novamente.');
+      }
       const { error: sessionErr } = await supabase.auth.setSession({
         access_token: data.access_token,
         refresh_token: data.refresh_token,

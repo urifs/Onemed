@@ -26,6 +26,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const initialized = useRef(false);
   const hadSession = useRef(false);
   const manualSignOut = useRef(false);
+  const lastUserId = useRef<string | null>(null);
 
   const checkAdmin = async (userId: string): Promise<boolean> => {
     try {
@@ -51,6 +52,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setUser(session?.user ?? null);
         hadSession.current = !!session?.user;
         if (session?.user) {
+          lastUserId.current = session.user.id;
           const admin = await checkAdmin(session.user.id);
           setIsAdmin(admin);
         }
@@ -78,14 +80,25 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           setKickedOut(true);
         }
         manualSignOut.current = false;
+        const prevUserId = hadSession.current ? lastUserId.current : null;
         hadSession.current = !!session?.user;
 
         setSession(session);
         setUser(session?.user ?? null);
         if (session?.user) {
-          const admin = await checkAdmin(session.user.id);
-          setIsAdmin(admin);
+          // NÃO await supabase dentro do callback do onAuthStateChange: o
+          // supabase-js segura um lock interno enquanto o callback roda, e
+          // chamar rpc/getUser aqui pode travar o cliente (deadlock em token
+          // refresh / evento entre abas). Defere pra fora do callback. E só
+          // recomputa admin quando a identidade muda — não a cada
+          // TOKEN_REFRESHED (de hora em hora) do mesmo usuário.
+          const uid = session.user.id;
+          if (uid !== prevUserId) {
+            lastUserId.current = uid;
+            setTimeout(() => { checkAdmin(uid).then(setIsAdmin); }, 0);
+          }
         } else {
+          lastUserId.current = null;
           setIsAdmin(false);
         }
       }

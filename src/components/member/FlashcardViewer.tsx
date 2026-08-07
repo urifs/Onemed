@@ -141,8 +141,11 @@ export function FlashcardViewer({ deck, deckId, onClose, onSave, saved, saving }
     }).then(({ error }: { error: unknown }) => {
       if (error) console.error('flashcard_sessions insert', error);
     });
+    // `user` na dep: se a sessão terminasse (current=null) enquanto o user
+    // ainda carregava, o guard !user saía sem gravar e, sem user aqui, o
+    // efeito não re-rodava quando ele chegasse — a sessão nunca era gravada.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [current]);
+  }, [current, user]);
 
   return (
     <div className="fixed inset-0 z-[90] bg-background flex flex-col">

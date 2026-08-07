@@ -245,11 +245,16 @@ export function PdfViewer({ url, lessonId }: { url: string; title?: string; less
       overlay.addEventListener('pointercancel', finish);
     }
 
+    // Guardado fora da IIFE pra poder destruir no cleanup: o pdf.js mantém
+    // recursos do worker (páginas/fontes) vivos até destroy(). Trocar de aula
+    // sem isto vazava um documento + páginas renderizadas a cada troca.
+    let pdfDoc: any = null;
     (async () => {
       let pdf;
       for (let attempt = 0; ; attempt++) {
         try {
           pdf = await pdfjsLib.getDocument({ url }).promise;
+          pdfDoc = pdf;
           break;
         } catch (err) {
           if (cancelled) return;
@@ -337,7 +342,12 @@ export function PdfViewer({ url, lessonId }: { url: string; title?: string; less
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      // Libera worker/páginas do pdf.js (guardado com try: destroy pode
+      // rejeitar se o load ainda estava em curso).
+      try { pdfDoc?.destroy?.(); } catch { /* ignore */ }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url, canAnnotate]);
 

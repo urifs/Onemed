@@ -169,8 +169,13 @@ export default function EmailCampaignPage() {
   const [progress, setProgress] = useState({ total: 0, sent: 0, failed: 0, current: 0 });
   const [log, setLog] = useState<LogEntry[]>([]);
   const [done, setDone] = useState(false);
+  const [scheduling, setScheduling] = useState(false);
   const shouldStopRef = useRef(false);
+  const unmountedRef = useRef(false);
   const logEndRef = useRef<HTMLDivElement>(null);
+
+  // Ao desmontar, sinaliza pro loop de polling parar (ver runCampaign).
+  useEffect(() => () => { unmountedRef.current = true; }, []);
   const [activeCampaign, setActiveCampaign] = useState<any | null>(null);
 
   // Scheduled campaigns list
@@ -249,7 +254,10 @@ export default function EmailCampaignPage() {
   // ── Server-side campaign runner ──────────────────────────────────────────────
 
   const runCampaign = useCallback(async (campaignId: string) => {
-    while (!shouldStopRef.current) {
+    // unmountedRef corta o loop de polling quando a página desmonta — sem
+    // isso ele seguia consultando o banco e chamando setState/toast num
+    // componente já desmontado, indefinidamente.
+    while (!shouldStopRef.current && !unmountedRef.current) {
       const { data: current } = await (supabase as any)
         .from('email_campaigns').select('*').eq('id', campaignId).maybeSingle();
 
@@ -450,6 +458,9 @@ export default function EmailCampaignPage() {
 
   const startSendingNow = async () => {
     if (!validate()) return;
+    // Disparo em massa é irreversível e conta como envio real (custo +
+    // reputação de entrega). Confirma com a contagem antes.
+    if (!confirm(`Enviar o email AGORA para ${recipients.length} destinatário(s)? Não dá pra desfazer.`)) return;
     shouldStopRef.current = false;
     setSending(true);
     setDone(false);
@@ -491,6 +502,8 @@ export default function EmailCampaignPage() {
 
   const scheduleCampaign = async () => {
     if (!validate()) return;
+    if (scheduling) return; // trava anti-duplo-clique: sem ela, dois cliques
+                            // agendavam a MESMA campanha duas vezes
 
     const scheduledUTC = spLocalToUTC(scheduledAt);
     if (new Date(scheduledUTC) <= new Date()) {
@@ -501,6 +514,7 @@ export default function EmailCampaignPage() {
     const subject = getSubject();
     const { templateType: tType, templateData } = getTemplatePayload();
 
+    setScheduling(true);
     try {
       const { error } = await (supabase as any).from('email_campaigns').insert({
         subject,
@@ -516,6 +530,8 @@ export default function EmailCampaignPage() {
       fetchCampaigns();
     } catch (err: any) {
       toast.error('Erro ao agendar: ' + err.message);
+    } finally {
+      setScheduling(false);
     }
   };
 
@@ -895,7 +911,7 @@ export default function EmailCampaignPage() {
                     </Button>
                   )
                 ) : (
-                  <Button onClick={scheduleCampaign} disabled={loadingRecipients || recipients.length === 0} className="w-full">
+                  <Button onClick={scheduleCampaign} disabled={scheduling || loadingRecipients || recipients.length === 0} className="w-full">
                     <CalendarClock className="w-4 h-4 mr-2" />
                     Agendar {recipients.length} email{recipients.length !== 1 ? 's' : ''}
                   </Button>

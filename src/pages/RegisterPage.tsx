@@ -25,10 +25,23 @@ export default function RegisterPage() {
     setLoading(true);
     try {
       await register(email, password, name);
-      // Grant admin role
+      // Concede a role admin. A RLS de user_roles exige que quem insere JÁ
+      // seja admin (WITH CHECK has_role admin) — então isto só funciona para
+      // o PRIMEIRO admin quando ainda não há RLS bloqueando, ou falha. Antes,
+      // o código ignorava o resultado e dizia "sucesso" mesmo quando o insert
+      // era negado, jogando o usuário no /admin de onde o ProtectedRoute o
+      // expulsava na hora. Agora é honesto.
       const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        await supabase.from('user_roles').insert({ user_id: user.id, role: 'admin' });
+      if (!user) {
+        // signUp sem sessão = confirmação de email ativada. Não dá pra
+        // conceder role agora.
+        toast.success('Conta criada! Confirme seu email e peça a um admin para liberar seu acesso.');
+        return;
+      }
+      const { error: roleErr } = await supabase.from('user_roles').insert({ user_id: user.id, role: 'admin' });
+      if (roleErr) {
+        toast.error('Conta criada, mas o acesso admin precisa ser concedido por um administrador existente.');
+        return;
       }
       toast.success('Conta criada com sucesso!');
       navigate('/admin');

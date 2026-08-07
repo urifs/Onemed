@@ -64,6 +64,7 @@ export default function AcervoAdminPage() {
   const [likeCount, setLikeCount] = useState<Record<string, number>>({});
   const [uploaders, setUploaders] = useState<Record<string, { name: string | null; email: string | null }>>({});
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
   const [filesByItem, setFilesByItem] = useState<Record<string, FileRow[]>>({});
@@ -75,11 +76,23 @@ export default function AcervoAdminPage() {
     setLoading(true);
     // Admin enxerga TODOS os itens direto pela tabela (política de admin) —
     // inclusive privados e pendentes, que o feed dos alunos nunca mostra.
-    const [{ data: rows }, { data: files }, { data: likes }] = await Promise.all([
-      supabase.from('archive_items' as never).select('*').order('created_at', { ascending: false }) as any,
-      supabase.from('archive_files' as never).select('item_id, size_bytes, status') as any,
-      supabase.from('archive_likes' as never).select('item_id') as any,
-    ]);
+    let rows: any, files: any, likes: any;
+    try {
+      const res = await Promise.all([
+        supabase.from('archive_items' as never).select('*').order('created_at', { ascending: false }) as any,
+        supabase.from('archive_files' as never).select('item_id, size_bytes, status') as any,
+        supabase.from('archive_likes' as never).select('item_id') as any,
+      ]);
+      if (res[0].error) throw res[0].error;
+      rows = res[0].data; files = res[1].data; likes = res[2].data;
+      setLoadError(false);
+    } catch {
+      // Sem isto, uma falha de rede mostrava "Nenhum material no acervo",
+      // como se tudo tivesse sido apagado.
+      setLoadError(true);
+      setLoading(false);
+      return;
+    }
     const list = (rows || []) as ItemRow[];
     setItems(list);
 
@@ -234,6 +247,11 @@ export default function AcervoAdminPage() {
           <CardContent className="p-0">
             {loading ? (
               <div className="p-5 space-y-3">{[0, 1, 2].map(i => <div key={i} className="h-14 bg-secondary rounded animate-pulse" />)}</div>
+            ) : loadError ? (
+              <div className="text-center py-10">
+                <p className="text-sm text-muted-foreground mb-4">Não foi possível carregar o acervo.</p>
+                <button onClick={load} className="text-sm font-medium text-primary hover:underline">Tentar novamente</button>
+              </div>
             ) : filtered.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-10">
                 {items.length === 0 ? 'Nenhum material no acervo ainda.' : 'Nada encontrado com essa busca.'}

@@ -238,7 +238,7 @@ export default function WhatsAppPage() {
     setConnecting(true);
     try {
       const base = apiUrl.replace(/\/$/, '');
-      const inst = instanceName.trim() || 'onomed';
+      const inst = instanceName.trim() || 'onemed';
       const webhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/whatsapp-webhook`;
 
       const createRes = await fetch(`${base}/instance/create`, {
@@ -284,7 +284,7 @@ export default function WhatsAppPage() {
     setPairingCode(null);
     try {
       const base = apiUrl.replace(/\/$/, '');
-      const inst = instanceName.trim() || 'onomed';
+      const inst = instanceName.trim() || 'onemed';
 
       // Garante que a instância existe
       await fetch(`${base}/instance/create`, {
@@ -317,7 +317,7 @@ export default function WhatsAppPage() {
     setDisconnecting(true);
     try {
       const base = apiUrl.replace(/\/$/, '');
-      const inst = instanceName.trim() || 'onomed';
+      const inst = instanceName.trim() || 'onemed';
       await fetch(`${base}/instance/logout/${inst}`, { method: 'DELETE', headers: { apikey: apiKey } }).catch(() => null);
       if (configId) await supabase.from('whatsapp_config').update({ connected: false, phone_number: null }).eq('id', configId);
       setStatus('disconnected'); setQrcode(null); setPhone(null);

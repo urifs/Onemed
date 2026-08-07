@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Send, MessageCircle, BadgeCheck, Pencil } from 'lucide-react';
@@ -63,12 +64,15 @@ export function CommunityTab({ courseId }: { courseId: string }) {
 
   const doPost = async () => {
     if (!body.trim() || !user) return;
+    if (posting) return; // trava anti-duplo-submit no estado (o textarea pode
+                         // enviar rápido); só o disabled do botão não basta
     setPosting(true);
     const { error } = await supabase.from('course_comments').insert({
       course_id: courseId, user_id: user.id, body: body.trim(),
     });
     setPosting(false);
     if (!error) { setBody(''); load(); }
+    else toast.error('Não foi possível publicar o comentário. Tente novamente.');
   };
 
   const handlePost = () => ensureName(doPost);
@@ -83,7 +87,7 @@ export function CommunityTab({ courseId }: { courseId: string }) {
     if (!error) {
       setComments(prev => prev.map(c => c.id === editingId ? { ...c, body: editBody.trim() } : c));
       setEditingId(null);
-    }
+    } else toast.error('Não foi possível salvar a edição. Tente novamente.');
   };
 
   const initials = (name?: string | null, email?: string | null) => (name || email || '?').trim().charAt(0).toUpperCase();
