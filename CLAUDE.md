@@ -1555,6 +1555,13 @@ checkout/upgrade/stream já usavam).
 dois clientes com exatamente 15 tentativas na janela, um deles em 07/08, mesma data do print.
 Descartadas por teste em produção: tamanho do arquivo (2/5/8/12 MB de upload → todos 200; o teto
 prático é ~16 MB de payload) e PDF de editora (apostila real de 4,6 MB gerou 5 questões em 39s).
+**LIMITE REMOVIDO no mesmo dia (decisão do dono):** o teto de 15/dia saiu do `generate-flashcards`
+— nenhum aluno é mais recusado por volume, nos dois modos. A CONTAGEM das últimas 24h continua
+sendo gravada em `rate_limits` (telemetria: a IA é paga por chamada, e sem o número não dá pra
+saber quem usa quanto nem reativar um teto depois sem começar às cegas). Verificado em produção:
+conta com 20 gerações na janela gerou normalmente (HTTP 200) e o contador foi a 21.
+⚠️ Continuam com teto: `generate-study-plan` (10 cronogramas/dia) e `member-assistant` (limite
+diário do chat) — não foram tocados.
 A mensagem do 429 também foi reescrita: dizia "tente amanhã", mas a janela é de 24h a partir da
 PRIMEIRA geração — agora informa quantas horas faltam e cita o tipo certo ("bancos de questões"
 × "baralhos de flashcards"). ⚠️ Tentativa que FALHA (erro de IA) também consome uma das 15.
