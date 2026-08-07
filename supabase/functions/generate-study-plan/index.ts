@@ -52,13 +52,28 @@ serve(async (req) => {
       }
     } catch { /* segue liberado */ }
 
-    // Limite: 10 gerações/dia por usuário (gerar chama IA paga).
+    // Teto de segurança: 100 cronogramas/dia (mesma régua dos outros geradores
+    // de IA — não limita uso real, só barra abuso; a IA é paga por chamada).
+    const LIMITE_DIARIO = 100
     try {
       const now = new Date()
       const { data: rl } = await supabase.from('rate_limits')
         .select('attempts, window_start').eq('identifier', user.id).eq('action', 'study_plan').maybeSingle()
       if (rl && (now.getTime() - new Date(rl.window_start).getTime()) < 24 * 3600 * 1000) {
-        if (rl.attempts >= 10) return json(req, { error: 'Você atingiu o limite de 10 cronogramas por dia. Tente amanhã.' }, 429)
+        if (rl.attempts >= LIMITE_DIARIO) {
+          // Janela de 24h desde a PRIMEIRA geração — "tente amanhã" mandava o
+          // aluno voltar na hora errada.
+          const faltamMin = Math.max(
+            1,
+            Math.ceil((new Date(rl.window_start).getTime() + 24 * 3600 * 1000 - now.getTime()) / 60000),
+          )
+          const quando = faltamMin >= 60
+            ? `em ${Math.ceil(faltamMin / 60)}h`
+            : `em ${faltamMin} minuto${faltamMin === 1 ? '' : 's'}`
+          return json(req, {
+            error: `Você já gerou ${LIMITE_DIARIO} cronogramas nas últimas 24 horas, que é o limite diário. Você poderá gerar de novo ${quando}.`,
+          }, 429)
+        }
         await supabase.from('rate_limits').update({ attempts: rl.attempts + 1 }).eq('identifier', user.id).eq('action', 'study_plan')
       } else {
         await supabase.from('rate_limits').upsert(

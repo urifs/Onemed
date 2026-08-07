@@ -145,15 +145,28 @@ serve(async (req) => {
     const { data: { user }, error: authErr } = await supabase.auth.getUser(jwt)
     if (authErr || !user) return json(req, { error: 'Sessão inválida' }, 401)
 
-    // ── limite de uso: 60 mensagens/dia por conta ──────────────────────────
+    // ── teto de segurança: 100 mensagens/dia por conta ─────────────────────
+    // Mesma régua dos geradores de IA — não limita conversa real, só barra
+    // abuso (cada mensagem chama uma IA paga).
+    const LIMITE_DIARIO = 100
     try {
       const now = new Date()
       const { data: rl } = await supabase.from('rate_limits')
         .select('attempts, window_start')
         .eq('identifier', user.id).eq('action', 'assistant').maybeSingle()
       if (rl && (now.getTime() - new Date(rl.window_start).getTime()) < 24 * 3600 * 1000) {
-        if (rl.attempts >= 60) {
-          return json(req, { error: 'Você atingiu o limite diário do assistente. Volte amanhã ou fale com o suporte no WhatsApp.' }, 429)
+        if (rl.attempts >= LIMITE_DIARIO) {
+          // Janela de 24h desde a PRIMEIRA mensagem, não o fim do dia.
+          const faltamMin = Math.max(
+            1,
+            Math.ceil((new Date(rl.window_start).getTime() + 24 * 3600 * 1000 - now.getTime()) / 60000),
+          )
+          const quando = faltamMin >= 60
+            ? `em ${Math.ceil(faltamMin / 60)}h`
+            : `em ${faltamMin} minuto${faltamMin === 1 ? '' : 's'}`
+          return json(req, {
+            error: `Você já enviou ${LIMITE_DIARIO} mensagens ao assistente nas últimas 24 horas, que é o limite diário. Você poderá conversar de novo ${quando}.`,
+          }, 429)
         }
         await supabase.from('rate_limits').update({ attempts: rl.attempts + 1 })
           .eq('identifier', user.id).eq('action', 'assistant')

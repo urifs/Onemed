@@ -154,17 +154,32 @@ serve(async (req) => {
     const importar = modo === 'questions' && importExisting === true
     const rlAction = modo === 'questions' ? 'questions' : 'flashcards'
 
-    // ── uso por aluno: SÓ CONTA, não bloqueia (decisão do dono em 07/08) ─────
-    // O teto de 15/dia foi removido — nenhum aluno é mais recusado por volume.
-    // A contagem das últimas 24h continua sendo gravada porque é o único jeito
-    // de enxergar quem está usando quanto (a IA é paga por chamada) e de poder
-    // reativar um teto depois sem começar às cegas.
+    // ── teto de segurança: 100/dia por modo (decisão do dono em 07/08) ──────
+    // Não é pra limitar uso real — 100 é muito acima de qualquer estudo normal
+    // (o aluno que mais usou fez 15 em 24h). É rede de proteção contra abuso
+    // ou script em série, já que a IA é paga por chamada.
+    const LIMITE_DIARIO = 100
     try {
       const now = new Date()
       const { data: rl } = await supabase.from('rate_limits')
         .select('attempts, window_start')
         .eq('identifier', user.id).eq('action', rlAction).maybeSingle()
       if (rl && (now.getTime() - new Date(rl.window_start).getTime()) < 24 * 3600 * 1000) {
+        if (rl.attempts >= LIMITE_DIARIO) {
+          // A janela é de 24h a partir da PRIMEIRA geração, não do fim do dia —
+          // dizer só "tente amanhã" mandava o aluno voltar na hora errada.
+          const faltamMin = Math.max(
+            1,
+            Math.ceil((new Date(rl.window_start).getTime() + 24 * 3600 * 1000 - now.getTime()) / 60000),
+          )
+          const quando = faltamMin >= 60
+            ? `em ${Math.ceil(faltamMin / 60)}h`
+            : `em ${faltamMin} minuto${faltamMin === 1 ? '' : 's'}`
+          const oQue = modo === 'questions' ? 'bancos de questões' : 'baralhos de flashcards'
+          return json(req, {
+            error: `Você já gerou ${LIMITE_DIARIO} ${oQue} nas últimas 24 horas, que é o limite diário. Você poderá gerar de novo ${quando}.`,
+          }, 429)
+        }
         await supabase.from('rate_limits').update({ attempts: rl.attempts + 1 })
           .eq('identifier', user.id).eq('action', rlAction)
       } else {
