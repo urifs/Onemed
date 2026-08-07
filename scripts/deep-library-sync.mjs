@@ -384,6 +384,7 @@ async function writeCourse(course, folders, files, protectedKeys, courseIndex, u
   const normal = [], protectedRows = [];
   for (const f of files) {
     if (f.mimeType === 'text/html') continue; // .html solto do Drive não é aula
+    if (/\.gdrive$/i.test(f.name || '')) continue; // ponteiro de 168 bytes, não é mídia
     const base = {
       course_id: courseId,
       module_id: moduleIdByFolder.get(f.parentFolderId) ?? null,
@@ -503,6 +504,7 @@ const driveKeys = new Set();
 const missingByCourse = new Map();
 for (const f of readNdjson(path.join(WORK_DIR, 'drive_files.ndjson'))) {
   if (f.mimeType === 'text/html') { skippedHtml++; continue; }
+  if (/\.gdrive$/i.test(f.name || '')) { skippedHtml++; continue; } // ponteiro .gdrive, não é mídia
   const key = `${f.rootId}::${f.id}`;
   driveKeys.add(key);
   driveFiles++;

@@ -426,6 +426,13 @@ serve(async (req) => {
             childFolders.push({ id: resolved.id, name: f.name })
           } else if (resolved.mimeType === 'text/html') {
             continue // páginas .html soltas do Drive não são aula
+          } else if (/\.gdrive$/i.test(f.name || '')) {
+            // Arquivos `.gdrive` são PONTEIROS de 168 bytes (JSON com o doc_id
+            // do vídeo real em OUTRA conta), criados por ferramentas de sync do
+            // Drive — NÃO são a mídia. Importá-los enche o curso de "aulas" que
+            // não tocam (o vídeo real vive numa conta que a plataforma não
+            // acessa). Nunca são conteúdo; pula igual ao .html.
+            continue
           } else {
             let type = lessonType(resolved.mimeType, f.name)
             if (f.videoMediaMetadata) type = 'video'
