@@ -1815,6 +1815,34 @@ linhas. Login real testado no navegador em produção (dashboard + faixa + loja 
 
 ---
 
+### 2026-08-07 (sessão remota) — INCIDENTE: code-splitting derrubou a produção
+
+**Sintoma:** logo após o deploy do frontend com merge na `main`, os alunos viram
+"Algo deu errado ao carregar a página" em massa; console cheio de
+`ReferenceError: can't access lexical declaration 'H' before initialization`
+(trace em `CourseDetailPage.js` + `index.js`, num `useMemo`).
+
+**Causa:** o code-splitting por rota (`React.lazy` no `App.tsx` + o `PdfViewer`
+lazy no `LessonPlayer`) introduzido na auditoria de desempenho criou fronteiras
+de chunk que EXPUSERAM uma dependência circular já existente no código — um erro
+de TDZ (temporal dead zone) na ordem de inicialização ENTRE o chunk lazy e o
+chunk principal. Num bundle único o bundler ordena os módulos e o ciclo nunca
+dispara (é como a plataforma rodou por meses); split em chunks, a ordem muda e
+o ciclo quebra tudo. **Build e testes locais NÃO pegam isso** — só acontece em
+runtime no navegador, com os chunks separados.
+
+**Correção (hotfix `6acb8a2`):** revertido todo o code-splitting — `App.tsx`
+voltou a imports estáticos (sem `lazy`/`Suspense`), `LessonPlayer` voltou a
+importar `PdfViewer` estático. Bundle único de novo (~1,9MB), produção
+restaurada e verificada (bundle novo servido, rotas 200).
+
+> ⚠️ **Regra:** NÃO reintroduzir `React.lazy`/code-splitting sem antes QUEBRAR a
+> dependência circular na fonte (provavelmente um ciclo entre páginas e algum
+> módulo compartilhado tipo `lib/*` ou um barrel de componentes). Rodar
+> `npx madge --circular src` (ou equivalente) e zerar os ciclos ANTES de
+> qualquer split. A otimização de bundle (−62%) fica pendente até lá — o resto
+> da auditoria (segurança, pagamentos, RLS, afiliados, UX) permanece no ar.
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
