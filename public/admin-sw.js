@@ -1,84 +1,29 @@
-const CACHE_NAME = 'onemed-admin-v1';
+// KILL-SWITCH (2026-08-07): este service worker foi APOSENTADO.
+//
+// A versão anterior fazia cache-first de JS/CSS. Durante o incidente do TDZ,
+// ela cacheou o bundle QUEBRADO e continuou servindo mesmo depois da correção
+// já estar no ar — o painel admin ficava preso na tela de erro. É o mesmo
+// motivo pelo qual o SW da área de membros já tinha sido removido.
+//
+// Agora este arquivo não faz cache de nada: ao ser detectado pelo navegador
+// (que checa o /admin-sw.js a cada navegação nos clientes que ainda o têm
+// registrado), ele APAGA todos os caches, se desregistra e recarrega as abas
+// abertas — curando sozinho quem estava preso no bundle antigo. O
+// AdminPWAHead não registra mais nenhum SW.
+self.addEventListener('install', () => self.skipWaiting());
 
-const APP_SHELL = [
-  '/admin',
-  '/admin/login',
-];
-
-// Install: pre-cache app shell
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL))
-  );
-  self.skipWaiting();
-});
-
-// Activate: remove old caches
 self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(
-        keys
-          .filter((key) => key !== CACHE_NAME)
-          .map((key) => caches.delete(key))
-      )
-    )
-  );
-  self.clients.claim();
+  event.waitUntil((async () => {
+    try {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+    } catch { /* ignore */ }
+    try { await self.registration.unregister(); } catch { /* ignore */ }
+    try {
+      const clients = await self.clients.matchAll({ type: 'window' });
+      for (const client of clients) client.navigate(client.url);
+    } catch { /* ignore */ }
+  })());
 });
 
-// Fetch strategy:
-// - Supabase API / external: always network (never cache)
-// - Admin JS/CSS/assets: cache first, then network
-// - Admin HTML routes: network first, fallback to cache
-self.addEventListener('fetch', (event) => {
-  const { request } = event;
-  const url = new URL(request.url);
-
-  // Never intercept Supabase, Google APIs, or external requests
-  if (
-    url.hostname.includes('supabase.co') ||
-    url.hostname.includes('googleapis.com') ||
-    url.hostname.includes('mercadopago.com') ||
-    url.hostname !== self.location.hostname
-  ) {
-    return;
-  }
-
-  // Static assets (JS, CSS, images, fonts) — cache first
-  if (
-    request.destination === 'script' ||
-    request.destination === 'style' ||
-    request.destination === 'image' ||
-    request.destination === 'font'
-  ) {
-    event.respondWith(
-      caches.match(request).then((cached) => {
-        if (cached) return cached;
-        return fetch(request).then((response) => {
-          if (response.ok) {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-          }
-          return response;
-        });
-      })
-    );
-    return;
-  }
-
-  // Admin HTML routes — network first, fallback to /admin
-  if (url.pathname.startsWith('/admin')) {
-    event.respondWith(
-      fetch(request)
-        .then((response) => {
-          if (response.ok) {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-          }
-          return response;
-        })
-        .catch(() => caches.match(request).then((cached) => cached || caches.match('/admin')))
-    );
-  }
-});
+// Sem handler de fetch: o navegador serve tudo direto da rede, nunca do cache.

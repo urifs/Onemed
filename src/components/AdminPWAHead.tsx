@@ -34,12 +34,11 @@ export const AdminPWAHead = () => {
     appleIcon.href = '/icons/admin-icon-192.png';
     document.head.appendChild(appleIcon);
 
-    // Register service worker
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker
-        .register('/admin-sw.js', { scope: '/admin' })
-        .catch(() => {});
-    }
+    // Service worker do admin APOSENTADO (2026-08-07): não registramos mais
+    // nenhum SW — o cache-first dele prendeu admins no bundle quebrado durante
+    // o incidente do TDZ. O main.tsx já desregistra qualquer SW e limpa os
+    // caches a cada load; o /admin-sw.js virou um kill-switch que se
+    // autodestrói pra curar quem ainda o tiver registrado.
 
     // Cleanup on unmount (when leaving admin)
     return () => {
