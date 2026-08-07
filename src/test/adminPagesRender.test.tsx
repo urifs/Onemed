@@ -27,18 +27,10 @@ vi.mock('@/integrations/supabase/client', () => ({
 vi.mock('@/context/AuthContext', () => ({
   useAuth: () => ({ user: { id: 'u1', email: 'a@a.com' }, session: { access_token: 't' }, isAdmin: true, isViewer: false, loading: false }),
 }));
-vi.mock('@/components/AdminLayout', () => ({
-  default: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  AdminLayout: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-}));
-// Componentes/hoolks pesados (mapas, gráficos, realtime) viram stubs.
-vi.mock('@/components/admin/OnlineMembersCard', () => ({ OnlineMembersCard: () => null }));
+// AdminLayout e os cards NÃO são mockados de propósito: eles renderizam em
+// TODAS as páginas admin, então um TDZ neles precisa ser exercido de verdade.
+// Só mockamos o que quebra no jsdom por motivo alheio ao TDZ: o mapa Leaflet.
 vi.mock('@/components/admin/MemberLocationsMap', () => ({ MemberLocationsMap: () => null }));
-vi.mock('@/components/admin/MemberLocationsList', () => ({ MemberLocationsList: () => null }));
-vi.mock('@/components/admin/MetaPixelHealthCard', () => ({ MetaPixelHealthCard: () => null }));
-vi.mock('@/components/admin/StorageAccountsCard', () => ({ StorageAccountsCard: () => null }));
-vi.mock('@/components/admin/EgressChart', () => ({ EgressChart: () => null, default: () => null }));
-vi.mock('@/components/EgressChart', () => ({ EgressChart: () => null, default: () => null }));
 vi.mock('@/hooks/useOnlineMembers', () => ({ useOnlineMembers: () => ({ members: [], onlineIds: new Set(), onlineCount: 0, loading: false, loadError: false, refetch: () => {} }) }));
 vi.mock('@/hooks/useVisibleMemberLocations', () => ({ useVisibleMemberLocations: () => ({ visible: [], online: [], offline: [], totalOnlineCount: 0, locationGroups: [], loading: false, loadError: false }) }));
 vi.mock('@/hooks/useMemberLocationsMap', () => ({ useMemberLocationsMap: () => ({ points: [], loading: false, loadError: false, refetch: () => {} }) }));
