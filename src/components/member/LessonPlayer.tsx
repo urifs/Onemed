@@ -1,13 +1,10 @@
-import { Suspense, lazy, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type Mpegts from 'mpegts.js';
 import { X, ChevronLeft, ChevronRight, Loader2, ExternalLink, Download, Printer, Gauge, Check, SquareStack, ClipboardList, RotateCcw, RotateCw } from 'lucide-react';
 import { useLessonStreamUrl } from '@/hooks/useLessonStream';
-
-// O PdfViewer arrasta o pdfjs-dist inteiro (centenas de KB + worker de 1,4MB).
-// Carregado sob demanda: quem só assiste vídeo nunca baixa nada disso.
-const PdfViewer = lazy(() =>
-  import('./PdfViewer').then(m => ({ default: m.PdfViewer })),
-);
+// PdfViewer importado estaticamente: o lazy foi revertido junto com o
+// code-splitting de rotas (2026-08-07) que expunha a dependência circular.
+import { PdfViewer } from './PdfViewer';
 import { OfficeViewer } from './OfficeViewer';
 import { TxtViewer } from './TxtViewer';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
