@@ -92,7 +92,13 @@ serve(async (req) => {
 
     if (!EMAIL_REGEX.test(email)) return jsonResponse(req, { error: 'Email inválido' }, 400)
 
-    const ip = (req.headers.get('x-forwarded-for') || '').split(',')[0].trim() || req.headers.get('x-real-ip') || 'unknown'
+    // x-real-ip PRIMEIRO: é setado pela plataforma e não é forjável. O
+    // x-forwarded-for esquerdo é a parte controlada pelo cliente — um
+    // atacante mandando um XFF diferente por requisição zerava o rate limit
+    // por IP (5/15min), liberando enumeração/abuso do login sem trava.
+    const ip = req.headers.get('x-real-ip')
+      || (req.headers.get('x-forwarded-for') || '').split(',').map(s => s.trim()).filter(Boolean).pop()
+      || 'unknown'
 
     // Sem .limit(1).maybeSingle() de propósito: uma conta pode ter mais de
     // uma linha "active" em accesses (ex: grant manual antigo nunca

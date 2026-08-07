@@ -88,9 +88,10 @@ serve(async (req) => {
           .select('role').eq('user_id', user.id).eq('role', 'admin').maybeSingle()
         if (roleData) authed = true
       }
-    } else if (!cronSecret) {
-      authed = true
     }
+    // Sem fallback aberto: se o CRON_SECRET ficar em branco no ambiente,
+    // ninguém deve conseguir disparar SMS em massa (custo real). Falha
+    // fechada — o cron sempre envia o secret.
 
     if (!authed) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {

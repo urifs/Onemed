@@ -89,7 +89,11 @@ serve(async (req) => {
 
     const email = (user.email || '').toLowerCase()
     const [{ data: activeAccess }, { data: buyer }, { data: isAdmin }] = await Promise.all([
-      supabase.from('accesses').select('id').eq('email', email).eq('status', 'active').limit(1).maybeSingle(),
+      // expires_at é indispensável: entre o trial expirar e o cron de revogação
+      // (a cada 5min) virar o status, um trial vencido ainda conseguia emitir
+      // token de 2h e continuar assistindo. status='active' sozinho não basta.
+      supabase.from('accesses').select('id').eq('email', email).eq('status', 'active')
+        .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`).limit(1).maybeSingle(),
       supabase.from('buyers').select('id').eq('email', email).eq('access_granted', true).limit(1).maybeSingle(),
       supabase.rpc('has_role', { _user_id: user.id, _role: 'admin' }),
     ])

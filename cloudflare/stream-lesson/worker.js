@@ -85,6 +85,10 @@ export default {
     });
     if (!tokenRes.ok) return new Response('Drive indisponível', { status: 502, headers: cors });
     const { accessToken } = await tokenRes.json();
+    // Sem esta checagem, um corpo 200 malformado dava accessToken=undefined e o
+    // worker mandava "Bearer undefined" pro Drive → 401 → aluno via erro
+    // genérico depois de uma ida à toa ao Google.
+    if (!accessToken) return new Response('Drive indisponível', { status: 502, headers: cors });
 
     let driveRes;
     if (mimeType.startsWith(GOOGLE_NATIVE_PREFIX)) {

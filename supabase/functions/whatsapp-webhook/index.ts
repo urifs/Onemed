@@ -83,8 +83,11 @@ serve(async (req) => {
       return new Response('ok', { status: 200 })
     }
 
-    // Valida apikey do webhook contra a config (Evolution API inclui apikey no body)
-    if (body.apikey && config.evolution_api_key && body.apikey !== config.evolution_api_key) {
+    // Valida apikey do webhook contra a config (Evolution API inclui apikey no
+    // body). EXIGE o apikey: antes, omitir o campo pulava a checagem e um
+    // estranho conseguia dirigir a instância pra mandar auto-reply pra números
+    // arbitrários. Ausente = inválido. (200 pra não servir de sonda.)
+    if (body.apikey !== config.evolution_api_key) {
       return new Response('ok', { status: 200 })
     }
 

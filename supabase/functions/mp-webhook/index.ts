@@ -292,6 +292,16 @@ async function processAffiliateSale(
     }
     if (!affiliate) return
 
+    // Auto-indicação: afiliado comprando com o PRÓPRIO cupom/ref. Sem esta
+    // trava ele ganhava 15-30% de volta em toda compra própria e destravava
+    // o Vitalício Pro grátis com 5 compras suas (ou de laranjas). Comissão só
+    // vale pra venda a OUTRA pessoa.
+    if (affiliate.email && buyer.email &&
+        affiliate.email.trim().toLowerCase() === buyer.email.trim().toLowerCase()) {
+      console.log('Auto-indicação ignorada (comprador = afiliado):', buyer.email)
+      return
+    }
+
     const percent = AFFILIATE_COMMISSION_PERCENT[buyer.plan]
     if (!percent) return
     const amount = Number(transactionAmount ?? buyer.amount ?? 0)
