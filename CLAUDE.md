@@ -1925,6 +1925,34 @@ PULAM arquivos `.gdrive` (não reimportam os ponteiros). Ressalva: um re-sync ma
 recriar as PASTAS vazias (a subpasta ainda existe no Drive só com o `.gdrive` dentro) —
 reaparecem como pasta vazia no `CourseTree`, nunca como aula quebrada.
 
+---
+
+### 2026-08-07 (sessão remota) — Mensal cobrando R$49 em vez de R$99 (deploy defasado do mp-create-payment)
+
+**Relato:** cliente usou o cupom `ONE50` e o Mensal de R$99 saiu por "20 e pouco".
+
+**Causa:** `24,50 = 49,00 × 0,5`. O `mp-create-payment` **em produção** ainda tinha
+`PLAN_PRICES.monthly = 49.00` (extraído do eszip da função no ar, versão 65) enquanto o
+REPO já estava em `99.00`. Ou seja: a mudança de preço pra R$99 foi feita no código mas o
+`mp-create-payment` **não foi redeployado** — provavelmente revertido por um redeploy da
+própria função no dia 07/08 (trabalho de afiliados) a partir de uma cópia com o preço antigo.
+O Vitalício saía certo (`149,95 = 299,90 × 0,5`) porque só o preço do Mensal mudou.
+
+**Correção:** redeploy do `mp-create-payment` (repo → versão 66, `verify_jwt=false`, OPTIONS
+200). Confirmado em produção com chamada real (monthly + ONE50): `buyers.amount = 49,50`,
+`plan_amount = 49,5` — R$99 − 50% correto. As outras 3 fontes de preço já estavam em 99
+(`plans.ts`, `CheckoutPage` display, `member-account-info` deployado).
+
+**Regra:** mudar preço de plano exige redeploy do `mp-create-payment` (quem cobra) E conferir
+o preço no eszip da função no ar — não basta o repo. Ideal: extrair `PLAN_PRICES` pra um lugar
+só; hoje vive em 4 fontes.
+
+**Cobranças abaixo do valor na janela do bug (07/08, entre o redeploy defasado e a correção):**
+`liaregocr@gmail.com` pagou R$49 (devia R$99, sem cupom) e `ronaibandrade@gmail.com` pagou
+R$24,50 (devia R$49,50, ONE50). Decisão sobre cobrar a diferença é do dono — nenhuma ação
+financeira tomada. (Os vários `49,00` ANTERIORES a 06/08 estavam certos: o Mensal era R$49 até
+a subida pra R$99 em ~06/08.)
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
