@@ -1621,6 +1621,57 @@ do Supabase desatualizado (16 tabelas de ~40 — regenerar com
 
 ---
 
+### 2026-08-07 (sessão remota) — 2ª auditoria profunda (afiliados, loja, admin, auth, edge functions)
+
+**Segunda varredura** cobrindo tudo que a primeira não aprofundou: sistema de afiliados,
+loja, geradores de IA, todas as páginas admin restantes, fluxos de auth, componentes de
+comunidade e o restante das Edge Functions + worker. As correções desta sessão FORAM
+deployadas em produção (9 Edge Functions redeployadas via multipart, OPTIONS 200; frontend
+aguarda merge na `main`). Destaques:
+
+**Dinheiro / segurança (edge):**
+- `mp-webhook`: trava de **auto-indicação de afiliado** — comprador usando o próprio
+  cupom/ref ganhava 15-30% de volta e destravava o Vitalício Pro grátis com 5 compras
+  próprias. Agora comissão só vale pra venda a outra pessoa.
+- `send-access-email`: era um **relay de email aberto** (`verify_jwt=false`, sem checagem) —
+  qualquer um mandava "pagamento aprovado" pelo domínio verificado da OneMed. Fechado com
+  gate de service-role (mesmo mecanismo do drive-share-folder). Verificado: 401 sem auth.
+- `run-email-campaign`: **claim atômico** (scheduled→running com guard) — invocações
+  concorrentes mandavam o mesmo lote 2×; removido o fallback aberto quando `CRON_SECRET`
+  em branco (idem `run-sms-job`).
+- `member-lesson-token`/`member-stream-file`: entitlement passou a checar `expires_at` —
+  trial vencido emitia token de 2h e assistia até o cron de revogação rodar.
+- `whatsapp-webhook`: exige `apikey` (omitir o campo pulava a validação).
+- `member-auth-request`: rate limit por IP usa `x-real-ip` (XFF esquerdo era forjável,
+  zerando a trava de brute-force do login).
+- `member-sync-library`: falha de gravação de aulas marca `error` após N tentativas (ficava
+  `pending` pra sempre relistando o Drive).
+- Worker Cloudflare: rejeita `accessToken` ausente (evita `Bearer undefined`). **Precisa de
+  deploy manual do worker** (não sobe com as functions).
+
+**Auth / UX (frontend):**
+- `AuthContext`: parou de fazer `await` de supabase DENTRO do `onAuthStateChange` (risco de
+  deadlock do supabase-js em refresh/entre-abas); só recomputa admin em mudança de identidade.
+- `RegisterPage`: honesto sobre a concessão de admin. **Confirmado que a RLS de `user_roles`
+  já bloqueia auto-concessão** (WITH CHECK exige has_role admin) — não era exploit, mas a
+  página dizia "sucesso" quando o insert era negado.
+- `CommentThread`/`CommunityTab`: `ensureName` na resposta aninhada, guard anti-duplo-submit
+  no estado, toasts nos erros silenciosos.
+- `PdfViewer`: destrói o documento pdf.js no cleanup (vazava worker/páginas por aula).
+- `DriveSettings`: "Desconectar" pede confirmação (derrubava o acervo de todos num clique).
+- `EmailCampaign`/`SMS`: confirmação antes de disparo em massa; polling do EmailCampaign
+  para no unmount. `Coupons`: guarda de afiliado fail-closed. `WhatsApp`: typo `onomed`.
+- Vários estados de erro com "tentar novamente" (Flashcards/StudyPlans/Acervo admin);
+  `MemberLoginPage` valida tokens antes do setSession; `AccessManagement` pagina buyers.
+
+**Pendências de decisão do dono (afiliados — mexem em pagamento real, NÃO alteradas):**
+1. Comissão paga sobre upsells junto do plano (`transaction_amount` inteiro) — manter ou só
+   sobre o plano?
+2. Venda reembolsada continua com comissão a pagar (webhook só trata `approved`; não há
+   reversão em refund/chargeback).
+3. Token de indicação `?ref=` é o cupom (mutável) — trocar o cupom quebra a atribuição de
+   quem clicou no link antigo. Um id imutável resolveria.
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
