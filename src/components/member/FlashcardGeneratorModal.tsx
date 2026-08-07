@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { ChevronDown, ChevronRight, Loader2, Plus, SquareStack, ClipboardList, Upload, FileText, X } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { extractFunctionErrorMessage } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import type { FlashcardDeck } from './FlashcardViewer';
@@ -379,7 +380,13 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
           importExisting: ehQuestoes && importExisting ? true : undefined,
         },
       });
-      if (error || data?.error) throw new Error(data?.error || error?.message);
+      // Erro do servidor vem no CORPO da resposta; quando o status é não-2xx o
+      // supabase-js devolve só "Edge Function returned a non-2xx status code"
+      // em error.message e deixa `data` nulo. Sem ler o corpo, o aluno via essa
+      // frase crua no lugar do motivo real (ex: o limite diário de gerações).
+      if (error || data?.error) {
+        throw new Error(data?.error || await extractFunctionErrorMessage(error, 'Não foi possível gerar agora'));
+      }
       for (const w of data.warnings || []) toast.warning(w);
       onOpenChange(false);
       onGenerated(data as GeneratedDeck);

@@ -163,7 +163,19 @@ serve(async (req) => {
         .eq('identifier', user.id).eq('action', rlAction).maybeSingle()
       if (rl && (now.getTime() - new Date(rl.window_start).getTime()) < 24 * 3600 * 1000) {
         if (rl.attempts >= 15) {
-          return json(req, { error: 'Você atingiu o limite de 15 gerações por dia. Tente novamente amanhã.' }, 429)
+          // A janela é de 24h a partir da PRIMEIRA geração, não do fim do dia —
+          // dizer só "tente amanhã" mandava o aluno voltar na hora errada.
+          const faltamMin = Math.max(
+            1,
+            Math.ceil((new Date(rl.window_start).getTime() + 24 * 3600 * 1000 - now.getTime()) / 60000),
+          )
+          const quando = faltamMin >= 60
+            ? `em ${Math.ceil(faltamMin / 60)}h`
+            : `em ${faltamMin} minuto${faltamMin === 1 ? '' : 's'}`
+          const oQue = modo === 'questions' ? 'bancos de questões' : 'baralhos de flashcards'
+          return json(req, {
+            error: `Você já gerou 15 ${oQue} nas últimas 24 horas, que é o limite diário. Você poderá gerar de novo ${quando}.`,
+          }, 429)
         }
         await supabase.from('rate_limits').update({ attempts: rl.attempts + 1 })
           .eq('identifier', user.id).eq('action', rlAction)
