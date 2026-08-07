@@ -1848,6 +1848,83 @@ que as usam. Deploy verificado (bundle novo servido, rotas 200).
 segurança depois (a otimização de −62% fica pendente); `madge` já confirma que
 não há ciclo de import pra atrapalhar.
 
+---
+
+### 2026-08-07 (sessão remota) — 3º incidente do mesmo lote: `<Suspense>` órfão + varredura da classe de erro
+
+**Sintoma:** `ReferenceError: Suspense is not defined` ao abrir aula tipo PDF em
+`/membros/curso/*` (print do cliente, bundle `index-Bvi1JO0u`/`-DzptLWzL`). Terceiro
+`ReferenceError` da mesma leva de reversões (depois de `fetchRoster` e do TDZ do
+CourseDetailPage).
+
+**Causa:** ao reverter o code-splitting do `PdfViewer` (voltar pro import estático),
+o import de `Suspense` foi removido do `LessonPlayer` mas o JSX
+`<Suspense>…</Suspense>` em volta do `<PdfViewer>` ficou órfão. Corrigido removendo
+o wrapper (commit `fe4a3ed`) — `PdfViewer` renderiza direto.
+
+**Causa-raiz de por que os 3 vazaram pra produção:** `npm run build` = `vite build`
+(SWC), que **STRIPA os tipos sem type-check**. Os três (`Suspense`, `fetchRoster`,
+identificadores) seriam pegos por `tsc --noEmit`, que **nunca fazia parte do deploy**.
+Agora `tsc --noEmit` é gate obrigatório antes de qualquer push de frontend.
+
+**Varredura completa da classe de erro (para fechar de vez):**
+- `tsc --noEmit`: **limpo** — zero identificador indefinido em qualquer arquivo/branch
+  (pega `Suspense`/`fetchRoster` e qualquer irmão).
+- `eslint no-use-before-define` (variables:true) no `src` inteiro: todos os hits são
+  referências dentro de `useEffect`/handlers/`async` que rodam DEPOIS do corpo do
+  componente — **nenhum TDZ de render** (o do CourseDetailPage, já corrigido, não tem
+  irmão). Verificado caso a caso (MemberDashboard `userId`, CourseDetail `podeGerarIa`,
+  Checkout `getTotalPrice`, Archive `reallyStart`, DriveSettings `canResume`).
+- Redes de segurança novas: `src/test/lessonPlayerRender.test.tsx` (renderiza o
+  LessonPlayer por tipo de aula, reprova ReferenceError — testado: falha COM o bug,
+  passa SEM); `src/test/setup.ts` ganhou polyfills de
+  ResizeObserver/IntersectionObserver/scrollIntoView (gaps do jsdom).
+- 102 testes verdes; build de produção OK (prerender 27/27). Deploy verificado no
+  bundle vivo: a assinatura do bug (`animate-spin text-white/70`, que só existia no
+  fallback do `<Suspense>`) NÃO está mais no `index-*.js` servido em produção.
+
+**Regra reforçada:** hooks que rodam no render (`useMemo`/`useDeferredValue`/JSX inline)
+só referenciam coisas declaradas ACIMA deles; e **`tsc --noEmit` antes de todo deploy**
+(o build com SWC não substitui type-check).
+
+---
+
+### 2026-08-07 (sessão remota) — 145 aulas `.mp4.gdrive` removidas do "Anatomia [MuscleFLIX]"
+
+**Relato:** arquivos `.mp4.gdrive` no meio dos cursos que não reproduzem, "destruindo a
+experiência". Todas as 145 estavam num único curso: **Anatomia [MuscleFLIX]**
+(`course_id 553995eb-61ae-4173-8056-bc1bd220f946`), que tem 283 aulas = **138 vídeos
+reais + 145 ponteiros**.
+
+**O que são:** cada `.gdrive` é um arquivo-TEXTO de 168 bytes (`{"":"WARNING! DO NOT
+EDIT THIS FILE!","doc_id":"…","resource_key":"","email":"medconteudos21@gmail.com"}`) —
+ponteiro deixado por uma ferramenta de backup quando NÃO conseguiu copiar o vídeo de
+origem. Não são vídeo; o worker de streaming baixava os 168 bytes e o `<video>` não
+tocava.
+
+**Por que não dá pra fazer tocar (medido, não suposto):** o vídeo real mora em
+`medconteudos21@gmail.com` e **nunca foi compartilhado com a conta de conteúdo**. Testei
+os **145 doc_ids**: `onemedcursos` → **0/145 (todos 404)**; `ufgravity` → 403; público →
+401. A pasta do curso é de `medcinerdrive@gmail.com`, compartilhada com `onemedcursos`
+(os 138 vídeos reais tocam: metadata 200, range 206) — mas os 145 alvos não. A plataforma
+só tem token de `onemedcursos` (conteúdo) e `ufgravity` (storage); nenhum de
+`medconteudos21`/`medcinerdrive`. **Sem os bytes compartilhados/copiados, não há o que
+servir.**
+
+**Ação (escolha do dono: "esconder por ora, reversível"):** DELETE das 145 linhas-ponteiro
+(cascata: só 1 `lesson_progress`, 0 anotações/comentários/favoritos) + DELETE iterativo de
+146→149 módulos que ficaram vazios (o feed já esconde módulo vazio, mas o `CourseTree` não).
+`recalc_course_totals` rodado. Curso ficou **138 aulas, 143 módulos, 0 vazios** — só DB, sem
+deploy (produção lê o mesmo banco, então já sumiram pra todos). Mapa completo de restauração
+(lesson→doc_id + módulos removidos) em **`scripts/muscleflix-gdrive-pointers.json`** — quando
+o acesso for concedido (compartilhar origem com `onemedcursos` OU token de
+`medcinerdrive`/`medconteudos21`), reimportar apontando `drive_file_id=doc_id`.
+
+**Import futuro protegido:** `member-sync-library` e `scripts/deep-library-sync.mjs` já
+PULAM arquivos `.gdrive` (não reimportam os ponteiros). Ressalva: um re-sync manual pode
+recriar as PASTAS vazias (a subpasta ainda existe no Drive só com o `.gdrive` dentro) —
+reaparecem como pasta vazia no `CourseTree`, nunca como aula quebrada.
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
