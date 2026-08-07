@@ -322,6 +322,25 @@ export default function CourseDetailPage() {
   // módulo (ou o "Conteúdo geral" pra aulas soltas sem módulo).
   // A árvore marca as aulas já concluídas com um check, do mesmo jeito que a
   // lista principal.
+  // Enquanto o player está aberto, o tique de progresso (a cada poucos
+  // segundos de vídeo) NÃO pode virar setState: a lista de aulas continua
+  // montada atrás do overlay e, nos cursos de 30 mil aulas, cada atualização
+  // re-renderizava a página inteira. O progresso fica num ref e só vira estado
+  // quando o player fecha/troca de aula (ou quando "concluída" muda).
+  //
+  // ⚠️ Estas declarações PRECISAM vir antes do useMemo/useEffect abaixo que as
+  // usam: o useMemo executa o callback já na 1ª renderização, e um `const`
+  // referenciado antes da própria linha de declaração estoura TDZ
+  // ("can't access lexical declaration before initialization") — foi o que
+  // derrubou a plataforma em 2026-08-07.
+  const pendingProgress = useRef<Record<string, Progress>>({});
+  const flushPendingProgress = () => {
+    if (Object.keys(pendingProgress.current).length === 0) return;
+    const pend = pendingProgress.current;
+    pendingProgress.current = {};
+    setProgressMap(prev => ({ ...prev, ...pend }));
+  };
+
   // Congelado no momento em que a aula abre: se acompanhasse o progressMap,
   // cada gravação de progresso mudaria a prop e o player refaria o efeito de
   // seek no meio da reprodução. Troca de aula (id novo) recalcula.
@@ -356,21 +375,6 @@ export default function CourseDetailPage() {
     setContentTypeFilter('all');
     setTab(lesson.type === 'video' ? 'aulas' : 'arquivos');
     setActiveLesson(lesson);
-  };
-
-  // Enquanto o player está aberto, o tique de progresso (a cada poucos
-  // segundos de vídeo) NÃO pode virar setState: a lista de aulas continua
-  // montada atrás do overlay e, nos cursos de 30 mil aulas, cada atualização
-  // re-renderizava a página inteira — travadinha visível durante a
-  // reprodução. O progresso fica num ref e só vira estado quando o player
-  // fecha ou troca de aula (ou quando o "concluída" muda, que afeta o check
-  // visível na hora).
-  const pendingProgress = useRef<Record<string, Progress>>({});
-  const flushPendingProgress = () => {
-    if (Object.keys(pendingProgress.current).length === 0) return;
-    const pend = pendingProgress.current;
-    pendingProgress.current = {};
-    setProgressMap(prev => ({ ...prev, ...pend }));
   };
 
   const handleProgress = async (lessonId: string, watchedSeconds: number, completed: boolean) => {
