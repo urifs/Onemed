@@ -73,6 +73,7 @@ const StoreAdminPage = lazyPage(() => import("./pages/StoreAdminPage"));
 const FlashcardsAdminPage = lazyPage(() => import("./pages/FlashcardsAdminPage"));
 const AcervoAdminPage = lazyPage(() => import("./pages/AcervoAdminPage"));
 const AnnouncementsPage = lazyPage(() => import("./pages/AnnouncementsPage"));
+const PanelAccountsPage = lazyPage(() => import("./pages/PanelAccountsPage"));
 const DatabasePage = lazyPage(() => import("./pages/DatabasePage"));
 const EmailCampaignPage = lazyPage(() => import("./pages/EmailCampaignPage"));
 const SMSPage = lazyPage(() => import("./pages/SMSPage"));
@@ -245,6 +246,7 @@ const App = () => (
             <Route path="/admin/cronogramas" element={<ProtectedRoute><StudyPlansAdminPage /></ProtectedRoute>} />
             <Route path="/admin/flashcards" element={<ProtectedRoute><FlashcardsAdminPage /></ProtectedRoute>} />
             <Route path="/admin/acervo" element={<ProtectedRoute><AcervoAdminPage /></ProtectedRoute>} />
+            <Route path="/admin/contas" element={<ProtectedRoute><PanelAccountsPage /></ProtectedRoute>} />
             <Route path="/admin/avisos" element={<ProtectedRoute><AnnouncementsPage /></ProtectedRoute>} />
             <Route path="/admin/database" element={<ProtectedRoute><DatabasePage /></ProtectedRoute>} />
             <Route path="/admin/email-campaign" element={<ProtectedRoute><EmailCampaignPage /></ProtectedRoute>} />

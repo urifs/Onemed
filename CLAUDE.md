@@ -657,7 +657,7 @@ na API mas falhava ao subir). Corrigido redeployando todas via multipart
 aprovado foi perdido no incidente — todos os `buyers` afetados estavam `status:'pending'` sem
 `payment_id`.
 
-**3 novos planos:** `monthly` (R$49,90/30 dias), `lifetime_plus` (R$599 — vitalício + backup no
+**3 novos planos:** `monthly` (R$99/30 dias — era R$49,90 no lançamento, subiu para R$49 e depois R$99 em 05/08), `lifetime_plus` (R$599 — vitalício + backup no
 Drive do usuário + 4 telas), `lifetime_pro` (R$997 — tudo do Plus + IA Meduf + download em massa
 na plataforma). Preços/labels/features centralizados em `src/lib/plans.ts`; `mp-create-payment` e
 `mp-webhook` reescritos com lookups por tabela (`PLAN_PRICES`, `LIFETIME_TIER_RANK`) em vez de
@@ -1671,6 +1671,149 @@ aguarda merge na `main`). Destaques:
    reversão em refund/chargeback).
 3. Token de indicação `?ref=` é o cupom (mutável) — trocar o cupom quebra a atribuição de
    quem clicou no link antigo. Um id imutável resolveria.
+
+> **Atualização 2026-08-07 (fim desta sessão):** as 3 pendências acima foram RESOLVIDAS a
+> pedido do dono — comissão passou a incidir só sobre o plano (`buyers.plan_amount`),
+> reembolso/chargeback reverte a comissão (`affiliate_sales.status='reversed'`), e o link de
+> indicação passou a usar `affiliates.ref_code` imutável. Migration
+> `20260807120000_affiliate_commission_refund_refcode.sql` aplicada; mp-create-payment,
+> mp-webhook e affiliate-register redeployados.
+
+---
+
+**"Edge Function returned a non-2xx status code" ao gerar banco de questões** (cliente com PDF
+próprio): a frase é do supabase-js, não da nossa função. Em status não-2xx ele devolve `data`
+NULO e só essa frase em `error.message` — a razão real vai no CORPO da resposta. O
+`FlashcardGeneratorModal` lia só `error.message`, então QUALQUER recusa da função chegava ao aluno
+como erro cru em inglês. Corrigido com `extractFunctionErrorMessage` (mesmo utilitário que
+checkout/upgrade/stream já usavam).
+**Causa real no caso relatado: o limite diário de 15 gerações (429).** Confirmado nos dados —
+dois clientes com exatamente 15 tentativas na janela, um deles em 07/08, mesma data do print.
+Descartadas por teste em produção: tamanho do arquivo (2/5/8/12 MB de upload → todos 200; o teto
+prático é ~16 MB de payload) e PDF de editora (apostila real de 4,6 MB gerou 5 questões em 39s).
+**Tetos de IA unificados em 100/dia (decisão do dono, 07/08):** o de 15/dia foi removido e, no
+mesmo dia, substituído por um teto ALTO de segurança em TODAS as funções de IA — 100 por conta a
+cada 24h em `generate-flashcards` (por modo: flashcards e questões), `generate-study-plan`
+(era 10) e `member-assistant` (era 60). Não limita uso real (o aluno que mais usou fez 15 em
+24h); serve só de rede contra abuso/script, já que a IA é paga por chamada. As três mensagens de
+429 seguem o mesmo padrão: dizem quantas horas faltam (a janela é de 24h desde a PRIMEIRA
+chamada, não o fim do dia) e citam o tipo certo. Verificado em produção nas três funções, nos
+dois lados do teto: 30 gerações de questões → 200; 20 cronogramas → 200; 70 mensagens do
+assistente → respondeu; e com o contador em 100 cada uma devolve a mensagem correta.
+A mensagem do 429 também foi reescrita: dizia "tente amanhã", mas a janela é de 24h a partir da
+PRIMEIRA geração — agora informa quantas horas faltam e cita o tipo certo ("bancos de questões"
+× "baralhos de flashcards"). ⚠️ Tentativa que FALHA (erro de IA) também consome uma das 15.
+
+---
+
+**Arquivo do acervo abria mas NÃO rolava e o clique "saía do documento"** (cliente com PDF de
+apostila): o `LessonPlayer` do acervo é portalizado no `document.body`, ou seja, FORA do
+`DialogContent` do detalhe do item. Com o diálogo em modo **modal**, o Radix aplica
+`react-remove-scroll` + `pointer-events: none` em tudo que está fora do content — o PDF renderiza
+mas fica inerte. Reproduzido em produção antes de mexer (`body` com `pointer-events: none`,
+`scrollTop` preso em 0). Correção: `<Dialog modal={!sobreposto}>` no `DetailDialog`, onde
+`sobreposto` = player OU FlashcardViewer OU QuestionBankViewer aberto (os dois últimos são irmãos
+do diálogo e sofriam o mesmo), mais `onInteractOutside`/`onEscapeKeyDown` bloqueados nesse período
+— sem isso um clique dentro do player contaria como "fora" e fecharia o detalhe junto. Verificado
+em produção no MESMO arquivo do print do cliente: rolagem 0 → 2.740px de 8.202px, clique na página
+e na margem sem fechar, e ao fechar o player o detalhe volta a ser modal normalmente.
+**Regra:** overlay em portal + Radix Dialog modal não convivem — quando um sobe, o diálogo de trás
+tem que sair do modo modal.
+
+---
+
+**"SEMANA 10 aparecendo junto com a 1" — ordenação alfabética virou NATURAL:** o dono viu no
+mapa do MEDCURSO 2026 que a Semana 10 caía entre a 1 e a 2. Causa: `recalc_course_totals`
+numerava módulos e aulas com `ORDER BY` de TEXTO, e em texto "SEMANA 10" < "SEMANA 2". Não era
+específico desse curso — **8.960 módulos em 82 cursos** e **108.641 aulas** estavam fora de ordem
+("Aula 2" × "Aula 10", "Bloco 3" × "Bloco 12"). Migration `20260805060000_natural_sort_modules.sql`:
+nova função `natural_key(texto)` (quebra em pedaços dígito/não-dígito e zera à esquerda os
+números em 12 casas, então a comparação de texto respeita o valor numérico) usada nos dois
+`ORDER BY` do recalc. Reordenação aplicada em produção em TODOS os cursos (módulos de uma vez,
+aulas curso a curso pra não estourar o timeout da API).
+**Desempate obrigatório:** 18 cursos têm pastas de nome idêntico (ex: dois "Gastrologia" no
+MEDCurso) — sem `id` no fim do `ORDER BY` o `row_number()` alternava a cada recálculo e a
+verificação nunca convergia. Com o desempate, converge em zero. Correção é 100% de banco:
+nenhum deploy de frontend foi necessário (a UI já lia `sort_order`).
+
+---
+
+### 2026-08-05 (sessão remota) — MEDCURSO 2026: semanas 8, 9, 10 e a 6 completa
+
+**Pedido:** sincronizar o MEDCURSO com a pasta `1aWl1UsFms5_W9n1rAkRY_yWGBL8Ug515` (plataforma
+tinha até a Semana 6 parcial; a pasta tem 6, 8, 9 e 10 — **não existe Semana 7** na origem).
+
+**Descoberta que destravou tudo:** a pasta nova ("MED Curso 2026") é da PRÓPRIA conta de
+armazenamento da plataforma (`ufgravity@gmail.com`), mas não estava compartilhada com a conta de
+CONTEÚDO (`onemedcursos@gmail.com`) — que é justamente quem o worker de streaming usa pra servir
+os bytes. Daí o 404 na API. Compartilhada como leitura (permissão criada com o token da conta de
+armazenamento, via função temporária depois removida); sem isso as aulas importariam mas NÃO
+tocariam.
+
+**Importação (62 arquivos, 19,3 GB, 35 módulos):** Semana 6 ganhou a estrutura completa
+(Ped 1 · Preventiva, com Video Aulas / Aula Bônus / No Papo) dentro do módulo `SEMANA 6` que já
+existia; Semanas 8, 9 e 10 viraram módulos novos, nomeados em CAIXA ALTA (`SEMANA 8`) pra casar
+com as 1-6. Curso foi de 123 → **185 aulas**. Script `scratchpad/importar.mjs` espelha o
+`member-sync-library` (mesmo `lessonType`, `path`, `depth`, `parent_module_id`, `drive_path`,
+`last_seen_at`), com simulação por padrão e `--aplicar` pra gravar.
+
+**Duplicata conhecida e deliberada:** "AULA ESPECIAL- TRIAGEM NEONATAL" existe duas vezes na
+Semana 6 — a antiga (2,15 GB, solta na raiz do módulo, vinda da pasta do `medbrasil31`, com
+**13 alunos com progresso**) e a nova (442 MB, dentro de `Ped 1/Video Aulas`). Não apaguei a
+antiga porque `lesson_progress` cai por CASCADE; a nova, muito mais leve, é a que menos sofre com
+a cota de download do Drive.
+
+⚠️ **Duas fontes no mesmo curso:** `courses.drive_folder_id` continua apontando pra pasta ANTIGA
+(`medbrasil31`, semanas 1-6 + banco de questões). As semanas novas moram na pasta do ufgravity.
+Consequência: `scripts/deep-library-sync.mjs` rodado SEM `--only` marcaria as 62 aulas novas com
+`missing_since` (não apaga, e o aluno continua vendo — a página do curso não filtra por esse
+campo; o botão "Sincronizar biblioteca" do painel também nunca marca). Se for rodar o script
+completo, restaure o `missing_since = null` dessas aulas depois.
+
+---
+
+**Plano Mensal: R$49 → R$99.** Preço vive em 4 fontes de verdade que precisam andar juntas
+(`src/lib/plans.ts` PLAN_PRICES · `CheckoutPage` PLANS · `mp-create-payment` PLAN_PRICES, que é
+quem realmente cobra · `member-account-info` PLAN_PRICES, usado no desconto do upgrade de quem
+não tem linha em `buyers`). Citações que precisaram acompanhar: rótulo "Só Plano Mensal (R$ 99)"
+no seletor de cupom, prompt do `member-assistant` (a IA respondia o preço antigo) e o teste
+`upgradePriceFor('monthly','annual')` (150 → 100). Herdam sozinhos: JSON-LD de SEO, pixel/CAPI e
+UpgradePlanModal (todos leem PLAN_PRICES). Verificado em produção: `mp-create-payment` gravou
+`amount: 99.00` numa preferência real do Mercado Pago e o checkout exibe R$99,00.
+⚠️ **Efeito colateral aceito:** o upgrade é diferença de TABELA, então quem pagou R$49 no Mensal
+passa a receber R$99 de crédito ao subir para o Anual (paga R$100 em vez de R$150).
+
+---
+
+**Área "Contas do Painel" (`/admin/contas`, só admin):** gestão de quem entra no painel.
+RPC `admin_panel_accounts` (migration `20260805050000_admin_panel_accounts.sql`; user_roles
+admin/viewer × auth.users com último login) + Edge Function `admin-panel-accounts` (service
+role): `create` (e-mail já existente ganha o papel SEM trocar a senha — senão seria roubo de
+conta de assinante), `set_role`, `reset_password`, `remove` (tira só o papel; a conta de usuário
+fica). Trava: recusa demover/remover o ÚLTIMO admin. Visualizador não vê o item de nav
+(`adminOnly` no navItems) e é recusado na RPC e na função (testado em produção: lista admin ok,
+viewer barrado nos dois caminhos, criar/remover conta ok, UI conferida logada como viewer).
+
+---
+
+### 2026-08-05 (sessão remota) — conta VISUALIZADORA do painel admin
+
+**Papel `viewer`** (pedido do dono): conta `medestudosplusmedicina@gmail.com` (senha definida
+pelo dono) entra no painel `/admin` inteiro em modo leitura; edição SÓ na **Loja** (criar/gerir
+produtos) e na **Área de Membros** (conceder/renovar/revogar acesso — sem DELETE de linha).
+Migration `20260805040000_viewer_role.sql`: valor `viewer` no enum `app_role` (ALTER TYPE em
+statement separado!); policies de SELECT pra viewer em accesses/buyers/coupons/visits/affiliates/
+affiliate_sales/email_followups/user_roles/store_orders; FOR ALL em `store_products`; INSERT+
+UPDATE em `accesses`. `is_member()` e `can_read_library_audit()` ganharam bypass do viewer (o
+painel de comunidade/acervo/biblioteca lê por eles); RPCs admin_* de leitura re-gateadas pra
+admin-OU-viewer via `pg_get_functiondef` + replace direto em produção. `AuthContext` expõe
+`isViewer` (admin OU viewer abrem o painel); `AdminLayout` mostra faixa fixa "Modo visualização".
+**`drive_config` fica FORA do viewer de propósito** (tokens OAuth do Drive — a página Google
+Drive aparece como desconectada pra ele). Enforcement é NO BANCO: sondas confirmaram leitura ok,
+criar produto ok, conceder acesso ok, e PATCH em coupons/buyers e DELETE em accesses afetando 0
+linhas. Login real testado no navegador em produção (dashboard + faixa + loja + membros).
+
+---
 
 ## Meta Ads — Contexto Geral
 

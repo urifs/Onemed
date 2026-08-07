@@ -716,6 +716,10 @@ function DetailDialog({ itemId, initialFileId, currentUserId, onClose, onChanged
 
   const isOwner = item?.user_id === currentUserId;
 
+  // Alguma tela cheia por cima do diálogo? (player de arquivo, baralho de
+  // flashcards ou prova gerados a partir de um arquivo do acervo)
+  const sobreposto = !!playing || !!fcDeck || !!qbBank;
+
   // Abrir = tocar/visualizar DENTRO da plataforma, com o mesmo player das
   // aulas. CADA abertura de arquivo conta uma visualização (qualquer cliente,
   // toda vez) — o .then é obrigatório: o builder do supabase-js é preguiçoso
@@ -863,8 +867,21 @@ function DetailDialog({ itemId, initialFileId, currentUserId, onClose, onChanged
   };
 
   return (
-    <Dialog open onOpenChange={v => { if (!v) onClose(); }}>
-      <DialogContent className="bg-background-paper border-border sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+    // `modal={!sobreposto}`: enquanto QUALQUER tela cheia está por cima
+    // (player, baralho de flashcards, prova), o diálogo de detalhe precisa
+    // DEIXAR de ser modal. Modal do Radix trava a rolagem da página e põe
+    // `pointer-events: none` em tudo fora do DialogContent — e essas telas
+    // ficam fora dele (o player num portal no body, os visualizadores como
+    // irmãos deste diálogo). Era o que o cliente via: o PDF abria mas não
+    // rolava e o clique não pegava.
+    <Dialog open modal={!sobreposto} onOpenChange={v => { if (!v) onClose(); }}>
+      <DialogContent
+        className="bg-background-paper border-border sm:max-w-2xl max-h-[90vh] overflow-y-auto"
+        // Sem o modo modal, um clique dentro dessas telas conta como "fora" do
+        // diálogo — sem isso o detalhe fecharia junto e as levaria embora.
+        onInteractOutside={e => { if (sobreposto) e.preventDefault(); }}
+        onEscapeKeyDown={e => { if (sobreposto) e.preventDefault(); }}
+      >
         {loading || !item ? (
           <div className="py-16 flex justify-center"><Loader2 className="w-6 h-6 text-primary animate-spin" /></div>
         ) : (

@@ -213,7 +213,7 @@ export default function CouponsPage() {
                   </SelectTrigger>
                   <SelectContent className="bg-background-paper border-border">
                     <SelectItem value="all">Todos os planos</SelectItem>
-                    <SelectItem value="monthly">Só Plano Mensal (R$ 49)</SelectItem>
+                    <SelectItem value="monthly">Só Plano Mensal (R$ 99)</SelectItem>
                     <SelectItem value="annual">Só Plano Anual (R$ 199)</SelectItem>
                     <SelectItem value="lifetime">Só Plano Vitalício (R$ 299,90)</SelectItem>
                     <SelectItem value="lifetime_plus">Só Plano Vitalício Plus (R$ 599)</SelectItem>

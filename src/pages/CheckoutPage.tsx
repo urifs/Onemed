@@ -77,7 +77,7 @@ const PLANS: Record<string, {
 }> = {
   monthly: {
     name: 'Plano Mensal',
-    price: 49.00,
+    price: 99.00,
     period: '/mês',
     icon: Calendar,
     features: [
