@@ -58,8 +58,13 @@ async function checkRateLimit(supabase: ReturnType<typeof createClient>, identif
 
 async function generateInitialCoupon(supabase: ReturnType<typeof createClient>, name: string): Promise<string | null> {
   const base = (name.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-zA-Z]/g, '').slice(0, 10) || 'AFILIADO').toUpperCase()
+  // Sufixo de 3 caracteres alfanuméricos (~46 mil combos por nome) em vez dos
+  // 2 dígitos antigos (só 100): nomes comuns esgotavam as 100 tentativas e o
+  // afiliado nascia sem cupom.
+  const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  const rand = (n: number) => Array.from({ length: n }, () => ALPHABET[Math.floor(Math.random() * ALPHABET.length)]).join('')
   for (let i = 0; i < 12; i++) {
-    const code = `${base}${String(Math.floor(Math.random() * 100)).padStart(2, '0')}`
+    const code = `${base}${rand(3)}`
     const { data: created, error } = await supabase.from('coupons')
       .insert({ code, discount_percent: 10, active: true, description: 'Cupom de afiliado' })
       .select('code').maybeSingle()
@@ -244,8 +249,13 @@ serve(async (req) => {
     }
 
     const couponCode = await generateInitialCoupon(supabase, cleanName)
+    // ref_code é o token IMUTÁVEL do link de indicação (?ref=): nasce igual ao
+    // cupom (link familiar), mas NUNCA muda quando o afiliado troca o cupom —
+    // é o que garante que links antigos continuem atribuindo a venda. Fallback
+    // único quando não há cupom.
+    const refCode = couponCode || `AF${crypto.randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase()}`
     const { error: affErr } = await supabase.from('affiliates').insert({
-      user_id: userId, name: cleanName, email: cleanEmail, coupon_code: couponCode,
+      user_id: userId, name: cleanName, email: cleanEmail, coupon_code: couponCode, ref_code: refCode,
     })
     if (affErr) {
       console.error('affiliates insert error', affErr)

@@ -19,6 +19,7 @@ interface Affiliate {
   name: string;
   email: string;
   coupon_code: string | null;
+  ref_code: string | null;
   pix_key: string | null;
   pix_name: string | null;
   pix_bank: string | null;
@@ -95,9 +96,11 @@ export default function AffiliatePanelPage() {
   // O link leva pra LANDING, não pro checkout: o indicado conhece o produto,
   // pode fazer o teste grátis e comprar depois — a referência fica guardada
   // por 30 dias no navegador dele e a venda continua sendo do afiliado.
-  const shareLink = affiliate?.coupon_code
-    ? `${SITE_URL}/?ref=${affiliate.coupon_code}`
-    : null;
+  // Link de indicação usa o ref_code IMUTÁVEL, não o cupom: trocar o cupom
+  // não quebra mais a atribuição de quem já clicou no link. Fallback pro
+  // cupom em contas antigas cujo ref_code ainda não foi preenchido.
+  const shareToken = affiliate?.ref_code || affiliate?.coupon_code || null;
+  const shareLink = shareToken ? `${SITE_URL}/?ref=${shareToken}` : null;
 
   const copy = (text: string, what: string) => {
     navigator.clipboard.writeText(text)

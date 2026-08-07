@@ -277,18 +277,22 @@ async function processAffiliateSale(
   paymentId: string,
 ): Promise<void> {
   try {
-    // Atribuição: primeiro pelo cupom efetivamente usado na compra; sem cupom
-    // (ou cupom que não é de afiliado), pela referência do link ?ref= guardada
-    // no navegador do indicado — cobre quem fez o teste e comprou dias depois,
-    // até sem digitar cupom nenhum.
-    let affiliate: { id: string; name: string; email: string } | null = null
-    for (const code of [buyer?.coupon_code, buyer?.affiliate_ref]) {
-      if (!code) continue
+    // Atribuição, em ordem de prioridade:
+    //   1. cupom efetivamente usado na compra (match em coupon_code);
+    //   2. ref do link ?ref= — o ref_code IMUTÁVEL primeiro (link que não
+    //      quebra quando o afiliado troca o cupom), depois o coupon_code
+    //      como legado (links antigos que carregavam o cupom no ?ref=).
+    // Cobre quem fez o teste e comprou dias depois, até sem digitar cupom.
+    const lookup = async (col: 'coupon_code' | 'ref_code', code: string) => {
       const { data } = await supabase.from('affiliates')
-        .select('id, name, email')
-        .eq('coupon_code', code)
-        .maybeSingle()
-      if (data) { affiliate = data as any; break }
+        .select('id, name, email').eq(col, code).maybeSingle()
+      return (data as { id: string; name: string; email: string } | null) || null
+    }
+    let affiliate: { id: string; name: string; email: string } | null = null
+    if (buyer?.coupon_code) affiliate = await lookup('coupon_code', buyer.coupon_code)
+    if (!affiliate && buyer?.affiliate_ref) {
+      affiliate = await lookup('ref_code', buyer.affiliate_ref)
+        || await lookup('coupon_code', buyer.affiliate_ref)
     }
     if (!affiliate) return
 
@@ -304,8 +308,13 @@ async function processAffiliateSale(
 
     const percent = AFFILIATE_COMMISSION_PERCENT[buyer.plan]
     if (!percent) return
+    // Base da comissão = valor do PLANO (plan_amount), NÃO o total pago
+    // (transaction_amount inclui upsells). Decisão do dono: comissão não
+    // incide sobre complementos. Fallback pro valor pago em linhas antigas
+    // sem plan_amount preenchido.
     const amount = Number(transactionAmount ?? buyer.amount ?? 0)
-    const commission = Math.round(amount * percent) / 100
+    const commissionBase = buyer.plan_amount != null ? Number(buyer.plan_amount) : amount
+    const commission = Math.round(commissionBase * percent) / 100
 
     const { data: inserted, error: insErr } = await supabase.from('affiliate_sales')
       .upsert({
@@ -313,7 +322,7 @@ async function processAffiliateSale(
         buyer_email: buyer.email,
         buyer_name: buyer.name || null,
         plan: buyer.plan,
-        amount,
+        amount: commissionBase,
         commission_percent: percent,
         commission_amount: commission,
         payment_id: paymentId,
@@ -326,9 +335,12 @@ async function processAffiliateSale(
       return
     }
 
+    // Conta pro benefício das 5 vendas EXCLUINDO reembolsadas — uma venda
+    // estornada não pode contar pro Vitalício Pro grátis.
     const { count } = await supabase.from('affiliate_sales')
       .select('id', { count: 'exact', head: true })
       .eq('affiliate_id', affiliate.id)
+      .neq('status', 'reversed')
     const totalSales = count ?? 1
 
     // Benefício das 5 vendas: conta Vitalício Pro pro e-mail do afiliado,
@@ -586,6 +598,28 @@ serve(async (req) => {
       console.error('Error updating buyer:', updateErr.message)
     } else {
       console.log('Buyer updated:', buyer.id, 'status:', status)
+    }
+
+    // Reembolso / estorno: reverte a comissão de afiliado ainda não paga —
+    // uma venda que a OneMed devolveu não pode gerar comissão a pagar nem
+    // contar pro Vitalício Pro grátis. Só mexe em linhas 'pending' (se já foi
+    // paga via PIX, marcar aqui não desfaz o pagamento — fica pro admin
+    // acertar; o log registra o caso).
+    if (['refunded', 'charged_back', 'cancelled'].includes(status)) {
+      const { data: reversed, error: revErr } = await supabase.from('affiliate_sales')
+        .update({ status: 'reversed' })
+        .eq('external_reference', externalRef)
+        .eq('status', 'pending')
+        .select('id, commission_amount')
+      if (revErr) console.error('Erro ao reverter comissão:', revErr.message)
+      else if (reversed && reversed.length > 0) {
+        console.log('Comissão de afiliado revertida:', externalRef, status)
+      } else {
+        // Nenhuma linha pending — ou não havia comissão, ou já foi paga.
+        const { data: paid } = await supabase.from('affiliate_sales')
+          .select('id').eq('external_reference', externalRef).eq('status', 'paid').maybeSingle()
+        if (paid) console.warn('ATENÇÃO: venda estornada mas comissão já PAGA ao afiliado:', externalRef)
+      }
     }
 
     // If approved, grant access and send email

@@ -65,8 +65,11 @@ export default function AffiliatesAdminPage() {
       const e = map.get(s.affiliate_id);
       if (!e) continue;
       e.vendas.push(s);
+      // 'reversed' (venda reembolsada) NÃO entra em pago nem em pendente —
+      // sem este if explícito, o else jogava a comissão estornada de volta
+      // no "a pagar".
       if (s.status === 'paid') e.pago += Number(s.commission_amount);
-      else e.pendente += Number(s.commission_amount);
+      else if (s.status === 'pending') e.pendente += Number(s.commission_amount);
     }
     return map;
   }, [affiliates, sales]);

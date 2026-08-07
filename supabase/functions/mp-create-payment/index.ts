@@ -320,6 +320,9 @@ serve(async (req) => {
       plan,
       payment_id: mpData.id,
       amount: totalAmount,
+      // Valor do PLANO após desconto, SEM os upsells: é a base da comissão de
+      // afiliado (decisão do dono — comissão não incide sobre complementos).
+      plan_amount: Math.round(discountedPrice * 100) / 100,
       client_ip: clientIp,
       client_user_agent: clientUserAgent,
       coupon_code: appliedCouponCode,
