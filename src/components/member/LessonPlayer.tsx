@@ -611,15 +611,7 @@ export function LessonPlayer({
             </button>
           </div>
         ) : lesson.type === 'pdf' ? (
-          <Suspense
-            fallback={
-              <div className="flex h-full w-full items-center justify-center">
-                <Loader2 className="w-8 h-8 animate-spin text-white/70" />
-              </div>
-            }
-          >
-            <PdfViewer url={src} title={lesson.title} lessonId={lesson.id} />
-          </Suspense>
+          <PdfViewer url={src} title={lesson.title} lessonId={lesson.id} />
         ) : lesson.type === 'doc' || lesson.type === 'sheet' ? (
           <OfficeViewer url={src} title={lesson.title} />
         ) : lesson.type === 'txt' ? (
