@@ -1815,33 +1815,38 @@ linhas. Login real testado no navegador em produção (dashboard + faixa + loja 
 
 ---
 
-### 2026-08-07 (sessão remota) — INCIDENTE: code-splitting derrubou a produção
+### 2026-08-07 (sessão remota) — INCIDENTE: TDZ no CourseDetailPage derrubou a área de membros
 
-**Sintoma:** logo após o deploy do frontend com merge na `main`, os alunos viram
-"Algo deu errado ao carregar a página" em massa; console cheio de
-`ReferenceError: can't access lexical declaration 'H' before initialization`
-(trace em `CourseDetailPage.js` + `index.js`, num `useMemo`).
+**Sintoma:** após o deploy do frontend, os alunos viram "Algo deu errado ao
+carregar a página" ao abrir qualquer curso; console com
+`ReferenceError: can't access lexical declaration 'X' before initialization`
+(trace em `CourseDetailPage` + `index.js`, dentro de um `useMemo`).
 
-**Causa:** o code-splitting por rota (`React.lazy` no `App.tsx` + o `PdfViewer`
-lazy no `LessonPlayer`) introduzido na auditoria de desempenho criou fronteiras
-de chunk que EXPUSERAM uma dependência circular já existente no código — um erro
-de TDZ (temporal dead zone) na ordem de inicialização ENTRE o chunk lazy e o
-chunk principal. Num bundle único o bundler ordena os módulos e o ciclo nunca
-dispara (é como a plataforma rodou por meses); split em chunks, a ordem muda e
-o ciclo quebra tudo. **Build e testes locais NÃO pegam isso** — só acontece em
-runtime no navegador, com os chunks separados.
+**CAUSA REAL (não era o code-splitting):** no `CourseDetailPage`, o
+`useMemo` de `initialWatchedSeconds` executava o callback já na 1ª renderização
+referenciando `pendingProgress`/`flushPendingProgress`, que estavam declarados
+(`const`) ~30 linhas ABAIXO. `const` tem TDZ: usar antes da linha de declaração
+estoura `ReferenceError` — e o `useMemo` invoca o callback SÍNCRONO no render.
+`madge --circular` confirmou ZERO dependência circular; o erro aparecia tanto
+no bundle dividido quanto no único (por isso reverter o splitting NÃO resolveu).
 
-**Correção (hotfix `6acb8a2`):** revertido todo o code-splitting — `App.tsx`
-voltou a imports estáticos (sem `lazy`/`Suspense`), `LessonPlayer` voltou a
-importar `PdfViewer` estático. Bundle único de novo (~1,9MB), produção
-restaurada e verificada (bundle novo servido, rotas 200).
+> ⚠️ **`tsc` e `vite build` NÃO pegam esse bug** — não sabem que o `useMemo`
+> chama o callback sincronamente, então "const usado antes da declaração dentro
+> de um callback" passa reto. Só quebra em runtime, ao RENDERIZAR a página.
+> Testes unitários que não montam a página também não pegam. **Regra: hooks que
+> rodam no render (`useMemo`/`useDeferredValue`/código inline) só podem
+> referenciar coisas declaradas ACIMA deles no componente.**
 
-> ⚠️ **Regra:** NÃO reintroduzir `React.lazy`/code-splitting sem antes QUEBRAR a
-> dependência circular na fonte (provavelmente um ciclo entre páginas e algum
-> módulo compartilhado tipo `lib/*` ou um barrel de componentes). Rodar
-> `npx madge --circular src` (ou equivalente) e zerar os ciclos ANTES de
-> qualquer split. A otimização de bundle (−62%) fica pendente até lá — o resto
-> da auditoria (segurança, pagamentos, RLS, afiliados, UX) permanece no ar.
+**Correção (hotfix `04a183e`):** mover a declaração de
+`pendingProgress`/`flushPendingProgress` para ANTES do `useMemo`/`useEffect`
+que as usam. Deploy verificado (bundle novo servido, rotas 200).
+
+**Sobre o code-splitting:** foi revertido no meio da investigação (commit
+`6acb8a2`) por suspeita errada — a plataforma segue hoje com bundle único
+(~1,9MB), imports estáticos no `App.tsx` e `PdfViewer` estático no
+`LessonPlayer`. Como o splitting NÃO era a causa, dá pra reintroduzir com
+segurança depois (a otimização de −62% fica pendente); `madge` já confirma que
+não há ciclo de import pra atrapalhar.
 
 ## Meta Ads — Contexto Geral
 
