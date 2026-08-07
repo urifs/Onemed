@@ -1545,6 +1545,22 @@ dos vídeos sem conversão: mp4 (99k, nativo), mp2t (12k, mpegts.js), quicktime 
 
 ---
 
+**"Edge Function returned a non-2xx status code" ao gerar banco de questões** (cliente com PDF
+próprio): a frase é do supabase-js, não da nossa função. Em status não-2xx ele devolve `data`
+NULO e só essa frase em `error.message` — a razão real vai no CORPO da resposta. O
+`FlashcardGeneratorModal` lia só `error.message`, então QUALQUER recusa da função chegava ao aluno
+como erro cru em inglês. Corrigido com `extractFunctionErrorMessage` (mesmo utilitário que
+checkout/upgrade/stream já usavam).
+**Causa real no caso relatado: o limite diário de 15 gerações (429).** Confirmado nos dados —
+dois clientes com exatamente 15 tentativas na janela, um deles em 07/08, mesma data do print.
+Descartadas por teste em produção: tamanho do arquivo (2/5/8/12 MB de upload → todos 200; o teto
+prático é ~16 MB de payload) e PDF de editora (apostila real de 4,6 MB gerou 5 questões em 39s).
+A mensagem do 429 também foi reescrita: dizia "tente amanhã", mas a janela é de 24h a partir da
+PRIMEIRA geração — agora informa quantas horas faltam e cita o tipo certo ("bancos de questões"
+× "baralhos de flashcards"). ⚠️ Tentativa que FALHA (erro de IA) também consome uma das 15.
+
+---
+
 **Arquivo do acervo abria mas NÃO rolava e o clique "saía do documento"** (cliente com PDF de
 apostila): o `LessonPlayer` do acervo é portalizado no `document.body`, ou seja, FORA do
 `DialogContent` do detalhe do item. Com o diálogo em modo **modal**, o Radix aplica
