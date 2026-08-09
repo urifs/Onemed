@@ -11,6 +11,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.app.json --noEmit",
+    "typecheck:refs": "tsc -p tsconfig.app.json --noEmit 2>&1 | grep -E 'TS2304|TS2448|TS2454|TS1005|TS1381' || echo 'ok: nenhum identificador indefinido / erro de sintaxe'",
     "build:ssr": "vite build --ssr src/entry-server.tsx --outDir dist-ssr"
   },
   "dependencies": {

@@ -180,8 +180,15 @@ export const AdminLayout = ({ children }: { children: React.ReactNode }) => {
         </header>
 
         {/* Page content */}
-        <main className="flex-1 p-6 overflow-auto">
-          {children}
+        {/* O painel tinha o problema OPOSTO ao da área de membros: era 100%
+            fluido, então num monitor de 3440px as fileiras de 4 cards de
+            métrica esticavam para ~740px cada, com o número num canto e o
+            resto vazio. A casca põe um teto generoso (as tabelas de dados
+            continuam ganhando espaço até 2240px) sem deixar esticar sem fim. */}
+        <main className="flex-1 overflow-auto">
+          <div className="shell-wide p-6">
+            {children}
+          </div>
         </main>
       </div>
     </div>

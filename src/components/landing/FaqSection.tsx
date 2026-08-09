@@ -38,7 +38,7 @@ export const FaqSection = () => {
 
   return (
     <section className="py-24 bg-background">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="shell-list px-4 sm:px-6 lg:px-8">
         <div className="grid lg:grid-cols-[0.8fr_1.2fr] gap-12">
           <div>
             <h2 className="font-secondary text-3xl md:text-4xl font-bold text-foreground mb-4">

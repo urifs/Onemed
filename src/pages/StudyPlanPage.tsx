@@ -103,7 +103,7 @@ export default function StudyPlanPage() {
       <Seo title="Cronograma de Estudos | OneMed" description="Gere um cronograma de estudos personalizado com IA." path="/membros/cronograma" noindex />
 
       <header className="border-b border-border bg-background-paper sticky top-0 z-30">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3.5 flex items-center gap-3">
+        <div className="shell-form px-4 sm:px-6 py-3.5 flex items-center gap-3">
           <button onClick={() => selected ? closePlan() : navigate('/membros')} title="Voltar"
             className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
             <ArrowLeft className="w-5 h-5" />
@@ -123,7 +123,7 @@ export default function StudyPlanPage() {
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
+      <main className="shell-form px-4 sm:px-6 py-6">
         {selected ? (
           <PlanDetail plan={selected} onChange={updatePlanLocal} onDelete={removePlan} />
         ) : loading ? (

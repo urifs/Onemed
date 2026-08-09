@@ -195,7 +195,7 @@ export default function FlashcardsAdminPage() {
           })}
         </div>
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 3xl:max-w-[1400px]">
           <Card className="bg-background-paper border-border">
             <CardContent className="p-4">
               <p className="text-xs text-muted-foreground">Alunos usando</p>

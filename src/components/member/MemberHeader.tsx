@@ -50,7 +50,7 @@ export function MemberHeader() {
     <>
       <MemberPWAHead />
       <header className="sticky top-0 z-40 backdrop-blur-xl bg-background/75 border-b border-border">
-        <div className="max-w-[1400px] mx-auto flex items-center gap-3 md:gap-5 px-4 md:px-8 py-3.5">
+        <div className="shell-wide flex items-center gap-3 md:gap-5 px-4 md:px-8 py-3.5">
           <Link to="/membros" className="flex items-center gap-3 shrink-0">
             <div className="w-9 h-9 bg-primary/15 rounded-lg flex items-center justify-center">
               <Stethoscope className="w-5 h-5 text-primary" />

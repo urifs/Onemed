@@ -195,7 +195,7 @@ export function FlashcardViewer({ deck, deckId, onClose, onSave, saved, saving }
         <div className="flex-1 flex flex-col items-center justify-center px-4 sm:px-8 py-6 overflow-y-auto">
           <div
             onClick={() => !isMcq && !revealed && setRevealed(true)}
-            className={`w-full max-w-2xl glass rounded-2xl border border-border p-6 sm:p-8 text-left transition-colors ${!isMcq && !revealed ? 'hover:border-primary/40 cursor-pointer' : ''}`}
+            className={`w-full max-w-2xl 3xl:max-w-3xl glass rounded-2xl border border-border p-6 sm:p-8 text-left transition-colors ${!isMcq && !revealed ? 'hover:border-primary/40 cursor-pointer' : ''}`}
           >
             <p className="text-[11px] uppercase tracking-wider font-bold text-muted-foreground mb-3">Pergunta</p>
             <p className="text-lg sm:text-xl font-semibold text-foreground whitespace-pre-wrap leading-relaxed">
@@ -272,7 +272,7 @@ export function FlashcardViewer({ deck, deckId, onClose, onSave, saved, saving }
             )}
           </div>
 
-          <div className="mt-6 w-full max-w-2xl">
+          <div className="mt-6 w-full max-w-2xl 3xl:max-w-3xl">
             {isMcq ? (
               picked === null ? (
                 <p className="text-[11px] text-muted-foreground text-center">

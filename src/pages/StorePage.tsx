@@ -119,7 +119,7 @@ export default function StorePage() {
   return (
     <div className="min-h-screen bg-background">
       <MemberHeader />
-      <div className="max-w-2xl mx-auto px-4 md:px-0 py-8 space-y-6">
+      <div className="shell-read px-4 md:px-0 py-8 space-y-6">
         <div>
           <h1 className="font-secondary text-2xl font-bold text-foreground flex items-center gap-2">
             <ShoppingBag className="w-6 h-6 text-primary" /> Loja

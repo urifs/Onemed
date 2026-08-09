@@ -61,7 +61,7 @@ export default function StudyPlansAdminPage() {
           <p className="text-muted-foreground mt-1">Cronogramas que os alunos geraram, com o progresso de cada um</p>
         </div>
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 3xl:max-w-[1400px]">
           {[
             { icon: CalendarClock, label: 'Cronogramas', value: String(totals.planos) },
             { icon: Users, label: 'Alunos', value: String(totals.alunos) },

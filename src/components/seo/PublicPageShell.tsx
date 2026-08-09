@@ -25,7 +25,7 @@ export function PublicPageShell({
     <div className="min-h-screen bg-background">
       <LandingHeader />
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-28 sm:pt-32 pb-8">
+      <main className="shell-page px-4 sm:px-6 lg:px-8 pt-28 sm:pt-32 pb-8">
         <Breadcrumbs trail={trail} />
 
         <article>

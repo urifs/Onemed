@@ -25,7 +25,7 @@ const supporting = [
 export const BenefitsSection = () => {
   return (
     <section className="py-24 bg-background-paper border-y border-border/60">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="shell-page px-4 sm:px-6 lg:px-8">
         <div className="grid md:grid-cols-[1fr_auto] gap-6 items-end mb-14">
           <h2 className="font-secondary text-3xl md:text-4xl font-bold text-foreground max-w-xl">
             Tudo que sua formação médica precisa, num só lugar
@@ -53,7 +53,7 @@ export const BenefitsSection = () => {
         </div>
 
         <div className="rounded-2xl border border-border bg-card/50 px-6 py-2 sm:px-8">
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-x-8">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 3xl:grid-cols-4 gap-x-8">
             {supporting.map((item) => (
               <div key={item.text} className="flex items-center gap-3 py-3.5 border-b border-border/60 last:border-0 sm:[&:nth-last-child(-n+1)]:border-0">
                 <item.icon className="w-4 h-4 text-primary shrink-0" />

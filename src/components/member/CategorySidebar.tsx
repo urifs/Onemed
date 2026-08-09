@@ -98,7 +98,7 @@ export function CategorySidebar({ menuItems, categories, active, onSelect, total
     <>
       {/* Desktop: persistent left column, grows with its content and scrolls
           together with the page — no inner scrollbar of its own. */}
-      <aside className="hidden md:block w-[228px] shrink-0">
+      <aside className="hidden md:block w-[228px] 3xl:w-[260px] shrink-0">
         <div className="sticky top-[84px]">
           <div className="space-y-0.5 mb-6">{menuSection}</div>
           <div className="space-y-0.5">{categoriesSection}</div>

@@ -113,7 +113,7 @@ export default function AffiliatesAdminPage() {
         </div>
 
         {/* resumo */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 3xl:max-w-[1400px]">
           {[
             { icon: Users, label: 'Afiliados', value: String(affiliates.length) },
             { icon: Tag, label: 'Vendas por afiliados', value: String(totais.vendas) },

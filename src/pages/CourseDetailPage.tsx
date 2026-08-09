@@ -546,7 +546,10 @@ export default function CourseDetailPage() {
           <CourseCover title={course.title} showTitle={false} />
           <div className="absolute inset-0 bg-gradient-to-t from-red-950/80 via-red-950/20 to-transparent dark:from-black/75 dark:via-black/25" />
         </div>
-        <div className="max-w-[1000px] mx-auto px-4 md:px-8 -mt-16 relative">
+        {/* Mesma casca do conteúdo abaixo e do header acima: o bloco do
+            título vinha com 1000px contra 1280px do conteúdo, então o botão
+            "Todos os cursos" e o título começavam à direita do mapa do curso. */}
+        <div className="shell-wide px-4 md:px-8 -mt-16 relative">
           <div className="flex items-center justify-between gap-4 mb-4">
             <button
               onClick={() => navigate('/membros')}
@@ -581,7 +584,7 @@ export default function CourseDetailPage() {
         </div>
       </section>
 
-      <main className="max-w-[1280px] mx-auto px-4 md:px-8 pb-16">
+      <main className="shell-wide px-4 md:px-8 pb-16">
         <div className="md:flex md:items-start md:gap-8">
           <CourseSummarySidebar
             modules={modules}
@@ -591,7 +594,10 @@ export default function CourseDetailPage() {
             onSelectLesson={handleTreeSelect}
           />
 
-          <div className="flex-1 min-w-0">
+          {/* Teto na coluna de conteúdo: a linha de aula é "título … duração
+              ícones", então sem limite ela vira um vão enorme entre o nome da
+              aula e os controles. O que sobra vai para o mapa do curso. */}
+          <div className="flex-1 min-w-0 4xl:max-w-[1560px]">
             <div className="flex items-center justify-between gap-2 border-b border-border mb-6">
               <div className="flex items-center gap-1">
                 <button
@@ -756,7 +762,7 @@ function CourseSummarySidebar({
   return (
     <>
       {/* Desktop: coluna fixa à esquerda, acompanha o scroll da página. */}
-      <aside className="hidden md:block w-[280px] shrink-0">
+      <aside className="hidden md:block w-[280px] 3xl:w-[320px] 4xl:w-[380px] shrink-0">
         <div className="sticky top-[84px] max-h-[calc(100vh-104px)] overflow-y-auto pr-1">
           <p className="px-3 pb-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
             Mapa do curso

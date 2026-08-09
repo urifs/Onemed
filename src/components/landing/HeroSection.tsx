@@ -55,7 +55,7 @@ export const HeroSection = ({
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-background" />
       </div>
 
-      <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid lg:grid-cols-[1.1fr_0.9fr] gap-16 items-center">
+      <div className="relative shell-page px-4 sm:px-6 lg:px-8 grid lg:grid-cols-[1.1fr_0.9fr] gap-16 items-center">
         {/* Left: Content */}
         <div>
           <div className="flex items-center gap-2 text-primary text-xs font-mono uppercase tracking-widest mb-6">

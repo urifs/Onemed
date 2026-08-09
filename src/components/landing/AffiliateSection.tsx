@@ -16,7 +16,7 @@ const beneficios = [
 const AffiliateSection = () => {
   return (
     <section className="py-24 bg-background-paper border-y border-border/60">
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="shell-form px-4 sm:px-6 lg:px-8">
         <div className="rounded-3xl border border-primary/25 bg-card overflow-hidden">
           <div className="p-8 sm:p-12">
             <div className="flex items-center gap-3 mb-4">

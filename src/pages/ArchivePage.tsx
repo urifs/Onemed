@@ -277,7 +277,7 @@ export default function ArchivePage() {
       <Seo title="Acervo Público | OneMed" description="Materiais de estudo compartilhados entre assinantes." path="/membros/acervo" noindex />
 
       <header className="border-b border-border bg-background-paper sticky top-0 z-30">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3.5 flex items-center gap-3">
+        <div className="shell-list px-4 sm:px-6 py-3.5 flex items-center gap-3">
           <button onClick={() => navigate('/membros')} title="Voltar" className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
             <ArrowLeft className="w-5 h-5" />
           </button>
@@ -296,7 +296,7 @@ export default function ArchivePage() {
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-5">
+      <main className="shell-list px-4 sm:px-6 py-6 space-y-5">
         {/* busca */}
         <div className="relative">
           <Search className="w-4 h-4 text-muted-foreground absolute left-4 top-1/2 -translate-y-1/2" />
@@ -363,7 +363,7 @@ export default function ArchivePage() {
             </p>
           </div>
         ) : (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 3xl:grid-cols-4 gap-4">
             {items.map(item => {
               const Icon = mimeIcon(item.first_mime, item.kind);
               const isFav = favIds.has(item.id);

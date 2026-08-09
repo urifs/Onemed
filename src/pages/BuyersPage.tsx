@@ -132,7 +132,7 @@ export default function BuyersPage() {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 3xl:max-w-[1400px]">
           <Card className="bg-background-paper border-border lg:col-span-1">
             <CardContent className="p-5">
               <div className="flex items-center justify-between mb-3">

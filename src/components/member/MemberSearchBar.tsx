@@ -20,7 +20,7 @@ export function MemberSearchBar({
 }: MemberSearchBarProps) {
   return (
     <div className="bg-background/60 border-b border-border">
-      <div className="max-w-[1400px] mx-auto px-4 md:px-8 py-3 flex items-center gap-3">
+      <div className="shell-wide px-4 md:px-8 py-3 flex items-center gap-3">
         <div className="relative w-full max-w-md flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input

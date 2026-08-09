@@ -180,7 +180,7 @@ export default function TrialUsersPage() {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 3xl:max-w-[1400px]">
           {[
             { label: 'Trial Hoje', value: stats?.total ?? '—', icon: Users },
             { label: 'Ativos Hoje', value: stats?.active ?? '—', icon: Clock },

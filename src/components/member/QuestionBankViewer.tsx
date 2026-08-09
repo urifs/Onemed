@@ -161,7 +161,7 @@ export function QuestionBankViewer({ bank, bankId, onClose, onSave, saved, savin
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
-        <div className="max-w-2xl mx-auto px-4 sm:px-6 py-6 space-y-5">
+        <div className="shell-read px-4 sm:px-6 py-6 space-y-5">
           {/* resultado no topo, depois de corrigir */}
           {finished && (
             <div className="glass rounded-2xl border border-border p-6 text-center">

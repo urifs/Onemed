@@ -688,7 +688,7 @@ export default function MemberDashboardPage() {
       />
 
       {announcementMessage && (
-        <div className="max-w-[1400px] mx-auto px-4 md:px-8 pt-4">
+        <div className="shell-wide px-4 md:px-8 pt-4">
           <div className="rounded-xl bg-primary px-4 py-3 flex items-start gap-2.5">
             <Megaphone className="w-4 h-4 text-white shrink-0 mt-0.5" />
             <p className="text-sm text-white leading-snug">{announcementMessage}</p>
@@ -697,9 +697,9 @@ export default function MemberDashboardPage() {
       )}
 
       {!searching && !activeCategory && featured && (
-        <section className="max-w-[1400px] mx-auto px-4 md:px-8 pt-6">
+        <section className="shell-wide px-4 md:px-8 pt-6">
           <div
-            className="relative rounded-2xl overflow-hidden border border-border min-h-[280px] md:min-h-[340px] flex items-end shadow-[0_30px_70px_-40px_rgba(239,68,68,0.4)]"
+            className="relative rounded-2xl overflow-hidden border border-border min-h-[280px] md:min-h-[340px] 3xl:min-h-[400px] 4xl:min-h-[460px] flex items-end shadow-[0_30px_70px_-40px_rgba(239,68,68,0.4)]"
             onMouseEnter={() => setHeroPaused(true)}
             onMouseLeave={() => setHeroPaused(false)}
             onTouchStart={() => setHeroPaused(true)}
@@ -717,7 +717,7 @@ export default function MemberDashboardPage() {
                 overlay preto traria o "gradiente pro preto" de volta. */}
             <div className="absolute inset-0 bg-gradient-to-t from-red-950/90 via-red-950/35 to-transparent dark:from-black/85 dark:via-black/40" />
             <div className="absolute inset-0 bg-gradient-to-r from-red-950/60 via-transparent to-transparent dark:from-black/60" />
-            <div key={`${featured.id}-copy`} className="relative p-6 md:p-10 max-w-xl animate-fade-in">
+            <div key={`${featured.id}-copy`} className="relative p-6 md:p-10 3xl:p-14 max-w-xl 3xl:max-w-2xl 4xl:max-w-3xl animate-fade-in">
               <span className="inline-flex items-center gap-1.5 text-[11px] font-bold tracking-widest uppercase text-primary mb-3">
                 <span className="w-1.5 h-1.5 rounded-full bg-primary shadow-[0_0_0_4px_rgba(239,68,68,0.2)]" />
                 {isContinuing ? 'Continue de onde parou' : 'Destaque'}
@@ -768,7 +768,7 @@ export default function MemberDashboardPage() {
         </section>
       )}
 
-      <main className="max-w-[1400px] mx-auto px-4 md:px-8 pb-16 pt-8">
+      <main className="shell-wide px-4 md:px-8 pb-16 pt-8">
         <div className="md:flex md:items-start md:gap-8">
           <CategorySidebar
             menuItems={menuList}
@@ -802,7 +802,7 @@ export default function MemberDashboardPage() {
                     <p className="text-sm text-muted-foreground mb-5">
                       {filtered.length} curso{filtered.length !== 1 ? 's' : ''} encontrado{filtered.length !== 1 ? 's' : ''}
                     </p>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-8 items-start">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 3xl:grid-cols-5 4xl:grid-cols-6 gap-x-4 gap-y-8 items-start">
                       {filtered.map(c => <CourseCard key={c.id} course={c} isFavorite={favorites.has(c.id)} onToggleFavorite={handleToggleFavorite} />)}
                     </div>
                   </div>
@@ -960,7 +960,7 @@ export default function MemberDashboardPage() {
                     Cursos favoritados {categoryCourses.length > 0 && `(${categoryCourses.length})`}
                   </p>
                   {categoryCourses.length > 0 ? (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-8 items-start">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 3xl:grid-cols-5 4xl:grid-cols-6 gap-x-4 gap-y-8 items-start">
                       {categoryCourses.map(c => <CourseCard key={c.id} course={c} isFavorite={favorites.has(c.id)} onToggleFavorite={handleToggleFavorite} />)}
                     </div>
                   ) : (
@@ -1089,7 +1089,7 @@ export default function MemberDashboardPage() {
                 <p className="text-sm text-muted-foreground mb-5">
                   {categoryCourses.length} curso{categoryCourses.length !== 1 ? 's' : ''}
                 </p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-8 items-start">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 3xl:grid-cols-5 4xl:grid-cols-6 gap-x-4 gap-y-8 items-start">
                   {categoryCourses.map(c => <CourseCard key={c.id} course={c} isFavorite={favorites.has(c.id)} onToggleFavorite={handleToggleFavorite} />)}
                 </div>
               </section>
@@ -1266,9 +1266,13 @@ function Row({ title, items, onToggleFavorite, action }: {
         <span className="text-xs text-muted-foreground tabular-nums">{items.length}</span>
         {action}
       </div>
+      {/* A prateleira já mostra mais cursos sozinha quando a casca cresce (é
+          rolagem horizontal com card de largura fixa). O card também cresce um
+          pouco em ultra-wide para a capa não virar uma miniatura perdida no
+          meio de uma fileira longa. */}
       <div className="flex items-start gap-3.5 overflow-x-auto pb-3 -mx-1 px-1 scrollbar-thin">
         {items.map(({ course, progressPercent, isFavorite }) => (
-          <div key={course.id} className="w-[168px] sm:w-[192px] shrink-0">
+          <div key={course.id} className="w-[168px] sm:w-[192px] 3xl:w-[212px] 4xl:w-[232px] shrink-0">
             <CourseCard course={course} progressPercent={progressPercent} isFavorite={isFavorite} onToggleFavorite={onToggleFavorite} />
           </div>
         ))}
@@ -1330,7 +1334,7 @@ function FlashcardsTab({ decks, sessions, loading, onOpenDeck, onDeleteDeck, onC
         <>
           {/* resumo geral */}
           {sessions.length > 0 && (
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 3xl:max-w-[1240px] 4xl:max-w-[1440px]">
               <div className="glass rounded-xl border border-border p-4">
                 <p className="text-xs text-muted-foreground mb-1">Média geral</p>
                 <p className={`text-2xl font-bold ${notaCor(mediaGeral)}`}>{mediaGeral}%</p>
@@ -1520,7 +1524,7 @@ function QuestionsTab({ banks, sessions, loading, onOpenBank, onDeleteBank, onCr
       ) : (
         <>
           {sessions.length > 0 && (
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 3xl:max-w-[1240px] 4xl:max-w-[1440px]">
               <div className="glass rounded-xl border border-border p-4">
                 <p className="text-xs text-muted-foreground mb-1">Média geral</p>
                 <p className={`text-2xl font-bold ${notaCor(mediaGeral)}`}>{mediaGeral}%</p>

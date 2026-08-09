@@ -7,7 +7,7 @@ export const LandingFooter = () => {
       {/* CTA Section — faixa cheia com o vermelho da marca, em vez de mais
           um card de vidro flutuando dentro de uma seção escura. */}
       <section className="bg-primary">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-20 text-center">
+        <div className="shell-form px-4 sm:px-6 lg:px-8 py-16 sm:py-20 text-center">
           <h2 className="font-secondary text-3xl md:text-5xl font-bold text-primary-foreground mb-4">
             Pronto para transformar sua carreira médica?
           </h2>
@@ -26,7 +26,7 @@ export const LandingFooter = () => {
 
       {/* Footer */}
       <footer className="bg-background-paper py-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="shell-page px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col md:flex-row justify-between items-center gap-6">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">

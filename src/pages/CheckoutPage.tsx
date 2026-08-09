@@ -802,7 +802,7 @@ export default function CheckoutPage() {
     <div className="min-h-screen bg-background">
       {/* Header */}
       <header className="px-6 py-6 border-b border-border/50">
-        <nav className="max-w-4xl mx-auto flex items-center justify-between">
+        <nav className="shell-form flex items-center justify-between">
           <Link to="/" className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-primary/15 flex items-center justify-center">
               <Stethoscope className="w-5 h-5 text-primary" />
@@ -824,7 +824,7 @@ export default function CheckoutPage() {
 
       {/* Progress Steps */}
       <div className="px-6 py-4 border-b border-border/30">
-        <div className="max-w-4xl mx-auto">
+        <div className="shell-form">
           <div className="flex items-center justify-center gap-2 md:gap-4">
             {[
               { n: 1, label: 'Plano' },
@@ -846,7 +846,7 @@ export default function CheckoutPage() {
 
       {/* Content */}
       <main className="px-6 py-12">
-        <div className={step === 1 ? 'max-w-5xl mx-auto' : 'max-w-2xl mx-auto'}>
+        <div className={step === 1 ? 'shell-form' : 'shell-read'}>
           {step === 1 && renderPlanSelection()}
           {step === 2 && renderUpsellStep()}
           {step === 3 && renderCustomerDataForm()}
@@ -855,7 +855,7 @@ export default function CheckoutPage() {
       </main>
 
       <footer className="px-6 py-8 border-t border-border/30">
-        <div className="max-w-4xl mx-auto text-center">
+        <div className="shell-form text-center">
           <p className="text-muted-foreground text-sm">© 2026 OneMed - Comunidade Médica</p>
         </div>
       </footer>

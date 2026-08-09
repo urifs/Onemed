@@ -120,7 +120,7 @@ export default function Dashboard() {
         )}
 
         {/* Stats grid */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 3xl:max-w-[1400px]">
           {[
             { label: 'Acessos Hoje', value: stats?.total ?? '—', icon: Users, color: 'text-primary' },
             { label: 'Ativos Hoje', value: stats?.active ?? '—', icon: Clock, color: 'text-accent-success' },
