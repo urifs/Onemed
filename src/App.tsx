@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { ThemeProvider } from "next-themes";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Route, Routes, Navigate, useLocation } from "react-router-dom";
+import { SpeedInsights } from "@vercel/speed-insights/react";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -97,6 +98,22 @@ const FbclidCapture = () => {
   return null
 }
 
+// Speed Insights (Vercel) — mede a experiência REAL de carregamento dos
+// alunos. Sem o `route`, cada URL vira uma linha própria no painel: são 403
+// cursos e milhares de aulas, então o relatório viraria uma lista inútil de
+// caminhos únicos. Aqui os trechos dinâmicos são normalizados para o padrão da
+// rota (/membros/curso/[slug]), que é como a Vercel agrupa as medições.
+const ROTAS_DINAMICAS: [RegExp, string][] = [
+  [/^\/membros\/curso\/[^/]+$/, '/membros/curso/[slug]'],
+  [/^\/cursos\/[^/]+$/, '/cursos/[categoria]'],
+]
+
+const SpeedInsightsRotas = () => {
+  const location = useLocation()
+  const rota = ROTAS_DINAMICAS.find(([re]) => re.test(location.pathname))?.[1] ?? location.pathname
+  return <SpeedInsights route={rota} />
+}
+
 // O `fbq('track','PageView')` do index.html roda uma vez só, no carregamento
 // do HTML. Como isto é uma SPA, ir de / para /checkout nunca contava
 // visualização — a Meta enxergava uma fração do funil. Aqui cada troca de rota
@@ -174,6 +191,7 @@ const App = () => (
           <BrowserRouter>
             <FbclidCapture />
             <PixelPageViews />
+            <SpeedInsightsRotas />
             <PrivateRouteSeo />
             <Routes>
             {/* Public routes */}
