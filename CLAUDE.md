@@ -1953,6 +1953,44 @@ R$24,50 (devia R$49,50, ONE50). Decisão sobre cobrar a diferença é do dono �
 financeira tomada. (Os vários `49,00` ANTERIORES a 06/08 estavam certos: o Mensal era R$49 até
 a subida pra R$99 em ~06/08.)
 
+---
+
+### 2026-08-09 (sessão remota) — Vercel Speed Insights
+
+**Pedido:** o painel da Vercel mostrava o card "Speed Insights / Get Started" sem nenhum dado.
+
+Speed Insights mede a experiência REAL de carregamento dos alunos (LCP, CLS, INP coletados no
+navegador de quem acessa), diferente do Analytics de visitas. O card do painel ensina o passo do
+**Next.js** (`@vercel/speed-insights/next`) — aqui é **React + Vite**, então a integração é pelo
+subcaminho `/react`, com o componente montado dentro do `BrowserRouter`.
+
+| Arquivo | Mudança |
+|---|---|
+| `package.json` | `@vercel/speed-insights@2` |
+| `src/App.tsx` | `<SpeedInsightsRotas />` ao lado do `<PixelPageViews />`, dentro do `BrowserRouter` |
+
+**O detalhe que importa — agrupar as rotas dinâmicas.** Sem passar `route`, o pacote reporta a
+URL crua e cada curso vira uma linha própria no painel: são **403 cursos**, e o relatório viraria
+uma lista de caminhos únicos com 1 amostra cada, sem média utilizável. `ROTAS_DINAMICAS`
+normaliza antes de reportar:
+
+```
+/membros/curso/<slug>   → /membros/curso/[slug]
+/cursos/<categoria>     → /cursos/[categoria]
+```
+
+Rota estática é reportada como está. É o mesmo padrão que a Vercel usa nativamente no Next.
+
+**Verificado em produção** (deploy `013c71b` READY): `/_vercel/speed-insights/script.js` responde
+200 e o `window.si` fica pronto; `data-route` conferido no navegador — `/cursos/cardiologia-ecg` e
+`/cursos/pediatria` reportam ambos `/cursos/[categoria]`; com sessão de teste (criada e apagada na
+mesma execução), dois cursos diferentes reportam ambos `/membros/curso/[slug]`, enquanto
+`/membros` e `/membros/acervo` reportam a si mesmos.
+
+> O prerender NÃO carrega o beacon (o `dist/index.html` não tem a tag) — é client-only por
+> design, então nem o SSR nem o sitemap mudam. Os primeiros números aparecem no painel conforme
+> os alunos navegam.
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
