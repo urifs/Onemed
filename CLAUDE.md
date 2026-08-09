@@ -2066,6 +2066,67 @@ arquivos. **Zero** da classe que quebra em runtime (TS2304 identificador indefin
 sintaxe, TS2448 TDZ) — por isso `typecheck:refs` filtra exatamente esses códigos e serve como
 gate utilizável hoje. Regenerar o `types.ts` destravaria o gate completo.
 
+---
+
+### 2026-08-09 (sessão remota) — download de aula em vídeo vira exclusividade do Vitalício Pro
+
+**Regra nova:** nenhum plano baixa **aula em vídeo**, exceto o **Vitalício Pro** (e admin).
+**Arquivo** (apostila, PDF, planilha, imagem, áudio) segue como estava: do Vitalício pra cima.
+O corte aula×arquivo é `lessons.type === 'video'` — o MESMO que a página do curso já usa nas
+abas "Aulas" e "Arquivos", então o aluno vê a regra batendo com o que a tela mostra.
+
+`src/lib/plans.ts` continua sendo a fonte única, agora com DUAS listas
+(`PLANS_WITH_DOWNLOAD` para arquivo, `PLANS_WITH_LESSON_DOWNLOAD` para aula) e um porteiro
+`canDownloadItem(plano, item)`. Trocar quem pode baixar é editar um `Set`.
+
+**🔴 O buraco que isso fechou (o principal desta mudança):** o `dl` do Worker de streaming era
+**só um parâmetro de URL, sem assinatura**. Como todo aluno que assiste recebe uma URL de
+streaming, bastava acrescentar `&dl=aula.mp4` a ela para o Worker devolver
+`Content-Disposition: attachment` e salvar o vídeo — **em qualquer plano, inclusive trial**.
+Esconder o botão no frontend não resolveria nada.
+
+Agora a permissão de baixar entra na **assinatura**: `member-lesson-token` resolve o plano
+(maior tier entre as linhas ativas, mesmo critério do `member_plan_tier`), recusa o pedido com
+403 quando não há direito, e só então assina o sufixo `.dl` e devolve a URL com `&dlok=1`. O
+Worker verifica com a mensagem que inclui `.dl` quando `dlok=1` vem na URL, e **ignora o `dl`**
+em qualquer outro caso. O cliente pede `intent: 'download'` explicitamente.
+
+> Compatibilidade: URL SEM `dlok` continua verificada com a mensagem antiga
+> (`id.exp.mime`) — os tokens de 2h emitidos antes do deploy seguiram tocando normalmente.
+> Por isso a ordem de deploy é **Worker primeiro, Edge Function depois**: o Worker novo aceita
+> os dois formatos, enquanto o Worker antigo recusaria a assinatura nova (403 para quem baixa).
+
+**Verificado em produção** com contas reais dos 5 planos (criadas e apagadas no próprio teste):
+
+| plano | aula: stream | aula: download | arquivo: download |
+|---|---|---|---|
+| monthly / annual | 200 | **403** | **403** |
+| lifetime / lifetime_plus | 200 | **403** | 200 |
+| lifetime_pro | 200 | **200** | 200 |
+
+E as três sondas de bypass: URL de streaming + `&dl=` → **206 inline** (streaming intacto, sem
+`Content-Disposition`); URL do Pro com `dlok` assinado → **attachment**; `&dlok=1` forjado numa
+URL de streaming → **403 assinatura inválida**. Na interface, conta Vitalício clicando no
+download de uma aula vê "Baixar aulas é exclusivo do Vitalício Pro"; conta Pro baixa direto.
+
+**Textos de venda acompanharam:** `PLAN_FEATURES` e os cards do checkout ganharam "Download das
+aulas em vídeo — exclusivo do Pro" SÓ no Pro (o teste `downloadPlans.test.ts` que exigia zero
+novidade de download entre Plus→Pro codificava a regra antiga e foi atualizado para exigir
+exatamente essa linha). O convite de upgrade ganhou uma terceira versão: quem já baixa arquivo
+e esbarra numa aula vê que falta o Pro, em vez de "seu plano não inclui downloads".
+
+⚠️ **Duas brechas que continuam abertas de propósito** (são decisão de produto, não bug):
+1. **Backup no Drive próprio** é benefício de Plus **e** Pro (`BACKUP_FOLDER_PLANS` no
+   `mp-webhook`) e entrega a biblioteca inteira, vídeos inclusive. Ou seja: o Plus não baixa
+   aula pela plataforma, mas alcança os vídeos pelo backup. Fechar isso é tirar o backup do
+   Plus.
+2. **Aulas com `storage_path`** (~240, as convertidas para o bucket `lesson-media`) são servidas
+   por signed URL do Supabase Storage, que honra `?download=` como parâmetro solto — o mesmo
+   truque do `dl` antigo. Fechar exigiria proxy próprio para esses arquivos.
+
+> E o limite físico: vídeo que **toca** no navegador pode ser capturado por quem insistir. O que
+> essa mudança garante é que não sai mais um arquivo pronto, com um clique, para quem não pagou.
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
