@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { canDownloadPlan, PLAN_LABELS, PLAN_FEATURES, PLAN_PRICES, upgradePriceFor, MIN_UPGRADE_PRICE } from '@/lib/plans';
+import {
+  canDownloadPlan, canDownloadLessonPlan, canDownloadItem, isLessonVideo,
+  PLAN_LABELS, PLAN_FEATURES, PLAN_PRICES, upgradePriceFor, MIN_UPGRADE_PRICE,
+} from '@/lib/plans';
 
 // Regra de produto: teste grátis, Mensal e Anual não baixam. Vitalício e
 // acima baixam. Está em teste porque é uma decisão de negócio fácil de
@@ -40,6 +43,52 @@ describe('canDownloadPlan', () => {
   });
 });
 
+// Regra de produto de 09/08: baixar AULA em vídeo é exclusivo do Vitalício
+// Pro. Arquivo (apostila/PDF/planilha/imagem/áudio) continua do Vitalício pra
+// cima. As duas listas são independentes de propósito.
+describe('download de aula em vídeo (exclusivo do Pro)', () => {
+  it('só o Pro e o admin baixam aula', () => {
+    expect(canDownloadLessonPlan('lifetime_pro')).toBe(true);
+    expect(canDownloadLessonPlan('admin')).toBe(true);
+  });
+
+  it('nenhum outro plano baixa aula — nem o Plus, nem o Vitalício', () => {
+    for (const plano of ['trial', 'monthly', 'annual', 'lifetime', 'lifetime_plus']) {
+      expect(canDownloadLessonPlan(plano)).toBe(false);
+    }
+  });
+
+  it('sem plano conhecido não libera aula', () => {
+    expect(canDownloadLessonPlan(null)).toBe(false);
+    expect(canDownloadLessonPlan(undefined)).toBe(false);
+    expect(canDownloadLessonPlan('paid')).toBe(false);
+  });
+
+  it('o que separa aula de arquivo é o tipo do item', () => {
+    expect(isLessonVideo({ type: 'video' })).toBe(true);
+    for (const t of ['pdf', 'doc', 'sheet', 'txt', 'audio', 'image', 'other']) {
+      expect(isLessonVideo({ type: t })).toBe(false);
+    }
+    expect(isLessonVideo(null)).toBe(false);
+  });
+
+  it('porteiro único: mesmo plano, resposta diferente por tipo', () => {
+    // O caso que motivou a mudança: Vitalício e Plus baixam a apostila,
+    // mas não baixam mais o vídeo da aula.
+    for (const plano of ['lifetime', 'lifetime_plus']) {
+      expect(canDownloadItem(plano, { type: 'pdf' })).toBe(true);
+      expect(canDownloadItem(plano, { type: 'video' })).toBe(false);
+    }
+    // Pro baixa os dois; Mensal/Anual não baixam nenhum.
+    expect(canDownloadItem('lifetime_pro', { type: 'video' })).toBe(true);
+    expect(canDownloadItem('lifetime_pro', { type: 'pdf' })).toBe(true);
+    for (const plano of ['monthly', 'annual', 'trial']) {
+      expect(canDownloadItem(plano, { type: 'video' })).toBe(false);
+      expect(canDownloadItem(plano, { type: 'pdf' })).toBe(false);
+    }
+  });
+});
+
 // O modal de upgrade lista "o que você ganha a mais" como diferença de
 // conjunto entre os textos de PLAN_FEATURES — por isso os textos repetidos
 // entre planos vizinhos precisam ser IDÊNTICOS, senão um benefício que a
@@ -58,8 +107,12 @@ describe('diferença de benefícios no upgrade', () => {
     expect(d).not.toContain('Download de arquivos, um a um');
   });
 
-  it('plus → pro não repete nenhum benefício de download', () => {
-    expect(novos('lifetime_plus', 'lifetime_pro').filter(f => f.startsWith('Download'))).toEqual([]);
+  // Mudou em 09/08: baixar aula em vídeo virou exclusividade do Pro, então
+  // agora ESPERA-SE uma novidade de download aqui — mas só essa. Repetir os
+  // downloads de arquivo continuaria sendo bug (a pessoa já os tem no Plus).
+  it('plus → pro ganha só o download das aulas em vídeo', () => {
+    expect(novos('lifetime_plus', 'lifetime_pro').filter(f => f.startsWith('Download')))
+      .toEqual(['Download das aulas em vídeo — exclusivo do Pro']);
   });
 
   it('mensal → anual não promete download', () => {

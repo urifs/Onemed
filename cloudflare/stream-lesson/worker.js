@@ -77,7 +77,18 @@ export default {
       return new Response('Link expirado', { status: 403, headers: cors });
     }
 
-    const expected = await hmacHex(env.LESSON_STREAM_SECRET, `${fileId}.${exp}.${mimeType}`);
+    // O direito de BAIXAR vem na assinatura, não no parâmetro. Antes, `dl` era
+    // só um nome de arquivo na URL: qualquer aluno com um link de streaming
+    // (todo mundo que assiste tem um) acrescentava `&dl=aula.mp4` e salvava o
+    // vídeo, independente do plano. Agora o `member-lesson-token` só assina o
+    // sufixo `.dl` para quem tem direito, e é isso que libera o
+    // Content-Disposition lá embaixo.
+    //
+    // A URL SEM `dlok` continua sendo verificada com a mensagem antiga — é o
+    // que mantém válidos os links de 2h emitidos antes deste deploy.
+    const pediuDownload = url.searchParams.get('dlok') === '1';
+    const mensagem = `${fileId}.${exp}.${mimeType}${pediuDownload ? '.dl' : ''}`;
+    const expected = await hmacHex(env.LESSON_STREAM_SECRET, mensagem);
     if (!timingSafeEqual(expected, sig)) return new Response('Assinatura inválida', { status: 403, headers: cors });
 
     const tokenRes = await fetch(`${env.SUPABASE_URL}/functions/v1/drive-access-token`, {
@@ -176,7 +187,11 @@ export default {
     // num cabeçalho, então CR/LF precisam sumir antes (senão dá pra injetar
     // cabeçalho), e o `filename*` RFC 5987 é o que preserva os acentos dos
     // títulos em português.
-    const dl = url.searchParams.get('dl');
+    //
+    // `pediuDownload` é o que separa quem tem direito: só quando a assinatura
+    // cobre o sufixo `.dl` o nome vira anexo. Sem isso o `dl` é ignorado e o
+    // arquivo é servido inline, como qualquer streaming.
+    const dl = pediuDownload ? url.searchParams.get('dl') : null;
     if (dl) {
       const clean = dl.replace(/[\r\n"\\]/g, '').slice(0, 200) || 'arquivo';
       const ascii = clean.replace(/[^\x20-\x7E]/g, '_');

@@ -141,6 +141,7 @@ const PLANS: Record<string, {
       'Backup de tudo da plataforma no seu próprio Google Drive',
       'Download de arquivos, um a um',
       'Download em massa, cursos e pastas inteiras',
+      'Download das aulas em vídeo — exclusivo do Pro',
       'Gerador de flashcards a partir de qualquer conteúdo da plataforma',
       'Gerador de banco de questões a partir de qualquer conteúdo da plataforma',
       'Gerador de cronograma de estudos e mapa mental personalizados para o seu interesse de estudo',

@@ -1,5 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
-import { downloadFilenameFor, downloadUrlFor } from '@/lib/utils';
+import { downloadFilenameFor, downloadUrlFor, extractFunctionErrorMessage } from '@/lib/utils';
 
 export type DownloadableLesson = {
   id: string;
@@ -23,10 +23,16 @@ export type DownloadableLesson = {
  * `Content-Disposition` que a URL de download pede (ver `downloadUrlFor`).
  */
 export async function downloadLesson(lesson: DownloadableLesson): Promise<void> {
+  // `intent: 'download'` não é decoração: o servidor só assina a permissão de
+  // salvar em disco quando o plano permite (aula em vídeo é exclusiva do
+  // Vitalício Pro). Sem esse pedido explícito volta uma URL só de streaming, e
+  // o Worker ignora o `dl` — o arquivo abre inline em vez de baixar.
   const { data, error } = await supabase.functions.invoke('member-lesson-token', {
-    body: { lessonId: lesson.id },
+    body: { lessonId: lesson.id, intent: 'download' },
   });
-  if (error || !data?.url) throw new Error(data?.error || 'Não foi possível gerar o link do arquivo');
+  if (error || !data?.url) {
+    throw new Error(await extractFunctionErrorMessage(error, data?.error || 'Não foi possível gerar o link do arquivo'));
+  }
 
   const url = downloadUrlFor(data.url, downloadFilenameFor(lesson));
 

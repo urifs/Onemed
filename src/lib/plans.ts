@@ -53,6 +53,7 @@ export const PLAN_FEATURES: Record<string, string[]> = {
     'Backup de tudo da plataforma no seu próprio Google Drive',
     'Download de arquivos, um a um',
     'Download em massa, cursos e pastas inteiras',
+    'Download das aulas em vídeo — exclusivo do Pro',
     'Gerador de flashcards a partir de qualquer conteúdo da plataforma',
     'Gerador de banco de questões a partir de qualquer conteúdo da plataforma',
     'Gerador de cronograma de estudos e mapa mental personalizados para o seu interesse de estudo',
@@ -79,18 +80,36 @@ export function upgradePriceFor(currentPlan: string | null | undefined, targetPl
   return Math.max(Math.round((alvo - atual) * 100) / 100, MIN_UPGRADE_PRICE);
 }
 
-// Quem pode baixar aula/arquivo. Teste grátis, Mensal e Anual não baixam —
-// clicar no download abre o convite pra assinar (trial) ou pra fazer upgrade
-// (Mensal/Anual). É a única lista que decide isso na plataforma inteira.
+// Quem pode baixar. São DUAS listas, porque aula e arquivo têm regras
+// diferentes — é o único lugar da plataforma que decide isso.
 //
-// Do Vitalício pra cima o download é liberado, um arquivo por vez — é o que
-// PLAN_FEATURES anuncia. Baixar em massa (curso/pasta inteira) é benefício de
-// Plus e Pro, e não passa por esta lista: hoje sai pelo backup no Drive
-// próprio, que só esses dois planos têm.
+// ARQUIVO (apostila, PDF, planilha, imagem, áudio — tudo que não é vídeo):
+// do Vitalício pra cima, um por vez. Teste grátis, Mensal e Anual não baixam;
+// clicar abre o convite pra assinar (trial) ou pra fazer upgrade.
 export const PLANS_WITH_DOWNLOAD = new Set(['lifetime', 'lifetime_plus', 'lifetime_pro', 'admin']);
+
+// AULA (vídeo): bloqueada em TODOS os planos, menos o Vitalício Pro. O acervo
+// de vídeo é o ativo da plataforma; assistir na plataforma é o que todo plano
+// compra, baixar o arquivo do vídeo é exclusividade do topo.
+export const PLANS_WITH_LESSON_DOWNLOAD = new Set(['lifetime_pro', 'admin']);
 
 export function canDownloadPlan(plan?: string | null): boolean {
   return !!plan && PLANS_WITH_DOWNLOAD.has(plan);
+}
+
+export function canDownloadLessonPlan(plan?: string | null): boolean {
+  return !!plan && PLANS_WITH_LESSON_DOWNLOAD.has(plan);
+}
+
+// O que separa aula de arquivo é o tipo do próprio conteúdo — o mesmo corte
+// que a página do curso já faz nas abas "Aulas" (vídeo) e "Arquivos" (resto).
+export function isLessonVideo(item?: { type?: string | null } | null): boolean {
+  return item?.type === 'video';
+}
+
+// Porteiro único: recebe o item e o plano, devolve se o download pode sair.
+export function canDownloadItem(plan: string | null | undefined, item?: { type?: string | null } | null): boolean {
+  return isLessonVideo(item) ? canDownloadLessonPlan(plan) : canDownloadPlan(plan);
 }
 
 // Vitalício Plus libera 4 telas simultâneas e Pro libera 6, em vez das 2 padrão.

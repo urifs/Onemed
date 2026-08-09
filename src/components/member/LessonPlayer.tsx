@@ -372,7 +372,9 @@ export function LessonPlayer({
   };
 
   const handleDownload = async () => {
-    if (!bypassDownloadGate && !ensureCanDownload()) return;
+    // `bypassDownloadGate` é o acervo público (material entre assinantes, sem
+    // trava de plano). Fora dele, o porteiro decide pelo tipo da aula.
+    if (!bypassDownloadGate && !ensureCanDownload(lesson)) return;
     if (downloading) return;
     setDownloading(true);
     try {
@@ -386,9 +388,9 @@ export function LessonPlayer({
       } else {
         await downloadLesson(lesson);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to download file', err);
-      toast.error('Não foi possível baixar este arquivo.');
+      toast.error(err?.message || 'Não foi possível baixar este arquivo.');
     } finally {
       setDownloading(false);
     }

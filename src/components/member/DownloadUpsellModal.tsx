@@ -7,10 +7,12 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { UpgradePlanModal } from './UpgradePlanModal';
 import { PLAN_LABELS } from '@/lib/plans';
 
-export type DownloadBlockReason = 'trial' | 'upgrade';
+// 'lesson-pro' = assinante que JÁ baixa arquivo e tentou baixar uma aula em
+// vídeo; o download de aula é exclusivo do Vitalício Pro.
+export type DownloadBlockReason = 'trial' | 'upgrade' | 'lesson-pro';
 
 const VANTAGENS = [
-  'Baixar qualquer aula ou arquivo',
+  'Baixar os arquivos e apostilas do acervo',
   'Acervo completo, sem limite de tempo',
   'Comunidade e grupo no WhatsApp',
 ];
@@ -36,7 +38,25 @@ export function DownloadUpsellModal({ open, onOpenChange, reason, plan }: {
   };
 
   const ehTrial = reason === 'trial';
+  const ehAulaPro = reason === 'lesson-pro';
   const nomePlano = plan ? PLAN_LABELS[plan] || plan : null;
+
+  const titulo = ehTrial
+    ? 'Downloads são exclusivos para assinantes'
+    : ehAulaPro
+      ? 'Baixar aulas é exclusivo do Vitalício Pro'
+      : 'Seu plano não inclui downloads';
+
+  const descricao = ehTrial
+    ? 'Sua conta é de teste grátis. Para baixar os arquivos do acervo, assine um plano e libere a plataforma completa.'
+    : ehAulaPro
+      // Quem chega aqui já baixa arquivo — o texto precisa deixar claro que o
+      // que mudou é só a aula em vídeo, senão parece que perdeu um direito.
+      ? `${nomePlano ? `O ${nomePlano}` : 'Seu plano'} baixa os arquivos e apostilas normalmente. `
+        + 'O download das aulas em vídeo é exclusivo do Vitalício Pro — no seu plano elas ficam '
+        + 'disponíveis para assistir na plataforma, sem limite. No upgrade você paga só a diferença.'
+      : `${nomePlano ? `O ${nomePlano}` : 'Seu plano'} dá acesso a todo o conteúdo para assistir na plataforma. `
+        + 'Para baixar os arquivos do acervo, faça upgrade — você paga só a diferença.';
 
   return (
     <>
@@ -44,17 +64,10 @@ export function DownloadUpsellModal({ open, onOpenChange, reason, plan }: {
         <DialogContent className="bg-background-paper border-border max-w-md">
           <DialogHeader>
             <div className="w-11 h-11 rounded-full bg-primary/15 border border-primary/30 flex items-center justify-center mb-1">
-              {ehTrial ? <Lock className="w-5 h-5 text-primary" /> : <Download className="w-5 h-5 text-primary" />}
+              {ehTrial || ehAulaPro ? <Lock className="w-5 h-5 text-primary" /> : <Download className="w-5 h-5 text-primary" />}
             </div>
-            <DialogTitle className="text-foreground text-lg">
-              {ehTrial ? 'Downloads são exclusivos para assinantes' : 'Seu plano não inclui downloads'}
-            </DialogTitle>
-            <DialogDescription>
-              {ehTrial
-                ? 'Sua conta é de teste grátis. Para baixar aulas e arquivos, assine um plano e libere a plataforma completa.'
-                : `${nomePlano ? `O ${nomePlano}` : 'Seu plano'} dá acesso a todo o conteúdo para assistir na plataforma. `
-                  + 'Para baixar aulas e arquivos, faça upgrade — você paga só a diferença.'}
-            </DialogDescription>
+            <DialogTitle className="text-foreground text-lg">{titulo}</DialogTitle>
+            <DialogDescription>{descricao}</DialogDescription>
           </DialogHeader>
 
           {ehTrial && (

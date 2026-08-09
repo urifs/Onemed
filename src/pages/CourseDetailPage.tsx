@@ -447,14 +447,18 @@ export default function CourseDetailPage() {
 
   // Baixar direto da lista, sem precisar abrir a aula.
   const handleDownloadLesson = async (lesson: Lesson) => {
-    if (!ensureCanDownload()) return;
+    // O porteiro decide pelo TIPO: aula em vídeo só no Vitalício Pro,
+    // arquivo segue liberado do Vitalício pra cima.
+    if (!ensureCanDownload(lesson)) return;
     if (downloadingId) return;
     setDownloadingId(lesson.id);
     try {
       await downloadLesson(lesson);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Falha ao baixar', lesson.title, err);
-      toast.error(`Não foi possível baixar "${lesson.title}"`);
+      // O servidor também recusa por plano (o porteiro acima é só a interface).
+      // Quando ele explica o motivo, quem manda é a mensagem dele.
+      toast.error(err?.message || `Não foi possível baixar "${lesson.title}"`);
     } finally {
       setDownloadingId(null);
     }
