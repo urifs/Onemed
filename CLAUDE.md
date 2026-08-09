@@ -1991,6 +1991,81 @@ mesma execução), dois cursos diferentes reportam ambos `/membros/curso/[slug]`
 > design, então nem o SSR nem o sitemap mudam. Os primeiros números aparecem no painel conforme
 > os alunos navegam.
 
+---
+
+### 2026-08-09 (sessão remota) — plataforma adaptada a monitores ultra-wide
+
+**Relato:** print de um monitor de ~2000px com tudo espremido no meio. Medido antes de mexer,
+em 1920/2560/3440: o conteúdo ficava preso a **1400px** (dashboard), 1280px (curso), 1152px
+(acervo) e 1024px (cronograma) — em 3440px isso é **1020px de tela vazia de cada lado, 59% do
+monitor**. O painel admin tinha o problema OPOSTO: era 100% fluido (`flex-1 p-6`), então as
+fileiras de 4 cards de métrica esticavam para **~740px cada**, com o número num canto e o resto
+vazio.
+
+**Sistema de larguras (o ponto principal — fica num lugar só):**
+- Breakpoints `3xl: 1920px` e `4xl: 2560px` em `tailwind.config.ts` (o Tailwind parava no 2xl,
+  1536px).
+- Cinco cascas em `@layer components` no `index.css`: `.shell-wide` (1400→1800→2240, área de
+  membros e admin), `.shell-page` (max-w-7xl→1560→1840, landing e silo de SEO), `.shell-list`
+  (max-w-6xl→1400→1680, acervo), `.shell-form` (max-w-5xl→1240→1440, checkout/cronograma/
+  afiliado) e `.shell-read` (max-w-2xl→860→1000, comunidade/loja).
+
+> A largura BASE de cada casca é a que a plataforma já usava — **em telas de até 1919px nada
+> muda**. Conferido por medição em 390/768/1366: idêntico ao anterior, zero vazamento horizontal.
+
+**Corrigiu de quebra um desalinhamento que já existia** (visível nos prints "antes"): na área de
+membros o header era 1400px, o conteúdo do curso 1280px e o bloco do título do curso 1000px —
+três alinhamentos diferentes na mesma tela. Agora os três compartilham a mesma casca. Mesma
+coisa no checkout (nav/etapas/rodapé eram `max-w-4xl` contra `max-w-5xl` dos cards de plano).
+
+**Proporção, não só largura.** Casca larga com 4 colunas fixas não resolve nada, e mais colunas
+sem casca maior só encolhe os cards. As duas coisas crescem juntas, então o card fica MAIOR:
+
+| viewport | colunas | largura do card |
+|---|---|---|
+| 1366 (notebook) | 4 | 249px |
+| 1920 | 5 | 276px |
+| 3440 | 6 | 301px |
+
+⚠️ **As colunas extras entram só em `3xl`+, nunca em `xl`.** Na primeira tentativa usei
+`xl:grid-cols-5` (1280px) — como a casca só cresce a partir de 1920, isso ESPREMIA o card de
+257px para 202px em qualquer desktop de 1440px. Regra: coluna nova só no mesmo breakpoint em
+que a casca cresce.
+
+**Outros ajustes de proporção:** banner de destaque ganhou altura (340→400→460px) e o texto
+deixou de ficar preso num quarto da esquerda; mapa do curso foi a 380px (os nomes de módulo
+vinham truncados) e a coluna de aulas ganhou teto de 1560px (senão a linha vira um vão de 800px
+entre o título e os ícones); cards das prateleiras 192→232px; faixas de métrica do admin com
+teto de 1400px (as tabelas seguem usando os 2240px).
+
+**Comunidade e cronograma crescem pouco de propósito** (672→1000px e 1024→1440px): são coluna
+de leitura. Esticar um feed de discussão para 3000px piora a leitura, e dividir conversa
+encadeada em colunas seria pior ainda. Continuam com margem larga em 3440 — é decisão, não
+esquecimento.
+
+**Verificado em produção** (deploy `d93e18d`): dashboard e curso 1400→2240px, acervo
+1152→1680px, grade de categoria em 6 colunas, admin capado em 2240 com card de métrica caindo
+de 720px para 456px. Contas de teste (assinante e um admin temporário) criadas e apagadas na
+mesma execução.
+
+**🔴 Achado grave: o gate de deploy `tsc --noEmit` não checava NADA.** O `tsconfig.json` da raiz
+é solution-style (`"files": []` + `references`), então `tsc --noEmit` nele compila zero arquivo e
+sempre sai 0. Comprovado nesta sessão: quebrei um JSX de propósito, `tsc --noEmit` passou e o
+`vite build` falhou. É por isso que os três `ReferenceError` de 07/08 (`Suspense`, `fetchRoster`,
+TDZ) chegaram em produção mesmo depois do gate ter sido "adicionado". O comando real é
+**`tsc -p tsconfig.app.json --noEmit`**, agora nos scripts:
+
+```bash
+npm run typecheck        # o projeto de verdade (hoje: 141 erros de TIPO pré-existentes)
+npm run typecheck:refs   # só a classe que derruba produção — hoje limpo
+```
+
+O typecheck completo está VERMELHO por causa do `types.ts` desatualizado (16 tabelas de ~40 —
+pendência já documentada): 141 erros, todos de tipo (TS2769/TS2345/TS2339/TS2322…) em 29
+arquivos. **Zero** da classe que quebra em runtime (TS2304 identificador indefinido, TS1005
+sintaxe, TS2448 TDZ) — por isso `typecheck:refs` filtra exatamente esses códigos e serve como
+gate utilizável hoje. Regenerar o `types.ts` destravaria o gate completo.
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
