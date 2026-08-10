@@ -2127,6 +2127,58 @@ e esbarra numa aula vê que falta o Pro, em vez de "seu plano não inclui downlo
 > E o limite físico: vídeo que **toca** no navegador pode ser capturado por quem insistir. O que
 > essa mudança garante é que não sai mais um arquivo pronto, com um clique, para quem não pagou.
 
+---
+
+### 2026-08-09 (sessão remota) — MEDCURSO 2026: semanas 11 e 12
+
+**Pedido:** o dono subiu mais semanas na MESMA pasta de antes
+(`1aWl1UsFms5_W9n1rAkRY_yWGBL8Ug515`, no Drive de armazenamento `ufgravity`) — sincronizar o que
+faltava.
+
+**Varredura completa da pasta** (recursiva, atalhos resolvidos, zero erros de listagem):
+6 pastas de topo (Semanas 6, 8, 9, 10, **11 e 12**), 54 pastas, **97 arquivos, 34,21 GB**.
+
+**Comparação arquivo a arquivo por ID do Drive:**
+
+| semana | arquivos | já na plataforma | a importar |
+|---|---|---|---|
+| 6, 8, 9, 10 | 62 | **62** | 0 |
+| **11** | 19 | 0 | **19** (4,32 GB) |
+| **12** | 16 | 0 | **16** (10,55 GB) |
+
+Paridade exata com a importação de 05/08 nas semanas antigas — nada tinha se perdido. Zero
+arquivos `.gdrive`, zero stubs de 55.855 bytes, zero colisão de nome (as três armadilhas que já
+morderam esta biblioteca antes foram checadas explicitamente).
+
+**Importado:** 35 aulas e 18 módulos (`SEMANA 11|12 / <DISCIPLINA> / {Video Aulas, Aulas Bônus,
+No Papo}` — mesma estrutura das semanas 8-10), com semana em CAIXA ALTA para casar com as 1-10.
+Curso foi de **185 → 220 aulas** (129 vídeos, 90 PDFs, 1 doc), 99,8 GB. Zero duplicata por
+`drive_file_id`.
+
+**Antes de gravar, conferido que a conta de CONTEÚDO (`onemedcursos`) lê os bytes** — a pasta é
+do `ufgravity`, e foi exatamente isso que quase impediu a importação de 05/08. O
+compartilhamento daquela sessão propagou para as subpastas novas: `alt=media` com `Range` curto
+devolveu `206` e assinatura `ftypisom` (MP4 de verdade, não TS disfarçado nem stub).
+
+**Ordenação:** `recalc_course_totals` renumerou com `natural_key` — SEMANA 10, 11 e 12 ficam
+DEPOIS da 9, não entre a 1 e a 2. Conferido na página do curso em produção, com conta de teste
+criada e apagada na mesma execução: o mapa lista SEMANA 1…12 na ordem certa e o streaming de uma
+aula nova de cada semana responde 206 com bytes de MP4.
+
+**Durações:** as 34 aulas novas em vídeo entraram sem `duration_seconds`. Preenchidas em 34/34
+lendo SÓ `videoMediaMetadata.durationMillis` do Drive — chamada de metadado, **não baixa bytes**,
+então não consome a franquia de download de nenhum vídeo (o
+`admin-backfill-lesson-durations` faria o mesmo, mas com fallback que lê trechos do arquivo).
+Curso passou a somar 35,9h. O resto do curso segue com cobertura parcial de duração (31/95
+vídeos antigos), situação anterior a esta sessão.
+
+⚠️ **Segue valendo o aviso de 05/08:** `courses.drive_folder_id` deste curso aponta para a pasta
+ANTIGA (`medbrasil31`, semanas 1-6 + banco de questões). As semanas 8-12 moram na pasta do
+`ufgravity`. Rodar `scripts/deep-library-sync.mjs` SEM `--only` marcaria as 97 aulas dessas
+semanas com `missing_since` (não apaga, e o aluno continua vendo — a página do curso não filtra
+por esse campo; o botão "Sincronizar biblioteca" do painel também nunca marca). Se rodar o
+script completo, restaure o `missing_since = null` dessas aulas depois.
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
