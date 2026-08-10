@@ -2309,6 +2309,44 @@ visualmente no resumo do checkout); upgrades por diferença de tabela com sessã
 conferido com os valores novos — a lição do incidente de 07/08, quando o repo tinha R$99 e a
 função no ar cobrava R$49.
 
+---
+
+### 2026-08-10 (sessão remota) — planos redefinidos: download só Pro, IA por plano, tabela comparativa
+
+**Download** (decisão do dono): QUALQUER download — arquivo OU aula em vídeo — passa a ser
+EXCLUSIVO do Vitalício Pro (e admin). `PLANS_WITH_DOWNLOAD` e `PLANS_WITH_LESSON_DOWNLOAD` viram
+os dois `{lifetime_pro, admin}`; `member-lesson-token` acompanha (`podeBaixar = isAdmin || plano
+=== 'lifetime_pro'`). Vitalício e Plus deixaram de baixar arquivo. O `dl` do Worker segue
+assinado no HMAC, então continua sem como burlar pela URL. Verificado em produção com contas dos
+5 planos: aula e arquivo com `intent=download` → **403 em todos menos o Pro (200)**.
+
+**Ferramentas de IA — limite por plano (enforcement REAL nas 3 functions:** `generate-flashcards`
+nos dois modos, `generate-study-plan`, `member-assistant`): Mensal **BLOQUEADO** (403); Anual
+**5/dia**; Vitalício **10**; Plus **20**; Pro e admin sem limite de plano (só o teto de segurança
+de 100). O limite é POR FERRAMENTA — cada uma tem seu contador em `rate_limits` (action
+`flashcards`/`questions`/`study_plan`/`assistant`), como o dono pediu. O `member-assistant` passou
+a bloquear o Mensal também (antes só lia o plano pra contexto). Cada função resolve o plano via
+`my_member_status` (mesma RPC das telas) e usa `LIMITE_IA_POR_PLANO[plano] ?? 100`. Verificado em
+produção pré-carregando o contador na fronteira: no limite → 429 com a mensagem certa; um abaixo →
+passa; Pro com 30 no contador não trava; Mensal 403 nas três ferramentas.
+
+**Benefícios reescritos** (`plans.ts` PLAN_FEATURES + cards do `CheckoutPage` + prompt do
+`member-assistant`): atualizações — Mensal/Anual **nenhuma** ("acervo atual"), Vitalício **anuais
+dos cursos básicos**, Plus **anuais dos intermediários**, Pro **mensais de 95% + novos cursos**.
+Download e IA como acima. Os textos IGUAIS entre planos vizinhos (`Acesso vitalício`, o backup no
+Drive) são idênticos de propósito — o diff do `UpgradePlanModal` esconde o que a pessoa já tem; os
+que MUDAM de valor (telas, limite de IA, atualizações) têm texto próprio e aparecem como novidade
+no upgrade.
+
+**Tabela comparativa** dos 5 planos no checkout: novo `src/components/PlanComparisonTable.tsx`,
+abaixo dos cards, com scroll horizontal próprio no mobile (a página nunca rola de lado), ✓/✗ e
+condições por célula, coluna do Pro destacada. É uma verdade só — bate com PLAN_FEATURES e com o
+enforcement do servidor.
+
+⚠️ **Brecha mantida de propósito:** o **backup no Drive próprio** (Plus e Pro) entrega a
+biblioteca inteira, vídeos inclusos — então o Plus não baixa pela plataforma mas alcança tudo pelo
+backup. O dono não pediu pra mexer no backup; fechar isso seria tirar o benefício do Plus.
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
