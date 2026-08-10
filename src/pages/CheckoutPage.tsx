@@ -131,6 +131,7 @@ const PLANS: Record<string, {
   },
   lifetime_pro: {
     name: 'Plano Vitalício Pro',
+    originalPrice: 2000,
     price: 1497.00,
     period: ' único',
     icon: Crown,
@@ -424,7 +425,7 @@ export default function CheckoutPage() {
             <div className="mb-6">
               <div className="flex items-baseline gap-2">
                 {plan.originalPrice && (
-                  <span className="text-lg text-muted-foreground line-through">R${plan.originalPrice}</span>
+                  <span className="text-lg text-muted-foreground line-through">R${plan.originalPrice.toLocaleString('pt-BR')}</span>
                 )}
                 <span className="text-4xl font-bold text-foreground">R${plan.price.toFixed(2).replace('.', ',')}</span>
               </div>
