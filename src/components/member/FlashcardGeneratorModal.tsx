@@ -303,6 +303,8 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
   const [extraText, setExtraText] = useState('');
   const [showTree, setShowTree] = useState(false);
   const [generating, setGenerating] = useState(false);
+  // Progresso da importação paginada de banco de questões ("Transcrevendo… N").
+  const [progresso, setProgresso] = useState<string | null>(null);
   const [uploads, setUploads] = useState<UploadedFile[]>([]);
   const [reading, setReading] = useState(false);
   // Só no modo questões: em vez de GERAR questões novas (padrão), importar um
@@ -371,28 +373,72 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
   const generate = async () => {
     if (selected.size === 0 && uploads.length === 0) { toast.error('Selecione um conteúdo ou envie um arquivo'); return; }
     setGenerating(true);
+    setProgresso(null);
     try {
       const fontes = [...selected.values()];
-      const { data, error } = await supabase.functions.invoke('generate-flashcards', {
-        body: {
-          lessonIds: fontes.filter(s => !s.archive).map(s => s.id),
-          archiveFileIds: fontes.filter(s => s.archive).map(s => s.id),
-          difficulty,
-          format: ehQuestoes ? 'multiple_choice' : format,
-          mode,
-          count,
-          extraText: extraText.trim() || undefined,
-          uploads: uploads.map(u => ({ name: u.name, mime: u.mime, data: u.data })),
-          importExisting: ehQuestoes && importExisting ? true : undefined,
-        },
-      });
+      const bodyBase = {
+        lessonIds: fontes.filter(s => !s.archive).map(s => s.id),
+        archiveFileIds: fontes.filter(s => s.archive).map(s => s.id),
+        difficulty,
+        format: ehQuestoes ? 'multiple_choice' : format,
+        mode,
+        count,
+        extraText: extraText.trim() || undefined,
+        uploads: uploads.map(u => ({ name: u.name, mime: u.mime, data: u.data })),
+        importExisting: ehQuestoes && importExisting ? true : undefined,
+      };
+
       // Erro do servidor vem no CORPO da resposta; quando o status é não-2xx o
       // supabase-js devolve só "Edge Function returned a non-2xx status code"
       // em error.message e deixa `data` nulo. Sem ler o corpo, o aluno via essa
       // frase crua no lugar do motivo real (ex: o limite diário de gerações).
-      if (error || data?.error) {
-        throw new Error(data?.error || await extractFunctionErrorMessage(error, 'Não foi possível gerar agora'));
+      const erroDe = async (data: any, error: any) =>
+        new Error(data?.error || await extractFunctionErrorMessage(error, 'Não foi possível gerar agora'));
+
+      // ── Importação de banco existente: PAGINADA ──────────────────────────
+      // Um banco de 100-150 questões não cabe numa chamada só (a function é
+      // cortada aos ~150s). A plataforma chama em sequência, cada uma
+      // transcrevendo o bloco que couber, e junta tudo aqui — o aluno vê o
+      // progresso subir e recebe o banco inteiro no fim.
+      if (ehQuestoes && importExisting) {
+        const MAX_CHAMADAS = 24;     // 24 × ~20 questões = teto folgado
+        const TETO_QUESTOES = 300;
+        const acumulado: any[] = [];
+        const vistos = new Set<string>();
+        const avisos = new Set<string>();
+        let primeiro: any = null;
+        let start = 1;
+        let done = false;
+
+        for (let i = 0; i < MAX_CHAMADAS && !done; i++) {
+          setProgresso(acumulado.length ? `Transcrevendo o banco… ${acumulado.length} questões` : 'Lendo o banco de questões…');
+          const { data, error } = await supabase.functions.invoke('generate-flashcards', {
+            body: { ...bodyBase, importStart: start },
+          });
+          if (error || data?.error) {
+            // Já temos questões: entrega o que deu, com aviso. Nada ainda: erro.
+            if (acumulado.length) { toast.warning('A leitura parou antes do fim — entregando o que já foi transcrito.'); break; }
+            throw await erroDe(data, error);
+          }
+          if (!primeiro) primeiro = data;
+          const novas = (data.cards || []).filter((c: any) => c?.front && !vistos.has(c.front));
+          for (const c of novas) vistos.add(c.front);
+          acumulado.push(...novas);
+          for (const w of data.warnings || []) avisos.add(w);
+          done = data.importDone || !data.importNextStart || novas.length === 0;
+          start = data.importNextStart || start;
+          if (acumulado.length >= TETO_QUESTOES) break;
+        }
+        if (acumulado.length === 0) throw new Error('Não encontrei questões no documento selecionado. Confira se o PDF é mesmo um banco de questões.');
+        for (const w of avisos) toast.warning(w);
+        onOpenChange(false);
+        onGenerated({ ...(primeiro as GeneratedDeck), cards: acumulado });
+        return;
       }
+
+      // ── Geração normal: chamada única ────────────────────────────────────
+      const { data, error } = await supabase.functions.invoke('generate-flashcards', { body: bodyBase });
+      if (error || data?.error) throw await erroDe(data, error);
       for (const w of data.warnings || []) toast.warning(w);
       onOpenChange(false);
       onGenerated(data as GeneratedDeck);
@@ -401,6 +447,7 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
       const rede = /Failed to send a request|Failed to fetch|NetworkError|aborted/i.test(cru);
       toast.error(rede ? 'A conexão caiu durante a geração. Tente de novo.' : cru || 'Não foi possível gerar os flashcards');
       setGenerating(false);
+      setProgresso(null);
     }
   };
 
@@ -421,10 +468,13 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
         {generating ? (
           <div className="py-10 text-center">
             <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto mb-4" />
-            <p className="text-sm font-semibold text-foreground mb-1">{ehQuestoes ? 'Gerando suas questões…' : 'Gerando seus flashcards…'}</p>
+            <p className="text-sm font-semibold text-foreground mb-1">
+              {progresso || (ehQuestoes ? 'Gerando suas questões…' : 'Gerando seus flashcards…')}
+            </p>
             <p className="text-xs text-muted-foreground">
-              Esse processo pode levar alguns minutos — a IA está lendo o conteúdo selecionado.
-              Mantenha esta tela aberta.
+              {ehQuestoes && importExisting
+                ? 'Bancos grandes são transcritos em partes automaticamente — pode levar alguns minutos. Mantenha esta tela aberta.'
+                : 'Esse processo pode levar alguns minutos — a IA está lendo o conteúdo selecionado. Mantenha esta tela aberta.'}
             </p>
           </div>
         ) : (

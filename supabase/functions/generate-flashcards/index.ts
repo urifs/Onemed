@@ -150,7 +150,7 @@ serve(async (req) => {
     } catch { /* segue liberado no teto de segurança */ }
 
     // ── entrada ────────────────────────────────────────────────────────────
-    const { lessonIds, archiveFileIds, difficulty, count, extraText, format, uploads, mode, importExisting } = await req.json()
+    const { lessonIds, archiveFileIds, difficulty, count, extraText, format, uploads, mode, importExisting, importStart } = await req.json()
     // 'questions' = banco de questões: sempre múltipla escolha, com enunciado
     // no estilo de prova de residência. Reusa todo o pipeline dos flashcards.
     const modo = mode === 'questions' ? 'questions' : 'flashcards'
@@ -160,6 +160,15 @@ serve(async (req) => {
     const importar = modo === 'questions' && importExisting === true
     const rlAction = modo === 'questions' ? 'questions' : 'flashcards'
 
+    // Importação PAGINADA: um banco de 100-150 questões não cabe numa única
+    // chamada (a function é cortada aos 150s). O cliente chama em sequência,
+    // cada uma transcrevendo o bloco que couber no tempo, e junta tudo. Esta
+    // chamada começa na questão nº `startImport` do documento. startImport > 1
+    // é uma CONTINUAÇÃO — não conta de novo no limite diário (a operação
+    // inteira é UMA geração, cobrada na primeira chamada).
+    const startImport = importar ? Math.max(1, Math.floor(Number(importStart) || 1)) : 1
+    const ehContinuacao = importar && startImport > 1
+
     // Limite efetivo do dia: o do plano (5/10/20) ou o teto de segurança de
     // 100 para Pro/admin (e para quem a resolução de plano não pegou). Cada
     // "ferramenta" tem seu contador (rlAction 'flashcards' vs 'questions'),
@@ -167,7 +176,9 @@ serve(async (req) => {
     const LIMITE_IA_POR_PLANO: Record<string, number> = { annual: 5, lifetime: 10, lifetime_plus: 20 }
     const TETO_SEGURANCA = 100
     const LIMITE_DIARIO = LIMITE_IA_POR_PLANO[planoAtual] ?? TETO_SEGURANCA
-    try {
+    // Continuação de importação paginada não passa pelo contador — a primeira
+    // chamada já cobrou a operação inteira.
+    if (!ehContinuacao) try {
       const now = new Date()
       const { data: rl } = await supabase.from('rate_limits')
         .select('attempts, window_start')
@@ -596,6 +607,10 @@ serve(async (req) => {
     }
 
     let cards: Carta[]
+    // Paginação da importação: preenchidos no ramo importar; no ramo normal
+    // ficam como "operação concluída numa chamada só".
+    let importDone = true
+    let importNextStart: number | null = null
     if (importar) {
       // Importação: transcreve o banco em lotes até o documento acabar, o
       // relógio apertar ou bater o teto de segurança.
@@ -623,19 +638,21 @@ serve(async (req) => {
       const LIMITE_MS = 132_000
       let duracaoLote = 55_000
       cards = []
-      let pararPorTempo = false
-      for (let inicio = 1; inicio <= MAX_IMPORT; inicio += LOTE_IMPORT) {
+      // Onde parar/continuar: começa em startImport (1 na 1ª chamada, ou o
+      // ponto que a chamada anterior devolveu em importNextStart).
+      let proximoInicio = startImport
+      let cortadoPorTempo = false
+      let documentoAcabou = false
+      for (let inicio = startImport; inicio < startImport + MAX_IMPORT; inicio += LOTE_IMPORT) {
         const decorrido = Date.now() - inicioReq
-        if (decorrido + duracaoLote * 1.3 > LIMITE_MS) { pararPorTempo = true; break }
+        if (decorrido + duracaoLote * 1.3 > LIMITE_MS) { cortadoPorTempo = true; proximoInicio = inicio; break }
         const t0Lote = Date.now()
         const lote = await obterCartas(promptImport(inicio), LOTE_IMPORT + 5)
         duracaoLote = Date.now() - t0Lote
         if (lote === null) {
-          // falha de LLM no meio: entrega o que já foi transcrito, com aviso
-          if (cards.length > 0) {
-            warnings.push('A leitura parou antes do fim do documento — gere de novo se faltarem questões.')
-            break
-          }
+          // falha de LLM no meio: entrega o que já foi transcrito nesta chamada
+          // e sinaliza para o cliente continuar do mesmo ponto.
+          if (cards.length > 0) { cortadoPorTempo = true; proximoInicio = inicio; break }
           return json(req, { error: 'A IA não conseguiu ler este banco de questões agora. Tente novamente em instantes.' }, 502)
         }
         // dedupe do lote de fronteira (o modelo às vezes repete a última questão)
@@ -644,14 +661,21 @@ serve(async (req) => {
         cards.push(...novos)
         // Lote sem nada novo = documento acabou (ou o modelo travou). Lote
         // curto NÃO é sinal de fim: pode ser só o limite de tokens da resposta.
-        if (novos.length === 0) break
+        if (novos.length === 0) { documentoAcabou = true; break }
+        proximoInicio = inicio + LOTE_IMPORT
       }
-      if (pararPorTempo && cards.length > 0) {
-        // Sem prometer o que não existe: não há retomada — uma nova geração
-        // recomeça da primeira questão do documento.
-        warnings.push(`Importei as ${cards.length} primeiras questões — é o máximo que cabe numa geração. Para o resto, envie o documento dividido em partes.`)
-      }
+      // importDone = a operação inteira terminou (documento acabou ou bateu o
+      // teto). Só o corte por tempo pede continuação. Numa continuação sem
+      // nenhuma questão nova, é o fim — o cliente para.
+      importDone = !cortadoPorTempo || (ehContinuacao && cards.length === 0)
+      importNextStart = importDone ? null : proximoInicio
+
       if (cards.length === 0) {
+        // Continuação que veio vazia: o documento acabou na chamada anterior —
+        // não é erro, só encerra. Primeira chamada vazia: PDF não é banco.
+        if (ehContinuacao) {
+          return json(req, { title: 'Banco de questões', difficulty: nivel, format: formato, cards: [], warnings, importDone: true, importNextStart: null, source: [] })
+        }
         return json(req, { error: 'Não encontrei questões no documento selecionado. Confira se o PDF é mesmo um banco de questões.' }, 422)
       }
       // A transcrição fiel traz junto os prefixos do documento ("Questão 3.",
@@ -747,6 +771,10 @@ serve(async (req) => {
       format: formato,
       cards,
       warnings,
+      // Importação paginada: o cliente usa importDone/importNextStart para
+      // decidir se pede o próximo bloco. No modo normal, importDone=true.
+      importDone,
+      importNextStart,
       source: [
         ...(lessons || []).map((l: { id: string; title: string }) => ({ id: l.id, title: l.title })),
         ...archFiles.map(af => ({ id: af.id, title: `${af.name} (Acervo Público)` })),
