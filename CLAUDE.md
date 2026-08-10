@@ -2230,6 +2230,27 @@ provocar vem do modo **"usar banco de questões já existente"** apontado para m
 banco de questões (422 "Não encontrei questões no documento") — e agora também da recusa do
 item 3, que é intencional.
 
+---
+
+### 2026-08-10 (sessão remota) — curso "AnestReview" (1 arquivo) removido da plataforma
+
+Havia **dois** cursos com esse nome: `anestreview` (1 aula, 1 KB) e
+`anestesiologia-anestreview` (**1.214 aulas, 140 GB** — o curso de verdade). O da reclamação era
+o primeiro; a "aula" era um Google Doc chamado **"Acessar pelo telegram, link abaixo:"**, ou
+seja, um ponteiro para canal externo, não conteúdo.
+
+**Desativado (`active=false`), não deletado — de propósito.** O aluno só vê `active=true` (o
+dashboard e a página de curso filtram por isso), então o efeito visível é o mesmo. A diferença
+está na durabilidade: `member-sync-library` casa curso existente por `drive_folder_id` e **nunca
+toca em `active`**; se a linha fosse APAGADA, a próxima "Sincronizar biblioteca" acharia a pasta
+`190AKwx4SmRUQB0JKyagrpE2a27f6cG_L` de novo e **recriaria o curso ativo**. Deletar parece
+resolvido hoje e volta sozinho depois. Mesmo critério dos 5 cursos vazios de 04/08.
+
+Perdas: nenhuma de conteúdo. Ficaram presos ao curso oculto 1 registro de progresso e 1 favorito
+(preservados — reativar em `courses` traz tudo de volta). Verificado em produção com conta real:
+a busca por "anest" agora devolve só o curso de 1.214 aulas, e `/membros/curso/anestreview`
+responde "Curso não encontrado". Mudança só de banco, sem deploy.
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
