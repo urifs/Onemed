@@ -131,12 +131,22 @@ curl -o /dev/null -w "%{http_code}\n" -X OPTIONS "https://onemed-stream-lesson.o
 
 ## Planos e Preços (sempre calculados no servidor)
 
+> Atualizados em 10/08/2026 (Mensal já tinha subido para R$99 em ~06/08).
+
 ```
-lifetime:  R$ 299,90  — acesso permanente
-annual:    R$ 199,00  — acesso por 12 meses
-upsell:    R$  19,90  — complemento 1
-upsell2:   R$   9,90  — complemento 2
+monthly:        R$    99,00  — acesso por 1 mês
+annual:         R$   299,00  — acesso por 12 meses
+lifetime:       R$   499,00  — acesso permanente
+lifetime_plus:  R$   798,00  — vitalício + backup Drive + 4 telas
+lifetime_pro:   R$ 1.497,00  — tudo do Plus + IA Meduf + download de aulas
+upsell:         R$    19,90  — complemento 1
+upsell2:        R$     9,90  — complemento 2
 ```
+
+⚠️ Preço vive em 4 fontes que precisam andar JUNTAS (`src/lib/plans.ts` ·
+`CheckoutPage` display · `mp-create-payment`, quem cobra · `member-account-info`)
++ prompt do `member-assistant` e rótulos de `/admin/cupons`. Mudar preço exige
+redeploy das 3 functions e conferir o valor no eszip da função NO AR.
 
 ---
 
@@ -2279,6 +2289,25 @@ Perdas: nenhuma de conteúdo. Ficaram presos ao curso oculto 1 registro de progr
 (preservados — reativar em `courses` traz tudo de volta). Verificado em produção com conta real:
 a busca por "anest" agora devolve só o curso de 1.214 aulas, e `/membros/curso/anestreview`
 responde "Curso não encontrado". Mudança só de banco, sem deploy.
+
+---
+
+### 2026-08-10 (sessão remota) — reajuste geral dos planos
+
+**Preços novos** (Mensal já estava em R$99): Anual 199→**299** · Vitalício 299,90→**499** ·
+Plus 599→**798** · Pro 997→**1.497**. As 4 fontes + assistente + rótulos de cupom atualizados
+juntos; `AccountMenu` parou de ter o amount da renovação hardcoded (lê `PLAN_PRICES`). Âncoras
+riscadas do checkout (R$399/R$667) mantidas — seguem acima dos preços novos. Testes de
+`upgradePriceFor` refeitos para os degraus novos (Plus→Pro 699 · Vitalício→Plus 299 ·
+Anual→Vitalício 200 · Mensal→Anual 200).
+
+**Verificado em produção, 12/12 casos** com preferências REAIS do Mercado Pago (buyers de teste
+apagados após): preço cheio dos 5 planos exato; **ONEMED30 (30%)** em annual/lifetime/pro
+cobrando exatamente o que o checkout exibe (R$209,30 / R$349,30 / R$1.047,90 — conferido também
+visualmente no resumo do checkout); upgrades por diferença de tabela com sessão logada
+(299/699/200) e upgrade+cupom (R$209,30). Eszip do `mp-create-payment` NO AR extraído e
+conferido com os valores novos — a lição do incidente de 07/08, quando o repo tinha R$99 e a
+função no ar cobrava R$49.
 
 ## Meta Ads — Contexto Geral
 
