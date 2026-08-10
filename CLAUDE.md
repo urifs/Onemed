@@ -2347,6 +2347,32 @@ enforcement do servidor.
 biblioteca inteira, vídeos inclusos — então o Plus não baixa pela plataforma mas alcança tudo pelo
 backup. O dono não pediu pra mexer no backup; fechar isso seria tirar o benefício do Plus.
 
+---
+
+### 2026-08-10 (sessão remota) — importar banco grande: a plataforma divide sozinha (paginação)
+
+**Pedido:** um banco de 100-150 questões no modo "usar banco existente" entregava só ~20 — o
+resto era cortado pelo limite de 150s da Edge Function. O dono pediu que a própria plataforma
+dividisse e gerasse por partes.
+
+**Solução — importação PAGINADA orquestrada pelo cliente:**
+- `generate-flashcards` aceita `importStart` (nº da 1ª questão do bloco), transcreve o que couber
+  no tempo e devolve `importDone` + `importNextStart`.
+- O `FlashcardGeneratorModal` chama em sequência a partir do `importNextStart`, acumula (dedupe
+  por enunciado) e mostra o progresso ao vivo ("Transcrevendo o banco… N questões"). Para quando
+  `importDone` ou nenhuma questão nova; tetos de 300 questões e 24 chamadas.
+- **A operação inteira conta como UMA geração** no limite diário: só a primeira chamada
+  (`importStart<=1`) passa pelo contador; continuações (`ehContinuacao`, importStart>1) pulam o
+  rate limit. Sem isso, um banco de 150 questões gastaria ~8 do limite do plano.
+
+**Verificado em produção** com a prova UFSC 2022 (43 páginas, ~60 questões): **60/60 em 4
+chamadas** (~6 min total, com progresso subindo), todas completas, zero duplicata. Antes: 20 no
+máximo. Modo GERAR normal intacto (chamada única, `importDone=true`).
+
+> Custo assumido: bancos grandes levam minutos (cada bloco é uma chamada ao modelo, ~60-115s). O
+> aluno vê o número subir e precisa manter a tela aberta — foi o trade-off aceito para entregar o
+> banco inteiro em vez de pedir pra dividir o PDF à mão.
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
