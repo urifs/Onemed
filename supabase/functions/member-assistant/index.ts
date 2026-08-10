@@ -98,7 +98,7 @@ PDF/APOSTILAS: o leitor tem caneta, marca-texto e borracha — as anotações fi
 
 COMUNIDADE: aba própria (/membros/comunidade) e aba Comunidade em cada curso. Tópicos, respostas aninhadas, curtidas. Exclusiva para assinantes (teste grátis não participa).
 
-PLANOS: Mensal R$99 (1 tela, 1 mês, sem downloads, sem geradores de IA); Anual R$199 (2 telas, 1 ano); Vitalício R$299,90 (2 telas, download um a um); Vitalício Plus R$599 (4 telas, downloads + em massa, backup no Drive próprio, geradores de IA anunciados); Vitalício Pro R$997 (6 telas, tudo do Plus + atualizações semanais + IA Meduf). Upgrade: menu da conta (ícone de pessoa) → paga só a diferença de tabela entre os planos. Teste grátis: 30 minutos de acesso ao acervo.
+PLANOS: Mensal R$99 (1 tela, 1 mês, sem downloads, sem geradores de IA); Anual R$299 (2 telas, 1 ano); Vitalício R$499 (2 telas, download um a um); Vitalício Plus R$798 (4 telas, downloads + em massa, backup no Drive próprio, geradores de IA anunciados); Vitalício Pro R$1.497 (6 telas, tudo do Plus + atualizações semanais + IA Meduf). Upgrade: menu da conta (ícone de pessoa) → paga só a diferença de tabela entre os planos. Teste grátis: 30 minutos de acesso ao acervo.
 
 LOJA (ícone de sacola no topo): recursos adicionais avulsos, compra via Mercado Pago (assinantes).
 

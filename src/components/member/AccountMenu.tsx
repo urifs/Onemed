@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
 import { extractFunctionErrorMessage, formatDateSP } from '@/lib/utils';
+import { PLAN_PRICES } from '@/lib/plans';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -79,7 +80,7 @@ export function AccountMenu() {
         email: user.email.toLowerCase(),
         name: name.trim() || null,
         plan: 'annual',
-        amount: 199,
+        amount: PLAN_PRICES.annual,
         status: 'pending',
         external_reference: ref,
       });

@@ -88,7 +88,7 @@ const PLANS: Record<string, {
   annual: {
     name: 'Plano Anual',
     originalPrice: 399,
-    price: 199,
+    price: 299,
     period: '/ano',
     icon: Clock,
     features: [
@@ -100,7 +100,7 @@ const PLANS: Record<string, {
   lifetime: {
     name: 'Plano Vitalício',
     originalPrice: 667,
-    price: 299.90,
+    price: 499.00,
     period: ' único',
     icon: Infinity,
     features: [
@@ -113,7 +113,7 @@ const PLANS: Record<string, {
   },
   lifetime_plus: {
     name: 'Plano Vitalício Plus',
-    price: 599.00,
+    price: 798.00,
     period: ' único',
     icon: HardDrive,
     features: [
@@ -131,7 +131,7 @@ const PLANS: Record<string, {
   },
   lifetime_pro: {
     name: 'Plano Vitalício Pro',
-    price: 997.00,
+    price: 1497.00,
     period: ' único',
     icon: Crown,
     features: [
