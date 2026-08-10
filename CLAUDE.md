@@ -2179,6 +2179,57 @@ semanas com `missing_since` (não apaga, e o aluno continua vendo — a página 
 por esse campo; o botão "Sincronizar biblioteca" do painel também nunca marca). Se rodar o
 script completo, restaure o `missing_since = null` dessas aulas depois.
 
+---
+
+### 2026-08-10 (sessão remota) — gerador de questões: 3 defeitos distintos
+
+**Relato:** "não está funcionando, gerando apenas 1 questão e às vezes nem gera".
+
+**O motor está são.** Antes de mexer, medi em produção com conta real: apostila PDF pedindo 15,
+30 e 5 → **15/15, 30/30, 5/5**, todas completas (4 alternativas + `why` paralelo). Upload próprio
+do aluno → 15/15. O limite diário também foi descartado: ninguém passou de **15/100**. Os
+sintomas vinham de outro lugar.
+
+**1. "apenas 1 questão" — o campo de quantidade não podia ser limpo.** Reproduzido no navegador:
+
+| ação do aluno | campo | botão |
+|---|---|---|
+| inicial | `10` | Gerar 10 questões |
+| 1 backspace | `1` | **Gerar 1 questão** |
+| 2 backspaces (queria limpar) | `1` | **Gerar 1 questão** |
+| digita "20" em seguida | `120`→clamp | **Gerar 30 questões** |
+
+O estado era numérico com clamp a CADA tecla: `Number('') || 1` devolvia 1 no instante em que o
+campo esvaziava, e o valor voltava para o input controlado. Quem queria 20 gerava **1** (se não
+percebia) ou **30** — nunca 20. Corrigido guardando o valor como TEXTO enquanto se digita, com o
+ajuste só no `blur` e no envio. Verificado depois do deploy: apagar deixa vazio, digitar "20" dá
+20.
+
+**2. Pedir 30 entregava ~21, em silêncio.** Com várias fontes, `max_tokens: 16384` cortava a
+resposta no meio e o parser (que recupera o último objeto completo) salvava só o pedaço — sem
+avisar. Teto subiu para **32768** e, se ainda faltar, uma segunda chamada pede só a diferença
+listando o que já existe para o modelo não repetir. Verificado: **30/30** e **25/25**.
+⚠️ A segunda chamada dobra o tempo (uma geração pesada já leva ~80s), então ela só roda se
+faltou mais de 10% E o relógio da function ainda tem folga (<90s) — estourar o limite entregaria
+ZERO questões, que é pior do que entregar algumas a menos.
+
+**3. Aula em vídeo virava questão inventada a partir do NOME do arquivo.** O pior dos três.
+A função manda os primeiros 10 MB do vídeo para a IA, mas **7 de 12 vídeos amostrados têm o
+átomo `moov` no fim do arquivo** (não são "faststart"), então esse trecho é indecifrável e
+sobrava só o título. O aluno pedia 15 questões sobre a aula e recebia 15 questões plausíveis
+inventadas em cima de um nome de arquivo — com cara de legítimas, para estudar medicina.
+Agora, quando NENHUMA fonte teve o conteúdo lido de verdade (contador `fontesLidas`), a geração
+é recusada com 422 e orientação para escolher a apostila do módulo. Verificado em produção.
+
+> Corrigir a leitura do vídeo em si exigiria remuxar para faststart (mover o `moov` para o
+> começo) — não dá para concatenar prefixo + `moov` e obter um MP4 válido. Enquanto isso, o
+> caminho honesto é recusar em vez de inventar.
+
+**O que NÃO foi reproduzido:** um "nem gera" sistemático no caminho normal. O zero que consegui
+provocar vem do modo **"usar banco de questões já existente"** apontado para material que não é
+banco de questões (422 "Não encontrei questões no documento") — e agora também da recusa do
+item 3, que é intencional.
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
