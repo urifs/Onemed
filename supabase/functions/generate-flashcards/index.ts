@@ -112,6 +112,9 @@ function b64(bytes: Uint8Array): string {
 }
 
 serve(async (req) => {
+  // Relógio da requisição: usado para decidir se ainda cabe uma segunda
+  // chamada ao modelo sem estourar o limite de execução da function.
+  const inicioReq = Date.now()
   if (req.method === 'OPTIONS') return new Response('ok', { headers: getCorsHeaders(req) })
 
   try {
@@ -260,6 +263,11 @@ serve(async (req) => {
     }
 
     const sourceTitles: string[] = []
+    // Quantas fontes tiveram o CONTEÚDO realmente lido (não só o título).
+    // Sem isto, uma aula em vídeo que a IA não consegue abrir virava 15
+    // questões inventadas a partir do NOME do arquivo — com cara de legítimas,
+    // para um aluno de medicina estudar. É pior do que não gerar nada.
+    let fontesLidas = 0
 
     // ── arquivos enviados pelo aluno (nunca persistidos) ───────────────────
     let uploadRaw = 0
@@ -287,6 +295,7 @@ serve(async (req) => {
       budget -= rawSize
       parts.push({ type: 'text', text: `Material enviado pelo aluno: "${up.name}":` })
       parts.push({ type: 'file', file: { file_data: `data:${up.mime};base64,${up.data}` } })
+      fontesLidas++
     }
 
     for (const lesson of (lessons || [])) {
@@ -353,6 +362,7 @@ serve(async (req) => {
       budget -= bytes.length
       parts.push({ type: 'text', text: `Material: "${lesson.title}" (curso: ${courseTitle})${isAv ? ' — trecho inicial da aula em vídeo/áudio' : ''}:` })
       parts.push({ type: 'file', file: { file_data: `data:${mime};base64,${b64(bytes)}` } })
+      fontesLidas++
     }
 
     // ── arquivos do Acervo Público (mesma régua das aulas) ─────────────────
@@ -410,6 +420,21 @@ serve(async (req) => {
       budget -= bytes.length
       parts.push({ type: 'text', text: `Material do Acervo Público: "${af.name}" (em «${af.item_title}»)${isAv ? ' — trecho inicial do vídeo/áudio' : ''}:` })
       parts.push({ type: 'file', file: { file_data: `data:${mime};base64,${b64(bytes)}` } })
+      fontesLidas++
+    }
+
+    // Nenhuma fonte foi lida de verdade: sem o complemento escrito pelo aluno,
+    // o modelo só teria os NOMES dos arquivos para trabalhar. Recusar aqui é
+    // melhor do que devolver questões inventadas a partir de um título — o
+    // aluno estuda em cima disso achando que veio da aula.
+    if (fontesLidas === 0 && !complemento) {
+      const soVideo = sourceTitles.length > 0
+      return json(req, {
+        error: soVideo
+          ? 'Não consegui ler o conteúdo do material selecionado (é comum em aulas em vídeo). Escolha a apostila ou o PDF do módulo, ou envie um arquivo — assim as questões saem do conteúdo, e não do título da aula.'
+          : 'Selecione um conteúdo ou envie um arquivo para gerar.',
+        warnings,
+      }, 422)
     }
 
     // ── prompt ─────────────────────────────────────────────────────────────
@@ -475,7 +500,11 @@ serve(async (req) => {
         temperature: importar ? 0.1 : 0.4,
         // Sem isto, resposta longa (30 questões com justificativas) vinha
         // CORTADA no limite padrão do provedor e o JSON quebrava no meio.
-        max_tokens: 16384,
+        // 16384 ainda cortava: uma questão de múltipla escolha com "back" e
+        // "why" para 4 alternativas gasta ~500 tokens, então 30 questões não
+        // cabiam e o aluno pedia 30 e recebia ~21 (o parser salvava o pedaço
+        // completo e o resto se perdia em silêncio).
+        max_tokens: 32768,
       }),
     })
 
@@ -591,6 +620,41 @@ serve(async (req) => {
         return json(req, { error: 'A IA devolveu uma resposta inválida. Tente gerar de novo.' }, 502)
       }
       cards = geradas
+
+      // Completa o que faltou. Mesmo com o teto de tokens maior, uma resposta
+      // longa pode voltar curta — e entregar 21 quando o aluno pediu 30, sem
+      // dizer nada, é o tipo de falha que ele lê como "não funciona". Aqui a
+      // diferença é pedida numa segunda chamada, informando o que já existe
+      // para o modelo não repetir.
+      // A chamada de complemento dobra o tempo (uma geração pesada já leva
+      // ~80s sozinha). Só vale a pena quando faltou bastante E ainda há folga
+      // no relógio da function — estourar o limite entregaria ZERO questões,
+      // que é bem pior do que entregar algumas a menos.
+      const faltouMuito = cards.length < nCards * 0.9
+      const temFolga = Date.now() - inicioReq < 90_000
+      if (faltouMuito && temFolga) {
+        const jaFeitas = cards.map(c => `- ${c.front}`).join('\n')
+        // Nome próprio (não `complemento`): esse identificador já existe no
+        // escopo de fora, com outro significado — o texto extra do aluno.
+        const promptFaltantes = {
+          type: 'text',
+          text: [
+            `${(promptNormal as { text: string }).text}`,
+            ``,
+            `ATENÇÃO: já existem as ${cards.length} ${modo === 'questions' ? 'questões' : 'cartas'} abaixo. Gere APENAS as ${nCards - cards.length} que faltam, sobre pontos AINDA NÃO cobertos. Não repita nenhuma delas:`,
+            jaFeitas.slice(0, 6000),
+          ].join('\n'),
+        }
+        const extras = await obterCartas(promptFaltantes, nCards - cards.length)
+        if (extras?.length) {
+          const vistos = new Set(cards.map(c => c.front))
+          cards.push(...extras.filter(c => !vistos.has(c.front)))
+        }
+      }
+      cards = cards.slice(0, nCards)
+      if (cards.length < nCards) {
+        warnings.push(`O material rendeu ${cards.length} de ${nCards} ${modo === 'questions' ? 'questões' : 'cartas'} — gere de novo ou escolha mais conteúdo para completar.`)
+      }
     }
 
     // Embaralha as alternativas de cada carta AQUI, não no prompt: o modelo

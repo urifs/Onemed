@@ -293,7 +293,13 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
   const [selected, setSelected] = useState<Map<string, FlashcardSource>>(new Map());
   const [difficulty, setDifficulty] = useState('intermediario');
   const [format, setFormat] = useState<'classic' | 'multiple_choice'>('classic');
-  const [count, setCount] = useState(10);
+  // A quantidade vive como TEXTO enquanto o aluno digita. Com número puro e
+  // clamp no onChange, o campo não podia ficar vazio: apagar "10" virava 1 na
+  // hora (Number('') || 1) e o campo travava em "1" — quem queria 20 acabava
+  // gerando 1 questão, ou 30 (o "1" preso + "20" digitado = 120, clampado).
+  // O clamp acontece ao sair do campo e no envio, não a cada tecla.
+  const [countTexto, setCountTexto] = useState('10');
+  const count = Math.min(Math.max(Number(countTexto) || 10, 1), 30);
   const [extraText, setExtraText] = useState('');
   const [showTree, setShowTree] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -574,11 +580,11 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
                 {ehQuestoes ? 'Quantidade de questões' : 'Quantidade de flashcards'}
               </p>
               <input
-                type="number"
-                min={1}
-                max={30}
-                value={count}
-                onChange={e => setCount(Math.min(Math.max(Number(e.target.value) || 1, 1), 30))}
+                type="text"
+                inputMode="numeric"
+                value={countTexto}
+                onChange={e => setCountTexto(e.target.value.replace(/\D/g, '').slice(0, 2))}
+                onBlur={() => setCountTexto(String(count))}
                 className="w-24 rounded-lg bg-secondary border border-border px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary/50"
               />
               <span className="text-xs text-muted-foreground ml-2">máx. 30 por geração</span>
