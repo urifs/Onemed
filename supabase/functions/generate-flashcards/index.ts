@@ -469,7 +469,11 @@ serve(async (req) => {
     // Prompt de TRANSCRIÇÃO (importar banco existente): fidelidade total ao
     // PDF — enunciados, alternativas na mesma ordem e gabarito do documento.
     // Só as explicações podem ser geradas, e apenas quando o PDF não as tem.
-    const LOTE_IMPORT = 20
+    // 10, não 20: transcrever questão de prova (enunciado longo + alternativas
+    // + justificativa de cada uma) é caro, e lote de 20 estourava o limite de
+    // saída do modelo — a resposta vinha cortada e o parser salvava só um
+    // pedaço. Lote menor cabe inteiro e ainda deixa o laço avançar rápido.
+    const LOTE_IMPORT = 10
     const promptImport = (inicio: number) => ({
       type: 'text',
       text: [
@@ -547,6 +551,7 @@ serve(async (req) => {
     let avisoMidiaDado = false
     const obterCartas = async (promptFinal: unknown, teto: number): Promise<Carta[] | null> => {
       const conteudo = [...parts, promptFinal]
+      const t0Chamada = Date.now()
       let llmRes = await chamarLLM(conteudo)
       let llmData = await llmRes.json()
 
@@ -567,7 +572,13 @@ serve(async (req) => {
         return null
       }
       let cartas = validar(extrairCartas(llmData.choices?.[0]?.message?.content || '') || [], teto)
-      if (cartas.length === 0) {
+      // A repetição automática DOBRA o tempo da rodada. Num PDF grande cada
+      // chamada leva ~75s, então repetir levava a requisição a 150s — o limite
+      // em que a function é cortada com 504 e o aluno não recebe nada. Só
+      // repete se o que já se passou couber mais uma chamada do mesmo tamanho.
+      const gastoNaChamada = Date.now() - t0Chamada
+      const cabeRepetir = (Date.now() - inicioReq) + gastoNaChamada * 1.2 < 130_000
+      if (cartas.length === 0 && cabeRepetir) {
         console.warn('Resposta inválida do modelo; repetindo a chamada uma vez')
         llmRes = await chamarLLM(conteudo)
         llmData = await llmRes.json()
@@ -578,12 +589,39 @@ serve(async (req) => {
 
     let cards: Carta[]
     if (importar) {
-      // Importação: transcreve o banco inteiro em lotes até o documento
-      // acabar (lote incompleto) ou bater o teto de segurança.
+      // Importação: transcreve o banco em lotes até o documento acabar, o
+      // relógio apertar ou bater o teto de segurança.
+      //
+      // Duas armadilhas já custaram caro aqui, as duas reproduzidas com provas
+      // de residência reais (43 páginas, ~100 questões):
+      //
+      // 1. Parar quando o lote vem incompleto (`lote.length < LOTE_IMPORT`)
+      //    entregava UMA questão. Transcrever questão de prova é caro em
+      //    tokens (enunciado com caso clínico + 5 alternativas + justificativa
+      //    de cada uma), então o primeiro lote de 20 estourava o limite de
+      //    saída, o parser recuperava só a primeira questão inteira, e o laço
+      //    encerrava achando que o documento tinha acabado. Era o "só gerou 01"
+      //    relatado pelos alunos. Agora só encerra quando o lote não traz
+      //    NENHUMA questão nova.
+      // 2. Sem trava de tempo, o laço rodava 6 lotes e a function morria com
+      //    504 aos 150s — o aluno não recebia nada. Agora para antes disso e
+      //    entrega o que já transcreveu, dizendo quantas vieram.
       const MAX_IMPORT = 120
+      // A function é cortada com 504 aos 150s. Só vale começar um lote novo se
+      // ele couber INTEIRO no que sobra — checar o relógio antes de chamar não
+      // basta: com 100s no relógio e um lote de 50s, a chamada terminaria em
+      // 150s e o aluno não receberia nada. A estimativa vem do lote anterior
+      // (o primeiro assume 55s, medido em provas reais) com 30% de folga.
+      const LIMITE_MS = 132_000
+      let duracaoLote = 55_000
       cards = []
+      let pararPorTempo = false
       for (let inicio = 1; inicio <= MAX_IMPORT; inicio += LOTE_IMPORT) {
+        const decorrido = Date.now() - inicioReq
+        if (decorrido + duracaoLote * 1.3 > LIMITE_MS) { pararPorTempo = true; break }
+        const t0Lote = Date.now()
         const lote = await obterCartas(promptImport(inicio), LOTE_IMPORT + 5)
+        duracaoLote = Date.now() - t0Lote
         if (lote === null) {
           // falha de LLM no meio: entrega o que já foi transcrito, com aviso
           if (cards.length > 0) {
@@ -596,8 +634,14 @@ serve(async (req) => {
         const vistos = new Set(cards.map(c => c.front))
         const novos = lote.filter(c => !vistos.has(c.front))
         cards.push(...novos)
-        if (lote.length < LOTE_IMPORT) break
+        // Lote sem nada novo = documento acabou (ou o modelo travou). Lote
+        // curto NÃO é sinal de fim: pode ser só o limite de tokens da resposta.
         if (novos.length === 0) break
+      }
+      if (pararPorTempo && cards.length > 0) {
+        // Sem prometer o que não existe: não há retomada — uma nova geração
+        // recomeça da primeira questão do documento.
+        warnings.push(`Importei as ${cards.length} primeiras questões — é o máximo que cabe numa geração. Para o resto, envie o documento dividido em partes.`)
       }
       if (cards.length === 0) {
         return json(req, { error: 'Não encontrei questões no documento selecionado. Confira se o PDF é mesmo um banco de questões.' }, 422)
@@ -631,7 +675,10 @@ serve(async (req) => {
       // no relógio da function — estourar o limite entregaria ZERO questões,
       // que é bem pior do que entregar algumas a menos.
       const faltouMuito = cards.length < nCards * 0.9
-      const temFolga = Date.now() - inicioReq < 90_000
+      // 75s, não 90s: com 6 fontes a primeira chamada já leva ~80s, e uma
+      // segunda em cima disso chegou a 146s — perto demais do limite de 150s
+      // em que a function é cortada com 504 e o aluno não recebe nada.
+      const temFolga = Date.now() - inicioReq < 75_000
       if (faltouMuito && temFolga) {
         const jaFeitas = cards.map(c => `- ${c.front}`).join('\n')
         // Nome próprio (não `complemento`): esse identificador já existe no

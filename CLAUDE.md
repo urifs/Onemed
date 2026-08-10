@@ -2225,10 +2225,39 @@ Agora, quando NENHUMA fonte teve o conteúdo lido de verdade (contador `fontesLi
 > começo) — não dá para concatenar prefixo + `moov` e obter um MP4 válido. Enquanto isso, o
 > caminho honesto é recusar em vez de inventar.
 
-**O que NÃO foi reproduzido:** um "nem gera" sistemático no caminho normal. O zero que consegui
-provocar vem do modo **"usar banco de questões já existente"** apontado para material que não é
-banco de questões (422 "Não encontrei questões no documento") — e agora também da recusa do
-item 3, que é intencional.
+**4. A causa REAL do relato, achada depois com o print do cliente: o modo IMPORTAR.** O aluno
+enviava "um PDF com +100 questões" e recebia 1 — sempre pelo caminho **"usar banco de questões
+já existente"**. Reproduzido com provas de residência reais (UFSC 2022, 43 páginas; um simulado
+de 11 páginas), enviadas por upload como o aluno faz:
+
+| | antes | depois |
+|---|---|---|
+| prova de 43 páginas | **504 aos 151s** (nada) | **200, 20 questões, 88s** |
+| simulado de 11 páginas | **504 aos 150s** (nada) | **200, 18-20 questões, ~93s** |
+
+Eram **três** defeitos empilhados no mesmo laço:
+
+- `if (lote.length < LOTE_IMPORT) break` — transcrever questão de prova é caro em tokens
+  (enunciado com caso clínico + 5 alternativas + justificativa de cada uma), então o primeiro
+  lote de 20 estourava o limite de saída, o parser recuperava só a primeira questão inteira e o
+  laço encerrava achando que o documento tinha acabado. **Era o "só gerou 01".** Agora só encerra
+  quando o lote não traz NENHUMA questão nova; lote curto não é sinal de fim.
+- **Sem trava de tempo**, o laço rodava 6 lotes e a function morria com **504 aos 150s**. Checar
+  o relógio ANTES do lote não bastou (a primeira tentativa ainda deu 504): com 100s no relógio e
+  um lote de 50s, a chamada termina em 150s. Agora só começa um lote que **caiba inteiro** no que
+  sobra, estimando pela duração do lote anterior.
+- A **repetição automática** dentro de `obterCartas` dobrava a rodada: num PDF grande, duas
+  chamadas de ~75s davam exatamente 150s. Ela agora só acontece se couber no relógio.
+
+`LOTE_IMPORT` caiu de 20 para **10** — lote menor cabe inteiro na resposta e o laço avança mais
+rápido. Quando o tempo acaba, a resposta traz as questões já transcritas e um aviso honesto
+("Importei as 20 primeiras… envie o documento dividido em partes"): **não existe retomada**, uma
+nova geração recomeça da primeira questão, então o aviso não promete o que o sistema não faz.
+
+⚠️ Um PDF grande no modo GERAR chegou a **145s** numa medição — perto do corte de 150s. É
+comportamento anterior a esta sessão (uma única chamada ao modelo, sem laço), mas fica o registro:
+documento muito maior que isso pode estourar. O teto do complemento no modo normal foi apertado
+de 90s para **75s** por causa disso.
 
 ---
 
