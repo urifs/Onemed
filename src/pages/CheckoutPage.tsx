@@ -32,6 +32,7 @@ import {
 import { formatWhatsApp, extractFunctionErrorMessage } from '@/lib/utils';
 import { getAffiliateRef } from '@/lib/affiliateRef';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { PlanComparisonTable } from '@/components/PlanComparisonTable';
 
 const MEDUF_URL = 'https://meduf.com.br/about';
 
@@ -83,6 +84,7 @@ const PLANS: Record<string, {
     features: [
       'Acesso por 1 mês',
       '1 tela simultânea',
+      'Acesso a todo o acervo atual da plataforma',
     ],
   },
   annual: {
@@ -94,7 +96,8 @@ const PLANS: Record<string, {
     features: [
       'Acesso por 1 ano',
       '2 telas simultâneas',
-      'Atualizações mensais',
+      'Acesso a todo o acervo atual da plataforma',
+      'Ferramentas de IA (flashcards, banco de questões, cronograma e assistente): até 5 usos por dia em cada',
     ],
   },
   lifetime: {
@@ -106,8 +109,8 @@ const PLANS: Record<string, {
     features: [
       'Acesso vitalício',
       '2 telas simultâneas',
-      'Atualizações mensais',
-      'Download de arquivos, um a um',
+      'Atualizações anuais dos cursos básicos',
+      'Ferramentas de IA (flashcards, banco de questões, cronograma e assistente): até 10 usos por dia em cada',
     ],
     badge: 'MAIS POPULAR',
   },
@@ -119,14 +122,9 @@ const PLANS: Record<string, {
     features: [
       'Acesso vitalício',
       '4 telas simultâneas',
-      'Atualizações mensais',
+      'Atualizações anuais dos cursos intermediários',
       'Backup de tudo da plataforma no seu próprio Google Drive',
-      'Download de arquivos, um a um',
-      'Download em massa, cursos e pastas inteiras',
-      'Gerador de flashcards a partir de qualquer conteúdo da plataforma',
-      'Gerador de banco de questões a partir de qualquer conteúdo da plataforma',
-      'Gerador de cronograma de estudos e mapa mental personalizados para o seu interesse de estudo',
-      'Assistente de IA que lê em tempo real a aula ou arquivo que você está estudando e tira qualquer dúvida',
+      'Ferramentas de IA (flashcards, banco de questões, cronograma e assistente): até 20 usos por dia em cada',
     ],
   },
   lifetime_pro: {
@@ -138,16 +136,10 @@ const PLANS: Record<string, {
     features: [
       'Acesso vitalício',
       '6 telas simultâneas',
-      'Atualizações mensais + semanais',
+      'Atualizações mensais de 95% de todo o conteúdo + adição de novos cursos',
       'Backup de tudo da plataforma no seu próprio Google Drive',
-      'Download de arquivos, um a um',
-      'Download em massa, cursos e pastas inteiras',
-      'Download das aulas em vídeo — exclusivo do Pro',
-      'Gerador de flashcards a partir de qualquer conteúdo da plataforma',
-      'Gerador de banco de questões a partir de qualquer conteúdo da plataforma',
-      'Gerador de cronograma de estudos e mapa mental personalizados para o seu interesse de estudo',
-      'Assistente de IA que lê em tempo real a aula ou arquivo que você está estudando e tira qualquer dúvida',
-      'Acesso a todas as atualizações sem precisar de nenhuma colaboração',
+      'Download de aulas em vídeo e de arquivos (exclusivo do Pro)',
+      'Ferramentas de IA (flashcards, banco de questões, cronograma e assistente): uso ilimitado',
       'Acesso à IA de diagnósticos Meduf (meduf.com.br)',
     ],
     badge: 'MAIS COMPLETO',
@@ -446,6 +438,9 @@ export default function CheckoutPage() {
           );
         })}
       </div>
+
+      {/* Tabela comparativa dos planos */}
+      <PlanComparisonTable />
 
       {/* Coupon */}
       <div className="bg-card border border-border rounded-xl p-6">

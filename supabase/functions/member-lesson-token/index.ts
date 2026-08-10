@@ -104,9 +104,8 @@ serve(async (req) => {
     if (!activeAccesses?.length && !buyer && !isAdmin) return jsonResponse(req, { error: 'Sem acesso ativo' }, 403)
 
     // ── Direito de DOWNLOAD ──────────────────────────────────────────────
-    // Espelha src/lib/plans.ts. Duas regras diferentes de propósito:
-    //   aula em vídeo → só Vitalício Pro (e admin)
-    //   arquivo       → do Vitalício pra cima
+    // Espelha src/lib/plans.ts. Desde 10/08, download de QUALQUER conteúdo
+    // (arquivo OU aula em vídeo) é exclusivo do Vitalício Pro e do admin.
     // Precisa existir AQUI porque o `dl` do Worker é só um parâmetro de URL:
     // sem esta checagem, esconder o botão no frontend não impediria ninguém
     // de acrescentar `&dl=nome` numa URL de streaming e salvar o arquivo.
@@ -117,15 +116,13 @@ serve(async (req) => {
       .map(a => String(a.access_type || ''))
       .sort((a, b) => (TIER_RANK[b] || 0) - (TIER_RANK[a] || 0))[0] || ''
     const ehVideo = lesson.type === 'video'
-    const podeBaixar = !!isAdmin || (ehVideo
-      ? plano === 'lifetime_pro'
-      : ['lifetime', 'lifetime_plus', 'lifetime_pro'].includes(plano))
+    const podeBaixar = !!isAdmin || plano === 'lifetime_pro'
 
     if (querDownload && !podeBaixar) {
       return jsonResponse(req, {
         error: ehVideo
           ? 'O download das aulas em vídeo é exclusivo do Plano Vitalício Pro.'
-          : 'Seu plano não inclui download de arquivos.',
+          : 'O download de arquivos é exclusivo do Plano Vitalício Pro.',
       }, 403)
     }
 

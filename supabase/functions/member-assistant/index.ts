@@ -98,7 +98,7 @@ PDF/APOSTILAS: o leitor tem caneta, marca-texto e borracha — as anotações fi
 
 COMUNIDADE: aba própria (/membros/comunidade) e aba Comunidade em cada curso. Tópicos, respostas aninhadas, curtidas. Exclusiva para assinantes (teste grátis não participa).
 
-PLANOS: Mensal R$99 (1 tela, 1 mês, sem downloads, sem geradores de IA); Anual R$299 (2 telas, 1 ano); Vitalício R$499 (2 telas, download um a um); Vitalício Plus R$798 (4 telas, downloads + em massa, backup no Drive próprio, geradores de IA anunciados); Vitalício Pro R$1.497 (6 telas, tudo do Plus + atualizações semanais + IA Meduf). Upgrade: menu da conta (ícone de pessoa) → paga só a diferença de tabela entre os planos. Teste grátis: 30 minutos de acesso ao acervo.
+PLANOS (regras de 10/08): Mensal R$99 (1 tela, 1 mês, acervo atual, SEM ferramentas de IA, sem download, sem atualizações); Anual R$299 (2 telas, 1 ano, acervo atual, ferramentas de IA até 5 usos/dia em cada, sem download, sem atualizações); Vitalício R$499 (2 telas, vitalício, atualizações anuais dos cursos básicos, IA até 10 usos/dia em cada, sem download); Vitalício Plus R$798 (4 telas, vitalício, atualizações anuais dos cursos intermediários, backup no Drive próprio, IA até 20 usos/dia em cada, sem download); Vitalício Pro R$1.497 (6 telas, vitalício, atualizações mensais de 95% do conteúdo + novos cursos, backup no Drive próprio, IA ILIMITADA, DOWNLOAD de aulas e arquivos — exclusivo do Pro, IA Meduf). Download de qualquer conteúdo é EXCLUSIVO do Pro. Upgrade: menu da conta (ícone de pessoa) → paga só a diferença de tabela. Teste grátis: 30 minutos de acesso ao acervo.
 
 LOJA (ícone de sacola no topo): recursos adicionais avulsos, compra via Mercado Pago (assinantes).
 
@@ -145,10 +145,25 @@ serve(async (req) => {
     const { data: { user }, error: authErr } = await supabase.auth.getUser(jwt)
     if (authErr || !user) return json(req, { error: 'Sessão inválida' }, 401)
 
-    // ── teto de segurança: 100 mensagens/dia por conta ─────────────────────
-    // Mesma régua dos geradores de IA — não limita conversa real, só barra
-    // abuso (cada mensagem chama uma IA paga).
-    const LIMITE_DIARIO = 100
+    // Limite de IA por plano (decisão do dono, 10/08): Mensal BLOQUEADO;
+    // Anual 5/dia; Vitalício 10; Plus 20; Pro/admin sem limite de plano.
+    // Resolve o plano ANTES do rate limit (o assistente é uma das ferramentas).
+    let planoAluno = ''
+    try {
+      const asUser = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY') || '', {
+        global: { headers: { Authorization: `Bearer ${jwt}` } },
+      })
+      const { data: st } = await asUser.rpc('my_member_status')
+      planoAluno = String((Array.isArray(st) ? st[0] : st)?.plan || '')
+      if (planoAluno === 'monthly') {
+        return json(req, { error: 'O Plano Mensal não inclui o assistente de IA. Faça upgrade de plano para liberar.' }, 403)
+      }
+    } catch { /* segue liberado no teto de segurança */ }
+
+    // ── limite de mensagens/dia: o do plano (5/10/20) ou o teto de 100 ──────
+    const LIMITE_IA_POR_PLANO: Record<string, number> = { annual: 5, lifetime: 10, lifetime_plus: 20 }
+    const TETO_SEGURANCA = 100
+    const LIMITE_DIARIO = LIMITE_IA_POR_PLANO[planoAluno] ?? TETO_SEGURANCA
     try {
       const now = new Date()
       const { data: rl } = await supabase.from('rate_limits')
@@ -164,9 +179,10 @@ serve(async (req) => {
           const quando = faltamMin >= 60
             ? `em ${Math.ceil(faltamMin / 60)}h`
             : `em ${faltamMin} minuto${faltamMin === 1 ? '' : 's'}`
-          return json(req, {
-            error: `Você já enviou ${LIMITE_DIARIO} mensagens ao assistente nas últimas 24 horas, que é o limite diário. Você poderá conversar de novo ${quando}.`,
-          }, 429)
+          const msg = LIMITE_DIARIO < TETO_SEGURANCA
+            ? `Você usou as ${LIMITE_DIARIO} mensagens de hoje do seu plano no assistente. O limite renova ${quando}. Planos superiores liberam mais — o Pro é sem limite.`
+            : `Você já enviou ${LIMITE_DIARIO} mensagens ao assistente nas últimas 24 horas, que é o limite diário. Você poderá conversar de novo ${quando}.`
+          return json(req, { error: msg }, 429)
         }
         await supabase.from('rate_limits').update({ attempts: rl.attempts + 1 })
           .eq('identifier', user.id).eq('action', 'assistant')
@@ -188,16 +204,7 @@ serve(async (req) => {
     const pergunta = [...historico].reverse().find(m => m.role === 'user')?.content || ''
     if (!pergunta.trim()) return json(req, { error: 'Escreva uma pergunta' }, 400)
 
-    // ── contexto: plano do aluno ───────────────────────────────────────────
-    let planoAluno = ''
-    try {
-      const asUser = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY') || '', {
-        global: { headers: { Authorization: `Bearer ${jwt}` } },
-      })
-      const { data: st } = await asUser.rpc('my_member_status')
-      const row = Array.isArray(st) ? st[0] : st
-      if (row?.plan) planoAluno = String(row.plan)
-    } catch { /* segue sem */ }
+    // (planoAluno já foi resolvido no gate de limite, acima.)
 
     // ── contexto: categorias (agregado barato) ─────────────────────────────
     const { data: cats } = await supabase

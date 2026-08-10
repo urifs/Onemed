@@ -128,23 +128,26 @@ serve(async (req) => {
     const { data: { user }, error: authErr } = await supabase.auth.getUser(jwt)
     if (authErr || !user) return json(req, { error: 'Sessão inválida' }, 401)
 
-    // Plano Mensal não usa as ferramentas de IA — o mesmo my_member_status
-    // das telas decide (chamado com o JWT do aluno, então auth.uid() vale).
-    // Falha na consulta NÃO bloqueia: pior negar a um assinante com direito
-    // do que deixar passar uma geração.
+    // Limite de uso das ferramentas de IA por plano (decisão do dono, 10/08):
+    // Mensal BLOQUEADO; Anual 5/dia; Vitalício 10; Plus 20; Pro e admin sem
+    // limite de plano — só o teto de segurança contra abuso/script. O
+    // my_member_status é o mesmo das telas (chamado com o JWT do aluno, então
+    // auth.uid() vale). Falha na consulta NÃO bloqueia nem restringe: cai no
+    // teto de segurança, permissivo — pior negar a quem tem direito.
+    let planoAtual = ''
     try {
       const anonKey = Deno.env.get('SUPABASE_ANON_KEY') || ''
       const asUser = createClient(supabaseUrl, anonKey, {
         global: { headers: { Authorization: `Bearer ${jwt}` } },
       })
       const { data: st } = await asUser.rpc('my_member_status')
-      const planoAtual = (Array.isArray(st) ? st[0] : st)?.plan
+      planoAtual = String((Array.isArray(st) ? st[0] : st)?.plan || '')
       if (planoAtual === 'monthly') {
         return json(req, {
           error: 'O Plano Mensal não inclui as ferramentas de geração por IA. Faça upgrade de plano para liberar.',
         }, 403)
       }
-    } catch { /* segue liberado */ }
+    } catch { /* segue liberado no teto de segurança */ }
 
     // ── entrada ────────────────────────────────────────────────────────────
     const { lessonIds, archiveFileIds, difficulty, count, extraText, format, uploads, mode, importExisting } = await req.json()
@@ -157,11 +160,13 @@ serve(async (req) => {
     const importar = modo === 'questions' && importExisting === true
     const rlAction = modo === 'questions' ? 'questions' : 'flashcards'
 
-    // ── teto de segurança: 100/dia por modo (decisão do dono em 07/08) ──────
-    // Não é pra limitar uso real — 100 é muito acima de qualquer estudo normal
-    // (o aluno que mais usou fez 15 em 24h). É rede de proteção contra abuso
-    // ou script em série, já que a IA é paga por chamada.
-    const LIMITE_DIARIO = 100
+    // Limite efetivo do dia: o do plano (5/10/20) ou o teto de segurança de
+    // 100 para Pro/admin (e para quem a resolução de plano não pegou). Cada
+    // "ferramenta" tem seu contador (rlAction 'flashcards' vs 'questions'),
+    // como o dono pediu — 5 flashcards E 5 questões no Anual, não 5 no total.
+    const LIMITE_IA_POR_PLANO: Record<string, number> = { annual: 5, lifetime: 10, lifetime_plus: 20 }
+    const TETO_SEGURANCA = 100
+    const LIMITE_DIARIO = LIMITE_IA_POR_PLANO[planoAtual] ?? TETO_SEGURANCA
     try {
       const now = new Date()
       const { data: rl } = await supabase.from('rate_limits')
@@ -179,9 +184,12 @@ serve(async (req) => {
             ? `em ${Math.ceil(faltamMin / 60)}h`
             : `em ${faltamMin} minuto${faltamMin === 1 ? '' : 's'}`
           const oQue = modo === 'questions' ? 'bancos de questões' : 'baralhos de flashcards'
-          return json(req, {
-            error: `Você já gerou ${LIMITE_DIARIO} ${oQue} nas últimas 24 horas, que é o limite diário. Você poderá gerar de novo ${quando}.`,
-          }, 429)
+          // Plano com limite baixo → aponta o upgrade; teto de segurança
+          // (Pro/admin) → mensagem antiga de "limite diário".
+          const msg = LIMITE_DIARIO < TETO_SEGURANCA
+            ? `Você usou as ${LIMITE_DIARIO} gerações de ${oQue} de hoje do seu plano. O limite renova ${quando}. Planos superiores liberam mais gerações por dia — o Pro é sem limite.`
+            : `Você já gerou ${LIMITE_DIARIO} ${oQue} nas últimas 24 horas, que é o limite diário. Você poderá gerar de novo ${quando}.`
+          return json(req, { error: msg }, 429)
         }
         await supabase.from('rate_limits').update({ attempts: rl.attempts + 1 })
           .eq('identifier', user.id).eq('action', rlAction)

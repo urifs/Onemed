@@ -4,64 +4,34 @@ import {
   PLAN_LABELS, PLAN_FEATURES, PLAN_PRICES, upgradePriceFor, MIN_UPGRADE_PRICE,
 } from '@/lib/plans';
 
-// Regra de produto: teste grátis, Mensal e Anual não baixam. Vitalício e
-// acima baixam. Está em teste porque é uma decisão de negócio fácil de
-// quebrar sem querer ao mexer na lista de planos.
-describe('canDownloadPlan', () => {
-  it('bloqueia teste grátis', () => {
-    expect(canDownloadPlan('trial')).toBe(false);
-  });
-
-  it('bloqueia mensal e anual', () => {
-    expect(canDownloadPlan('monthly')).toBe(false);
-    expect(canDownloadPlan('annual')).toBe(false);
-  });
-
-  it('libera vitalício, plus e pro', () => {
-    expect(canDownloadPlan('lifetime')).toBe(true);
-    expect(canDownloadPlan('lifetime_plus')).toBe(true);
+// Regra de produto de 10/08: download de QUALQUER conteúdo (arquivo OU aula
+// em vídeo) é EXCLUSIVO do Vitalício Pro (e admin). Nenhum outro plano baixa.
+// Está em teste porque é decisão de negócio fácil de quebrar ao mexer na lista.
+describe('download só no Vitalício Pro', () => {
+  it('arquivo: só Pro e admin baixam', () => {
     expect(canDownloadPlan('lifetime_pro')).toBe(true);
-  });
-
-  it('libera admin', () => {
     expect(canDownloadPlan('admin')).toBe(true);
   });
 
-  it('sem plano conhecido não libera', () => {
-    expect(canDownloadPlan(null)).toBe(false);
-    expect(canDownloadPlan(undefined)).toBe(false);
-    expect(canDownloadPlan('')).toBe(false);
-    // 'paid' é o rótulo legado do webhook: o banco resolve pelo plano da
-    // compra antes de chegar aqui, então ele nunca deve liberar sozinho.
-    expect(canDownloadPlan('paid')).toBe(false);
-  });
-
-  it('todo plano bloqueado tem nome para a mensagem de upgrade', () => {
-    for (const plano of ['monthly', 'annual']) {
-      expect(PLAN_LABELS[plano]).toBeTruthy();
+  it('arquivo: nenhum outro plano baixa — nem Vitalício, nem Plus', () => {
+    for (const plano of ['trial', 'monthly', 'annual', 'lifetime', 'lifetime_plus']) {
+      expect(canDownloadPlan(plano)).toBe(false);
     }
   });
-});
 
-// Regra de produto de 09/08: baixar AULA em vídeo é exclusivo do Vitalício
-// Pro. Arquivo (apostila/PDF/planilha/imagem/áudio) continua do Vitalício pra
-// cima. As duas listas são independentes de propósito.
-describe('download de aula em vídeo (exclusivo do Pro)', () => {
-  it('só o Pro e o admin baixam aula', () => {
+  it('aula em vídeo: só Pro e admin baixam', () => {
     expect(canDownloadLessonPlan('lifetime_pro')).toBe(true);
     expect(canDownloadLessonPlan('admin')).toBe(true);
-  });
-
-  it('nenhum outro plano baixa aula — nem o Plus, nem o Vitalício', () => {
     for (const plano of ['trial', 'monthly', 'annual', 'lifetime', 'lifetime_plus']) {
       expect(canDownloadLessonPlan(plano)).toBe(false);
     }
   });
 
-  it('sem plano conhecido não libera aula', () => {
-    expect(canDownloadLessonPlan(null)).toBe(false);
-    expect(canDownloadLessonPlan(undefined)).toBe(false);
-    expect(canDownloadLessonPlan('paid')).toBe(false);
+  it('sem plano conhecido não libera', () => {
+    for (const p of [null, undefined, '', 'paid']) {
+      expect(canDownloadPlan(p as string)).toBe(false);
+      expect(canDownloadLessonPlan(p as string)).toBe(false);
+    }
   });
 
   it('o que separa aula de arquivo é o tipo do item', () => {
@@ -72,19 +42,19 @@ describe('download de aula em vídeo (exclusivo do Pro)', () => {
     expect(isLessonVideo(null)).toBe(false);
   });
 
-  it('porteiro único: mesmo plano, resposta diferente por tipo', () => {
-    // O caso que motivou a mudança: Vitalício e Plus baixam a apostila,
-    // mas não baixam mais o vídeo da aula.
-    for (const plano of ['lifetime', 'lifetime_plus']) {
-      expect(canDownloadItem(plano, { type: 'pdf' })).toBe(true);
+  it('porteiro único: só o Pro baixa, qualquer tipo', () => {
+    // Vitalício e Plus NÃO baixam mais nada; Pro baixa tudo.
+    for (const plano of ['monthly', 'annual', 'lifetime', 'lifetime_plus', 'trial']) {
+      expect(canDownloadItem(plano, { type: 'pdf' })).toBe(false);
       expect(canDownloadItem(plano, { type: 'video' })).toBe(false);
     }
-    // Pro baixa os dois; Mensal/Anual não baixam nenhum.
     expect(canDownloadItem('lifetime_pro', { type: 'video' })).toBe(true);
     expect(canDownloadItem('lifetime_pro', { type: 'pdf' })).toBe(true);
-    for (const plano of ['monthly', 'annual', 'trial']) {
-      expect(canDownloadItem(plano, { type: 'video' })).toBe(false);
-      expect(canDownloadItem(plano, { type: 'pdf' })).toBe(false);
+  });
+
+  it('todo plano bloqueado tem nome para a mensagem de upgrade', () => {
+    for (const plano of ['monthly', 'annual', 'lifetime', 'lifetime_plus']) {
+      expect(PLAN_LABELS[plano]).toBeTruthy();
     }
   });
 });
@@ -97,26 +67,25 @@ describe('diferença de benefícios no upgrade', () => {
   const novos = (de: string, para: string) =>
     (PLAN_FEATURES[para] || []).filter(f => !(PLAN_FEATURES[de] || []).includes(f));
 
-  it('anual → vitalício ganha o download unitário', () => {
-    expect(novos('annual', 'lifetime')).toContain('Download de arquivos, um a um');
+  // Download só existe no Pro (10/08). Só o upgrade que CHEGA no Pro pode
+  // trazer download como novidade — nenhum outro.
+  it('só o upgrade para o Pro promete download', () => {
+    expect(novos('lifetime_plus', 'lifetime_pro').some(f => f.startsWith('Download'))).toBe(true);
+    for (const [de, para] of [['monthly', 'annual'], ['annual', 'lifetime'], ['lifetime', 'lifetime_plus']]) {
+      expect(novos(de, para).some(f => f.startsWith('Download'))).toBe(false);
+    }
   });
 
-  it('vitalício → plus ganha só o download em massa, não o unitário', () => {
-    const d = novos('lifetime', 'lifetime_plus');
-    expect(d).toContain('Download em massa, cursos e pastas inteiras');
-    expect(d).not.toContain('Download de arquivos, um a um');
+  // Backup no Drive é idêntico entre Plus e Pro, então NÃO reaparece no
+  // upgrade Plus→Pro (senão o cliente veria como novidade algo que já tem).
+  it('plus → pro não repete o backup no Drive', () => {
+    expect(novos('lifetime_plus', 'lifetime_pro')).not.toContain('Backup de tudo da plataforma no seu próprio Google Drive');
   });
 
-  // Mudou em 09/08: baixar aula em vídeo virou exclusividade do Pro, então
-  // agora ESPERA-SE uma novidade de download aqui — mas só essa. Repetir os
-  // downloads de arquivo continuaria sendo bug (a pessoa já os tem no Plus).
-  it('plus → pro ganha só o download das aulas em vídeo', () => {
-    expect(novos('lifetime_plus', 'lifetime_pro').filter(f => f.startsWith('Download')))
-      .toEqual(['Download das aulas em vídeo — exclusivo do Pro']);
-  });
-
-  it('mensal → anual não promete download', () => {
-    expect(novos('monthly', 'annual').filter(f => f.startsWith('Download'))).toEqual([]);
+  // 'Acesso vitalício' é idêntico de lifetime pra cima — não reaparece.
+  it('não repete "Acesso vitalício" entre vitalícios', () => {
+    expect(novos('lifetime', 'lifetime_plus')).not.toContain('Acesso vitalício');
+    expect(novos('lifetime_plus', 'lifetime_pro')).not.toContain('Acesso vitalício');
   });
 });
 
@@ -150,40 +119,47 @@ describe('upgradePriceFor', () => {
   });
 });
 
-// Ferramentas de IA anunciadas SO no Plus e no Pro (Mensal/Anual/Vitalicio
-// não citam — serão bloqueados futuramente sem quebrar promessa de venda).
-describe('geradores de IA nos benefícios', () => {
-  const GERADORES = [
-    'Gerador de flashcards a partir de qualquer conteúdo da plataforma',
-    'Gerador de banco de questões a partir de qualquer conteúdo da plataforma',
-  ];
+// Ferramentas de IA (10/08): Mensal NÃO tem; Anual pra cima têm todas, com
+// limite de uso crescente (5/10/20/ilimitado). Cada plano cita as ferramentas
+// com o SEU limite, então o texto é único por plano — é o que faz o upgrade
+// mostrar o novo limite como novidade.
+describe('ferramentas de IA nos benefícios', () => {
+  const linhaIa = (plano: string) =>
+    (PLAN_FEATURES[plano] || []).find(f => f.startsWith('Ferramentas de IA'));
 
-  it('plus e pro anunciam os dois geradores, com texto idêntico', () => {
-    for (const g of GERADORES) {
-      expect(PLAN_FEATURES.lifetime_plus).toContain(g);
-      expect(PLAN_FEATURES.lifetime_pro).toContain(g);
+  it('mensal não cita ferramentas de IA', () => {
+    expect(linhaIa('monthly')).toBeUndefined();
+  });
+
+  it('anual, vitalício, plus e pro citam as ferramentas de IA', () => {
+    for (const plano of ['annual', 'lifetime', 'lifetime_plus', 'lifetime_pro']) {
+      expect(linhaIa(plano)).toBeTruthy();
     }
   });
 
-  it('plus e pro anunciam o assistente de IA, com texto idêntico; os demais não', () => {
-    const ASSISTENTE = 'Assistente de IA que lê em tempo real a aula ou arquivo que você está estudando e tira qualquer dúvida';
-    expect(PLAN_FEATURES.lifetime_plus).toContain(ASSISTENTE);
-    expect(PLAN_FEATURES.lifetime_pro).toContain(ASSISTENTE);
-    for (const plano of ['monthly', 'annual', 'lifetime']) {
-      expect(PLAN_FEATURES[plano].filter(f => f.startsWith('Assistente'))).toEqual([]);
-    }
+  it('o limite de IA sobe a cada plano (5 → 10 → 20 → ilimitado)', () => {
+    expect(linhaIa('annual')).toContain('5 usos por dia');
+    expect(linhaIa('lifetime')).toContain('10 usos por dia');
+    expect(linhaIa('lifetime_plus')).toContain('20 usos por dia');
+    expect(linhaIa('lifetime_pro')).toContain('ilimitado');
   });
 
-  it('mensal, anual e vitalício não citam os geradores', () => {
-    for (const plano of ['monthly', 'annual', 'lifetime']) {
-      expect(PLAN_FEATURES[plano].filter(f => f.startsWith('Gerador'))).toEqual([]);
-    }
-  });
-
-  it('vitalício → plus ganha os geradores como novidade; plus → pro não repete', () => {
+  it('cada upgrade traz a linha de IA do novo limite como novidade', () => {
     const novos = (de: string, para: string) =>
       (PLAN_FEATURES[para] || []).filter(f => !(PLAN_FEATURES[de] || []).includes(f));
-    for (const g of GERADORES) expect(novos('lifetime', 'lifetime_plus')).toContain(g);
-    expect(novos('lifetime_plus', 'lifetime_pro').filter(f => f.startsWith('Gerador'))).toEqual([]);
+    for (const [de, para] of [['annual', 'lifetime'], ['lifetime', 'lifetime_plus'], ['lifetime_plus', 'lifetime_pro']]) {
+      expect(novos(de, para).some(f => f.startsWith('Ferramentas de IA'))).toBe(true);
+    }
+  });
+});
+
+// Só o Pro tem download; os limites de IA por plano batem com o enforcement
+// real das Edge Functions (annual 5, lifetime 10, plus 20, pro ilimitado).
+describe('coerência do card do Pro', () => {
+  it('só o Pro anuncia download', () => {
+    for (const plano of ['monthly', 'annual', 'lifetime', 'lifetime_plus']) {
+      expect(PLAN_FEATURES[plano].some(f => f.startsWith('Download'))).toBe(false);
+    }
+    expect(PLAN_FEATURES.lifetime_pro.some(f => f.startsWith('Download'))).toBe(true);
   });
 });

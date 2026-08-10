@@ -18,47 +18,43 @@ export const PLAN_LABELS: Record<string, string> = {
   lifetime_pro: 'Plano Vitalício Pro',
 };
 
+// Benefícios anunciados por plano (10/08). O modal de upgrade calcula "o que
+// você ganha a mais" pela DIFERENÇA de conjunto entre planos vizinhos, então:
+// benefício IGUAL entre dois planos precisa de texto IDÊNTICO (ex: 'Acesso
+// vitalício', o backup no Drive), e benefício que MUDA de valor (telas, limite
+// de IA, atualizações) tem texto próprio — aí aparece como novidade no upgrade.
 export const PLAN_FEATURES: Record<string, string[]> = {
   monthly: [
     'Acesso por 1 mês',
     '1 tela simultânea',
+    'Acesso a todo o acervo atual da plataforma',
   ],
   annual: [
     'Acesso por 1 ano',
     '2 telas simultâneas',
-    'Atualizações mensais',
+    'Acesso a todo o acervo atual da plataforma',
+    'Ferramentas de IA (flashcards, banco de questões, cronograma e assistente): até 5 usos por dia em cada',
   ],
   lifetime: [
     'Acesso vitalício',
     '2 telas simultâneas',
-    'Atualizações mensais',
-    'Download de arquivos, um a um',
+    'Atualizações anuais dos cursos básicos',
+    'Ferramentas de IA (flashcards, banco de questões, cronograma e assistente): até 10 usos por dia em cada',
   ],
   lifetime_plus: [
     'Acesso vitalício',
     '4 telas simultâneas',
-    'Atualizações mensais',
+    'Atualizações anuais dos cursos intermediários',
     'Backup de tudo da plataforma no seu próprio Google Drive',
-    'Download de arquivos, um a um',
-    'Download em massa, cursos e pastas inteiras',
-    'Gerador de flashcards a partir de qualquer conteúdo da plataforma',
-    'Gerador de banco de questões a partir de qualquer conteúdo da plataforma',
-    'Gerador de cronograma de estudos e mapa mental personalizados para o seu interesse de estudo',
-    'Assistente de IA que lê em tempo real a aula ou arquivo que você está estudando e tira qualquer dúvida',
+    'Ferramentas de IA (flashcards, banco de questões, cronograma e assistente): até 20 usos por dia em cada',
   ],
   lifetime_pro: [
     'Acesso vitalício',
     '6 telas simultâneas',
-    'Atualizações mensais + semanais',
+    'Atualizações mensais de 95% de todo o conteúdo + adição de novos cursos',
     'Backup de tudo da plataforma no seu próprio Google Drive',
-    'Download de arquivos, um a um',
-    'Download em massa, cursos e pastas inteiras',
-    'Download das aulas em vídeo — exclusivo do Pro',
-    'Gerador de flashcards a partir de qualquer conteúdo da plataforma',
-    'Gerador de banco de questões a partir de qualquer conteúdo da plataforma',
-    'Gerador de cronograma de estudos e mapa mental personalizados para o seu interesse de estudo',
-    'Assistente de IA que lê em tempo real a aula ou arquivo que você está estudando e tira qualquer dúvida',
-    'Acesso a todas as atualizações sem precisar de nenhuma colaboração',
+    'Download de aulas em vídeo e de arquivos (exclusivo do Pro)',
+    'Ferramentas de IA (flashcards, banco de questões, cronograma e assistente): uso ilimitado',
     'Acesso à IA de diagnósticos Meduf (meduf.com.br)',
   ],
 };
@@ -80,17 +76,15 @@ export function upgradePriceFor(currentPlan: string | null | undefined, targetPl
   return Math.max(Math.round((alvo - atual) * 100) / 100, MIN_UPGRADE_PRICE);
 }
 
-// Quem pode baixar. São DUAS listas, porque aula e arquivo têm regras
-// diferentes — é o único lugar da plataforma que decide isso.
+// Quem pode baixar. Desde 10/08 (decisão do dono): download de QUALQUER
+// conteúdo — arquivo (apostila/PDF/planilha/imagem/áudio) OU aula em vídeo —
+// é EXCLUSIVO do Vitalício Pro. Nos demais planos o conteúdo fica só para
+// assistir/ler na plataforma; clicar em baixar abre o convite de upgrade.
 //
-// ARQUIVO (apostila, PDF, planilha, imagem, áudio — tudo que não é vídeo):
-// do Vitalício pra cima, um por vez. Teste grátis, Mensal e Anual não baixam;
-// clicar abre o convite pra assinar (trial) ou pra fazer upgrade.
-export const PLANS_WITH_DOWNLOAD = new Set(['lifetime', 'lifetime_plus', 'lifetime_pro', 'admin']);
-
-// AULA (vídeo): bloqueada em TODOS os planos, menos o Vitalício Pro. O acervo
-// de vídeo é o ativo da plataforma; assistir na plataforma é o que todo plano
-// compra, baixar o arquivo do vídeo é exclusividade do topo.
+// Continuam DUAS listas por dois motivos: (1) a mensagem do upsell muda por
+// tipo, (2) trocar a regra de arquivo sem mexer na de vídeo (ou vice-versa)
+// vira uma linha. Hoje as duas apontam para o mesmo conjunto de propósito.
+export const PLANS_WITH_DOWNLOAD = new Set(['lifetime_pro', 'admin']);
 export const PLANS_WITH_LESSON_DOWNLOAD = new Set(['lifetime_pro', 'admin']);
 
 export function canDownloadPlan(plan?: string | null): boolean {

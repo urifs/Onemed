@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Download, Lock, Check } from 'lucide-react';
+import { Lock, Check } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -41,22 +41,21 @@ export function DownloadUpsellModal({ open, onOpenChange, reason, plan }: {
   const ehAulaPro = reason === 'lesson-pro';
   const nomePlano = plan ? PLAN_LABELS[plan] || plan : null;
 
+  // Desde 10/08 todo download é exclusivo do Vitalício Pro. 'lesson-pro' é o
+  // caso de aula em vídeo; 'upgrade' é o de arquivo. Os dois apontam pro Pro.
   const titulo = ehTrial
     ? 'Downloads são exclusivos para assinantes'
     : ehAulaPro
       ? 'Baixar aulas é exclusivo do Vitalício Pro'
-      : 'Seu plano não inclui downloads';
+      : 'Baixar arquivos é exclusivo do Vitalício Pro';
 
   const descricao = ehTrial
-    ? 'Sua conta é de teste grátis. Para baixar os arquivos do acervo, assine um plano e libere a plataforma completa.'
+    ? 'Sua conta é de teste grátis. O download é um recurso do Vitalício Pro — assine para liberar a plataforma completa.'
     : ehAulaPro
-      // Quem chega aqui já baixa arquivo — o texto precisa deixar claro que o
-      // que mudou é só a aula em vídeo, senão parece que perdeu um direito.
-      ? `${nomePlano ? `O ${nomePlano}` : 'Seu plano'} baixa os arquivos e apostilas normalmente. `
-        + 'O download das aulas em vídeo é exclusivo do Vitalício Pro — no seu plano elas ficam '
-        + 'disponíveis para assistir na plataforma, sem limite. No upgrade você paga só a diferença.'
-      : `${nomePlano ? `O ${nomePlano}` : 'Seu plano'} dá acesso a todo o conteúdo para assistir na plataforma. `
-        + 'Para baixar os arquivos do acervo, faça upgrade — você paga só a diferença.';
+      ? `${nomePlano ? `No ${nomePlano}` : 'No seu plano'} as aulas ficam disponíveis para assistir na plataforma, sem limite. `
+        + 'O download das aulas em vídeo é exclusivo do Vitalício Pro. No upgrade você paga só a diferença.'
+      : `${nomePlano ? `No ${nomePlano}` : 'No seu plano'} os arquivos ficam disponíveis para ler na plataforma. `
+        + 'O download de arquivos e apostilas é exclusivo do Vitalício Pro. No upgrade você paga só a diferença.';
 
   return (
     <>
@@ -64,7 +63,7 @@ export function DownloadUpsellModal({ open, onOpenChange, reason, plan }: {
         <DialogContent className="bg-background-paper border-border max-w-md">
           <DialogHeader>
             <div className="w-11 h-11 rounded-full bg-primary/15 border border-primary/30 flex items-center justify-center mb-1">
-              {ehTrial || ehAulaPro ? <Lock className="w-5 h-5 text-primary" /> : <Download className="w-5 h-5 text-primary" />}
+              <Lock className="w-5 h-5 text-primary" />
             </div>
             <DialogTitle className="text-foreground text-lg">{titulo}</DialogTitle>
             <DialogDescription>{descricao}</DialogDescription>

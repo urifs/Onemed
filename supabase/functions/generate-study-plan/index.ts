@@ -41,20 +41,23 @@ serve(async (req) => {
     const { data: { user }, error: authErr } = await supabase.auth.getUser(jwt)
     if (authErr || !user) return json(req, { error: 'Sessão inválida' }, 401)
 
-    // Plano Mensal não usa as ferramentas de IA (mesmo critério de flashcards).
+    // Limite de IA por plano (decisão do dono, 10/08): Mensal BLOQUEADO;
+    // Anual 5/dia; Vitalício 10; Plus 20; Pro/admin sem limite de plano.
+    let planoAtual = ''
     try {
       const asUser = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY') || '', {
         global: { headers: { Authorization: `Bearer ${jwt}` } },
       })
       const { data: st } = await asUser.rpc('my_member_status')
-      if ((Array.isArray(st) ? st[0] : st)?.plan === 'monthly') {
+      planoAtual = String((Array.isArray(st) ? st[0] : st)?.plan || '')
+      if (planoAtual === 'monthly') {
         return json(req, { error: 'O Plano Mensal não inclui as ferramentas de IA. Faça upgrade de plano para liberar.' }, 403)
       }
-    } catch { /* segue liberado */ }
+    } catch { /* segue liberado no teto de segurança */ }
 
-    // Teto de segurança: 100 cronogramas/dia (mesma régua dos outros geradores
-    // de IA — não limita uso real, só barra abuso; a IA é paga por chamada).
-    const LIMITE_DIARIO = 100
+    const LIMITE_IA_POR_PLANO: Record<string, number> = { annual: 5, lifetime: 10, lifetime_plus: 20 }
+    const TETO_SEGURANCA = 100
+    const LIMITE_DIARIO = LIMITE_IA_POR_PLANO[planoAtual] ?? TETO_SEGURANCA
     try {
       const now = new Date()
       const { data: rl } = await supabase.from('rate_limits')
@@ -70,9 +73,10 @@ serve(async (req) => {
           const quando = faltamMin >= 60
             ? `em ${Math.ceil(faltamMin / 60)}h`
             : `em ${faltamMin} minuto${faltamMin === 1 ? '' : 's'}`
-          return json(req, {
-            error: `Você já gerou ${LIMITE_DIARIO} cronogramas nas últimas 24 horas, que é o limite diário. Você poderá gerar de novo ${quando}.`,
-          }, 429)
+          const msg = LIMITE_DIARIO < TETO_SEGURANCA
+            ? `Você usou os ${LIMITE_DIARIO} cronogramas de hoje do seu plano. O limite renova ${quando}. Planos superiores liberam mais — o Pro é sem limite.`
+            : `Você já gerou ${LIMITE_DIARIO} cronogramas nas últimas 24 horas, que é o limite diário. Você poderá gerar de novo ${quando}.`
+          return json(req, { error: msg }, 429)
         }
         await supabase.from('rate_limits').update({ attempts: rl.attempts + 1 }).eq('identifier', user.id).eq('action', 'study_plan')
       } else {

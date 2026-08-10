@@ -26,10 +26,10 @@ export function useDownloadGate() {
 
   const motivoPara = (item?: GatedItem): DownloadBlockReason => {
     if (status === 'trial') return 'trial';
-    // Assinante que já podia baixar arquivo e esbarrou numa aula: o convite
-    // tem que dizer que o que falta é o Pro, não que "seu plano não baixa".
-    if (isLessonVideo(item) && canDownloadItem(plan, { type: 'pdf' })) return 'lesson-pro';
-    return 'upgrade';
+    // Desde 10/08 todo download é exclusivo do Pro. A mensagem muda só pelo
+    // TIPO do item — "baixar aulas" (vídeo) x "baixar arquivos" —, ambas
+    // apontando para o upgrade ao Pro.
+    return isLessonVideo(item) ? 'lesson-pro' : 'upgrade';
   };
 
   // Envolve a ação de download: devolve true quando pode seguir.
