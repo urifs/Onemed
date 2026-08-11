@@ -2601,6 +2601,44 @@ deployada, eszip no ar conferido). Verificado com 4 cobranças reais: 499+94=593
 MP. `plan_amount` segue só o plano (comissão de afiliado não incide sobre upsell, regra de
 07/08). Buyers de teste apagados.
 
+---
+
+### 2026-08-11 (sessão remota) — cache de trechos no worker: a solução da franquia diária por arquivo
+
+**Relato:** vários clientes com "Esta aula atingiu o limite de acessos de hoje" em vários vídeos
+(Hepatite B do Medcurso Comp etc.) — a mensagem honesta da correção anterior, mas o problema de
+fundo continuava: aula popular estoura a franquia diária de download POR ARQUIVO na origem e fica
+horas fora do ar para todo mundo.
+
+**Solução — cache por trecho na Cloudflare (`caches.default`, Cache API):** o worker já fatiava
+pedido aberto em janelas fixas de 24MB; agora cada janela é servida do cache do datacenter e só
+vai ao Drive UMA vez por colo a cada 3 dias (TTL). Cem alunos assistindo passam a custar ~1
+download na franquia em vez de cem — o estouro deixa de acontecer. Detalhes de implementação:
+- Assinatura HMAC conferida ANTES do cache (o cache não afrouxa a autenticação); a chave de
+  cache é `fileId + range` (exclui assinatura/`dl`), então alunos DIFERENTES compartilham os
+  trechos — verificado em produção (URL nova de outro token → HIT).
+- A Cache API **recusa respostas 206**: o trecho é guardado como 200 com `x-orig-status`/
+  `x-orig-content-range` e reconstruído na leitura. `tee()` no corpo: o mesmo fluxo vai pro
+  aluno e pro cache sem segurar 24MB em memória; `ctx.waitUntil` completa a gravação.
+- Cache HIT também pula a chamada à `drive-access-token` (menos uma invocação de function por
+  range request — amortiza a pendência antiga de cache de token).
+- Só corpos com `content-length` conhecido ≤32MB entram (janelas de 24MB sempre cabem; PDFs e
+  arquivos pequenos também são cacheados; export sem content-length fica de fora).
+- Header `x-cache: HIT|MISS` para diagnóstico.
+
+**Verificado em produção:** mesmo trecho 2× → MISS depois HIT com bytes SHA-256 idênticos e
+content-range correto; URL assinada nova (outro "aluno") → HIT; **trecho em cache continuou
+respondendo 206 mesmo com o arquivo JÁ BLOQUEADO na origem** (o 429 só aparece em trecho que
+nunca foi visto). Medido também que arquivo com franquia esgotada de verdade recusa QUALQUER
+tamanho de range (64KB → 429), então não existe fallback de "trecho menor" — o cache é a única
+mitigação real, e o que já foi assistido uma vez continua no ar.
+
+⚠️ O cache é POR DATACENTER (alunos do Brasil ≈ mesmo colo, efetivo) e sujeito a eviction LRU —
+não é garantia absoluta, é redução de ~N× no consumo da franquia. Aulas bloqueadas HOJE voltam
+sozinhas no reset diário; daí em diante o cache absorve a carga. Se ainda assim algum arquivo
+muito quente voltar a estourar, o caminho definitivo documentado continua sendo migrar o arquivo
+para conta própria (ufgravity/Storage) — o dono não tem franquia no próprio arquivo.
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
