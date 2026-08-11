@@ -19,6 +19,7 @@ import { QuestionBankViewer } from '@/components/member/QuestionBankViewer';
 import { exportQuestionBankPdf } from '@/lib/questionBankPdf';
 import { useMemberStatus } from '@/hooks/useMemberStatus';
 import { AiUpsellModal } from '@/components/member/AiUpsellModal';
+import { TrialWelcomeModal } from '@/components/member/TrialWelcomeModal';
 import { CATEGORY_ORDER } from '@/lib/courseCategories';
 import { lessonTypeFromMime } from './ArchivePage';
 import { formatDateTimeSP, formatDuration, matchesSearch, stripYearFromTitle, withTimeout, withRetry, describeLoadError } from '@/lib/utils';
@@ -679,6 +680,9 @@ export default function MemberDashboardPage() {
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Aviso do trial (versões completas só após assinar) — /membros é o
+          destino do fluxo de trial, então é aqui que a caixa aparece. */}
+      <TrialWelcomeModal />
       <MemberHeader />
       <MemberSearchBar
         query={query}
