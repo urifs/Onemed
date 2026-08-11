@@ -2373,6 +2373,32 @@ máximo. Modo GERAR normal intacto (chamada única, `importDone=true`).
 > aluno vê o número subir e precisa manter a tela aberta — foi o trade-off aceito para entregar o
 > banco inteiro em vez de pedir pra dividir o PDF à mão.
 
+---
+
+### 2026-08-11 (sessão remota) — caixa de boas-vindas do trial, IA 5× no trial, receita de ontem
+
+**Caixa flutuante ao iniciar o trial** (`TrialWelcomeModal.tsx`, montada no `MemberDashboardPage`
+— destino do fluxo de trial): aparece UMA vez, avisando que "os cursos nas versões mais
+atualizadas e totalmente completos ficam disponíveis apenas após a assinatura, para evitar
+cópias", com botão "Entendi". Marcado como visto em `localStorage` por conta (`om_trial_welcome_
+seen_<uid>`); só existe para `status === 'trial'`. Verificado em produção: trial vê e não
+reaparece após "Entendi"+reload; conta paga não vê.
+
+**Trial nas ferramentas de IA: 5 usos por ferramenta** (decisão do dono — "só pra conferir o
+funcionamento"). `LIMITE_IA_POR_PLANO` ganhou `trial: 5` nas 3 functions
+(`generate-flashcards` nos dois modos, `generate-study-plan`, `member-assistant`); no 6º uso →
+429 com mensagem específica de trial ("Você usou as 5 utilizações liberadas no teste grátis.
+Assine um plano para continuar…"). O **cronograma bloqueava trial totalmente no frontend**
+(`if (isTrial)` → tela de "exclusivo para assinantes") — removido, agora o trial gera e o limite
+de 5 é aplicado no servidor como nas demais. Flashcards/questões já liberavam trial
+(`podeGerarIa = memberPlan !== 'monthly'`). Verificado em produção nas 4 ferramentas: no 5º → 429,
+no 4º → passa.
+
+**Receita de ONTEM no admin** (`BuyersPage`): novos badges "Receita Ontem" e "Aprovados Ontem"
+ao lado dos de hoje. Novo helper `yesterdayStartISO()` — janela fechada `[ontem 00h, hoje 00h)`
+no fuso de São Paulo (não pode incluir hoje). Verificado em produção contra o banco: R$ 4.469,00
+e 14 aprovados ontem, batendo exatamente.
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
