@@ -53,12 +53,12 @@ const Take: React.FC<{ t: number; at: number; until: number; src: string; from: 
   if (o <= 0) return null;
   return (
     <div style={{ position: 'absolute', inset: 0, opacity: o }}>
-      <div style={{ position: 'absolute', left: '50%', top: '45%', transform: 'translate(-50%,-50%)', width: 620, height: 1130, borderRadius: 30, overflow: 'hidden', border: `1.5px solid rgba(216,180,90,0.4)`, boxShadow: '0 60px 130px -30px rgba(0,0,0,0.9)' }}>
+      <div style={{ position: 'absolute', left: '50%', top: '48%', transform: 'translate(-50%,-50%)', width: 600, height: 1000, borderRadius: 30, overflow: 'hidden', border: `1.5px solid rgba(216,180,90,0.4)`, boxShadow: '0 60px 130px -30px rgba(0,0,0,0.9)' }}>
         <ClipAt fromSec={at - 0.3}>
           <OffthreadVideo src={staticFile(src)} muted startFrom={from} style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top', filter: 'brightness(1.22)' }} />
         </ClipAt>
       </div>
-      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 330, textAlign: 'center' }}>
+      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 408, textAlign: 'center' }}>
         <span style={{ background: 'rgba(0,0,0,0.7)', border: `1px solid ${OURO}`, borderRadius: 999, padding: '10px 28px', fontFamily: HEAD, fontWeight: 800, fontSize: 28, color: OURO }}>{label}</span>
       </div>
     </div>
@@ -149,7 +149,7 @@ export const C64_Creditos: React.FC = () => {
 
       {/* PÓS-PRODUÇÃO: IA */}
       {t >= B.pos && t < B.cartela && (
-        <div style={{ position: 'absolute', left: 0, right: 0, top: 350, textAlign: 'center', opacity: Math.min(win(t, B.pos, B.pos + 0.3), 1 - win(t, B.cartela - 0.25, B.cartela)), zIndex: 6 }}>
+        <div style={{ position: 'absolute', left: 0, right: 0, top: 200, textAlign: 'center', opacity: Math.min(win(t, B.pos, B.pos + 0.3), 1 - win(t, B.cartela - 0.25, B.cartela)), zIndex: 6 }}>
           <Rotulo>PÓS-PRODUÇÃO</Rotulo>
           <div style={{ fontFamily: HEAD, fontWeight: 900, fontSize: 56, color: OURO, marginTop: 8 }}>INTELIGÊNCIA ARTIFICIAL</div>
         </div>
