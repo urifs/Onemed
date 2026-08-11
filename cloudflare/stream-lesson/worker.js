@@ -27,7 +27,7 @@ function corsHeaders(request) {
     'Access-Control-Allow-Origin': allowedOrigin,
     'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
     'Access-Control-Allow-Headers': 'Range',
-    'Access-Control-Expose-Headers': 'Content-Range, Content-Length, Accept-Ranges, Content-Type',
+    'Access-Control-Expose-Headers': 'Content-Range, Content-Length, Accept-Ranges, Content-Type, X-Embed-Ok',
     'Access-Control-Max-Age': '86400',
     'Vary': 'Origin',
   };
@@ -159,10 +159,28 @@ export default {
       // detalhe de infraestrutura nosso.
       const body = await driveRes.text().catch(() => '');
       if (driveRes.status === 403 && body.includes('downloadQuotaExceeded')) {
+        // O player tem um plano B para a franquia estourada — embutir o player
+        // público do armazenamento — mas ele SÓ funciona quando o arquivo é
+        // compartilhado por link ("qualquer pessoa com o link"). Vários cursos
+        // vêm de contas que compartilham só com a nossa conta de leitura: para
+        // esses, o embed mostrava "Você precisa ter acesso" pro aluno (pior:
+        // com botão de pedir acesso de EDITOR ao dono do arquivo). A sonda
+        // abaixo é anônima, exatamente como o iframe do aluno: 200 = o embed
+        // abre; qualquer outra coisa (401/302 de login) = não oferecer.
+        let embedOk = '0';
+        try {
+          const probe = await fetch(
+            `https://drive.google.com/file/d/${fileId}/preview`,
+            { redirect: 'manual' },
+          );
+          if (probe.status === 200) embedOk = '1';
+        } catch { /* na dúvida, não oferece o embed */ }
+        const quotaHeaders = new Headers(cors);
+        quotaHeaders.set('X-Embed-Ok', embedOk);
         return new Response(
           'Esta aula atingiu o limite de acessos de hoje. '
           + 'Ela volta a abrir automaticamente em algumas horas — as demais aulas seguem normais.',
-          { status: 429, headers: cors },
+          { status: 429, headers: quotaHeaders },
         );
       }
       return new Response('Não foi possível carregar o arquivo', { status: 502, headers: cors });

@@ -159,20 +159,31 @@ export function LessonPlayer({
    * passa mesmo com a cota estourada e daria um falso "está tudo bem". A
    * leitura para no primeiro pedaço do corpo, então quase nada é baixado.
    */
-  const sondarFalha = async (url: string): Promise<{ quotaMsg: string | null; ehTs: boolean }> => {
+  const sondarFalha = async (url: string): Promise<{ quotaMsg: string | null; ehTs: boolean; embedOk: boolean }> => {
     const ctrl = new AbortController();
     try {
       const res = await fetch(url, { headers: { Range: 'bytes=0-' }, signal: ctrl.signal });
-      if (res.status === 429) return { quotaMsg: (await res.text()).slice(0, 300), ehTs: false };
-      if (!res.ok || !res.body) return { quotaMsg: null, ehTs: false };
+      if (res.status === 429) {
+        // X-Embed-Ok vem do worker: ele sonda anonimamente se o player público
+        // do armazenamento abre sem login. '0' = arquivo NÃO compartilhado por
+        // link — o embed mostraria "Você precisa ter acesso" pro aluno (com
+        // botão de pedir acesso ao dono do arquivo!), então nem oferecer.
+        // Header ausente (worker antigo) mantém o comportamento de sempre.
+        return {
+          quotaMsg: (await res.text()).slice(0, 300),
+          ehTs: false,
+          embedOk: res.headers.get('x-embed-ok') !== '0',
+        };
+      }
+      if (!res.ok || !res.body) return { quotaMsg: null, ehTs: false, embedOk: true };
       const { value } = await res.body.getReader().read();
       // Pacote TS: 0x47 no byte 0 e de novo 188 bytes depois (tamanho fixo do
       // pacote). Checar os dois evita confundir com um arquivo qualquer que
       // por acaso comece com 0x47.
       const ehTs = !!value && value.length >= 189 && value[0] === 0x47 && value[188] === 0x47;
-      return { quotaMsg: null, ehTs };
+      return { quotaMsg: null, ehTs, embedOk: true };
     } catch {
-      return { quotaMsg: null, ehTs: false }; // rede caiu no meio: falha comum, tenta de novo
+      return { quotaMsg: null, ehTs: false, embedOk: true }; // rede caiu no meio: falha comum, tenta de novo
     } finally {
       ctrl.abort();
     }
@@ -186,14 +197,15 @@ export function LessonPlayer({
     // Sonda só no primeiro erro: se for a propagação de permissão do Drive
     // (o caso comum), a resposta não é 429 nem TS e as tentativas seguem.
     if (src && mediaRetries.current === 0) {
-      void sondarFalha(src).then(({ quotaMsg, ehTs }) => {
+      void sondarFalha(src).then(({ quotaMsg, ehTs, embedOk }) => {
         if (quotaMsg) {
           quotaBlocked.current = true;
           // Só há para onde cair se o arquivo ainda estiver no Drive de
-          // origem. Aula já migrada para o nosso armazenamento não tem
-          // drive_file_id útil — nesse caso a mensagem continua sendo a
-          // resposta certa.
-          if (lesson.drive_file_id && !lesson.storage_path) setUsarEmbed(true);
+          // origem E o embed público funcionar de verdade (embedOk, sondado
+          // pelo worker) — arquivo não compartilhado por link mostraria
+          // "Você precisa ter acesso" no lugar da aula. Sem plano B, a
+          // mensagem honesta de limite é a resposta certa.
+          if (embedOk && lesson.drive_file_id && !lesson.storage_path) setUsarEmbed(true);
           else setError(quotaMsg);
           return;
         }

@@ -2546,6 +2546,37 @@ não usa `amountPaid` (upgrade é diferença de tabela) — nada muda no preço 
 Verificado em produção com conta simulando upgrade real (buyers 299 + 200, accesses lifetime):
 `plan=lifetime, amountPaid=499`. Conta de teste apagada.
 
+---
+
+### 2026-08-11 (sessão remota) — "Você precisa ter acesso" no player (embed de cota × arquivo sem link)
+
+**Relato (vários clientes, prints):** aulas .mp4 (Manole Clínica Médica, Medcof) abrindo com a
+tela do Google Drive "Você precisa ter acesso" DENTRO do player — com o aluno podendo pedir
+acesso de EDITOR ao dono do arquivo.
+
+**Causa (duas condições juntas):** (1) a aula estourou a franquia diária de download do arquivo
+no Drive → worker responde 429 → o player cai no plano B, o embed `drive.google.com/.../preview`;
+(2) esses arquivos pertencem a contas de origem (`driveacesso55@`, `acessolivros25@`) que
+compartilham SÓ com a conta de leitura da plataforma — **não são "qualquer pessoa com o link"**.
+O embed então exige login/permissão e mostra o pedido de acesso. O fallback foi validado em
+31/07 com arquivos do `medbrasil31` (esses SÃO por link) e generalizado indevidamente. Sinal
+discriminante medido: preview ANÔNIMO responde **200** quando é por link e **401** quando não é.
+
+**Correção:**
+- `cloudflare/stream-lesson/worker.js` (deploy manual feito, keep_bindings preservado, 3 bindings
+  conferidos, OPTIONS 200): no 429 de cota, sonda o preview anonimamente (`redirect: manual`) e
+  responde o header **`X-Embed-Ok: 1|0`** (+ exposto no CORS).
+- `LessonPlayer.sondarFalha` lê o header: embed SÓ quando `X-Embed-Ok` ≠ '0'; senão mostra a
+  mensagem honesta de limite diário. Header ausente (worker antigo) mantém o comportamento de
+  sempre — ordem de deploy segura (worker primeiro, frontend depois).
+
+**Verificado em produção:** worker live era byte-idêntico ao repo antes da mudança (diff via
+multipart); pós-deploy, streaming normal da aula EXATA do print (206, bytes `ftyp` de MP4 real,
+com conta de teste criada e apagada). A cota dos arquivos reportados já tinha resetado (206 na
+sonda) — quando estourar de novo, o aluno verá a mensagem de limite em vez do pedido de acesso
+do Google. ⚠️ Sondar cota de arquivo grande: NUNCA `-o /dev/null` com range aberto (baixa bytes
+até o timeout e consome a franquia) — use `Range: bytes=0-1023` pra teste de vida.
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
