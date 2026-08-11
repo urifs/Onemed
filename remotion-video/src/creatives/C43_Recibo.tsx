@@ -46,7 +46,7 @@ export const C43_Recibo: React.FC = () => {
   const slot = 330;                      // boca da impressora
   const scroll = Math.max(0, printed - 880);   // papel desce, câmera segue
   const zoomTotal = win(t, B.total + 0.5, B.total + 1.1) * (1 - win(t, B.escorre - 0.4, B.escorre));
-  const slide = easeOutExpo(win(t, B.escorre + 0.55, B.escorre + 1.5)) * 1900;
+  const slide = Math.pow(win(t, B.escorre + 0.9, B.escorre + 2.7), 2.2) * 2100;
   const paperOp = sceneOpacity(t, [0, B.end + 0.6] as Range, true);
 
   return (
@@ -120,6 +120,13 @@ export const C43_Recibo: React.FC = () => {
               );
             })}
           </div>
+        </div>
+      </div>
+
+      {/* cartela: não coube na tela */}
+      <div style={{ position: 'absolute', left: 0, right: 0, top: 820, textAlign: 'center', zIndex: 8, opacity: win(t, B.escorre + 1.6, B.escorre + 2.0) * (1 - win(t, B.end + 0.4, B.end + 0.9)) }}>
+        <div style={{ fontFamily: HEAD, fontWeight: 900, fontSize: 72, color: O_INK, letterSpacing: -2, lineHeight: 1.15 }}>
+          não coube<br /><span style={{ color: O_RED }}>na tela.</span>
         </div>
       </div>
 
