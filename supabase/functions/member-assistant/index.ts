@@ -161,7 +161,7 @@ serve(async (req) => {
     } catch { /* segue liberado no teto de segurança */ }
 
     // ── limite de mensagens/dia: o do plano (5/10/20) ou o teto de 100 ──────
-    const LIMITE_IA_POR_PLANO: Record<string, number> = { annual: 5, lifetime: 10, lifetime_plus: 20 }
+    const LIMITE_IA_POR_PLANO: Record<string, number> = { trial: 5, annual: 5, lifetime: 10, lifetime_plus: 20 }
     const TETO_SEGURANCA = 100
     const LIMITE_DIARIO = LIMITE_IA_POR_PLANO[planoAluno] ?? TETO_SEGURANCA
     try {
@@ -179,9 +179,11 @@ serve(async (req) => {
           const quando = faltamMin >= 60
             ? `em ${Math.ceil(faltamMin / 60)}h`
             : `em ${faltamMin} minuto${faltamMin === 1 ? '' : 's'}`
-          const msg = LIMITE_DIARIO < TETO_SEGURANCA
-            ? `Você usou as ${LIMITE_DIARIO} mensagens de hoje do seu plano no assistente. O limite renova ${quando}. Planos superiores liberam mais — o Pro é sem limite.`
-            : `Você já enviou ${LIMITE_DIARIO} mensagens ao assistente nas últimas 24 horas, que é o limite diário. Você poderá conversar de novo ${quando}.`
+          const msg = planoAluno === 'trial'
+            ? `Você usou as ${LIMITE_DIARIO} utilizações liberadas no teste grátis. Assine um plano para continuar usando as ferramentas de IA da plataforma.`
+            : LIMITE_DIARIO < TETO_SEGURANCA
+              ? `Você usou as ${LIMITE_DIARIO} mensagens de hoje do seu plano no assistente. O limite renova ${quando}. Planos superiores liberam mais — o Pro é sem limite.`
+              : `Você já enviou ${LIMITE_DIARIO} mensagens ao assistente nas últimas 24 horas, que é o limite diário. Você poderá conversar de novo ${quando}.`
           return json(req, { error: msg }, 429)
         }
         await supabase.from('rate_limits').update({ attempts: rl.attempts + 1 })

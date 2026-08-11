@@ -6,7 +6,7 @@ import AdminLayout from '@/components/AdminLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { formatDateTimeSP, todayStartISO, fetchAllRows } from '@/lib/utils';
+import { formatDateTimeSP, todayStartISO, yesterdayStartISO, fetchAllRows } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DollarSign, Users, Clock, TrendingUp, Mail, Calendar, Phone, Trash2, UserPlus, Loader2, RefreshCw, CheckCircle, XCircle, X, Download, AlertTriangle } from 'lucide-react';
 import { WhatsAppLink } from '@/components/WhatsAppLink';
@@ -38,15 +38,21 @@ export default function BuyersPage() {
       setBuyers(buyersData);
       const all = buyersData;
       const todayISO = todayStartISO();
+      const yesterdayISO = yesterdayStartISO();
       const today = all.filter(b => b.created_at >= todayISO);
+      // Ontem = janela fechada [ontem 00h, hoje 00h): não pode incluir hoje.
+      const yesterday = all.filter(b => b.created_at >= yesterdayISO && b.created_at < todayISO);
       const byPlan: Record<string, number> = {};
       for (const plan of Object.keys(PLAN_LABELS)) {
         byPlan[plan] = today.filter(b => b.plan === plan).length;
       }
+      const somaAmount = (rows: any[]) => rows.reduce((s: number, b: any) => s + (b.amount || 0), 0);
       setStats({
         total: today.length,
         approved: today.filter(b => b.status === 'approved').length,
-        revenue: today.filter(b => b.status === 'approved').reduce((s: number, b: any) => s + (b.amount || 0), 0),
+        revenue: somaAmount(today.filter(b => b.status === 'approved')),
+        revenueYesterday: somaAmount(yesterday.filter(b => b.status === 'approved')),
+        approvedYesterday: yesterday.filter(b => b.status === 'approved').length,
         byPlan,
       });
     } catch {
@@ -147,7 +153,9 @@ export default function BuyersPage() {
           {[
             { label: 'Compradores', value: loading ? '—' : buyers.length, icon: Users, color: 'text-primary' },
             { label: 'Receita Hoje', value: stats ? `R$ ${stats.revenue.toFixed(2)}` : '—', icon: DollarSign, color: 'text-accent-warning' },
+            { label: 'Receita Ontem', value: stats ? `R$ ${(stats.revenueYesterday ?? 0).toFixed(2)}` : '—', icon: DollarSign, color: 'text-accent-info' },
             { label: 'Aprovados Hoje', value: stats?.approved ?? '—', icon: CheckCircle, color: 'text-accent-success' },
+            { label: 'Aprovados Ontem', value: stats?.approvedYesterday ?? '—', icon: CheckCircle, color: 'text-accent-info' },
           ].map((s, i) => (
             <Card key={i} className="bg-background-paper border-border">
               <CardContent className="p-5">

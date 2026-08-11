@@ -34,14 +34,16 @@ const TASK_LABEL: Record<string, string> = {
 
 export default function StudyPlanPage() {
   const navigate = useNavigate();
-  const { status, plan: memberPlan } = useMemberStatus();
+  const { plan: memberPlan } = useMemberStatus();
   const [searchParams, setSearchParams] = useSearchParams();
   const [plans, setPlans] = useState<StudyPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(searchParams.get('id'));
 
-  const isTrial = status === 'trial';
+  // Trial agora PODE gerar cronograma (limite de 5 usos aplicado no servidor,
+  // como todas as ferramentas de IA). Só o Mensal fica sem — bloqueado no
+  // diálogo de criação abaixo.
   const isMonthly = memberPlan === 'monthly';
 
   const [loadError, setLoadError] = useState(false);
@@ -57,7 +59,7 @@ export default function StudyPlanPage() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { if (!isTrial) load(); }, [load, isTrial]);
+  useEffect(() => { load(); }, [load]);
 
   const selected = useMemo(() => plans.find(p => p.id === selectedId) || null, [plans, selectedId]);
 
@@ -80,23 +82,6 @@ export default function StudyPlanPage() {
     closePlan();
     toast.success('Cronograma excluído.');
   };
-
-  if (isTrial) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center px-4">
-        <div className="max-w-md text-center">
-          <CalendarClock className="w-10 h-10 text-primary mx-auto mb-4" />
-          <h1 className="font-secondary text-2xl font-bold text-foreground mb-2">Cronograma de Estudos</h1>
-          <p className="text-sm text-muted-foreground mb-6">
-            O gerador de cronograma com IA é exclusivo para assinantes. Assine para montar seu plano de estudos personalizado.
-          </p>
-          <Link to="/checkout" className="inline-flex rounded-xl bg-primary hover:bg-primary-hover text-primary-foreground font-semibold px-8 py-3.5 transition-colors">
-            Adquirir acesso completo
-          </Link>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-background">

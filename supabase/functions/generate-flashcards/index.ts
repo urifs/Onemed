@@ -173,7 +173,7 @@ serve(async (req) => {
     // 100 para Pro/admin (e para quem a resolução de plano não pegou). Cada
     // "ferramenta" tem seu contador (rlAction 'flashcards' vs 'questions'),
     // como o dono pediu — 5 flashcards E 5 questões no Anual, não 5 no total.
-    const LIMITE_IA_POR_PLANO: Record<string, number> = { annual: 5, lifetime: 10, lifetime_plus: 20 }
+    const LIMITE_IA_POR_PLANO: Record<string, number> = { trial: 5, annual: 5, lifetime: 10, lifetime_plus: 20 }
     const TETO_SEGURANCA = 100
     const LIMITE_DIARIO = LIMITE_IA_POR_PLANO[planoAtual] ?? TETO_SEGURANCA
     // Continuação de importação paginada não passa pelo contador — a primeira
@@ -195,11 +195,14 @@ serve(async (req) => {
             ? `em ${Math.ceil(faltamMin / 60)}h`
             : `em ${faltamMin} minuto${faltamMin === 1 ? '' : 's'}`
           const oQue = modo === 'questions' ? 'bancos de questões' : 'baralhos de flashcards'
-          // Plano com limite baixo → aponta o upgrade; teto de segurança
-          // (Pro/admin) → mensagem antiga de "limite diário".
-          const msg = LIMITE_DIARIO < TETO_SEGURANCA
-            ? `Você usou as ${LIMITE_DIARIO} gerações de ${oQue} de hoje do seu plano. O limite renova ${quando}. Planos superiores liberam mais gerações por dia — o Pro é sem limite.`
-            : `Você já gerou ${LIMITE_DIARIO} ${oQue} nas últimas 24 horas, que é o limite diário. Você poderá gerar de novo ${quando}.`
+          // Trial → convite pra assinar (é um teto de experimentação, não
+          // renovável). Plano pago com limite baixo → aponta o upgrade. Teto de
+          // segurança (Pro/admin) → mensagem antiga de "limite diário".
+          const msg = planoAtual === 'trial'
+            ? `Você usou as ${LIMITE_DIARIO} utilizações liberadas no teste grátis. Assine um plano para continuar usando as ferramentas de IA da plataforma.`
+            : LIMITE_DIARIO < TETO_SEGURANCA
+              ? `Você usou as ${LIMITE_DIARIO} gerações de ${oQue} de hoje do seu plano. O limite renova ${quando}. Planos superiores liberam mais gerações por dia — o Pro é sem limite.`
+              : `Você já gerou ${LIMITE_DIARIO} ${oQue} nas últimas 24 horas, que é o limite diário. Você poderá gerar de novo ${quando}.`
           return json(req, { error: msg }, 429)
         }
         await supabase.from('rate_limits').update({ attempts: rl.attempts + 1 })

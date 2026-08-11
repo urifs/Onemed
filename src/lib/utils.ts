@@ -122,6 +122,15 @@ export function todayStartISO(): string {
   return new Date(`${spDateStr}T00:00:00-03:00`).toISOString();
 }
 
+// Início de ONTEM no horário de São Paulo, como ISO (UTC). Ontem = [ontem 00h,
+// hoje 00h) — usar junto de todayStartISO como limite superior.
+export function yesterdayStartISO(): string {
+  const spDateStr = new Date().toLocaleDateString('en-CA', { timeZone: SAO_PAULO_TIMEZONE });
+  const meiaNoiteHoje = new Date(`${spDateStr}T00:00:00-03:00`);
+  meiaNoiteHoje.setDate(meiaNoiteHoje.getDate() - 1);
+  return meiaNoiteHoje.toISOString();
+}
+
 // Busca todos os registros de uma tabela contornando o limite de 1000 linhas do Supabase.
 // Each page is wrapped in withTimeout — supabase-js resolves the current
 // access token *before* ever invoking the fetch we wrap with a timeout in
