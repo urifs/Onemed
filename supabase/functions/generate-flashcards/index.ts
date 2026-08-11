@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { PDFDocument, PDFDict, PDFName, PDFRawStream } from 'https://esm.sh/pdf-lib@1.17.1'
 
 // Gera flashcards (estilo Anki) a partir de aulas e arquivos do acervo, com
 // Gemini 2.5 Flash pela chave universal da Emergent (endpoint compatível com
@@ -101,6 +102,69 @@ function mp4TemMoov(bytes: Uint8Array): boolean {
 }
 
 const MP4_FAMILY = /^(video\/(mp4|quicktime)|audio\/(mp4|x-m4a))/i
+
+// ── imagens embutidas no PDF ──────────────────────────────────────────────
+// Questão de prova que depende de figura (ECG, radiografia, foto clínica)
+// virava texto com um marcador "IMG" — o modelo enxerga a imagem no PDF mas
+// não tem como devolvê-la em JSON. A saída: extrair as imagens JPEG do
+// próprio PDF (stream DCTDecode é um .jpg pronto, sem reencodar), mapeadas
+// por página; o modelo marca em qual PÁGINA está a imagem da questão e o
+// servidor anexa a imagem de verdade ao card.
+//
+// Limites deliberados: só JPEG puro (FlateDecode+DCT ou PNG-like exigiriam
+// decodificação, caro no edge); ignora imagens minúsculas (ícones/bullets)
+// e as repetidas em 3+ páginas (logo/marca d'água de editora).
+const IMG_MIN_BYTES = 10 * 1024
+const IMG_MAX_BYTES = 500 * 1024
+const IMG_TOTAL_BUDGET = 2_500 * 1024
+const IMG_MAX_COUNT = 24
+
+async function extrairImagensPdf(bytes: Uint8Array): Promise<Map<number, Uint8Array[]>> {
+  const porPagina = new Map<number, Uint8Array[]>()
+  try {
+    const doc = await PDFDocument.load(bytes, { ignoreEncryption: true, throwOnInvalidObject: false })
+    // 1ª passada: em quais páginas cada objeto de imagem aparece (pra pular
+    // logos repetidos) e o JPEG de cada um.
+    const usoPorTag = new Map<string, { jpeg: Uint8Array; paginas: number[] }>()
+    doc.getPages().forEach((page, pi) => {
+      let xo: unknown
+      try {
+        const res = page.node.Resources()
+        xo = res instanceof PDFDict ? res.lookup(PDFName.of('XObject')) : undefined
+      } catch { return }
+      if (!(xo instanceof PDFDict)) return
+      for (const [, ref] of xo.entries()) {
+        try {
+          const tag = String(ref)
+          const ja = usoPorTag.get(tag)
+          if (ja) { ja.paginas.push(pi + 1); continue }
+          const obj = doc.context.lookup(ref)
+          if (!(obj instanceof PDFRawStream)) continue
+          const d = obj.dict
+          if (String(d.lookup(PDFName.of('Subtype')) || '') !== '/Image') continue
+          const filtro = String(d.lookup(PDFName.of('Filter')) || '')
+          // Só DCTDecode puro: o conteúdo bruto do stream JÁ É o JPEG.
+          if (!/DCTDecode/.test(filtro) || /Flate/.test(filtro)) continue
+          const jpeg = obj.contents
+          if (jpeg.length < IMG_MIN_BYTES || jpeg.length > IMG_MAX_BYTES) continue
+          usoPorTag.set(tag, { jpeg, paginas: [pi + 1] })
+        } catch { /* objeto quebrado: ignora */ }
+      }
+    })
+    // 2ª passada: descarta o que aparece em 3+ páginas e monta o mapa final.
+    let total = 0, count = 0
+    for (const { jpeg, paginas } of usoPorTag.values()) {
+      if (paginas.length >= 3) continue
+      if (count >= IMG_MAX_COUNT || total + jpeg.length > IMG_TOTAL_BUDGET) break
+      total += jpeg.length; count++
+      for (const p of paginas) {
+        if (!porPagina.has(p)) porPagina.set(p, [])
+        porPagina.get(p)!.push(jpeg)
+      }
+    }
+  } catch { /* PDF que o pdf-lib não abre: segue sem imagens */ }
+  return porPagina
+}
 
 function b64(bytes: Uint8Array): string {
   let out = ''
@@ -285,6 +349,10 @@ serve(async (req) => {
     }
 
     const sourceTitles: string[] = []
+    // PDFs cujo conteúdo foi lido — candidatos à extração de imagens. A
+    // extração só roda com UM PDF na geração: a referência do modelo é o
+    // número da página, que ficaria ambíguo entre dois documentos.
+    const pdfLidos: { nome: string; bytes: Uint8Array }[] = []
     // Quantas fontes tiveram o CONTEÚDO realmente lido (não só o título).
     // Sem isto, uma aula em vídeo que a IA não consegue abrir virava 15
     // questões inventadas a partir do NOME do arquivo — com cara de legítimas,
@@ -318,6 +386,9 @@ serve(async (req) => {
       parts.push({ type: 'text', text: `Material enviado pelo aluno: "${up.name}":` })
       parts.push({ type: 'file', file: { file_data: `data:${up.mime};base64,${up.data}` } })
       fontesLidas++
+      if (up.mime === 'application/pdf') {
+        pdfLidos.push({ nome: up.name, bytes: Uint8Array.from(atob(up.data), c => c.charCodeAt(0)) })
+      }
     }
 
     for (const lesson of (lessons || [])) {
@@ -385,6 +456,7 @@ serve(async (req) => {
       parts.push({ type: 'text', text: `Material: "${lesson.title}" (curso: ${courseTitle})${isAv ? ' — trecho inicial da aula em vídeo/áudio' : ''}:` })
       parts.push({ type: 'file', file: { file_data: `data:${mime};base64,${b64(bytes)}` } })
       fontesLidas++
+      if (mime === 'application/pdf') pdfLidos.push({ nome: lesson.title, bytes })
     }
 
     // ── arquivos do Acervo Público (mesma régua das aulas) ─────────────────
@@ -443,6 +515,7 @@ serve(async (req) => {
       parts.push({ type: 'text', text: `Material do Acervo Público: "${af.name}" (em «${af.item_title}»)${isAv ? ' — trecho inicial do vídeo/áudio' : ''}:` })
       parts.push({ type: 'file', file: { file_data: `data:${mime};base64,${b64(bytes)}` } })
       fontesLidas++
+      if (mime === 'application/pdf') pdfLidos.push({ nome: af.name, bytes })
     }
 
     // Nenhuma fonte foi lida de verdade: sem o complemento escrito pelo aluno,
@@ -458,6 +531,23 @@ serve(async (req) => {
         warnings,
       }, 422)
     }
+
+    // ── imagens do PDF: extrai e ensina o modelo a referenciá-las ──────────
+    // Só com UM PDF lido — com dois, "página 5" seria ambígua. O modelo marca
+    // a página; o servidor anexa a imagem daquela página ao card no final.
+    let imagensPdf: Map<number, Uint8Array[]> | null = null
+    if (pdfLidos.length === 1) {
+      imagensPdf = await extrairImagensPdf(pdfLidos[0].bytes)
+      if (imagensPdf.size === 0) imagensPdf = null
+    }
+    const regraImagens = imagensPdf
+      ? [
+        `IMAGENS DO DOCUMENTO: as figuras das páginas ${[...imagensPdf.keys()].sort((a, b) => a - b).join(', ')} foram extraídas e podem ser EXIBIDAS junto das questões.`,
+        `- Quando uma questão depender de uma imagem/figura do documento (ECG, radiografia, foto clínica, esquema, tabela em imagem), adicione ao objeto JSON dela os campos "img" (o número da PÁGINA do documento onde a figura está) e "imgDesc" (descrição objetiva da figura em 1 frase).`,
+        `- A figura será mostrada ACIMA do enunciado — escreva o enunciado referindo-se a ela naturalmente ("Observe a imagem acima…").`,
+        `- NUNCA escreva marcadores como "IMG", [IMAGEM] ou [FIGURA] no texto — se o documento mostrar um marcador desses no lugar de uma figura, não o transcreva.`,
+      ].join('\n')
+      : `Se uma questão depender de uma figura que você não pode exibir, descreva a figura no enunciado entre colchetes ("[Imagem: …]") — NUNCA escreva marcadores soltos como "IMG", [IMAGEM] ou [FIGURA].`
 
     // ── prompt ─────────────────────────────────────────────────────────────
     const promptNormal = {
@@ -482,9 +572,10 @@ serve(async (req) => {
           : '',
         `- Cada carta testa UM conceito. Sem cartas duplicadas ou triviais.`,
         `- Se um material for um trecho de vídeo/áudio, use o que foi falado nele.`,
+        regraImagens,
         formato === 'multiple_choice'
-          ? `- Responda APENAS um array JSON válido: [{"front":"...","options":["...","...","...","..."],"correct":0,"back":"...","why":["...","...","...","..."]}] — "correct" é o índice (0-3) da alternativa certa. Sem markdown, sem comentários.`
-          : `- Responda APENAS um array JSON válido: [{"front":"...","back":"..."}] — sem markdown, sem comentários.`,
+          ? `- Responda APENAS um array JSON válido: [{"front":"...","options":["...","...","...","..."],"correct":0,"back":"...","why":["...","...","...","..."]}] — "correct" é o índice (0-3) da alternativa certa; "img"/"imgDesc" só nas cartas que dependem de figura. Sem markdown, sem comentários.`
+          : `- Responda APENAS um array JSON válido: [{"front":"...","back":"..."}] — "img"/"imgDesc" só nas cartas que dependem de figura. Sem markdown, sem comentários.`,
       ].filter(Boolean).join('\n'),
     }
 
@@ -508,8 +599,11 @@ serve(async (req) => {
         `- "correct": o índice (começando em 0) da alternativa correta SEGUNDO O GABARITO do próprio documento. Nunca invente gabarito: se o documento não indicar a resposta de uma questão em lugar nenhum, resolva-a com máximo rigor técnico.`,
         `- "back": a explicação de por que a correta está certa. Se o documento tiver comentário/explicação, use-o como base; se NÃO tiver, escreva você a explicação (2-3 frases, técnica e direta).`,
         `- "why": array paralelo a "options" — why[i] explica em 1 frase por que a alternativa i está errada (na posição da correta, por que está certa). Use os comentários do documento quando existirem; senão, gere.`,
+        `- "n": o NÚMERO da questão no documento original (ex.: a "Questão 7" do documento tem "n": 7).`,
         `- NÃO pule questões, NÃO mude a ordem, NÃO altere o texto das alternativas.`,
-        `- Responda APENAS um array JSON válido: [{"front":"...","options":["..."],"correct":0,"back":"...","why":["..."]}] — sem markdown, sem comentários. Se as questões pedidas não existirem no documento, responda [].`,
+        `- Se o documento tiver MENOS questões que o intervalo pedido, transcreva só as que existem de fato e PARE — NUNCA repita uma questão já transcrita, nunca crie variações dela e nunca invente questões para completar o intervalo.`,
+        regraImagens,
+        `- Responda APENAS um array JSON válido: [{"n":1,"front":"...","options":["..."],"correct":0,"back":"...","why":["..."]}] — "img"/"imgDesc" só nas questões que dependem de figura. Sem markdown, sem comentários. Se as questões pedidas não existirem no documento, responda [].`,
       ].filter(Boolean).join('\n'),
     })
 
@@ -534,7 +628,12 @@ serve(async (req) => {
       }),
     })
 
-    type Carta = { front: string; back: string; options?: string[]; correct?: number; why?: string[] }
+    // `img`/`imgDesc`/`n` são efêmeros (vêm do modelo e morrem no pós-
+    // processo); `image` é o que persiste — a figura em data URI nos viewers.
+    type Carta = {
+      front: string; back: string; options?: string[]; correct?: number; why?: string[];
+      img?: number; imgDesc?: string; image?: string; n?: number;
+    }
 
     // O modelo às vezes embrulha em ```json ... ```, põe texto antes/depois,
     // ou é cortado no meio da última carta. Este parser recupera o máximo:
@@ -641,6 +740,40 @@ serve(async (req) => {
       const LIMITE_MS = 132_000
       let duracaoLote = 55_000
       cards = []
+      // Assinatura anti-enchimento: quando o documento tem menos questões que
+      // o intervalo pedido, o modelo às vezes "completa" repetindo uma questão
+      // com variação mínima de texto ("imagem abaixo" → "imagem acima") — que
+      // escapa do dedupe por texto exato. A repetição verdadeira tem as MESMAS
+      // alternativas e um enunciado quase igual; questões legítimas diferentes
+      // que compartilham alternativas (séries "julgue os itens") têm
+      // enunciados diferentes e passam.
+      // Acentos são removidos DE VERDADE (o modelo duplica a mesma questão
+      // "corrigindo" a acentuação do PDF: "acao" numa cópia, "ação" na outra —
+      // sem isto, as duas versões pareceriam textos diferentes).
+      const normalizar = (s: string) => s.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '')
+      const tokensDe = (s: string) => new Set(
+        normalizar(s).replace(/[^\p{L}\p{N} ]/gu, ' ').split(/\s+/).filter(Boolean),
+      )
+      // CONTENÇÃO, não Jaccard de união: a cópia às vezes vem com uma frase a
+      // mais ("...dor torácica:" vs "...dor torácica: Qual é o diagnóstico?"),
+      // e a frase extra dilui a união pra baixo do corte. Interseção sobre o
+      // MENOR conjunto dá 1.0 quando um enunciado contém o outro.
+      const similaridade = (a: Set<string>, b: Set<string>) => {
+        let inter = 0
+        for (const t of a) if (b.has(t)) inter++
+        return inter / (Math.min(a.size, b.size) || 1)
+      }
+      const porAssinatura = new Map<string, Set<string>[]>()
+      const ehRepeticaoDisfarcada = (c: Carta): boolean => {
+        if (!Array.isArray(c.options)) return false
+        const assin = normalizar(c.options.join('|'))
+        const toks = tokensDe(c.front)
+        const irmas = porAssinatura.get(assin)
+        if (irmas?.some(t => similaridade(t, toks) >= 0.8)) return true
+        if (!porAssinatura.has(assin)) porAssinatura.set(assin, [])
+        porAssinatura.get(assin)!.push(toks)
+        return false
+      }
       // Onde parar/continuar: começa em startImport (1 na 1ª chamada, ou o
       // ponto que a chamada anterior devolveu em importNextStart).
       let proximoInicio = startImport
@@ -658,9 +791,27 @@ serve(async (req) => {
           if (cards.length > 0) { cortadoPorTempo = true; proximoInicio = inicio; break }
           return json(req, { error: 'A IA não conseguiu ler este banco de questões agora. Tente novamente em instantes.' }, 502)
         }
-        // dedupe do lote de fronteira (o modelo às vezes repete a última questão)
+        // Dedupe em duas camadas:
+        // - Entre lotes, por ENUNCIADO (o modelo às vezes repete a questão de
+        //   fronteira). Não por número: provas com numeração reiniciada por
+        //   seção repetem "Questão 1" legitimamente em lotes diferentes.
+        // - DENTRO do lote, também pelo NÚMERO "n" do documento: documento
+        //   menor que o intervalo pedido fazia o modelo "completar" repetindo
+        //   questões com variações de texto ("imagem abaixo" → "imagem
+        //   acima"), que escapam do dedupe por enunciado — o n repetido no
+        //   mesmo lote não mente: é enchimento.
         const vistos = new Set(cards.map(c => c.front))
-        const novos = lote.filter(c => !vistos.has(c.front))
+        const numerosNoLote = new Set<number>()
+        const novos = lote.filter(c => {
+          if (vistos.has(c.front)) return false
+          if (typeof c.n === 'number') {
+            if (numerosNoLote.has(c.n)) return false
+            numerosNoLote.add(c.n)
+          }
+          if (ehRepeticaoDisfarcada(c)) return false
+          vistos.add(c.front)
+          return true
+        })
         cards.push(...novos)
         // Lote sem nada novo = documento acabou (ou o modelo travou). Lote
         // curto NÃO é sinal de fim: pode ser só o limite de tokens da resposta.
@@ -736,6 +887,53 @@ serve(async (req) => {
       cards = cards.slice(0, nCards)
       if (cards.length < nCards) {
         warnings.push(`O material rendeu ${cards.length} de ${nCards} ${modo === 'questions' ? 'questões' : 'cartas'} — gere de novo ou escolha mais conteúdo para completar.`)
+      }
+    }
+
+    // ── anexa as figuras de verdade aos cards que as pedem ─────────────────
+    // O modelo devolveu "img" (página da figura) e "imgDesc" (descrição). Se a
+    // imagem daquela página foi extraída, vira data URI no card; senão, a
+    // descrição entra no enunciado pra questão continuar respondível.
+    const limparPlaceholder = (s: string) => s
+      .replace(/["'“”\[\(]\s*(?:IMG|IMAGEM|FIGURA)\s*["'“”\]\)]/gi, ' ')
+      .replace(/\bIMG\b/g, ' ')
+      .replace(/[ \t]{2,}/g, ' ')
+      .trim()
+    // Cursor por página: duas questões na mesma página pegam figuras
+    // diferentes quando existem; quando só há uma, compartilham ("as questões
+    // 5 e 6 referem-se à imagem").
+    const cursorPagina = new Map<number, number>()
+    const pegarImagem = (pagina: number): Uint8Array | null => {
+      if (!imagensPdf) return null
+      // O modelo às vezes conta capa/numeração visual diferente da física —
+      // tenta a página exata e as vizinhas.
+      for (const p of [pagina, pagina + 1, pagina - 1]) {
+        const arr = imagensPdf.get(p)
+        if (!arr?.length) continue
+        const i = cursorPagina.get(p) ?? 0
+        cursorPagina.set(p, i + 1)
+        return arr[Math.min(i, arr.length - 1)]
+      }
+      return null
+    }
+    let figuraPerdidaAvisada = false
+    for (const c of cards) {
+      const pagina = typeof c.img === 'number' && isFinite(c.img) ? Math.round(c.img) : null
+      const desc = typeof c.imgDesc === 'string' ? c.imgDesc.trim() : ''
+      delete c.img
+      delete c.imgDesc
+      delete c.n
+      c.front = limparPlaceholder(c.front)
+      if (pagina === null) continue
+      const jpeg = pegarImagem(pagina)
+      if (jpeg) {
+        c.image = `data:image/jpeg;base64,${b64(jpeg)}`
+      } else if (desc) {
+        c.front = `[Imagem: ${desc}]\n\n${c.front}`
+        if (!figuraPerdidaAvisada) {
+          warnings.push('Algumas figuras do material não puderam ser extraídas — nessas questões a imagem foi descrita em texto no enunciado.')
+          figuraPerdidaAvisada = true
+        }
       }
     }
 

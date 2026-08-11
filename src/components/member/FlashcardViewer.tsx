@@ -11,6 +11,8 @@ export interface Flashcard {
   correct?: number;
   // Explicação por alternativa (mesma ordem de options): por que está certa/errada.
   why?: string[];
+  // Figura da carta (data URI extraída do PDF de origem), exibida acima da pergunta.
+  image?: string;
 }
 
 export interface FlashcardDeck {
@@ -198,6 +200,14 @@ export function FlashcardViewer({ deck, deckId, onClose, onSave, saved, saving }
             className={`w-full max-w-2xl 3xl:max-w-3xl glass rounded-2xl border border-border p-6 sm:p-8 text-left transition-colors ${!isMcq && !revealed ? 'hover:border-primary/40 cursor-pointer' : ''}`}
           >
             <p className="text-[11px] uppercase tracking-wider font-bold text-muted-foreground mb-3">Pergunta</p>
+            {current.image && (
+              <img
+                src={current.image}
+                alt="Figura da carta"
+                draggable={false}
+                className="max-h-72 max-w-full rounded-lg border border-border bg-white mb-4"
+              />
+            )}
             <p className="text-lg sm:text-xl font-semibold text-foreground whitespace-pre-wrap leading-relaxed">
               {current.front}
             </p>

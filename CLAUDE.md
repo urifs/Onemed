@@ -2453,6 +2453,55 @@ segue a ordem DO CURSO (onNext/hasNext já existentes), não a ordem da playlist
 de cursos diferentes não encadeia entre cursos (cada `CourseDetailPage` só tem um curso). Fica
 como melhoria futura; o param é inofensivo (ignorado).
 
+---
+
+### 2026-08-11 (sessão remota) — questões com IMAGEM de verdade (fim do placeholder "IMG")
+
+**Relato:** no gerador de banco de questões, questão que dependia de figura aparecia com o texto
+"IMG" no lugar da imagem. Causa estrutural: o card era 100% texto
+(`front/options/correct/back/why`) — o Gemini VÊ a figura no PDF mas não tinha onde devolvê-la,
+então saía um marcador.
+
+**Solução — extração das imagens do próprio PDF (`generate-flashcards` v31):**
+- `extrairImagensPdf()` (pdf-lib): varre os XObjects por página e extrai os streams
+  **DCTDecode puros — o conteúdo bruto JÁ É o .jpg**, sem reencodar. Ignora imagens <10KB
+  (ícones), >500KB, repetidas em 3+ páginas (logo/marca d'água); tetos 24 imagens / 2,5MB.
+  Só roda com **UM PDF lido** na geração (a referência é o nº da página, ambígua com dois docs).
+- O prompt (modo gerar E importar) lista as páginas com figura; questão que depende de imagem
+  devolve `img` (página) + `imgDesc` (descrição). O servidor casa página→imagem (cursor por
+  página, tenta página±1 — o modelo às vezes conta capa diferente) e grava
+  **`image` (data URI JPEG) no card**. Sem imagem extraível → `[Imagem: descrição]` no enunciado
+  + warning. `img`/`imgDesc`/`n` são efêmeros (deletados antes de responder).
+- Placeholders residuais ("IMG", [IMAGEM], [FIGURA]) são varridos do enunciado sempre.
+
+**Viewers:** `BankQuestion`/`Flashcard` ganharam `image?: string`; `QuestionBankViewer` e
+`FlashcardViewer` renderizam a figura ACIMA do enunciado; `exportQuestionBankPdf` embute a
+imagem no PDF exportado (redimensionada, nunca falha a exportação). O save já passava os cards
+verbatim → `image` persiste no jsonb sem migration. Bancos antigos (sem o campo) seguem normais.
+
+**Bug achado no caminho — enchimento na importação de banco pequeno:** pedir "questões 1 a 10"
+de um documento com 3 fazia o modelo COMPLETAR repetindo questões com variações que escapavam do
+dedupe por texto: acentuação "corrigida" ("acao"→"ação") e frase extra no fim do enunciado.
+Três guardas novas no laço de importação:
+1. Prompt: campo `n` (nº da questão no documento) + ordem explícita de PARAR no fim do documento.
+2. Dedupe por `n` repetido DENTRO do lote (não entre lotes — prova com numeração reiniciada por
+   seção repete "Questão 1" legitimamente).
+3. **`ehRepeticaoDisfarcada()`**: mesma assinatura de alternativas (normalizada SEM acentos —
+   `normalize('NFD').replace(/\p{M}/gu,'')`, senão "ação"≠"acao" vira token diferente) +
+   **CONTENÇÃO** de tokens do enunciado ≥0.8 (interseção sobre o MENOR conjunto — Jaccard de
+   união falhava quando a cópia tinha uma frase a mais, 0.71<0.75). Série "julgue os itens"
+   (mesmas alternativas, enunciados diferentes) mede 0.29-0.45 e passa.
+
+**Verificado em produção** (conta de teste criada e apagada; PDF de prova sintético com JPEG
+embutido + gabarito): importação **8/8 runs exatos** — 3 questões, imagem SÓ na questão da
+figura, **SHA-256 da imagem anexada idêntico ao JPEG original**, gabarito preservado (1-B, 2-B,
+3-C), zero campos efêmeros vazando; modo GERAR normal: 5 questões, a da figura veio com `image`.
+103/103 testes, build 27/27, typecheck:refs limpo.
+
+⚠️ Limitação conhecida: imagens em outros formatos dentro do PDF (FlateDecode/PNG-like, JPX)
+não são extraídas — caem no fallback `[Imagem: descrição]`. Cobrir exigiria decodificar/reencodar
+no edge. A grande maioria das figuras de provas médicas é JPEG (DCTDecode).
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management

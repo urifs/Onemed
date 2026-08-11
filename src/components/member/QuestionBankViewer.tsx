@@ -11,6 +11,9 @@ export interface BankQuestion {
   options?: string[];
   correct?: number;
   why?: string[];
+  // Figura da questão (data URI extraída do PDF de origem) — ECG, radiografia,
+  // foto clínica. Exibida acima do enunciado.
+  image?: string;
 }
 
 export interface QuestionBank {
@@ -199,9 +202,19 @@ export function QuestionBankViewer({ bank, bankId, onClose, onSave, saved, savin
                   <span className="text-xs font-bold text-muted-foreground bg-secondary border border-border rounded px-1.5 py-0.5 shrink-0 mt-0.5">
                     {qIdx + 1}
                   </span>
-                  <p className="text-[15px] font-medium text-foreground whitespace-pre-wrap leading-relaxed">
-                    {q.front}
-                  </p>
+                  <div className="flex-1 min-w-0">
+                    {q.image && (
+                      <img
+                        src={q.image}
+                        alt="Figura da questão"
+                        draggable={false}
+                        className="max-h-80 max-w-full rounded-lg border border-border bg-white mb-3"
+                      />
+                    )}
+                    <p className="text-[15px] font-medium text-foreground whitespace-pre-wrap leading-relaxed">
+                      {q.front}
+                    </p>
+                  </div>
                   {finished && (
                     <span className={`ml-auto shrink-0 text-xs font-bold ${acertou ? 'text-accent-success' : 'text-red-500'}`}>
                       {acertou ? 'Acertou' : marcada === undefined ? 'Em branco' : 'Errou'}
