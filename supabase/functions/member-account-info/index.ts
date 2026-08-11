@@ -100,11 +100,13 @@ serve(async (req) => {
       grantedAt = trialRows[0]?.granted_at || null
     }
 
-    // Se não há valor real pago (compra de verdade), usa o preço de tabela
-    // do plano atual como "já investido" — concedido manualmente ou não,
-    // o upgrade sempre mostra só a diferença, nunca o preço cheio.
+    // "Valor" nos detalhes do plano: SEMPRE o preço de tabela do plano ATUAL
+    // (decisão do dono, 11/08). Depois de um upgrade, a última linha de buyers
+    // guarda só a DIFERENÇA paga (ex.: R$ 200 do Anual→Vitalício) — mostrar
+    // isso fazia o plano parecer valer R$ 200. Plano sem preço de tabela
+    // conhecido (legado) cai no valor realmente pago.
     const realAmountPaid = buyer?.amount ? Number(buyer.amount) : 0
-    const amountPaid = realAmountPaid > 0 ? realAmountPaid : (plan ? (PLAN_PRICES[plan] ?? 0) : 0)
+    const amountPaid = (plan && PLAN_PRICES[plan]) ? PLAN_PRICES[plan] : realAmountPaid
 
     const whatsapp = buyer?.whatsapp || nonTrialRows.find(a => a.whatsapp)?.whatsapp || null
 

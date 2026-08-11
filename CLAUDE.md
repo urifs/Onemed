@@ -2528,6 +2528,24 @@ aponta pro Vitalício, não mais pro Pro) · FAQ do `/planos` · manual do `memb
 `downloadPlans.test.ts` reescrito pra regra nova (108 testes no total). O Worker não mudou —
 o `dl` continua entrando na assinatura HMAC, só a decisão de quem assina mudou na function.
 
+---
+
+### 2026-08-11 (sessão remota) — Detalhes do Plano mostra o valor CHEIO do plano (não a diferença do upgrade)
+
+**Relato:** após um upgrade, os detalhes do plano mostravam como "Valor" só a diferença paga
+(ex.: R$ 200 do Anual→Vitalício) — parecia que o plano valia R$ 200.
+
+**Causa:** a última linha de `buyers` de quem faz upgrade guarda só a diferença cobrada, e o
+`member-account-info` devolvia esse `amount` como `amountPaid`.
+
+**Correção (decisão do dono): `amountPaid` passa a ser SEMPRE o preço de TABELA do plano
+atual** (`PLAN_PRICES[plan]` na própria function, v16); plano sem preço conhecido (legado) cai
+no valor realmente pago. `PlanDetailsModal` renomeou o rótulo para "Valor do plano" e formata
+com `formatBRL` (senão o Pro mostraria "R$ 1497,00" sem ponto de milhar). `UpgradePlanModal`
+não usa `amountPaid` (upgrade é diferença de tabela) — nada muda no preço de upgrade.
+Verificado em produção com conta simulando upgrade real (buyers 299 + 200, accesses lifetime):
+`plan=lifetime, amountPaid=499`. Conta de teste apagada.
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
