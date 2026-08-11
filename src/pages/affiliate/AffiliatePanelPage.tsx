@@ -36,7 +36,8 @@ interface Sale {
   created_at: string;
 }
 
-const brl = (v: number) => `R$ ${Number(v).toFixed(2).replace('.', ',')}`;
+// Padrão da moeda real: milhar com ponto e centavos com vírgula (R$ 4.469,00).
+const brl = (v: number) => Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
 export default function AffiliatePanelPage() {
   const navigate = useNavigate();

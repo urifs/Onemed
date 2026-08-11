@@ -6,7 +6,7 @@ import AdminLayout from '@/components/AdminLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { formatDateTimeSP, todayStartISO, yesterdayStartISO, fetchAllRows } from '@/lib/utils';
+import { formatDateTimeSP, todayStartISO, yesterdayStartISO, fetchAllRows, formatBRL } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DollarSign, Users, Clock, TrendingUp, Mail, Calendar, Phone, Trash2, UserPlus, Loader2, RefreshCw, CheckCircle, XCircle, X, Download, AlertTriangle } from 'lucide-react';
 import { WhatsAppLink } from '@/components/WhatsAppLink';
@@ -146,14 +146,14 @@ export default function BuyersPage() {
                 <DollarSign className="w-4 h-4 text-accent-success" />
               </div>
               <p className="font-secondary text-2xl font-bold text-foreground">
-                {loading ? '—' : `R$ ${buyers.reduce((s, b) => s + (b.amount || 0), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                {loading ? '—' : formatBRL(buyers.reduce((s, b) => s + (b.amount || 0), 0))}
               </p>
             </CardContent>
           </Card>
           {[
             { label: 'Compradores', value: loading ? '—' : buyers.length, icon: Users, color: 'text-primary' },
-            { label: 'Receita Hoje', value: stats ? `R$ ${stats.revenue.toFixed(2)}` : '—', icon: DollarSign, color: 'text-accent-warning' },
-            { label: 'Receita Ontem', value: stats ? `R$ ${(stats.revenueYesterday ?? 0).toFixed(2)}` : '—', icon: DollarSign, color: 'text-accent-info' },
+            { label: 'Receita Hoje', value: stats ? formatBRL(stats.revenue) : '—', icon: DollarSign, color: 'text-accent-warning' },
+            { label: 'Receita Ontem', value: stats ? formatBRL(stats.revenueYesterday ?? 0) : '—', icon: DollarSign, color: 'text-accent-info' },
             { label: 'Aprovados Hoje', value: stats?.approved ?? '—', icon: CheckCircle, color: 'text-accent-success' },
             { label: 'Aprovados Ontem', value: stats?.approvedYesterday ?? '—', icon: CheckCircle, color: 'text-accent-info' },
           ].map((s, i) => (
@@ -211,7 +211,7 @@ export default function BuyersPage() {
                       </td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">{buyer.name || '—'}</td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">{PLAN_LABELS[buyer.plan] || buyer.plan}</td>
-                      <td className="px-4 py-3 text-sm text-foreground">{buyer.amount ? `R$ ${Number(buyer.amount).toFixed(2)}` : '—'}</td>
+                      <td className="px-4 py-3 text-sm text-foreground">{buyer.amount ? formatBRL(buyer.amount) : '—'}</td>
                       <td className="px-4 py-3">{statusBadge(buyer.status)}</td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">{formatDateTimeSP(buyer.created_at)}</td>
                       <td className="px-4 py-3">
