@@ -47,6 +47,7 @@ import AdminCommunityPage from "./pages/AdminCommunityPage";
 import StorePage from "./pages/StorePage";
 import ArchivePage from "./pages/ArchivePage";
 import StudyPlanPage from "./pages/StudyPlanPage";
+import MemberPlaylistsPage from "./pages/MemberPlaylistsPage";
 import StudyPlansAdminPage from "./pages/StudyPlansAdminPage";
 import AffiliateRegisterPage from "./pages/affiliate/AffiliateRegisterPage";
 import AffiliateLoginPage from "./pages/affiliate/AffiliateLoginPage";
@@ -224,6 +225,7 @@ const App = () => (
             <Route path="/membros/loja" element={<MemberProtectedRoute><StorePage /></MemberProtectedRoute>} />
             <Route path="/membros/acervo" element={<MemberProtectedRoute><ArchivePage /></MemberProtectedRoute>} />
             <Route path="/membros/cronograma" element={<MemberProtectedRoute><StudyPlanPage /></MemberProtectedRoute>} />
+            <Route path="/membros/playlists" element={<MemberProtectedRoute><MemberPlaylistsPage /></MemberProtectedRoute>} />
 
             {/* Protected admin routes */}
             <Route path="/admin" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />

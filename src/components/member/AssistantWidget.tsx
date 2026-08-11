@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { MessageCircleQuestion, X, Send, Loader2, Trash2, BookOpen } from 'lucide-react';
+import { MessageCircleQuestion, X, Send, Loader2, Trash2, BookOpen, ListVideo } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
-import { subscribeOpenLesson, type OpenLessonRef } from '@/lib/assistantContext';
+import { subscribeOpenLesson, subscribeOpenPlaylist, type OpenLessonRef, type OpenPlaylistRef } from '@/lib/assistantContext';
 
 interface ChatMsg {
   role: 'user' | 'assistant';
@@ -36,10 +36,12 @@ export function AssistantWidget() {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [openLesson, setOpenLessonState] = useState<OpenLessonRef | null>(null);
+  const [openPlaylist, setOpenPlaylistState] = useState<OpenPlaylistRef | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => subscribeOpenLesson(setOpenLessonState), []);
+  useEffect(() => subscribeOpenPlaylist(setOpenPlaylistState), []);
 
   useEffect(() => {
     try { sessionStorage.setItem(STORAGE_KEY, JSON.stringify(msgs.slice(-30))); } catch { /* cheio */ }
@@ -70,6 +72,9 @@ export function AssistantWidget() {
           // (PDF/imagem inteiros; vídeo/áudio o trecho inicial) — sempre só
           // no momento da pergunta.
           currentLesson: openLesson ? { id: openLesson.id } : undefined,
+          // Playlist aberta: o servidor lista os itens (títulos) pra a IA saber
+          // do que o aluno está falando quando pergunta sobre "a playlist".
+          currentPlaylist: openPlaylist ? { id: openPlaylist.id } : undefined,
         },
       });
       if (error || data?.error) throw new Error(data?.error || error?.message);
@@ -186,16 +191,27 @@ export function AssistantWidget() {
             )}
           </div>
 
-          {/* material aberto: o assistente lê o conteúdo automaticamente */}
-          {openLesson && (
-            <div className="px-4 pb-1.5">
-              <span
-                title="O assistente lê este material para responder suas perguntas sobre ele"
-                className="inline-flex items-center gap-1.5 max-w-full text-[11px] font-medium rounded-full border px-2.5 py-1 bg-primary/15 border-primary/40 text-primary"
-              >
-                <BookOpen className="w-3 h-3 shrink-0" />
-                <span className="truncate">Lendo: {openLesson.title}</span>
-              </span>
+          {/* material / playlist abertos: o assistente usa como contexto */}
+          {(openLesson || openPlaylist) && (
+            <div className="px-4 pb-1.5 flex flex-wrap gap-1.5">
+              {openLesson && (
+                <span
+                  title="O assistente lê este material para responder suas perguntas sobre ele"
+                  className="inline-flex items-center gap-1.5 max-w-full text-[11px] font-medium rounded-full border px-2.5 py-1 bg-primary/15 border-primary/40 text-primary"
+                >
+                  <BookOpen className="w-3 h-3 shrink-0" />
+                  <span className="truncate">Lendo: {openLesson.title}</span>
+                </span>
+              )}
+              {openPlaylist && (
+                <span
+                  title="O assistente conhece os itens desta playlist para tirar suas dúvidas"
+                  className="inline-flex items-center gap-1.5 max-w-full text-[11px] font-medium rounded-full border px-2.5 py-1 bg-secondary border-border text-muted-foreground"
+                >
+                  <ListVideo className="w-3 h-3 shrink-0" />
+                  <span className="truncate">Playlist: {openPlaylist.name}</span>
+                </span>
+              )}
             </div>
           )}
 

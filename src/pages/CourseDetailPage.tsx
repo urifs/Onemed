@@ -26,6 +26,7 @@ import { useDownloadGate } from '@/hooks/useDownloadGate';
 import { useMemberStatus } from '@/hooks/useMemberStatus';
 import { setOpenLesson } from '@/lib/assistantContext';
 import { AiUpsellModal } from '@/components/member/AiUpsellModal';
+import { SaveToPlaylistButton } from '@/components/member/SaveToPlaylistButton';
 import { CourseTree } from '@/components/member/CourseTree';
 import type { Database } from '@/integrations/supabase/types';
 
@@ -572,6 +573,12 @@ export default function CourseDetailPage() {
               <Star className="w-3.5 h-3.5" fill={isFavorite ? 'currentColor' : 'none'} />
               {isFavorite ? 'Favorito' : 'Marcar como favorito'}
             </button>
+            {course && (
+              <SaveToPlaylistButton
+                itemType="course" itemId={course.id} variant="button" label="Salvar na playlist"
+                className="inline-flex items-center gap-2 text-xs font-medium backdrop-blur px-3 py-1.5 rounded-full border border-border bg-background/60 text-foreground/80 hover:bg-background/75 hover:text-foreground transition-colors"
+              />
+            )}
           </div>
           <div className="flex items-center gap-2 mb-2">
             <CategoryIcon className="w-4 h-4 text-primary" />
@@ -927,6 +934,7 @@ function LessonGroupList({
                     >
                       <Star className="w-4 h-4" fill={isLessonFavorite ? 'currentColor' : 'none'} />
                     </button>
+                    <SaveToPlaylistButton itemType="lesson" itemId={lesson.id} label={`Salvar "${lesson.title}" em playlist`} />
                   </div>
 
                   {/* Caixa de concluída — única ação sempre visível, em

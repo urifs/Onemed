@@ -14,6 +14,7 @@ import { FlashcardGeneratorModal, type FlashcardSource, type GeneratedDeck, type
 import { FlashcardViewer } from '@/components/member/FlashcardViewer';
 import { QuestionBankViewer } from '@/components/member/QuestionBankViewer';
 import { AiUpsellModal } from '@/components/member/AiUpsellModal';
+import { SaveToPlaylistButton } from '@/components/member/SaveToPlaylistButton';
 import { useAuth } from '@/context/AuthContext';
 import { useMemberStatus } from '@/hooks/useMemberStatus';
 import { useRequireName } from '@/hooks/useRequireName';
@@ -409,6 +410,10 @@ export default function ArchivePage() {
                 >
                   <Star className="w-4 h-4" fill={isFav ? 'currentColor' : 'none'} />
                 </button>
+                {/* salvar em playlist — irmão do card, abaixo da estrela */}
+                <div className="absolute top-12 right-3.5">
+                  <SaveToPlaylistButton itemType="archive_item" itemId={item.id} label="Salvar material em playlist" />
+                </div>
                 </div>
               );
             })}
@@ -932,6 +937,7 @@ function DetailDialog({ itemId, initialFileId, currentUserId, onClose, onChanged
                 }`}>
                 <Star className="w-4 h-4" fill={favorited ? 'currentColor' : 'none'} /> {favorited ? 'Favoritado' : 'Favoritar'}
               </button>
+              <SaveToPlaylistButton itemType="archive_item" itemId={item.id} variant="button" label="Salvar em playlist" />
               <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"><Eye className="w-3.5 h-3.5" /> {item.views} acessos</span>
               {isOwner && (
                 <div className="ml-auto flex items-center gap-1.5">

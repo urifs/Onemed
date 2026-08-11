@@ -16,6 +16,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { FlashcardViewer, type FlashcardDeck } from '@/components/member/FlashcardViewer';
 import { FlashcardGeneratorModal, type GeneratedDeck } from '@/components/member/FlashcardGeneratorModal';
 import { QuestionBankViewer } from '@/components/member/QuestionBankViewer';
+import { SaveToPlaylistButton } from '@/components/member/SaveToPlaylistButton';
 import { exportQuestionBankPdf } from '@/lib/questionBankPdf';
 import { useMemberStatus } from '@/hooks/useMemberStatus';
 import { AiUpsellModal } from '@/components/member/AiUpsellModal';
@@ -40,6 +41,7 @@ const AFILIADO_TAB = 'Programa de Afiliados';
 const CRONOGRAMA_TAB = 'Cronograma de Estudos';
 const FLASHCARDS_TAB = 'Flashcards';
 const QUESTIONS_TAB = 'Banco de Questões';
+const PLAYLISTS_TAB = 'Playlists';
 
 interface SavedDeck extends FlashcardDeck {
   id: string;
@@ -214,6 +216,7 @@ export default function MemberDashboardPage() {
   };
 
   const handleSelectCategory = (category: string | null) => {
+    if (category === PLAYLISTS_TAB) { navigate('/membros/playlists'); return; }
     if (category === ACERVO_TAB) { navigate('/membros/acervo'); return; }
     if (category === CRONOGRAMA_TAB) { navigate('/membros/cronograma'); return; }
     if (category === AFILIADO_TAB) { navigate('/afiliado'); return; }
@@ -543,6 +546,7 @@ export default function MemberDashboardPage() {
   // SEM contagem de propósito (pedido do dono): número só nas categorias.
   const menuList = useMemo(() => [
     { name: 'Favoritos' },
+    { name: PLAYLISTS_TAB },
     { name: FLASHCARDS_TAB },
     { name: QUESTIONS_TAB },
     // Acervo Público é página própria (rota /membros/acervo) e é exclusivo de
@@ -1426,6 +1430,7 @@ function FlashcardsTab({ decks, sessions, loading, onOpenDeck, onDeleteDeck, onC
                         <p className="text-[10px] text-muted-foreground">média{ultima !== null ? ` · última ${ultima}%` : ''}</p>
                       </div>
                     )}
+                    <SaveToPlaylistButton itemType="flashcard_deck" itemId={deck.id} label="Salvar baralho em playlist" />
                     <button
                       onClick={() => onDeleteDeck(deck)}
                       title="Excluir baralho (o histórico de estudo fica)"
@@ -1614,6 +1619,7 @@ function QuestionsTab({ banks, sessions, loading, onOpenBank, onDeleteBank, onCr
                         <p className="text-[10px] text-muted-foreground">média{ultima !== null ? ` · última ${ultima}%` : ''}</p>
                       </div>
                     )}
+                    <SaveToPlaylistButton itemType="question_bank" itemId={bank.id} label="Salvar banco em playlist" />
                     <button
                       onClick={() => exportQuestionBankPdf({ title: bank.title, difficulty: bank.difficulty, questions: bank.questions })}
                       title="Baixar em PDF (questões + gabarito comentado)"

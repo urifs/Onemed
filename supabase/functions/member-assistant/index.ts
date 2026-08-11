@@ -78,9 +78,13 @@ VISÃO GERAL: A OneMed (onemedcursos.com.br) é uma plataforma de cursos de medi
 
 NAVEGAÇÃO PRINCIPAL (área de membros, /membros):
 - Página inicial: destaque no topo, faixa "Continuar assistindo" (ícone de lixeira remove cursos da faixa), e as categorias de cursos.
-- Barra lateral esquerda: seção MENU (Favoritos, Flashcards, Banco de Questões) e seção CATEGORIAS (todas as categorias do acervo + Minhas anotações). No celular, dois botões no topo: "Menu" e "Categorias".
+- Barra lateral esquerda: seção MENU (Favoritos, Playlists, Flashcards, Banco de Questões) e seção CATEGORIAS (todas as categorias do acervo + Minhas anotações). No celular, dois botões no topo: "Menu" e "Categorias".
 - Busca no topo: procura cursos e também aulas/arquivos pelo nome (marque "conteúdos" para buscar dentro dos cursos).
 - Dentro de um curso: abas Aulas, Arquivos e Comunidade; Mapa do curso na lateral; busca interna.
+
+PLAYLISTS (Menu → Playlists, caminho /membros/playlists): o espaço de estudo do aluno. Ele cria playlists e salva nelas cursos, aulas, arquivos, materiais do Acervo Público, flashcards, bancos de questões e cronogramas. Em cada um desses lugares há um botão de salvar (ícone de lista com +) que abre um dropdown com as playlists do aluno para marcar/desmarcar ou criar nova. Já vem uma playlist pré-criada chamada "Assistir depois". Cada playlist tem um campo de anotações (salva sozinho). Abrir um item da playlist leva ao conteúdo; abrir uma aula toca no player e, ao terminar o vídeo, a próxima aula começa sozinha.
+
+PLAYER (vídeo e arquivos): botões de +10s/-10s (e setas do teclado), velocidade de reprodução, marcar como concluída, baixar (conforme o plano), abrir em outra aba, gerar flashcards/questões. Botão de MINIMIZAR: vira uma janelinha flutuante arrastável e libera a plataforma atrás para continuar navegando com o conteúdo rodando (funciona também com arquivos/PDF). Botão de VÍDEO FLUTUANTE (picture-in-picture): joga o vídeo para uma janela do sistema, que pode ir para outra tela e seguir tocando em segundo plano. Ao terminar um vídeo, o próximo da sequência começa automaticamente (dá para cancelar ou pular).
 
 EM CADA AULA/ARQUIVO (ícones na linha e dentro do player):
 - Baixar (planos Vitalício, Plus e Pro; um arquivo por vez).
@@ -197,7 +201,7 @@ serve(async (req) => {
     } catch { /* não derruba o chat */ }
 
     // ── entrada ────────────────────────────────────────────────────────────
-    const { messages, currentLesson, includeLessonContent } = await req.json()
+    const { messages, currentLesson, currentPlaylist, includeLessonContent } = await req.json()
     const historico: { role: string; content: string }[] = (Array.isArray(messages) ? messages : [])
       .filter((m: { role?: unknown; content?: unknown }) =>
         (m?.role === 'user' || m?.role === 'assistant') && typeof m?.content === 'string')
@@ -334,6 +338,34 @@ serve(async (req) => {
       }
     }
 
+    // ── contexto: playlist aberta ──────────────────────────────────────────
+    // O aluno pode ter uma playlist aberta (o "espaço de estudo" dele). A IA
+    // recebe o NOME, os ITENS (títulos) e as ANOTAÇÕES pra saber do que ele
+    // fala ao perguntar "sobre essa playlist". Só a própria playlist do aluno.
+    let playlistTxt = ''
+    if (currentPlaylist?.id && typeof currentPlaylist.id === 'string') {
+      const { data: pl } = await supabase
+        .from('playlists')
+        .select('id, name, notes')
+        .eq('id', currentPlaylist.id)
+        .eq('user_id', user.id)
+        .maybeSingle()
+      if (pl) {
+        // A RPC confere a posse por auth.uid(), então roda COMO O ALUNO.
+        const asUserPl = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY') || '', {
+          global: { headers: { Authorization: `Bearer ${jwt}` } },
+        })
+        const { data: its } = await asUserPl.rpc('playlist_items_resolved', { _playlist_id: pl.id })
+        const linhas = ((its || []) as { title: string; kind: string; course_slug: string | null }[])
+          .slice(0, 60)
+          .map(x => `- ${x.kind}: "${x.title}"${x.course_slug ? ` (/membros/curso/${x.course_slug})` : ''}`)
+        playlistTxt = `O aluno está com a PLAYLIST "${pl.name}" aberta — é o espaço de estudo dele. Itens da playlist${linhas.length ? ':\n' + linhas.join('\n') : ': (vazia).'}`
+        const notas = String((pl as { notes?: string }).notes || '').trim()
+        if (notas) playlistTxt += `\nAnotações do aluno nesta playlist: ${notas.slice(0, 800)}`
+        playlistTxt += `\nQuando ele perguntar sobre "a playlist", "esses itens" ou pedir ajuda pra estudar o que está aqui, use esta lista.`
+      }
+    }
+
     // ── prompt ─────────────────────────────────────────────────────────────
     const system = [
       `Você é o assistente oficial da OneMed, plataforma brasileira de cursos de medicina. Responda SEMPRE em português do Brasil, com tom cordial e direto.`,
@@ -359,6 +391,7 @@ serve(async (req) => {
       `CATEGORIAS DO ACERVO: ${categoriasTxt}`,
       planoAluno ? `PLANO DO ALUNO: ${planoAluno} (responda dúvidas de recursos conforme este plano).` : '',
       aulaAbertaTxt,
+      playlistTxt,
       catalogoTxt ? `CATÁLOGO RELEVANTE PARA ESTA CONVERSA (resultado de busca — pode estar incompleto):\n${catalogoTxt}` : '',
     ].filter(Boolean).join('\n')
 

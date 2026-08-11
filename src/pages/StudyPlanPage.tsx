@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useMemberStatus } from '@/hooks/useMemberStatus';
 import { MindMap, type MindNode } from '@/components/member/MindMap';
+import { SaveToPlaylistButton } from '@/components/member/SaveToPlaylistButton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Seo } from '@/seo/Seo';
 
@@ -142,27 +143,32 @@ export default function StudyPlanPage() {
               const done = (p.completed_tasks || []).length;
               const pct = total ? Math.round((done / total) * 100) : 0;
               return (
-                <button key={p.id} onClick={() => openPlan(p.id)}
-                  className="rounded-2xl border border-border bg-card hover:border-primary/40 p-5 text-left transition-colors">
-                  <div className="flex items-start gap-3 mb-3">
-                    <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-                      <CalendarClock className="w-5 h-5 text-primary" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-foreground line-clamp-2">{p.title}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {p.duration_weeks} semanas{p.weekly_hours ? ` · ${p.weekly_hours}h/sem` : ''}
-                      </p>
-                    </div>
+                <div key={p.id}
+                  className="relative rounded-2xl border border-border bg-card hover:border-primary/40 transition-colors">
+                  <div className="absolute top-3 right-3 z-10">
+                    <SaveToPlaylistButton itemType="study_plan" itemId={p.id} label="Salvar cronograma em playlist" />
                   </div>
-                  <p className="text-xs text-muted-foreground line-clamp-2 mb-3">{p.objective}</p>
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 h-2 rounded-full bg-border overflow-hidden">
-                      <div className="h-full bg-primary transition-all" style={{ width: `${pct}%` }} />
+                  <button onClick={() => openPlan(p.id)} className="w-full p-5 text-left">
+                    <div className="flex items-start gap-3 mb-3 pr-8">
+                      <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                        <CalendarClock className="w-5 h-5 text-primary" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-foreground line-clamp-2">{p.title}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {p.duration_weeks} semanas{p.weekly_hours ? ` · ${p.weekly_hours}h/sem` : ''}
+                        </p>
+                      </div>
                     </div>
-                    <span className="text-[11px] text-muted-foreground tabular-nums">{done}/{total}</span>
-                  </div>
-                </button>
+                    <p className="text-xs text-muted-foreground line-clamp-2 mb-3">{p.objective}</p>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 h-2 rounded-full bg-border overflow-hidden">
+                        <div className="h-full bg-primary transition-all" style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className="text-[11px] text-muted-foreground tabular-nums">{done}/{total}</span>
+                    </div>
+                  </button>
+                </div>
               );
             })}
           </div>
@@ -311,10 +317,13 @@ function PlanDetail({ plan, onChange, onDelete }: {
             <h2 className="font-secondary text-xl font-bold text-foreground">{plan.title}</h2>
             <p className="text-sm text-muted-foreground mt-1">{plan.plan.overview}</p>
           </div>
-          <button onClick={() => onDelete(plan)} title="Excluir cronograma"
-            className="p-2 rounded-lg text-muted-foreground hover:text-primary hover:bg-secondary transition-colors shrink-0">
-            <Trash2 className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-1 shrink-0">
+            <SaveToPlaylistButton itemType="study_plan" itemId={plan.id} label="Salvar cronograma em playlist" />
+            <button onClick={() => onDelete(plan)} title="Excluir cronograma"
+              className="p-2 rounded-lg text-muted-foreground hover:text-primary hover:bg-secondary transition-colors">
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mt-4 text-xs text-muted-foreground">
           <span className="inline-flex items-center gap-1.5"><CalendarClock className="w-3.5 h-3.5 text-primary" /> {plan.duration_weeks} semanas</span>
