@@ -14,7 +14,7 @@ export const C44_DURATION = Math.round((DELAY + T.duration + 2.2) * FPS);
 type Canal = { at: number; num: string; label: string; src?: string; from?: number };
 const CANAIS: Canal[] = [
   { at: DELAY + 3.3, num: '01', label: 'AULA AGORA', src: 'rec/ol_dash.mp4', from: 40 },
-  { at: DELAY + 5.4, num: '02', label: 'BUSCA UNIFICADA', src: 'rec/ol_acervo.mp4', from: 160 },
+  { at: DELAY + 5.4, num: '02', label: 'BUSCA UNIFICADA', src: 'rec/m_search.mp4', from: 140 },
   { at: DELAY + 10.2, num: '03', label: 'RESUMO EM 1 CLIQUE', src: 'rec/m_pdf.mp4', from: 180 },
   { at: DELAY + 13.5, num: '04', label: 'FLASHCARDS POR IA', src: 'rec/ol_flash.mp4', from: 170 },
   { at: DELAY + 17.7, num: '05', label: 'QUESTÕES COMENTADAS', src: 'rec/ol_quest.mp4', from: 200 },
@@ -105,7 +105,7 @@ export const C44_Zapping: React.FC = () => {
           background: 'linear-gradient(170deg,#2b2e35,#16181d)', borderRadius: 40,
           transform: `rotate(14deg) ${t < DELAY + 1 ? 'translateY(60px)' : ''}`,
           boxShadow: '0 40px 90px -20px rgba(22,24,29,0.55)', padding: 20,
-          opacity: win(t, DELAY + 0.1, DELAY + 0.6) * (1 - win(t, B.frase, B.frase + 0.4)),
+          opacity: win(t, DELAY + 0.1, DELAY + 0.6) * (1 - win(t, DELAY + 7.6, DELAY + 8.4)),
         }}>
           <div style={{ width: 46, height: 46, borderRadius: 99, background: O_RED, margin: '0 auto', boxShadow: `0 0 ${CANAIS.some(c => Math.abs(t - c.at) < 0.12) ? 26 : 6}px rgba(224,45,45,0.9)` }} />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 20 }}>
