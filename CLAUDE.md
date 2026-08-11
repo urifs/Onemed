@@ -139,8 +139,8 @@ annual:         R$   299,00  — acesso por 12 meses
 lifetime:       R$   499,00  — acesso permanente
 lifetime_plus:  R$   798,00  — vitalício + backup Drive + 4 telas
 lifetime_pro:   R$ 1.497,00  — tudo do Plus + IA Meduf + download de aulas
-upsell:         R$    19,90  — complemento 1
-upsell2:        R$     9,90  — complemento 2
+upsell:         R$    94,00  — Atualizações Semanais + Lançamentos (desde 11/08; era 19,90)
+upsell2:        R$    39,80  — Proteção Proxy + Backups (desde 11/08; era 9,90)
 ```
 
 ⚠️ Preço vive em 4 fontes que precisam andar JUNTAS (`src/lib/plans.ts` ·
@@ -250,7 +250,7 @@ Usuário acessa / (landing)
 Usuário clica em comprar
   → redireciona para /checkout
   → Step 1: seleciona plano (Annual R$199 ou Lifetime R$299,90)
-  → Step 2: seleciona upsells opcionais (R$19,90 e R$9,90)
+  → Step 2: seleciona upsells opcionais (R$94,00 e R$39,80)
   → Step 3: preenche nome, email, WhatsApp, país
       ├── frontend gera externalReference (UUID)
       ├── insere registro em buyers (status='pending', access_granted=false)
@@ -2576,6 +2576,30 @@ com conta de teste criada e apagada). A cota dos arquivos reportados já tinha r
 sonda) — quando estourar de novo, o aluno verá a mensagem de limite em vez do pedido de acesso
 do Google. ⚠️ Sondar cota de arquivo grande: NUNCA `-o /dev/null` com range aberto (baixa bytes
 até o timeout e consome a franquia) — use `Range: bytes=0-1023` pra teste de vida.
+
+---
+
+### 2026-08-11 (sessão remota) — auditoria de cobrança completa + upsells reajustados (94,00 / 39,80)
+
+**Auditoria a pedido do dono ("valores certos indo pro MP? cupons no preço atual?"):**
+eszip da `mp-create-payment` NO AR extraído e conferido (99/299/499/798/1497 + upsells);
+13/13 cobranças reais de teste exatas (5 preços cheios, 4 cupons — ONEMED10/30, 50OFF —
+descontando sobre o preço ATUAL, 2 combos de upsell, 2 upgrades por diferença de tabela com
+sessão real, inclusive upgrade+cupom `(1497-299)×0,7 = 838,60`); auditoria das 36 compras
+reais desde o reajuste: 29 exatas na tabela nova, e as 7 "fora do padrão" são todas ANTERIORES
+ao deploy do reajuste em 10/08 18:14 UTC (batem exatamente na tabela antiga — janela de
+transição, não bug). `mp-webhook` não tem preço embutido (usa `buyers.plan_amount`) e as
+comissões de afiliado conferem (15/20/20/25/30%). Zero correção necessária na cobrança.
+Detalhe de teste: restaurar `times_used` dos cupons por DECREMENTO relativo, nunca valor
+absoluto — um cliente real usou ONEMED30 no meio da janela de teste.
+
+**Upsells reajustados (decisão do dono):** "Atualizações Semanais + Lançamentos Instantâneos"
+19,90 → **R$ 94,00**; "Proteção Proxy + Backups Instantâneos" 9,90 → **R$ 39,80**. Duas fontes
+atualizadas juntas (`CheckoutPage` UPSELL_PRICE/UPSELL2_PRICE + `mp-create-payment` idem, v68
+deployada, eszip no ar conferido). Verificado com 4 cobranças reais: 499+94=593,00 ·
+499+39,80=538,80 · 499+94+39,80=632,80 · 99+94+39,80=232,80 — todas exatas, com link real do
+MP. `plan_amount` segue só o plano (comissão de afiliado não incide sobre upsell, regra de
+07/08). Buyers de teste apagados.
 
 ## Meta Ads — Contexto Geral
 

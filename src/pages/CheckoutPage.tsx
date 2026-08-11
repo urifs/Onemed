@@ -69,8 +69,10 @@ const COUNTRIES = [
   { code: '+57', country: 'Colômbia', flag: 'CO' },
 ];
 
-const UPSELL_PRICE = 19.90;
-const UPSELL2_PRICE = 9.90;
+// Precisam bater com o mp-create-payment (quem cobra de verdade) — mudar
+// preço de upsell exige alterar os DOIS e redeployar a function.
+const UPSELL_PRICE = 94.00;   // Atualizações Semanais + Lançamentos Instantâneos
+const UPSELL2_PRICE = 39.80;  // Proteção Proxy + Backups Instantâneos
 
 const PLANS: Record<string, {
   name: string; originalPrice?: number; price: number; period: string;

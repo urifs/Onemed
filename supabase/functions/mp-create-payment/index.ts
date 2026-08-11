@@ -63,8 +63,8 @@ const PLAN_PRICES: Record<string, number> = {
   lifetime_pro:  1497.00,
 }
 
-const UPSELL_PRICE  = 19.90
-const UPSELL2_PRICE = 9.90
+const UPSELL_PRICE  = 94.00  // Atualizações Semanais + Lançamentos Instantâneos
+const UPSELL2_PRICE = 39.80  // Proteção Proxy + Backups Instantâneos
 
 const PLAN_LABELS: Record<string, string> = {
   monthly:       'OneMed Mensal - 30 Dias de Acesso',
