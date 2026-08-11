@@ -4,17 +4,19 @@ import {
   PLAN_LABELS, PLAN_FEATURES, PLAN_PRICES, upgradePriceFor, MIN_UPGRADE_PRICE,
 } from '@/lib/plans';
 
-// Regra de produto de 10/08: download de QUALQUER conteúdo (arquivo OU aula
-// em vídeo) é EXCLUSIVO do Vitalício Pro (e admin). Nenhum outro plano baixa.
+// Regra de produto de 11/08: ARQUIVO (apostila, PDF, .apkg, planilha, imagem,
+// áudio) baixa do Vitalício pra cima — Vitalício, Plus e Pro; AULA EM VÍDEO é
+// exclusiva do Pro. Mensal/Anual/trial não baixam nada.
 // Está em teste porque é decisão de negócio fácil de quebrar ao mexer na lista.
-describe('download só no Vitalício Pro', () => {
-  it('arquivo: só Pro e admin baixam', () => {
-    expect(canDownloadPlan('lifetime_pro')).toBe(true);
-    expect(canDownloadPlan('admin')).toBe(true);
+describe('download: arquivo do Vitalício pra cima, aula só no Pro', () => {
+  it('arquivo: Vitalício, Plus, Pro e admin baixam', () => {
+    for (const plano of ['lifetime', 'lifetime_plus', 'lifetime_pro', 'admin']) {
+      expect(canDownloadPlan(plano)).toBe(true);
+    }
   });
 
-  it('arquivo: nenhum outro plano baixa — nem Vitalício, nem Plus', () => {
-    for (const plano of ['trial', 'monthly', 'annual', 'lifetime', 'lifetime_plus']) {
+  it('arquivo: trial, Mensal e Anual não baixam', () => {
+    for (const plano of ['trial', 'monthly', 'annual']) {
       expect(canDownloadPlan(plano)).toBe(false);
     }
   });
@@ -42,12 +44,18 @@ describe('download só no Vitalício Pro', () => {
     expect(isLessonVideo(null)).toBe(false);
   });
 
-  it('porteiro único: só o Pro baixa, qualquer tipo', () => {
-    // Vitalício e Plus NÃO baixam mais nada; Pro baixa tudo.
-    for (const plano of ['monthly', 'annual', 'lifetime', 'lifetime_plus', 'trial']) {
+  it('porteiro único: decide pelo par plano × tipo', () => {
+    // Mensal/Anual: nada.
+    for (const plano of ['monthly', 'annual', 'trial']) {
       expect(canDownloadItem(plano, { type: 'pdf' })).toBe(false);
       expect(canDownloadItem(plano, { type: 'video' })).toBe(false);
     }
+    // Vitalício e Plus: arquivo sim, aula não.
+    for (const plano of ['lifetime', 'lifetime_plus']) {
+      expect(canDownloadItem(plano, { type: 'pdf' })).toBe(true);
+      expect(canDownloadItem(plano, { type: 'video' })).toBe(false);
+    }
+    // Pro: tudo.
     expect(canDownloadItem('lifetime_pro', { type: 'video' })).toBe(true);
     expect(canDownloadItem('lifetime_pro', { type: 'pdf' })).toBe(true);
   });
@@ -67,13 +75,25 @@ describe('diferença de benefícios no upgrade', () => {
   const novos = (de: string, para: string) =>
     (PLAN_FEATURES[para] || []).filter(f => !(PLAN_FEATURES[de] || []).includes(f));
 
-  // Download só existe no Pro (10/08). Só o upgrade que CHEGA no Pro pode
-  // trazer download como novidade — nenhum outro.
-  it('só o upgrade para o Pro promete download', () => {
-    expect(novos('lifetime_plus', 'lifetime_pro').some(f => f.startsWith('Download'))).toBe(true);
-    for (const [de, para] of [['monthly', 'annual'], ['annual', 'lifetime'], ['lifetime', 'lifetime_plus']]) {
-      expect(novos(de, para).some(f => f.startsWith('Download'))).toBe(false);
-    }
+  // Download de ARQUIVO entra como novidade no Anual→Vitalício; de lá pra
+  // cima o texto é idêntico e não reaparece. Download de AULA é a novidade
+  // do Plus→Pro.
+  it('Anual → Vitalício promete o download de arquivos', () => {
+    expect(novos('annual', 'lifetime').some(f => f.startsWith('Download de arquivos'))).toBe(true);
+  });
+
+  it('Vitalício → Plus NÃO repete o download de arquivos', () => {
+    expect(novos('lifetime', 'lifetime_plus').some(f => f.startsWith('Download de arquivos'))).toBe(false);
+  });
+
+  it('Plus → Pro traz só o download de aulas como novidade de download', () => {
+    const diff = novos('lifetime_plus', 'lifetime_pro');
+    expect(diff.some(f => f.startsWith('Download das aulas'))).toBe(true);
+    expect(diff.some(f => f.startsWith('Download de arquivos'))).toBe(false);
+  });
+
+  it('Mensal → Anual não promete download', () => {
+    expect(novos('monthly', 'annual').some(f => f.startsWith('Download'))).toBe(false);
   });
 
   // Backup no Drive é idêntico entre Plus e Pro, então NÃO reaparece no
@@ -153,13 +173,25 @@ describe('ferramentas de IA nos benefícios', () => {
   });
 });
 
-// Só o Pro tem download; os limites de IA por plano batem com o enforcement
-// real das Edge Functions (annual 5, lifetime 10, plus 20, pro ilimitado).
-describe('coerência do card do Pro', () => {
-  it('só o Pro anuncia download', () => {
-    for (const plano of ['monthly', 'annual', 'lifetime', 'lifetime_plus']) {
+// Os benefícios anunciados batem com o enforcement real do servidor
+// (member-lesson-token): quem anuncia download nos cards é quem baixa.
+describe('coerência dos cards com a regra de download', () => {
+  it('Mensal e Anual não anunciam download', () => {
+    for (const plano of ['monthly', 'annual']) {
       expect(PLAN_FEATURES[plano].some(f => f.startsWith('Download'))).toBe(false);
     }
-    expect(PLAN_FEATURES.lifetime_pro.some(f => f.startsWith('Download'))).toBe(true);
+  });
+
+  it('Vitalício, Plus e Pro anunciam download de arquivos', () => {
+    for (const plano of ['lifetime', 'lifetime_plus', 'lifetime_pro']) {
+      expect(PLAN_FEATURES[plano].some(f => f.startsWith('Download de arquivos'))).toBe(true);
+    }
+  });
+
+  it('só o Pro anuncia download das aulas em vídeo', () => {
+    for (const plano of ['monthly', 'annual', 'lifetime', 'lifetime_plus']) {
+      expect(PLAN_FEATURES[plano].some(f => f.startsWith('Download das aulas'))).toBe(false);
+    }
+    expect(PLAN_FEATURES.lifetime_pro.some(f => f.startsWith('Download das aulas'))).toBe(true);
   });
 });

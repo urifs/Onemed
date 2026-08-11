@@ -3,7 +3,7 @@ import { PLAN_PRICES } from '@/lib/plans';
 
 // Tabela comparativa dos planos — didática, uma verdade só. Os valores batem
 // com PLAN_FEATURES/PLAN_PRICES (fonte) e com o enforcement real do servidor
-// (download só Pro; limite de IA 5/10/20/ilimitado; Mensal sem IA).
+// (arquivo baixa do Vitalício pra cima, aula só no Pro; IA 5/10/20/ilimitado; Mensal sem IA).
 //
 // Cada célula é: true (✓), false (✗) ou um texto curto. Texto vale como "tem,
 // com esta condição".
@@ -45,7 +45,10 @@ const LINHAS: [string, Record<string, Celula>][] = [
     lifetime_plus: 'Até 20 usos/dia em cada',
     lifetime_pro: 'Uso ilimitado',
   }],
-  ['Download de aulas em vídeo e arquivos', {
+  ['Download de arquivos e apostilas (PDF, Anki e mais)', {
+    monthly: false, annual: false, lifetime: true, lifetime_plus: true, lifetime_pro: true,
+  }],
+  ['Download das aulas em vídeo', {
     monthly: false, annual: false, lifetime: false, lifetime_plus: false, lifetime_pro: true,
   }],
   ['Backup no seu próprio Google Drive', {

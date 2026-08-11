@@ -39,6 +39,7 @@ export const PLAN_FEATURES: Record<string, string[]> = {
     'Acesso vitalício',
     '2 telas simultâneas',
     'Atualizações anuais dos cursos básicos',
+    'Download de arquivos e apostilas (PDF, Anki e mais)',
     'Ferramentas de IA (flashcards, banco de questões, cronograma e assistente): até 10 usos por dia em cada',
   ],
   lifetime_plus: [
@@ -46,6 +47,7 @@ export const PLAN_FEATURES: Record<string, string[]> = {
     '4 telas simultâneas',
     'Atualizações anuais dos cursos intermediários',
     'Backup de tudo da plataforma no seu próprio Google Drive',
+    'Download de arquivos e apostilas (PDF, Anki e mais)',
     'Ferramentas de IA (flashcards, banco de questões, cronograma e assistente): até 20 usos por dia em cada',
   ],
   lifetime_pro: [
@@ -53,7 +55,8 @@ export const PLAN_FEATURES: Record<string, string[]> = {
     '6 telas simultâneas',
     'Atualizações mensais de 95% de todo o conteúdo + adição de novos cursos',
     'Backup de tudo da plataforma no seu próprio Google Drive',
-    'Download de aulas em vídeo e de arquivos (exclusivo do Pro)',
+    'Download de arquivos e apostilas (PDF, Anki e mais)',
+    'Download das aulas em vídeo — exclusivo do Pro',
     'Ferramentas de IA (flashcards, banco de questões, cronograma e assistente): uso ilimitado',
     'Acesso à IA de diagnósticos Meduf (meduf.com.br)',
   ],
@@ -76,15 +79,11 @@ export function upgradePriceFor(currentPlan: string | null | undefined, targetPl
   return Math.max(Math.round((alvo - atual) * 100) / 100, MIN_UPGRADE_PRICE);
 }
 
-// Quem pode baixar. Desde 10/08 (decisão do dono): download de QUALQUER
-// conteúdo — arquivo (apostila/PDF/planilha/imagem/áudio) OU aula em vídeo —
-// é EXCLUSIVO do Vitalício Pro. Nos demais planos o conteúdo fica só para
-// assistir/ler na plataforma; clicar em baixar abre o convite de upgrade.
-//
-// Continuam DUAS listas por dois motivos: (1) a mensagem do upsell muda por
-// tipo, (2) trocar a regra de arquivo sem mexer na de vídeo (ou vice-versa)
-// vira uma linha. Hoje as duas apontam para o mesmo conjunto de propósito.
-export const PLANS_WITH_DOWNLOAD = new Set(['lifetime_pro', 'admin']);
+// Quem pode baixar (regra de 11/08, decisão do dono): ARQUIVO — apostila,
+// PDF, .apkg, planilha, imagem, áudio — baixa do Vitalício pra cima
+// (Vitalício, Plus e Pro). AULA EM VÍDEO continua exclusiva do Pro. Mensal e
+// Anual não baixam nada; clicar em baixar abre o convite de upgrade.
+export const PLANS_WITH_DOWNLOAD = new Set(['lifetime', 'lifetime_plus', 'lifetime_pro', 'admin']);
 export const PLANS_WITH_LESSON_DOWNLOAD = new Set(['lifetime_pro', 'admin']);
 
 export function canDownloadPlan(plan?: string | null): boolean {

@@ -41,21 +41,22 @@ export function DownloadUpsellModal({ open, onOpenChange, reason, plan }: {
   const ehAulaPro = reason === 'lesson-pro';
   const nomePlano = plan ? PLAN_LABELS[plan] || plan : null;
 
-  // Desde 10/08 todo download é exclusivo do Vitalício Pro. 'lesson-pro' é o
-  // caso de aula em vídeo; 'upgrade' é o de arquivo. Os dois apontam pro Pro.
+  // Regra de 11/08: arquivo baixa do Vitalício pra cima; aula em vídeo é
+  // exclusiva do Pro. 'lesson-pro' é o caso de aula; 'upgrade' é o de arquivo
+  // (Mensal/Anual), que aponta pro Vitalício.
   const titulo = ehTrial
     ? 'Downloads são exclusivos para assinantes'
     : ehAulaPro
       ? 'Baixar aulas é exclusivo do Vitalício Pro'
-      : 'Baixar arquivos é exclusivo do Vitalício Pro';
+      : 'Baixar arquivos é um recurso do Vitalício';
 
   const descricao = ehTrial
-    ? 'Sua conta é de teste grátis. O download é um recurso do Vitalício Pro — assine para liberar a plataforma completa.'
+    ? 'Sua conta é de teste grátis. O download de arquivos está disponível a partir do Plano Vitalício — assine para liberar a plataforma completa.'
     : ehAulaPro
       ? `${nomePlano ? `No ${nomePlano}` : 'No seu plano'} as aulas ficam disponíveis para assistir na plataforma, sem limite. `
         + 'O download das aulas em vídeo é exclusivo do Vitalício Pro. No upgrade você paga só a diferença.'
       : `${nomePlano ? `No ${nomePlano}` : 'No seu plano'} os arquivos ficam disponíveis para ler na plataforma. `
-        + 'O download de arquivos e apostilas é exclusivo do Vitalício Pro. No upgrade você paga só a diferença.';
+        + 'O download de arquivos e apostilas está disponível a partir do Plano Vitalício. No upgrade você paga só a diferença.';
 
   return (
     <>

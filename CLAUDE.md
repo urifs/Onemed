@@ -2502,6 +2502,32 @@ figura, **SHA-256 da imagem anexada idêntico ao JPEG original**, gabarito prese
 não são extraídas — caem no fallback `[Imagem: descrição]`. Cobrir exigiria decodificar/reencodar
 no edge. A grande maioria das figuras de provas médicas é JPEG (DCTDecode).
 
+---
+
+### 2026-08-11 (sessão remota) — download de ARQUIVO volta pro Vitalício+ (aula segue só no Pro)
+
+**Regra nova (decisão do dono, substitui a de 10/08 "tudo só Pro"):** ARQUIVO — apostila, PDF,
+`.apkg`, planilha, imagem, áudio — baixa do **Vitalício pra cima** (Vitalício, Plus e Pro);
+**AULA EM VÍDEO continua exclusiva do Pro**; Mensal/Anual/trial não baixam nada.
+
+| plano | arquivo (dl) | aula vídeo (dl) | stream |
+|---|---|---|---|
+| monthly / annual | **403** | **403** | 200 |
+| lifetime / lifetime_plus | **200** | **403** | 200 |
+| lifetime_pro | **200** | **200** | 200 |
+
+(Tabela = verificação REAL em produção com contas dos 5 planos, criadas e apagadas na sessão.)
+
+**Mudanças:** `plans.ts` (`PLANS_WITH_DOWNLOAD` volta a ter lifetime/plus/pro;
+`PLANS_WITH_LESSON_DOWNLOAD` segue só pro) · `member-lesson-token` v26 (checagem por TIPO:
+vídeo→Pro, arquivo→Vitalício+; mensagens de 403 atualizadas) · PLAN_FEATURES/cards do checkout
+(linha idêntica "Download de arquivos e apostilas (PDF, Anki e mais)" nos 3 vitalícios — o diff
+do upgrade esconde o repetido; "Download das aulas em vídeo — exclusivo do Pro" só no Pro) ·
+`PlanComparisonTable` (duas linhas de download) · `DownloadUpsellModal` (arquivo bloqueado
+aponta pro Vitalício, não mais pro Pro) · FAQ do `/planos` · manual do `member-assistant` v10.
+`downloadPlans.test.ts` reescrito pra regra nova (108 testes no total). O Worker não mudou —
+o `dl` continua entrando na assinatura HMAC, só a decisão de quem assina mudou na function.
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management

@@ -104,25 +104,27 @@ serve(async (req) => {
     if (!activeAccesses?.length && !buyer && !isAdmin) return jsonResponse(req, { error: 'Sem acesso ativo' }, 403)
 
     // ── Direito de DOWNLOAD ──────────────────────────────────────────────
-    // Espelha src/lib/plans.ts. Desde 10/08, download de QUALQUER conteúdo
-    // (arquivo OU aula em vídeo) é exclusivo do Vitalício Pro e do admin.
+    // Espelha src/lib/plans.ts (regra de 11/08): ARQUIVO (apostila, PDF,
+    // .apkg, planilha, imagem, áudio) baixa do Vitalício pra cima — Vitalício,
+    // Plus e Pro; AULA EM VÍDEO é exclusiva do Pro. Mensal/Anual não baixam.
     // Precisa existir AQUI porque o `dl` do Worker é só um parâmetro de URL:
     // sem esta checagem, esconder o botão no frontend não impediria ninguém
     // de acrescentar `&dl=nome` numa URL de streaming e salvar o arquivo.
     const TIER_RANK: Record<string, number> = {
       lifetime_pro: 6, lifetime_plus: 5, lifetime: 4, annual: 3, monthly: 2, trial: 1,
     }
+    const PLANOS_BAIXAM_ARQUIVO = new Set(['lifetime', 'lifetime_plus', 'lifetime_pro'])
     const plano = (activeAccesses || [])
       .map(a => String(a.access_type || ''))
       .sort((a, b) => (TIER_RANK[b] || 0) - (TIER_RANK[a] || 0))[0] || ''
     const ehVideo = lesson.type === 'video'
-    const podeBaixar = !!isAdmin || plano === 'lifetime_pro'
+    const podeBaixar = !!isAdmin || (ehVideo ? plano === 'lifetime_pro' : PLANOS_BAIXAM_ARQUIVO.has(plano))
 
     if (querDownload && !podeBaixar) {
       return jsonResponse(req, {
         error: ehVideo
           ? 'O download das aulas em vídeo é exclusivo do Plano Vitalício Pro.'
-          : 'O download de arquivos é exclusivo do Plano Vitalício Pro.',
+          : 'O download de arquivos está disponível a partir do Plano Vitalício.',
       }, 403)
     }
 

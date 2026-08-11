@@ -26,9 +26,8 @@ export function useDownloadGate() {
 
   const motivoPara = (item?: GatedItem): DownloadBlockReason => {
     if (status === 'trial') return 'trial';
-    // Desde 10/08 todo download é exclusivo do Pro. A mensagem muda só pelo
-    // TIPO do item — "baixar aulas" (vídeo) x "baixar arquivos" —, ambas
-    // apontando para o upgrade ao Pro.
+    // Aula em vídeo bloqueada → convite ao Pro ('lesson-pro'); arquivo
+    // bloqueado (Mensal/Anual) → convite ao Vitalício ('upgrade').
     return isLessonVideo(item) ? 'lesson-pro' : 'upgrade';
   };
 
