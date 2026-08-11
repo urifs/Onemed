@@ -2399,6 +2399,60 @@ ao lado dos de hoje. Novo helper `yesterdayStartISO()` — janela fechada `[onte
 no fuso de São Paulo (não pode incluir hoje). Verificado em produção contra o banco: R$ 4.469,00
 e 14 aprovados ontem, batendo exatamente.
 
+---
+
+### 2026-08-11 (sessão remota) — Playlists de estudo, player popup/PiP, autoplay e chatbot com contexto
+
+**Função nova "Playlist"** (Menu → Playlists, `/membros/playlists`) — o espaço de estudo do
+aluno. Modelo polimórfico `(item_type, item_id)` sem FK por tipo; a resolução de títulos é uma RPC
+`SECURITY DEFINER` que ignora a RLS mas confere a posse da playlist. Migration
+`20260811100000_playlists.sql`: tabelas `playlists` (name, notes, is_default) e `playlist_items`
+(UNIQUE por playlist+tipo+item); RPCs `my_playlists` (cria a "Assistir depois" padrão na 1ª
+chamada), `playlist_items_resolved` (LEFT JOIN em courses/lessons/flashcard_decks/question_banks/
+study_plans/archive_items, título com fallback "(item removido)", kind/course_slug/lesson_type),
+`playlist_create/add/remove/rename/set_notes/delete` (delete barra `is_default`) e
+`playlists_of_item`. RLS dono via `(select auth.uid())`.
+
+| Arquivo | Mudança |
+|---------|---------|
+| `src/hooks/usePlaylists.ts` (novo) | Hook react-query (`['playlists', user.id]`) + helpers `playlistsOfItem/addToPlaylist/removeFromPlaylist/createPlaylist` |
+| `src/components/member/SaveToPlaylistButton.tsx` (novo) | Dropdown "Salvar na playlist" (Popover): checa em quais playlists o item já está, marca/desmarca e cria nova. Variantes `icon`/`button` |
+| `src/pages/MemberPlaylistsPage.tsx` (novo) | Lista de playlists + criar; playlist selecionada com rename/delete, anotações (autosave 1,2s + flush no unmount), itens resolvidos. Aula abre no curso com `?lesson=&fila=`; flashcard/banco abrem inline nos viewers; cronograma `/membros/cronograma?id=`; acervo `/membros/acervo?item=` |
+| `SaveToPlaylistButton` plugado em | `CourseCard` (grade), `CourseDetailPage` (cabeçalho do curso + cada aula/arquivo), `MemberDashboardPage` (abas Flashcards e Banco de Questões), `StudyPlanPage` (cards + detalhe), `ArchivePage` (cards + diálogo) |
+| `courseCategories.ts` / `MemberDashboardPage` / `App.tsx` | Item "Playlists" no menu (ícone `ListVideo`), rota `/membros/playlists` |
+
+**Player — popup/minimizar, vídeo flutuante e autoplay** (`LessonPlayer.tsx`):
+- **Minimizar** vira janelinha flutuante arrastável (`fixed`, sem backdrop → a plataforma atrás
+  fica clicável). O elemento `<video>` é o MESMO nos dois modos (só troca a classe do wrapper),
+  então não recarrega nem perde o ponto. Vale pra QUALQUER tipo — arquivo/PDF também minimiza
+  ("arquivos também devem haver popups").
+- **Vídeo flutuante nativo (Picture-in-Picture)**: removido o `disablePictureInPicture`, botão
+  chama `requestPictureInPicture()` — janela do SO, vai pra outra tela e toca em 2º plano.
+- **Autoplay**: ao terminar vídeo/áudio com próxima aula, contagem de 5s cancelável ("Pular"/
+  "Cancelar") e emenda via `onNext()` (sequência do curso). Teclado/Escape não são sequestrados
+  quando minimizado (a página atrás está em uso).
+
+**Chatbot enxerga a playlist aberta:** `assistantContext.ts` ganhou `setOpenPlaylist`/
+`subscribeOpenPlaylist`; `MemberPlaylistsPage` publica a playlist selecionada; `AssistantWidget`
+mostra o chip "Playlist: X" e manda `currentPlaylist:{id}`. `member-assistant` confere a posse
+(`playlists` por `user_id`), lista os itens via `playlist_items_resolved` rodando COMO O ALUNO, e
+injeta nome+itens+anotações no contexto. Manual do assistente atualizado (Playlists + capacidades
+do player).
+
+**Deploy e verificação em produção** (autorizado pelo dono): migration já estava aplicada;
+`member-assistant` redeployado (v9, `verify_jwt=false`, OPTIONS 200); frontend na `main` (Vercel
+`cd4c025` READY). Verificado com conta de teste real (criada e apagada na sessão): `my_playlists`
+cria a "Assistir depois"; salvou curso/aula/acervo e `playlist_items_resolved` devolveu os 3 com
+título; `playlists_of_item` confirmou; assistente listou os itens da playlist aberta; smoke de UI
+no bundle vivo (Playwright) — `/membros/playlists` e `/membros` sem NENHUM erro de runtime, menu
+"Playlists" presente, 402 botões "Salvar na playlist" na grade. 103/103 testes verdes, build
+27/27 rotas, `typecheck:refs` limpo.
+
+⚠️ **`?fila=` (fila da playlist) ainda não é consumida** pelo `CourseDetailPage` — o autoplay
+segue a ordem DO CURSO (onNext/hasNext já existentes), não a ordem da playlist. Playlist com aulas
+de cursos diferentes não encadeia entre cursos (cada `CourseDetailPage` só tem um curso). Fica
+como melhoria futura; o param é inofensivo (ignorado).
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
