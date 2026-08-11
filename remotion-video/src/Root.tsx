@@ -81,6 +81,16 @@ import { C59_Boot, C59_DURATION } from './creatives/C59_Boot';
 import { C60_Numeros, C60_DURATION } from './creatives/C60_Numeros';
 import { C61_Foco, C61_DURATION } from './creatives/C61_Foco';
 import { C62_Finale, C62_DURATION } from './creatives/C62_Finale';
+import { C63_Estante, C63_DURATION } from './creatives/C63_Estante';
+import { C64_Creditos, C64_DURATION } from './creatives/C64_Creditos';
+import { C65_Cardapio, C65_DURATION } from './creatives/C65_Cardapio';
+import { C66_Trofeus, C66_DURATION } from './creatives/C66_Trofeus';
+import { C67_Tesouro, C67_DURATION } from './creatives/C67_Tesouro';
+import { C68_Luta, C68_DURATION } from './creatives/C68_Luta';
+import { C69_Feira, C69_DURATION } from './creatives/C69_Feira';
+import { C70_Observatorio, C70_DURATION } from './creatives/C70_Observatorio';
+import { C71_Mudanca, C71_DURATION } from './creatives/C71_Mudanca';
+import { C72_Leilao, C72_DURATION } from './creatives/C72_Leilao';
 import { AD01, AD02, AD03, AD04, AD05, AD06, AD07, AD08, AD09, AD10 } from './creatives/AdImages';
 import { POSTS, makePostComp } from './creatives/PostImages';
 import { PROMOS } from './creatives/PromoImages';
@@ -170,6 +180,16 @@ const CREATIVES: Array<[string, React.FC, number]> = [
   ['C60-Numeros', C60_Numeros, C60_DURATION],
   ['C61-Foco', C61_Foco, C61_DURATION],
   ['C62-Finale', C62_Finale, C62_DURATION],
+  ['C63-Estante', C63_Estante, C63_DURATION],
+  ['C64-Creditos', C64_Creditos, C64_DURATION],
+  ['C65-Cardapio', C65_Cardapio, C65_DURATION],
+  ['C66-Trofeus', C66_Trofeus, C66_DURATION],
+  ['C67-Tesouro', C67_Tesouro, C67_DURATION],
+  ['C68-Luta', C68_Luta, C68_DURATION],
+  ['C69-Feira', C69_Feira, C69_DURATION],
+  ['C70-Observatorio', C70_Observatorio, C70_DURATION],
+  ['C71-Mudanca', C71_Mudanca, C71_DURATION],
+  ['C72-Leilao', C72_Leilao, C72_DURATION],
 ];
 
 export const RemotionRoot: React.FC = () => {
