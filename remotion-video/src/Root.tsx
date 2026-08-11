@@ -61,6 +61,26 @@ import { C41_Linhas, C41_DURATION } from './creatives/C41_Linhas';
 import { C42_Pilha, C42_DURATION } from './creatives/C42_Pilha';
 import { MB01_Linhas, MB01_DURATION } from './creatives/MB01_Linhas';
 import { MB02_Pilha, MB02_DURATION } from './creatives/MB02_Pilha';
+import { C43_Recibo, C43_DURATION } from './creatives/C43_Recibo';
+import { C44_Zapping, C44_DURATION } from './creatives/C44_Zapping';
+import { C45_ZoomInf, C45_DURATION } from './creatives/C45_ZoomInf';
+import { C46_Cafe, C46_DURATION } from './creatives/C46_Cafe';
+import { C47_DiaNoite, C47_DURATION } from './creatives/C47_DiaNoite';
+import { C48_Perguntas, C48_DURATION } from './creatives/C48_Perguntas';
+import { C49_Print, C49_DURATION } from './creatives/C49_Print';
+import { C50_TesteCego, C50_DURATION } from './creatives/C50_TesteCego';
+import { C51_Rebobinar, C51_DURATION } from './creatives/C51_Rebobinar';
+import { C52_Dossie, C52_DURATION } from './creatives/C52_Dossie';
+import { C53_Trailer, C53_DURATION } from './creatives/C53_Trailer';
+import { C54_Top5, C54_DURATION } from './creatives/C54_Top5';
+import { C55_Plano, C55_DURATION } from './creatives/C55_Plano';
+import { C56_Documentario, C56_DURATION } from './creatives/C56_Documentario';
+import { C57_Lofi, C57_DURATION } from './creatives/C57_Lofi';
+import { C58_Vespera, C58_DURATION } from './creatives/C58_Vespera';
+import { C59_Boot, C59_DURATION } from './creatives/C59_Boot';
+import { C60_Numeros, C60_DURATION } from './creatives/C60_Numeros';
+import { C61_Foco, C61_DURATION } from './creatives/C61_Foco';
+import { C62_Finale, C62_DURATION } from './creatives/C62_Finale';
 import { AD01, AD02, AD03, AD04, AD05, AD06, AD07, AD08, AD09, AD10 } from './creatives/AdImages';
 import { POSTS, makePostComp } from './creatives/PostImages';
 import { PROMOS } from './creatives/PromoImages';
@@ -130,6 +150,26 @@ const CREATIVES: Array<[string, React.FC, number]> = [
   ['C42-Pilha', C42_Pilha, C42_DURATION],
   ['MB01-Linhas', MB01_Linhas, MB01_DURATION],
   ['MB02-Pilha', MB02_Pilha, MB02_DURATION],
+  ['C43-Recibo', C43_Recibo, C43_DURATION],
+  ['C44-Zapping', C44_Zapping, C44_DURATION],
+  ['C45-ZoomInf', C45_ZoomInf, C45_DURATION],
+  ['C46-Cafe', C46_Cafe, C46_DURATION],
+  ['C47-DiaNoite', C47_DiaNoite, C47_DURATION],
+  ['C48-Perguntas', C48_Perguntas, C48_DURATION],
+  ['C49-Print', C49_Print, C49_DURATION],
+  ['C50-TesteCego', C50_TesteCego, C50_DURATION],
+  ['C51-Rebobinar', C51_Rebobinar, C51_DURATION],
+  ['C52-Dossie', C52_Dossie, C52_DURATION],
+  ['C53-Trailer', C53_Trailer, C53_DURATION],
+  ['C54-Top5', C54_Top5, C54_DURATION],
+  ['C55-Plano', C55_Plano, C55_DURATION],
+  ['C56-Documentario', C56_Documentario, C56_DURATION],
+  ['C57-Lofi', C57_Lofi, C57_DURATION],
+  ['C58-Vespera', C58_Vespera, C58_DURATION],
+  ['C59-Boot', C59_Boot, C59_DURATION],
+  ['C60-Numeros', C60_Numeros, C60_DURATION],
+  ['C61-Foco', C61_Foco, C61_DURATION],
+  ['C62-Finale', C62_Finale, C62_DURATION],
 ];
 
 export const RemotionRoot: React.FC = () => {
