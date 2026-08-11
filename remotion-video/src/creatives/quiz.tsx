@@ -155,7 +155,7 @@ export const QuizVideo: React.FC<{ d: QuizData }> = ({ d }) => {
 
       {/* CARD DA PERGUNTA + ALTERNATIVAS */}
       {quizVisivel && (
-        <div style={{ position: 'absolute', left: 60, right: 60, top: emCd || t >= reveal ? 210 : 320, opacity: win(t, perguntaAt - 0.1, perguntaAt + 0.3) }}>
+        <div style={{ position: 'absolute', left: 60, right: 60, top: 320 - 110 * easeOutExpo(win(t, cdStart - 0.4, cdStart + 0.3)), opacity: win(t, perguntaAt - 0.1, perguntaAt + 0.3) }}>
           <div style={{ background: WHITE, border: '2px solid #eae6dc', borderRadius: 26, padding: '34px 36px', boxShadow: '0 40px 90px -26px rgba(22,24,29,0.25)' }}>
             <div style={{ fontFamily: MONO, fontWeight: 700, fontSize: 22, color: O_MUT, letterSpacing: 3 }}>QUESTÃO · {d.id.replace('C', '')}</div>
             <div style={{ fontFamily: HEAD, fontWeight: 900, fontSize: 42, color: O_INK, letterSpacing: -0.5, lineHeight: 1.25, marginTop: 12 }}>{d.pergunta}</div>
@@ -191,7 +191,7 @@ export const QuizVideo: React.FC<{ d: QuizData }> = ({ d }) => {
 
       {/* COUNTDOWN RING */}
       {emCd && (
-        <div style={{ position: 'absolute', left: 0, right: 0, bottom: 210, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+        <div style={{ position: 'absolute', left: 0, right: 0, bottom: 320, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
           <div style={{ position: 'relative', width: 190, height: 190 }}>
             <svg width={190} height={190} viewBox="0 0 190 190" style={{ transform: 'rotate(-90deg)' }}>
               <circle cx={95} cy={95} r={82} fill={WHITE} stroke="#eee9dd" strokeWidth={14} />
