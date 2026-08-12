@@ -24,6 +24,19 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 
+// Mesma limpeza de emoji da member-sync-library: o nome do Drive entra sem
+// pictograma, senão a varredura offline reintroduz o que o edge function tirou.
+const RE_EMOJI = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE00}-\u{FE0F}\u{1F3FB}-\u{1F3FF}\u{200B}\u{200D}\u{20E3}]/gu;
+function semEmoji(nome) {
+  return String(nome ?? '')
+    .replace(RE_EMOJI, '')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+([–\-—·:])\s*$/g, '')
+    .replace(/^\s*[–\-—·]\s+/, '')
+    .trim();
+}
+
+
 const MODE = (process.argv[2] || 'audit').toLowerCase();
 if (!['audit', 'sync'].includes(MODE)) {
   console.error('uso: node scripts/deep-library-sync.mjs [audit|sync]');
@@ -193,11 +206,11 @@ async function crawlDrive(rootFolderId) {
     if (!r) { brokenShortcuts++; continue; }
     if (r.mimeType !== FOLDER) { looseRootFiles++; continue; }
     if (ONLY_ROOTS.length && !ONLY_ROOTS.includes(r.id)) continue;
-    courses.push({ id: r.id, name: f.name.trim() });
+    courses.push({ id: r.id, name: semEmoji(f.name) });
     visited.add(`${r.id}::${r.id}`);
     folders++;
-    foldersOut.write(JSON.stringify({ id: r.id, name: f.name.trim(), parentId: rootFolderId, relPath: '', depth: 0, rootId: r.id, rootName: f.name.trim() }) + '\n');
-    queue.push({ folderId: r.id, relPath: '', depth: 0, rootId: r.id, rootName: f.name.trim() });
+    foldersOut.write(JSON.stringify({ id: r.id, name: semEmoji(f.name), parentId: rootFolderId, relPath: '', depth: 0, rootId: r.id, rootName: semEmoji(f.name) }) + '\n');
+    queue.push({ folderId: r.id, relPath: '', depth: 0, rootId: r.id, rootName: semEmoji(f.name) });
   }
 
   async function worker() {
@@ -216,7 +229,7 @@ async function crawlDrive(rootFolderId) {
       for (const f of page.files || []) {
         const r = resolveShortcut(f);
         if (!r) { brokenShortcuts++; continue; }
-        const name = f.name.trim();
+        const name = semEmoji(f.name);
         if (r.mimeType === FOLDER) {
           const key = `${task.rootId}::${r.id}`;
           if (visited.has(key)) continue;

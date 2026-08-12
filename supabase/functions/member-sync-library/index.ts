@@ -140,6 +140,26 @@ function lessonType(mimeType: string, name = ''): string {
   return 'other'
 }
 
+// Nome que veio do Drive quase sempre tem emoji ("002 - Material Complementar 📚",
+// "010 - 🤩 Avalie o Módulo 🤞"). Na plataforma isso polui índice, busca e o
+// nome do arquivo baixado, então a limpeza é feita AQUI, na entrada: se ficasse
+// só num UPDATE no banco, a próxima sincronização traria tudo de volta.
+//
+// Removido: pictogramas (blocos de emoji), símbolos usados como emoji,
+// modificadores de tom de pele, seletores de variação, ZWJ e espaços de
+// largura zero. PRESERVADO de propósito: travessão (–), aspas curvas,
+// ／ (que substitui a barra proibida em nome de arquivo do Drive) e acentos.
+const RE_EMOJI = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE00}-\u{FE0F}\u{1F3FB}-\u{1F3FF}\u{200B}\u{200D}\u{20E3}]/gu
+
+function semEmoji(nome: string): string {
+  return nome
+    .replace(RE_EMOJI, '')
+    .replace(/\s{2,}/g, ' ')          // buraco deixado pelo emoji no meio
+    .replace(/\s+([–\-—·:])\s*$/g, '') // separador que sobrou pendurado no fim
+    .replace(/^\s*[–\-—·]\s+/, '')    // ...e no começo
+    .trim()
+}
+
 function resolveShortcut(f: any): { id: string; mimeType: string } | null {
   if (f.mimeType === SHORTCUT_MIME) {
     if (!f.shortcutDetails?.targetId || !f.shortcutDetails?.targetMimeType) return null
@@ -323,7 +343,7 @@ serve(async (req) => {
 
           const { data: newCourse, error: courseErr } = await supabase.from('courses').insert({
             drive_folder_id: resolved.id,
-            title: f.name.trim(),
+            title: semEmoji(f.name),
             slug,
             category: categoryOf(f.name),
             sync_status: 'crawling',
@@ -359,7 +379,7 @@ serve(async (req) => {
           .upsert({ course_id: courseId, drive_folder_id: resolved.id, module_id: null, path: '', depth: 0 },
                   { onConflict: 'course_id,drive_folder_id', ignoreDuplicates: true })
 
-        await supabase.from('courses').update({ sync_status: 'crawling', title: f.name.trim(), synced_at: new Date().toISOString() }).eq('id', courseId)
+        await supabase.from('courses').update({ sync_status: 'crawling', title: semEmoji(f.name), synced_at: new Date().toISOString() }).eq('id', courseId)
         details.push({ course: f.name, action: existing ? 'updated' : 'created', message: 'Na fila de varredura profunda.' })
       }
 
@@ -440,7 +460,7 @@ serve(async (req) => {
               course_id: row.course_id,
               module_id: row.module_id,
               drive_file_id: resolved.id,
-              title: f.name.trim(),
+              title: semEmoji(f.name),
               type,
               mime_type: resolved.mimeType,
               duration_seconds: f.mimeType !== SHORTCUT_MIME && f.videoMediaMetadata?.durationMillis
@@ -485,11 +505,12 @@ serve(async (req) => {
 
         // 2) Subpastas viram módulos (em qualquer nível) e entram na fila.
         for (const child of childFolders) {
-          const childPath = row.path ? `${row.path}/${child.name.trim()}` : child.name.trim()
+          const nomeFilho = semEmoji(child.name)
+          const childPath = row.path ? `${row.path}/${nomeFilho}` : nomeFilho
           const { data: modRow, error: modErr } = await supabase.from('course_modules').upsert({
             course_id: row.course_id,
             drive_folder_id: child.id,
-            title: child.name.trim(),
+            title: nomeFilho,
             parent_module_id: row.module_id,
             depth: (row.depth || 0) + 1,
             path: childPath,
