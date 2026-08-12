@@ -8,6 +8,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { formatDateTimeSP } from '@/lib/utils';
+import { PLAN_PRICES, PLAN_LABELS } from '@/lib/plans';
+
+// A prévia usa a MESMA conta do servidor (base - base*pct/100, 2 casas) para
+// que o admin veja no painel exatamente o valor que sai no e-mail e é cobrado.
+const brlPreview = (v: number) => `R$ ${v.toFixed(2).replace('.', ',')}`;
+const comDescontoPreview = (plano: string, pct: number) =>
+  Math.round((PLAN_PRICES[plano] - (PLAN_PRICES[plano] * pct / 100)) * 100) / 100;
 import {
   Mail, Users, DollarSign, CheckCircle2, XCircle,
   Loader2, Send, Clock, StopCircle, CalendarClock,
@@ -62,8 +69,6 @@ interface FollowupFields {
   couponCode: string;
   discount: number;
   urgency: string;
-  annualPrice: string;
-  lifetimePrice: string;
 }
 
 interface FreeTrialFields {
@@ -86,8 +91,6 @@ const PRESETS: Record<Exclude<TemplateType, 'custom'>, FollowupFields> = {
     couponCode: 'ONEMED10',
     discount: 10,
     urgency: 'Aproveite nossa oferta especial e garanta acesso ilimitado a todo o conteudo.',
-    annualPrice: 'R$ 179,10',
-    lifetimePrice: 'R$ 269,10',
   },
   followup_7d: {
     subject: 'Uma semana se passou... - OneMed',
@@ -96,8 +99,6 @@ const PRESETS: Record<Exclude<TemplateType, 'custom'>, FollowupFields> = {
     couponCode: 'ONEMED20',
     discount: 20,
     urgency: 'Milhares de medicos ja garantiram acesso. Nao fique de fora!',
-    annualPrice: 'R$ 159,20',
-    lifetimePrice: 'R$ 239,20',
   },
   followup_30d: {
     subject: 'Ultima chance! - OneMed',
@@ -106,8 +107,6 @@ const PRESETS: Record<Exclude<TemplateType, 'custom'>, FollowupFields> = {
     couponCode: 'ONEMED30',
     discount: 30,
     urgency: 'Garanta seu acesso agora e transforme sua carreira medica.',
-    annualPrice: 'R$ 139,30',
-    lifetimePrice: 'R$ 209,30',
   },
 };
 
@@ -431,8 +430,6 @@ export default function EmailCampaignPage() {
         couponCode:   followupFields.couponCode,
         discount:     followupFields.discount,
         urgency:      followupFields.urgency,
-        annualPrice:  followupFields.annualPrice,
-        lifetimePrice: followupFields.lifetimePrice,
       },
     };
   };
@@ -659,15 +656,22 @@ export default function EmailCampaignPage() {
                       <Label className="text-muted-foreground text-xs uppercase font-mono">Texto de urgência</Label>
                       <Textarea value={followupFields.urgency} onChange={e => setFollowupFields(f => ({ ...f, urgency: e.target.value }))} rows={2} className="bg-background border-border text-foreground resize-none" />
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1.5">
-                        <Label className="text-muted-foreground text-xs uppercase font-mono">Preço Anual c/ desconto</Label>
-                        <Input value={followupFields.annualPrice} onChange={e => setFollowupFields(f => ({ ...f, annualPrice: e.target.value }))} placeholder="R$ 179,10" className="bg-background border-border text-foreground" />
+                    <div className="space-y-1.5">
+                      <Label className="text-muted-foreground text-xs uppercase font-mono">Preços no e-mail (calculados)</Label>
+                      <div className="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground">
+                        {(['annual', 'lifetime', 'monthly', 'lifetime_plus', 'lifetime_pro'] as const).map(plano => (
+                          <div key={plano} className="flex justify-between py-0.5">
+                            <span className="text-muted-foreground">{PLAN_LABELS[plano]}</span>
+                            <span>
+                              <span className="text-muted-foreground line-through mr-2">{brlPreview(PLAN_PRICES[plano])}</span>
+                              <span className="font-medium">{brlPreview(comDescontoPreview(plano, followupFields.discount))}</span>
+                            </span>
+                          </div>
+                        ))}
                       </div>
-                      <div className="space-y-1.5">
-                        <Label className="text-muted-foreground text-xs uppercase font-mono">Preço Vitalício c/ desconto</Label>
-                        <Input value={followupFields.lifetimePrice} onChange={e => setFollowupFields(f => ({ ...f, lifetimePrice: e.target.value }))} placeholder="R$ 269,10" className="bg-background border-border text-foreground" />
-                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Calculado a partir do cupom de {followupFields.discount}% sobre a tabela oficial — igual ao que o checkout cobra.
+                      </p>
                     </div>
                   </>
                 )}

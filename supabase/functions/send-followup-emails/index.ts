@@ -18,6 +18,23 @@ const SITE_NAME = 'OneMed'
 const FROM_EMAIL = 'noreply@onemedcursos.com.br'
 const WHATSAPP_URL = 'https://wa.me/5563999191551?text=Ol%C3%A1!%20Tenho%20interesse%20no%20OneMed.'
 
+// Preços de tabela — MESMOS valores que o mp-create-payment cobra. Antes os
+// preços com desconto eram strings escritas à mão em cada sequência e estavam
+// errados no vitalício (o e-mail prometia R$ 269,10 e o checkout cobrava
+// R$ 269,91), além de envelhecerem a cada mudança de tabela. Agora o e-mail
+// calcula igual ao servidor: base - base * pct / 100, arredondado em 2 casas.
+const PLAN_PRICES: Record<string, number> = {
+  monthly:       49.00,
+  annual:        199.00,
+  lifetime:      299.90,
+  lifetime_plus: 599.00,
+  lifetime_pro:  997.00,
+}
+
+const brl = (valor: number) => `R$ ${valor.toFixed(2).replace('.', ',')}`
+const comDesconto = (plano: string, pct: number) =>
+  Math.round((PLAN_PRICES[plano] - (PLAN_PRICES[plano] * pct / 100)) * 100) / 100
+
 interface FollowupConfig {
   days: number
   type: string
@@ -26,8 +43,6 @@ interface FollowupConfig {
   subjectText: string
   message: string
   urgency: string
-  annualPrice: string
-  lifetimePrice: string
 }
 
 const FOLLOWUP_CONFIGS: FollowupConfig[] = [
@@ -39,8 +54,6 @@ const FOLLOWUP_CONFIGS: FollowupConfig[] = [
     subjectText: 'Sentimos sua falta!',
     message: 'Notamos que você experimentou nosso conteúdo ontem. Esperamos que tenha gostado!',
     urgency: 'Aproveite nossa oferta especial e garanta acesso ilimitado a todo o conteúdo.',
-    annualPrice: 'R$ 179,10',
-    lifetimePrice: 'R$ 269,10',
   },
   {
     days: 7,
@@ -50,8 +63,6 @@ const FOLLOWUP_CONFIGS: FollowupConfig[] = [
     subjectText: 'Uma semana se passou...',
     message: 'Faz uma semana que você testou o OneMed. Sentimos sua falta!',
     urgency: 'Milhares de médicos já garantiram acesso. Não fique de fora!',
-    annualPrice: 'R$ 159,20',
-    lifetimePrice: 'R$ 239,20',
   },
   {
     days: 30,
@@ -61,8 +72,6 @@ const FOLLOWUP_CONFIGS: FollowupConfig[] = [
     subjectText: 'Última chance!',
     message: 'Faz um mês que você conheceu o OneMed. Esta pode ser sua última oportunidade!',
     urgency: 'Garanta seu acesso agora e transforme sua carreira médica.',
-    annualPrice: 'R$ 139,30',
-    lifetimePrice: 'R$ 209,30',
   },
 ]
 
@@ -177,16 +186,21 @@ function getFollowupEmailHtml(email: string, cfg: FollowupConfig): string {
             <tr>
               <td style="width: 50%; padding: 8px; text-align: center; border-right: 1px solid #262626;">
                 <p style="color: #64748B; font-size: 11px; margin: 0; text-transform: uppercase;">Plano anual</p>
-                <p style="color: #64748B; font-size: 13px; margin: 4px 0; text-decoration: line-through;">R$ 199,00</p>
-                <p style="color: #4ADE80; font-size: 22px; font-weight: 700; margin: 0;">${cfg.annualPrice}</p>
+                <p style="color: #64748B; font-size: 13px; margin: 4px 0; text-decoration: line-through;">${brl(PLAN_PRICES.annual)}</p>
+                <p style="color: #4ADE80; font-size: 22px; font-weight: 700; margin: 0;">${brl(comDesconto('annual', cfg.discount))}</p>
               </td>
               <td style="width: 50%; padding: 8px; text-align: center;">
                 <p style="color: #64748B; font-size: 11px; margin: 0; text-transform: uppercase;">Plano vitalício</p>
-                <p style="color: #64748B; font-size: 13px; margin: 4px 0; text-decoration: line-through;">R$ 299,90</p>
-                <p style="color: #4ADE80; font-size: 22px; font-weight: 700; margin: 0;">${cfg.lifetimePrice}</p>
+                <p style="color: #64748B; font-size: 13px; margin: 4px 0; text-decoration: line-through;">${brl(PLAN_PRICES.lifetime)}</p>
+                <p style="color: #4ADE80; font-size: 22px; font-weight: 700; margin: 0;">${brl(comDesconto('lifetime', cfg.discount))}</p>
               </td>
             </tr>
           </table>
+          <p style="color: #64748B; font-size: 12px; text-align: center; margin: 14px 0 0; line-height: 1.5;">
+            O cupom também vale no Mensal (${brl(comDesconto('monthly', cfg.discount))}),
+            no Vitalício Plus (${brl(comDesconto('lifetime_plus', cfg.discount))})
+            e no Vitalício Pro (${brl(comDesconto('lifetime_pro', cfg.discount))}).
+          </p>
         </td>
       </tr>
     </table>
