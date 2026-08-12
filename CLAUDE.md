@@ -2745,6 +2745,70 @@ e acentos.
 vídeos-quiz com countdown), posts de feed/stories, série MEDUF. Pasta isolada com `package.json`
 próprio — não entra no build do site (Vercel builda o `package.json` da raiz).
 
+---
+
+### 2026-08-12 (sessão remota) — PANE GERAL: a conta de conteúdo foi bloqueada pelo Google
+
+**Relato:** "TODOS, TODOS OS CLIENTES com esse problema, sendo que entro no Google Drive e
+reproduzo as aulas, está funcionando normalmente" — nenhuma aula abria, na plataforma inteira.
+
+**🔴 A causa (e a lição): o `downloadQuotaExceeded` do Google acompanha a conta que PEDE, não o
+arquivo.** A mensagem diz "the download quota for THIS FILE has been exceeded" e por isso a
+documentação anterior deste arquivo tratava tudo como franquia por arquivo — errado. Medição que
+fecha a questão, MESMO arquivo, MESMO instante, dois tokens:
+
+| Range | conta de conteúdo (`onemedcursos`) | conta de armazenamento (`ufgravity`) |
+|---|---|---|
+| `bytes=0-1023` | 206 | 206 |
+| `bytes=0-524287` | **403** | 206 |
+| `bytes=0-4194303` | **403** | 206 |
+| `bytes=0-25165823` | **403** | 206 |
+
+A conta de conteúdo está com o download RESTRINGIDO pelo Google (ela também está 2,8 GB acima do
+limite de armazenamento: 18,9 GB de 16,1 GB) e era ela quem servia 100% das aulas. O Drive do
+dono continuava tocando porque é outra conta e outro caminho (pré-visualização, que não tem essa
+franquia). Não era o cache da Cloudflare, não era a restrição de curso por plano, não era o
+tamanho da janela de 24MB — as três hipóteses foram testadas e descartadas antes.
+
+Sinal que engana e fez perder tempo: **1KB responde 206 mesmo com a conta bloqueada**. Sondar
+disponibilidade com range pequeno dá falso positivo. A sonda honesta é pedir um trecho do
+tamanho que o player pede de verdade.
+
+**A saída não dependeu do Google liberar nada:** a conta de conteúdo tem `canShare: true` nas
+pastas dos cursos (conferido em `capabilities`), então ela mesma concedeu **leitura** das **408
+pastas de curso** para `ufgravity@gmail.com` (a conta de armazenamento da própria plataforma,
+110 GB de 5,5 TB, saudável). 407 concedidas; a única falha é a pasta do curso `anestreview`,
+desativado em 10/08.
+
+| Onde | Mudança |
+|---|---|
+| `cloudflare/stream-lesson/worker.js` | Lê por DUAS contas, nesta ordem: armazenamento → conteúdo. 404 (conta não enxerga) e 403 (cota) mandam tentar a próxima. Guarda no cache qual conta funcionou (30 min) pra não repetir as recusas |
+| idem | **Escada de janelas**: 24 → 12 → 6 → 3 → 1,5MB. Como o Google recusa pedido MAIOR que o saldo restante, arquivo com saldo parcial volta a tocar em vez de virar 429. Todas as janelas dividem 24MB e ficam alinhadas à grade, então o cache continua batendo quando a escada desce |
+| idem | **Cache por trecho restaurado** (tinha sido revertido durante a investigação, por suspeita errada): cada janela é baixada uma vez por datacenter e servida a todos os alunos. Verificado: 2º acesso com URL assinada NOVA → `x-cache: HIT`, bytes idênticos, zero consumo |
+| `generate-flashcards` v32 · `member-assistant` v11 · `member-stream-file` v19 | Mesma ordem de duas contas ao ler bytes de aula/arquivo — a IA e o assistente liam pela conta bloqueada e falhavam junto |
+
+**Verificação em produção** (conta de teste criada e apagada na sessão), pelo caminho REAL do
+aluno (`member-lesson-token` → Worker → bytes):
+- **60/60 aulas em 60 cursos DIFERENTES** responderam bytes (vídeo 37, PDF 17, imagem 4, doc 1,
+  outro 1). Sonda de 64KB, pra não gastar franquia à toa.
+- 10/10 aulas grandes com o pedido real do navegador (`Range: bytes=0-`): 206 com os 24MB
+  inteiros e assinatura `ftyp` de MP4 de verdade, 1,7-4,9s.
+- A aula EXATA do print do cliente: era 429, agora 206 com 24MB de MP4.
+- `generate-flashcards` gerando de uma apostila real: 200, 3 cartas, 24s.
+
+⚠️ **Cuidado ao investigar 403 do Drive daqui pra frente:** teste o MESMO arquivo com os DOIS
+tokens antes de concluir qualquer coisa. Se um responde e o outro não, o problema é da conta, não
+do arquivo — e nenhuma quantidade de espera "pra cota resetar" resolve.
+
+⚠️ `drive-storage-token` sem e-mail devolve a conta com MAIS espaço livre. Hoje só existe uma
+(`ufgravity`), então a escolha é determinística; se um dia conectarem uma segunda conta com mais
+espaço e SEM leitura da biblioteca, o worker vai bater 404 nela e cair na conta de conteúdo
+(bloqueada) — nesse caso, compartilhar as pastas com a conta nova também.
+
+> Pendência pro dono, independente disso: a conta `onemedcursos@gmail.com` está 2,8 GB acima do
+> limite de armazenamento. Enquanto estiver assim ela segue sujeita a restrição do Google —
+> hoje ela é só reserva, mas convém liberar espaço ou ampliar o plano.
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management

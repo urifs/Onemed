@@ -336,16 +336,46 @@ serve(async (req) => {
     const warnings: string[] = []
     const parts: unknown[] = []
     let budget = MEDIA_BUDGET
-    let driveToken: string | null = null
+    // ── DUAS contas de leitura ────────────────────────────────────────────
+    // O `downloadQuotaExceeded` do Google acompanha a conta que PEDE, não o
+    // arquivo (medido: mesmo arquivo, mesmo instante, 403 numa conta e 206 na
+    // outra). A conta de conteúdo ficou com o download restringido e derrubou
+    // a leitura de aulas em toda a plataforma; a conta de armazenamento tem
+    // leitura das mesmas pastas e assume. Ordem igual à do Worker de
+    // streaming: armazenamento primeiro, conteúdo como reserva.
+    let driveTokens: string[] | null = null
 
-    const getDriveToken = async (): Promise<string | null> => {
-      if (driveToken) return driveToken
-      const res = await fetch(`${supabaseUrl}/functions/v1/drive-access-token`, {
-        headers: { Authorization: `Bearer ${serviceKey}` },
-      })
-      if (!res.ok) return null
-      driveToken = (await res.json()).accessToken || null
-      return driveToken
+    const getDriveTokens = async (): Promise<string[]> => {
+      if (driveTokens) return driveTokens
+      const lista: string[] = []
+      for (const fn of ['drive-storage-token', 'drive-access-token']) {
+        try {
+          const res = await fetch(`${supabaseUrl}/functions/v1/${fn}`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json' },
+            body: '{}',
+          })
+          if (!res.ok) continue
+          const t = (await res.json()).accessToken
+          if (t) lista.push(t)
+        } catch { /* conta indisponível: a próxima assume */ }
+      }
+      driveTokens = lista
+      return lista
+    }
+
+    // Tenta o arquivo em cada conta: 403 (cota) e 404 (sem acesso) mandam
+    // tentar a próxima; qualquer outra resposta é definitiva.
+    const lerDoDrive = async (fileId: string, range?: string): Promise<Uint8Array | null> => {
+      for (const tok of await getDriveTokens()) {
+        const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+          headers: { Authorization: `Bearer ${tok}`, ...(range ? { Range: range } : {}) },
+        })
+        if (res.ok || res.status === 206) return new Uint8Array(await res.arrayBuffer())
+        await res.body?.cancel().catch(() => {})
+        if (res.status !== 403 && res.status !== 404) return null
+      }
+      return null
     }
 
     const sourceTitles: string[] = []
@@ -422,19 +452,7 @@ serve(async (req) => {
             bytes = isAv ? buf.subarray(0, want) : buf
           }
         } else if (lesson.drive_file_id) {
-          const tok = await getDriveToken()
-          if (tok) {
-            const res = await fetch(
-              `https://www.googleapis.com/drive/v3/files/${lesson.drive_file_id}?alt=media`,
-              {
-                headers: {
-                  Authorization: `Bearer ${tok}`,
-                  ...(isAv ? { Range: `bytes=0-${want - 1}` } : {}),
-                },
-              },
-            )
-            if (res.ok || res.status === 206) bytes = new Uint8Array(await res.arrayBuffer())
-          }
+          bytes = await lerDoDrive(lesson.drive_file_id, isAv ? `bytes=0-${want - 1}` : undefined)
         }
       } catch { /* cai no aviso abaixo */ }
 
@@ -484,19 +502,7 @@ serve(async (req) => {
 
       let bytes: Uint8Array | null = null
       try {
-        const tok = await getDriveToken()
-        if (tok) {
-          const res = await fetch(
-            `https://www.googleapis.com/drive/v3/files/${af.drive_file_id}?alt=media`,
-            {
-              headers: {
-                Authorization: `Bearer ${tok}`,
-                ...(isAv ? { Range: `bytes=0-${want - 1}` } : {}),
-              },
-            },
-          )
-          if (res.ok || res.status === 206) bytes = new Uint8Array(await res.arrayBuffer())
-        }
+        bytes = await lerDoDrive(af.drive_file_id, isAv ? `bytes=0-${want - 1}` : undefined)
       } catch { /* cai no aviso abaixo */ }
 
       if (!bytes || bytes.length === 0) {

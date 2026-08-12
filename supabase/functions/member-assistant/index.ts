@@ -271,14 +271,24 @@ serve(async (req) => {
                 bytes = isAv ? buf.subarray(0, AV_CHUNK) : buf
               }
             } else if (lesson.drive_file_id) {
-              const tokRes = await fetch(`${supabaseUrl}/functions/v1/drive-access-token`, {
-                headers: { Authorization: `Bearer ${serviceKey}` },
-              })
-              if (tokRes.ok) {
+              // Duas contas de leitura: o `downloadQuotaExceeded` do Google
+              // acompanha a conta que PEDE, não o arquivo, e a conta de
+              // conteúdo ficou restringida. Armazenamento primeiro, conteúdo
+              // como reserva — mesma ordem do Worker de streaming.
+              for (const fn of ['drive-storage-token', 'drive-access-token']) {
+                const tokRes = await fetch(`${supabaseUrl}/functions/v1/${fn}`, {
+                  method: 'POST',
+                  headers: { Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json' },
+                  body: '{}',
+                })
+                if (!tokRes.ok) continue
                 const { accessToken } = await tokRes.json()
+                if (!accessToken) continue
                 const res = await fetch(`https://www.googleapis.com/drive/v3/files/${lesson.drive_file_id}?alt=media`,
                   { headers: { Authorization: `Bearer ${accessToken}`, ...(isAv ? { Range: `bytes=0-${AV_CHUNK - 1}` } : {}) } })
-                if (res.ok || res.status === 206) bytes = new Uint8Array(await res.arrayBuffer())
+                if (res.ok || res.status === 206) { bytes = new Uint8Array(await res.arrayBuffer()); break }
+                await res.body?.cancel().catch(() => {})
+                if (res.status !== 403 && res.status !== 404) break
               }
             }
             // Trecho de MP4 sem índice legível: não anexa (o modelo rejeitaria).

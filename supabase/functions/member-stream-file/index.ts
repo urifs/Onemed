@@ -117,20 +117,47 @@ serve(async (req) => {
       }).eq('id', config.id)
     }
 
-    const driveHeaders: Record<string, string> = { Authorization: `Bearer ${accessToken}` }
     const range = req.headers.get('range')
-    if (range) driveHeaders['Range'] = range
+    const metodo = req.method === 'HEAD' ? 'GET' : req.method
 
-    const driveRes = await fetch(
-      `https://www.googleapis.com/drive/v3/files/${lesson.drive_file_id}?alt=media`,
-      { method: req.method === 'HEAD' ? 'GET' : req.method, headers: driveHeaders },
-    )
+    // ── DUAS contas de leitura ────────────────────────────────────────────
+    // O `downloadQuotaExceeded` do Google acompanha a conta que PEDE, não o
+    // arquivo (medido: mesmo arquivo, mesmo instante, 403 numa conta e 206 na
+    // outra). A conta de conteúdo ficou com o download restringido; a de
+    // armazenamento tem leitura das mesmas pastas e assume. Mesma ordem do
+    // Worker de streaming: armazenamento primeiro, conteúdo como reserva.
+    const tokensLeitura: string[] = []
+    try {
+      const st = await fetch(`${supabaseUrl}/functions/v1/drive-storage-token`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json' },
+        body: '{}',
+      })
+      if (st.ok) {
+        const { accessToken: t } = await st.json()
+        if (t) tokensLeitura.push(t)
+      }
+    } catch { /* segue com a conta de conteúdo */ }
+    tokensLeitura.push(accessToken)
 
-    if (!driveRes.ok && driveRes.status !== 206) {
-      const text = await driveRes.text().catch(() => '')
-      console.error('Drive stream error', driveRes.status, text)
-      return new Response('Upstream error', { status: driveRes.status === 404 ? 404 : 502, headers: corsHeaders() })
+    let driveRes: Response | null = null
+    for (const tok of tokensLeitura) {
+      const driveHeaders: Record<string, string> = { Authorization: `Bearer ${tok}` }
+      if (range) driveHeaders['Range'] = range
+      const res = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${lesson.drive_file_id}?alt=media`,
+        { method: metodo, headers: driveHeaders },
+      )
+      if (res.ok || res.status === 206) { driveRes = res; break }
+      const text = await res.text().catch(() => '')
+      console.error('Drive stream error', res.status, text)
+      // 403 (cota da conta) e 404 (sem acesso) mandam tentar a próxima conta.
+      if (res.status !== 403 && res.status !== 404) {
+        return new Response('Upstream error', { status: 502, headers: corsHeaders() })
+      }
+      driveRes = null
     }
+    if (!driveRes) return new Response('Upstream error', { status: 502, headers: corsHeaders() })
 
     const outHeaders = new Headers(corsHeaders())
     outHeaders.set('Content-Type', lesson.mime_type || driveRes.headers.get('content-type') || 'application/octet-stream')
