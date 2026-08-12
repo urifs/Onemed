@@ -190,13 +190,26 @@ export default function BuyersPage() {
 
         {/* Table */}
         <Card className="bg-background-paper border-border">
+          <CardHeader className="px-4 py-3 border-b border-border">
+            <CardTitle className="text-sm font-semibold text-foreground flex items-center justify-between gap-3">
+              <span>Compradores</span>
+              <span className="text-xs font-normal text-muted-foreground tabular-nums">
+                {loading ? '—' : `${filtered.length} ${filtered.length === 1 ? 'registro' : 'registros'}`}
+              </span>
+            </CardTitle>
+          </CardHeader>
           <CardContent className="p-0">
-            <div className="overflow-x-auto">
+            {/* Quadro com altura própria: a lista rola AQUI dentro em vez de
+                esticar a página. Com centenas de compradores, a rolagem da
+                página inteira deixava os cartões de resumo e a busca longe
+                da tela. O cabeçalho fica fixo no topo do quadro (cada th
+                precisa do próprio fundo, senão as linhas passam por baixo). */}
+            <div className="max-h-[60vh] overflow-y-auto overflow-x-auto">
               <table className="w-full">
-                <thead>
+                <thead className="sticky top-0 z-10">
                   <tr className="border-b border-border">
                     {['Email', 'WhatsApp', 'Nome', 'Plano', 'Valor', 'Status', 'Data', ''].map(h => (
-                      <th key={h} className="text-left px-4 py-3 text-xs font-mono uppercase text-muted-foreground">{h}</th>
+                      <th key={h} className="text-left px-4 py-3 text-xs font-mono uppercase text-muted-foreground bg-background-paper border-b border-border">{h}</th>
                     ))}
                   </tr>
                 </thead>
