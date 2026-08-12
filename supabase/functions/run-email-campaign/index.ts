@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { quadroDePlanos } from '../_shared/plan-table.ts'
 
 const ALLOWED_ORIGINS = ['https://onemedcursos.com.br', 'http://localhost:5173', 'http://localhost:3000']
 
@@ -72,23 +73,6 @@ function getBaseTemplate(content: string, title: string): string {
 </html>`
 }
 
-// Preços de tabela — MESMOS valores cobrados pelo mp-create-payment. O preço
-// com desconto é CALCULADO aqui a partir do percentual do cupom, nunca recebido
-// pronto do cliente: os valores vinham digitados no painel e estavam
-// desatualizados (o e-mail prometia R$ 269,10 no vitalício e o checkout cobrava
-// R$ 269,91).
-const PLAN_PRICES: Record<string, number> = {
-  monthly:       49.00,
-  annual:        199.00,
-  lifetime:      299.90,
-  lifetime_plus: 599.00,
-  lifetime_pro:  997.00,
-}
-
-const brl = (valor: number) => `R$ ${valor.toFixed(2).replace('.', ',')}`
-const comDesconto = (plano: string, pct: number) =>
-  Math.round((PLAN_PRICES[plano] - (PLAN_PRICES[plano] * pct / 100)) * 100) / 100
-
 interface FollowupData {
   subjectText: string
   message: string
@@ -119,27 +103,7 @@ function buildFollowupHtml(email: string, cfg: FollowupData): string {
       <tr><td style="padding: 6px 0; color: #CBD5E1; font-size: 14px;">Material completo para Residência e Revalida</td></tr>
     </table>
 
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #161616; border-radius: 10px; border: 1px solid #262626; margin: 0 0 24px;">
-      <tr>
-        <td style="padding: 20px;">
-          <p style="color: #64748B; font-size: 12px; text-align: center; margin: 0 0 14px; text-transform: uppercase; letter-spacing: 0.5px;">Preço com o cupom</p>
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
-            <tr>
-              <td style="width: 50%; padding: 8px; text-align: center; border-right: 1px solid #262626;">
-                <p style="color: #64748B; font-size: 11px; margin: 0; text-transform: uppercase;">Plano anual</p>
-                <p style="color: #64748B; font-size: 13px; margin: 4px 0; text-decoration: line-through;">${brl(PLAN_PRICES.annual)}</p>
-                <p style="color: #4ADE80; font-size: 22px; font-weight: 700; margin: 0;">${brl(comDesconto('annual', cfg.discount))}</p>
-              </td>
-              <td style="width: 50%; padding: 8px; text-align: center;">
-                <p style="color: #64748B; font-size: 11px; margin: 0; text-transform: uppercase;">Plano vitalício</p>
-                <p style="color: #64748B; font-size: 13px; margin: 4px 0; text-decoration: line-through;">${brl(PLAN_PRICES.lifetime)}</p>
-                <p style="color: #4ADE80; font-size: 22px; font-weight: 700; margin: 0;">${brl(comDesconto('lifetime', cfg.discount))}</p>
-              </td>
-            </tr>
-          </table>
-        </td>
-      </tr>
-    </table>
+    ${quadroDePlanos(cfg.discount, SITE_URL, cfg.couponCode)}
 
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
       <tr>
