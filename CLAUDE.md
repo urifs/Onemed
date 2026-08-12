@@ -2700,6 +2700,51 @@ acesso. E o `logout` do app usa o padrão do supabase-js (escopo global, derruba
 aparelhos) — não foi alterado nesta sessão por não fazer parte do pedido, mas é candidato a virar
 escopo local (sair só daquele aparelho) numa próxima.
 
+---
+
+### 2026-08-12 (sessão paralela, branch `onemedcursos-remotion-video-iJRIp`) — admin sem limite de telas, e-mails com preço calculado, emoji fora dos nomes do Drive
+
+Trabalho feito em outro chat, na branch do projeto de vídeos, e consolidado depois na branch
+desta sessão (merge sem conflito, 113 testes verdes).
+
+**Admin sem teto de telas** (`20260812120000_admin_sem_limite_de_telas.sql`): o dono entra pelo
+celular para conferir uma aula, pelo notebook para mexer no painel e por um terceiro aparelho
+para testar — e era derrubado do mais antigo a cada login. O bypass fica DENTRO da função (e não
+em cada edge function), porque ela é o único ponto por onde a exclusão de sessão passa.
+`PlanDetailsModal` mostra "Ilimitado" para `plan === 'admin'`.
+
+> 🔴 **Incidente instrutivo — `CREATE OR REPLACE` sobrescreve lógica mais nova sem avisar.**
+> A migration do admin foi escrita a partir da versão ANTIGA da `enforce_session_limit` e
+> aplicada depois da `20260812010000` (contagem por tela ativa): o corpo inteiro foi substituído
+> e a janela de 7 dias + a ordenação por atividade **sumiram do banco em silêncio**. Corrigido na
+> `20260812130000_active_session_limit_admin_bypass.sql`, que junta as duas regras. Conferido na
+> função VIVA em produção: bypass de admin ✓, janela de 7 dias ✓, ordenação por atividade ✓.
+> **Regra: antes de dar `CREATE OR REPLACE` numa função existente, leia o corpo que está no
+> banco** (`pg_get_functiondef`) — o arquivo do repo pode estar atrasado em relação à produção.
+
+**E-mails prometiam preço ANTIGO, escrito à mão** (`_shared/plan-table.ts`, novo): os templates
+de follow-up tinham `annualPrice: 'R$ 179,10'` / `lifetimePrice: 'R$ 269,10'` hardcoded — desconto
+sobre a tabela velha (R$199/R$299,90), ou seja, o e-mail prometia um valor que o checkout não
+cobrava mais. Agora o preço vem de `PLAN_PRICES` e o desconto é calculado com a MESMA conta do
+`mp-create-payment` (`base - base*pct/100`, 2 casas), num quadro comparativo dos 5 planos em HTML
+de e-mail (tabela empilhada — Gmail/Outlook não renderizam flex/grid, e 5 colunas seriam
+ilegíveis no celular). `EmailCampaignPage` perdeu os campos de preço digitado e mostra a mesma
+prévia calculada. Usado por `send-followup-emails`, `send-custom-email` e `run-email-campaign`.
+⚠️ O arquivo avisa no topo: preço vive em 3 lugares (mp-create-payment cobra · plans.ts mostra ·
+plan-table.ts promete no e-mail) — mudar preço exige tocar nos três.
+
+**Emoji fora dos nomes vindos do Drive** (`member-sync-library` + `scripts/deep-library-sync.mjs`):
+nome de pasta/arquivo vinha com pictograma ("002 - Material Complementar 📚", "010 - 🤩 Avalie o
+Módulo 🤞"), poluindo índice, busca e o nome do arquivo baixado. A limpeza é na ENTRADA (se fosse
+só um UPDATE no banco, a próxima sincronização traria tudo de volta) e está nos DOIS caminhos de
+importação, senão a varredura offline reintroduz o que o edge function tirou. Preservados de
+propósito: travessão, aspas curvas, `／` (substitui a barra proibida em nome de arquivo do Drive)
+e acentos.
+
+**Projeto Remotion** (`remotion-video/`, 245 arquivos): criativos C43–C82 (kit cinematográfico,
+vídeos-quiz com countdown), posts de feed/stories, série MEDUF. Pasta isolada com `package.json`
+próprio — não entra no build do site (Vercel builda o `package.json` da raiz).
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
