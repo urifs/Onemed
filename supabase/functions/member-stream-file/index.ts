@@ -83,7 +83,10 @@ serve(async (req) => {
     if (userErr || !userRow?.user?.email) return new Response('Invalid session', { status: 401, headers: corsHeaders() })
     const email = userRow.user.email.toLowerCase()
     const [{ data: activeAccess }, { data: buyer }, { data: isAdmin }] = await Promise.all([
-      supabase.from('accesses').select('id').eq('email', email).eq('status', 'active').limit(1).maybeSingle(),
+      // expires_at indispensável (mesmo motivo do member-lesson-token): trial
+      // vencido não pode continuar puxando bytes até o cron de revogação rodar.
+      supabase.from('accesses').select('id').eq('email', email).eq('status', 'active')
+        .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`).limit(1).maybeSingle(),
       supabase.from('buyers').select('id').eq('email', email).eq('access_granted', true).limit(1).maybeSingle(),
       supabase.rpc('has_role', { _user_id: claims.uid, _role: 'admin' }),
     ])

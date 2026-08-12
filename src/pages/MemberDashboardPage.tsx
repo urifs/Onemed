@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { toast } from 'sonner';
 import { Play, Info, FileText, File, Music, Image as ImageIcon, Loader2, FileSpreadsheet, FileType, Megaphone, Star, Highlighter, Trash2, SquareStack, ClipboardList, FileDown, FolderUp } from 'lucide-react';
 import { useAnnouncementSettings } from '@/hooks/useAnnouncementSettings';
 import { supabase } from '@/integrations/supabase/client';
@@ -15,9 +16,11 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { FlashcardViewer, type FlashcardDeck } from '@/components/member/FlashcardViewer';
 import { FlashcardGeneratorModal, type GeneratedDeck } from '@/components/member/FlashcardGeneratorModal';
 import { QuestionBankViewer } from '@/components/member/QuestionBankViewer';
+import { SaveToPlaylistButton } from '@/components/member/SaveToPlaylistButton';
 import { exportQuestionBankPdf } from '@/lib/questionBankPdf';
 import { useMemberStatus } from '@/hooks/useMemberStatus';
 import { AiUpsellModal } from '@/components/member/AiUpsellModal';
+import { TrialWelcomeModal } from '@/components/member/TrialWelcomeModal';
 import { CATEGORY_ORDER } from '@/lib/courseCategories';
 import { lessonTypeFromMime } from './ArchivePage';
 import { formatDateTimeSP, formatDuration, matchesSearch, stripYearFromTitle, withTimeout, withRetry, describeLoadError } from '@/lib/utils';
@@ -38,6 +41,7 @@ const AFILIADO_TAB = 'Programa de Afiliados';
 const CRONOGRAMA_TAB = 'Cronograma de Estudos';
 const FLASHCARDS_TAB = 'Flashcards';
 const QUESTIONS_TAB = 'Banco de Questões';
+const PLAYLISTS_TAB = 'Playlists';
 
 interface SavedDeck extends FlashcardDeck {
   id: string;
@@ -212,6 +216,7 @@ export default function MemberDashboardPage() {
   };
 
   const handleSelectCategory = (category: string | null) => {
+    if (category === PLAYLISTS_TAB) { navigate('/membros/playlists'); return; }
     if (category === ACERVO_TAB) { navigate('/membros/acervo'); return; }
     if (category === CRONOGRAMA_TAB) { navigate('/membros/cronograma'); return; }
     if (category === AFILIADO_TAB) { navigate('/afiliado'); return; }
@@ -292,10 +297,19 @@ export default function MemberDashboardPage() {
       return next;
     });
 
-    if (currentStatus) {
-      await supabase.from('user_favorites').delete().match({ user_id: userId, course_id: courseId });
-    } else {
-      await supabase.from('user_favorites').insert({ user_id: userId, course_id: courseId });
+    // Se a gravação falhar (rede, RLS), desfaz a estrela e avisa — sem isso
+    // ela ficava acesa na tela e sumia sozinha no próximo reload.
+    const { error } = currentStatus
+      ? await supabase.from('user_favorites').delete().match({ user_id: userId, course_id: courseId })
+      : await supabase.from('user_favorites').insert({ user_id: userId, course_id: courseId });
+    if (error) {
+      setFavorites(prev => {
+        const next = new Set(prev);
+        if (currentStatus) next.add(courseId);
+        else next.delete(courseId);
+        return next;
+      });
+      toast.error('Não foi possível salvar o favorito. Tente novamente.');
     }
   };
 
@@ -309,9 +323,9 @@ export default function MemberDashboardPage() {
       .from('user_lesson_favorites')
       .select('lesson_id, lessons(id, title, type, duration_seconds, size_bytes, courses(title, slug))')
       .eq('user_id', userId)
-      .then(({ data }) => {
+      .then(({ data }: { data: unknown }) => {
         if (!alive) return;
-        const rows: FavoriteLesson[] = (data || [])
+        const rows: FavoriteLesson[] = ((data || []) as unknown[])
           .map((r: any) => r.lessons && r.lessons.courses ? {
             lesson_id: r.lessons.id as string,
             title: r.lessons.title as string,
@@ -323,10 +337,36 @@ export default function MemberDashboardPage() {
           } : null)
           .filter((r: FavoriteLesson | null): r is FavoriteLesson => r !== null);
         setFavoriteLessons(rows);
-        setFavoriteLessonsLoading(false);
-      });
+      })
+      .catch(() => { /* rede caiu: sai do spinner */ })
+      .finally(() => { if (alive) setFavoriteLessonsLoading(false); });
     return () => { alive = false; };
   }, [activeCategory, userId]);
+
+  // Materiais do Acervo Público favoritados — mesma receita: busca só quando
+  // a aba Favoritos abre. O join com archive_items passa pela RLS do acervo,
+  // então item que virou privado (de outro dono) some da lista sozinho.
+  const [favoriteArchive, setFavoriteArchive] = useState<{ item_id: string; title: string; kind: string; category: string }[]>([]);
+  useEffect(() => {
+    if (activeCategory !== 'Favoritos' || !userId || memberStatus === 'trial') { return; }
+    let alive = true;
+    supabase
+      .from('user_archive_favorites' as never)
+      .select('item_id, archive_items(id, title, kind, category)')
+      .eq('user_id', userId)
+      .then(({ data }: { data: unknown }) => {
+        if (!alive) return;
+        setFavoriteArchive(((data || []) as any[])
+          .filter(r => r.archive_items)
+          .map(r => ({ item_id: r.item_id, title: r.archive_items.title, kind: r.archive_items.kind, category: r.archive_items.category })));
+      });
+    return () => { alive = false; };
+  }, [activeCategory, userId, memberStatus]);
+
+  const handleUnfavoriteArchive = async (itemId: string) => {
+    setFavoriteArchive(prev => prev.filter(f => f.item_id !== itemId));
+    await supabase.from('user_archive_favorites' as never).delete().match({ user_id: userId, item_id: itemId } as never);
+  };
 
   // Mesma ideia da aba Favoritos: só busca as anotações quando o aluno abre a
   // aba. A RPC já devolve ordenado pela anotação mais recente.
@@ -334,11 +374,10 @@ export default function MemberDashboardPage() {
     if (activeCategory !== ANNOTATIONS_TAB || !userId) return;
     let alive = true;
     setAnnotatedLoading(true);
-    supabase.rpc('my_annotated_lessons' as never).then(({ data }) => {
-      if (!alive) return;
-      setAnnotated(((data || []) as unknown as AnnotatedLesson[]));
-      setAnnotatedLoading(false);
-    });
+    supabase.rpc('my_annotated_lessons' as never)
+      .then(({ data }) => { if (alive) setAnnotated(((data || []) as unknown as AnnotatedLesson[])); })
+      .catch(() => { /* rede caiu: sai do spinner */ })
+      .finally(() => { if (alive) setAnnotatedLoading(false); });
     return () => { alive = false; };
   }, [activeCategory, userId]);
 
@@ -350,7 +389,8 @@ export default function MemberDashboardPage() {
     Promise.all([
       (supabase as any).from('flashcard_decks')
         .select('id, title, difficulty, cards, source, created_at')
-        .order('created_at', { ascending: false }),
+        .order('created_at', { ascending: false })
+        .limit(200),
       (supabase as any).from('flashcard_sessions')
         .select('id, deck_id, deck_title, total_cards, correct_first_try, reviews, duration_seconds, created_at')
         .order('created_at', { ascending: false })
@@ -359,8 +399,8 @@ export default function MemberDashboardPage() {
       if (!alive) return;
       setDecks(((decksData || []) as SavedDeck[]));
       setSessions(((sessData || []) as StudySession[]));
-      setDecksLoading(false);
-    });
+    }).catch(() => { /* rede caiu: sai do spinner e mantém o que tinha */ })
+      .finally(() => { if (alive) setDecksLoading(false); });
     return () => { alive = false; };
   }, [activeCategory, userId, sessionsTick]);
 
@@ -371,7 +411,8 @@ export default function MemberDashboardPage() {
     Promise.all([
       (supabase as any).from('question_banks')
         .select('id, title, difficulty, questions, source, created_at')
-        .order('created_at', { ascending: false }),
+        .order('created_at', { ascending: false })
+        .limit(200),
       (supabase as any).from('question_sessions')
         .select('id, bank_id, bank_title, total_questions, correct, duration_seconds, created_at')
         .order('created_at', { ascending: false })
@@ -380,21 +421,31 @@ export default function MemberDashboardPage() {
       if (!alive) return;
       setBanks(((banksData || []) as SavedBank[]));
       setBankSessions(((sessData || []) as BankSession[]));
-      setBanksLoading(false);
-    });
+    }).catch(() => { /* rede caiu: sai do spinner e mantém o que tinha */ })
+      .finally(() => { if (alive) setBanksLoading(false); });
     return () => { alive = false; };
   }, [activeCategory, userId, sessionsTick]);
 
   const deleteBank = async (bank: SavedBank) => {
     if (!confirm(`Excluir o banco "${bank.title}"? O histórico de provas fica.`)) return;
     setBanks(prev => prev.filter(b => b.id !== bank.id));
-    await (supabase as any).from('question_banks').delete().eq('id', bank.id);
+    const { error } = await (supabase as any).from('question_banks').delete().eq('id', bank.id);
+    if (error) {
+      // Sem o rollback, o aluno via o banco "excluído" e ele reaparecia no
+      // próximo reload.
+      setBanks(prev => [bank, ...prev]);
+      toast.error('Não foi possível excluir o banco. Tente novamente.');
+    }
   };
 
   const deleteDeck = async (deck: SavedDeck) => {
     if (!confirm(`Excluir o baralho "${deck.title}"?`)) return;
     setDecks(prev => prev.filter(d => d.id !== deck.id));
-    await (supabase as any).from('flashcard_decks').delete().eq('id', deck.id);
+    const { error } = await (supabase as any).from('flashcard_decks').delete().eq('id', deck.id);
+    if (error) {
+      setDecks(prev => [deck, ...prev]);
+      toast.error('Não foi possível excluir o baralho. Tente novamente.');
+    }
   };
 
   const handleUnfavoriteLesson = async (lessonId: string) => {
@@ -410,7 +461,7 @@ export default function MemberDashboardPage() {
   // JS — a busca de conteúdo roda no banco (search_lessons), com debounce
   // pra não disparar uma consulta a cada tecla.
   useEffect(() => {
-    if (!searchContents || !query.trim()) { setContentResults([]); return; }
+    if (!searchContents || !query.trim()) { setContentResults([]); setContentLoading(false); return; }
     let alive = true;
     setContentLoading(true);
     const timer = setTimeout(() => {
@@ -495,6 +546,7 @@ export default function MemberDashboardPage() {
   // SEM contagem de propósito (pedido do dono): número só nas categorias.
   const menuList = useMemo(() => [
     { name: 'Favoritos' },
+    { name: PLAYLISTS_TAB },
     { name: FLASHCARDS_TAB },
     { name: QUESTIONS_TAB },
     // Acervo Público é página própria (rota /membros/acervo) e é exclusivo de
@@ -589,9 +641,14 @@ export default function MemberDashboardPage() {
 
   useEffect(() => {
     if (heroPaused || featuredPool.length < 2) return;
+    // Quem prefere menos movimento (ajuste do sistema) não ganha carrossel
+    // girando sozinho — os CTAs do banner trocariam embaixo do cursor.
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    // 3s era rápido demais pra um banner com dois botões de ação: o alvo
+    // mudava embaixo do dedo antes de o aluno terminar de ler.
     const id = setInterval(() => {
       setFeaturedIndex(i => (i + 1) % featuredPool.length);
-    }, 3000);
+    }, 6000);
     return () => clearInterval(id);
   }, [heroPaused, featuredPool.length]);
 
@@ -627,6 +684,9 @@ export default function MemberDashboardPage() {
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Aviso do trial (versões completas só após assinar) — /membros é o
+          destino do fluxo de trial, então é aqui que a caixa aparece. */}
+      <TrialWelcomeModal />
       <MemberHeader />
       <MemberSearchBar
         query={query}
@@ -636,7 +696,7 @@ export default function MemberDashboardPage() {
       />
 
       {announcementMessage && (
-        <div className="max-w-[1400px] mx-auto px-4 md:px-8 pt-4">
+        <div className="shell-wide px-4 md:px-8 pt-4">
           <div className="rounded-xl bg-primary px-4 py-3 flex items-start gap-2.5">
             <Megaphone className="w-4 h-4 text-white shrink-0 mt-0.5" />
             <p className="text-sm text-white leading-snug">{announcementMessage}</p>
@@ -645,11 +705,14 @@ export default function MemberDashboardPage() {
       )}
 
       {!searching && !activeCategory && featured && (
-        <section className="max-w-[1400px] mx-auto px-4 md:px-8 pt-6">
+        <section className="shell-wide px-4 md:px-8 pt-6">
           <div
-            className="relative rounded-2xl overflow-hidden border border-border min-h-[280px] md:min-h-[340px] flex items-end shadow-[0_30px_70px_-40px_rgba(239,68,68,0.4)]"
+            className="relative rounded-2xl overflow-hidden border border-border min-h-[280px] md:min-h-[340px] 3xl:min-h-[400px] 4xl:min-h-[460px] flex items-end shadow-[0_30px_70px_-40px_rgba(239,68,68,0.4)]"
             onMouseEnter={() => setHeroPaused(true)}
             onMouseLeave={() => setHeroPaused(false)}
+            onTouchStart={() => setHeroPaused(true)}
+            onFocus={() => setHeroPaused(true)}
+            onBlur={() => setHeroPaused(false)}
           >
             <div key={`${featured.id}-cover`} className="absolute inset-0 animate-fade-in">
               <CourseCover title={featured.title} showTitle={false} />
@@ -662,7 +725,7 @@ export default function MemberDashboardPage() {
                 overlay preto traria o "gradiente pro preto" de volta. */}
             <div className="absolute inset-0 bg-gradient-to-t from-red-950/90 via-red-950/35 to-transparent dark:from-black/85 dark:via-black/40" />
             <div className="absolute inset-0 bg-gradient-to-r from-red-950/60 via-transparent to-transparent dark:from-black/60" />
-            <div key={`${featured.id}-copy`} className="relative p-6 md:p-10 max-w-xl animate-fade-in">
+            <div key={`${featured.id}-copy`} className="relative p-6 md:p-10 3xl:p-14 max-w-xl 3xl:max-w-2xl 4xl:max-w-3xl animate-fade-in">
               <span className="inline-flex items-center gap-1.5 text-[11px] font-bold tracking-widest uppercase text-primary mb-3">
                 <span className="w-1.5 h-1.5 rounded-full bg-primary shadow-[0_0_0_4px_rgba(239,68,68,0.2)]" />
                 {isContinuing ? 'Continue de onde parou' : 'Destaque'}
@@ -713,7 +776,7 @@ export default function MemberDashboardPage() {
         </section>
       )}
 
-      <main className="max-w-[1400px] mx-auto px-4 md:px-8 pb-16 pt-8">
+      <main className="shell-wide px-4 md:px-8 pb-16 pt-8">
         <div className="md:flex md:items-start md:gap-8">
           <CategorySidebar
             menuItems={menuList}
@@ -747,7 +810,7 @@ export default function MemberDashboardPage() {
                     <p className="text-sm text-muted-foreground mb-5">
                       {filtered.length} curso{filtered.length !== 1 ? 's' : ''} encontrado{filtered.length !== 1 ? 's' : ''}
                     </p>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-8 items-start">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 3xl:grid-cols-5 4xl:grid-cols-6 gap-x-4 gap-y-8 items-start">
                       {filtered.map(c => <CourseCard key={c.id} course={c} isFavorite={favorites.has(c.id)} onToggleFavorite={handleToggleFavorite} />)}
                     </div>
                   </div>
@@ -905,7 +968,7 @@ export default function MemberDashboardPage() {
                     Cursos favoritados {categoryCourses.length > 0 && `(${categoryCourses.length})`}
                   </p>
                   {categoryCourses.length > 0 ? (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-8 items-start">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 3xl:grid-cols-5 4xl:grid-cols-6 gap-x-4 gap-y-8 items-start">
                       {categoryCourses.map(c => <CourseCard key={c.id} course={c} isFavorite={favorites.has(c.id)} onToggleFavorite={handleToggleFavorite} />)}
                     </div>
                   ) : (
@@ -990,6 +1053,43 @@ export default function MemberDashboardPage() {
                     <p className="text-sm text-muted-foreground">Nenhum arquivo favoritado ainda.</p>
                   )}
                 </div>
+
+                {memberStatus !== 'trial' && (
+                  <div>
+                    <p className="text-sm font-semibold text-foreground mb-3">
+                      Acervo Público favoritado {favoriteArchive.length > 0 && `(${favoriteArchive.length})`}
+                    </p>
+                    {favoriteArchive.length > 0 ? (
+                      <div className="rounded-xl border border-border overflow-hidden divide-y divide-border">
+                        {favoriteArchive.map(f => (
+                          <div key={f.item_id} className="w-full flex items-center gap-3.5 px-4 py-3.5 bg-card hover:bg-secondary transition-colors group">
+                            <button
+                              onClick={() => navigate(`/membros/acervo?item=${f.item_id}`)}
+                              className="flex-1 min-w-0 flex items-center gap-3.5 text-left"
+                            >
+                              <div className="w-9 h-9 rounded-full bg-secondary group-hover:bg-primary/15 flex items-center justify-center shrink-0 transition-colors">
+                                <FolderUp className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-foreground truncate">{f.title}</p>
+                                <p className="text-xs text-muted-foreground truncate">Acervo Público · {f.category}</p>
+                              </div>
+                            </button>
+                            <button
+                              onClick={() => handleUnfavoriteArchive(f.item_id)}
+                              className="shrink-0 p-1.5 rounded-lg text-accent-warning hover:text-accent-warning/70 transition-colors"
+                              title="Remover dos favoritos"
+                            >
+                              <Star className="w-4 h-4" fill="currentColor" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">Nenhum material do acervo favoritado ainda.</p>
+                    )}
+                  </div>
+                )}
               </section>
             ) : activeCategory ? (
               <section>
@@ -997,7 +1097,7 @@ export default function MemberDashboardPage() {
                 <p className="text-sm text-muted-foreground mb-5">
                   {categoryCourses.length} curso{categoryCourses.length !== 1 ? 's' : ''}
                 </p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-8 items-start">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 3xl:grid-cols-5 4xl:grid-cols-6 gap-x-4 gap-y-8 items-start">
                   {categoryCourses.map(c => <CourseCard key={c.id} course={c} isFavorite={favorites.has(c.id)} onToggleFavorite={handleToggleFavorite} />)}
                 </div>
               </section>
@@ -1174,9 +1274,13 @@ function Row({ title, items, onToggleFavorite, action }: {
         <span className="text-xs text-muted-foreground tabular-nums">{items.length}</span>
         {action}
       </div>
+      {/* A prateleira já mostra mais cursos sozinha quando a casca cresce (é
+          rolagem horizontal com card de largura fixa). O card também cresce um
+          pouco em ultra-wide para a capa não virar uma miniatura perdida no
+          meio de uma fileira longa. */}
       <div className="flex items-start gap-3.5 overflow-x-auto pb-3 -mx-1 px-1 scrollbar-thin">
         {items.map(({ course, progressPercent, isFavorite }) => (
-          <div key={course.id} className="w-[168px] sm:w-[192px] shrink-0">
+          <div key={course.id} className="w-[168px] sm:w-[192px] 3xl:w-[212px] 4xl:w-[232px] shrink-0">
             <CourseCard course={course} progressPercent={progressPercent} isFavorite={isFavorite} onToggleFavorite={onToggleFavorite} />
           </div>
         ))}
@@ -1238,7 +1342,7 @@ function FlashcardsTab({ decks, sessions, loading, onOpenDeck, onDeleteDeck, onC
         <>
           {/* resumo geral */}
           {sessions.length > 0 && (
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 3xl:max-w-[1240px] 4xl:max-w-[1440px]">
               <div className="glass rounded-xl border border-border p-4">
                 <p className="text-xs text-muted-foreground mb-1">Média geral</p>
                 <p className={`text-2xl font-bold ${notaCor(mediaGeral)}`}>{mediaGeral}%</p>
@@ -1326,6 +1430,7 @@ function FlashcardsTab({ decks, sessions, loading, onOpenDeck, onDeleteDeck, onC
                         <p className="text-[10px] text-muted-foreground">média{ultima !== null ? ` · última ${ultima}%` : ''}</p>
                       </div>
                     )}
+                    <SaveToPlaylistButton itemType="flashcard_deck" itemId={deck.id} label="Salvar baralho em playlist" />
                     <button
                       onClick={() => onDeleteDeck(deck)}
                       title="Excluir baralho (o histórico de estudo fica)"
@@ -1428,7 +1533,7 @@ function QuestionsTab({ banks, sessions, loading, onOpenBank, onDeleteBank, onCr
       ) : (
         <>
           {sessions.length > 0 && (
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 3xl:max-w-[1240px] 4xl:max-w-[1440px]">
               <div className="glass rounded-xl border border-border p-4">
                 <p className="text-xs text-muted-foreground mb-1">Média geral</p>
                 <p className={`text-2xl font-bold ${notaCor(mediaGeral)}`}>{mediaGeral}%</p>
@@ -1514,6 +1619,7 @@ function QuestionsTab({ banks, sessions, loading, onOpenBank, onDeleteBank, onCr
                         <p className="text-[10px] text-muted-foreground">média{ultima !== null ? ` · última ${ultima}%` : ''}</p>
                       </div>
                     )}
+                    <SaveToPlaylistButton itemType="question_bank" itemId={bank.id} label="Salvar banco em playlist" />
                     <button
                       onClick={() => exportQuestionBankPdf({ title: bank.title, difficulty: bank.difficulty, questions: bank.questions })}
                       title="Baixar em PDF (questões + gabarito comentado)"

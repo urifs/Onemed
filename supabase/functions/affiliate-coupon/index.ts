@@ -49,6 +49,17 @@ serve(async (req) => {
       return json({ error: 'O cupom deve ter de 4 a 20 letras e números, sem espaços.' }, 400)
     }
     if (cleanCode === affiliate.coupon_code) {
+      // Auto-conserto: se a linha do cupom sumiu da tabela (ex: apagada pelo
+      // painel admin), re-salvar o MESMO código recria e reativa — foi assim
+      // que 18 cupons de afiliados quebraram em 04/08.
+      const { data: row } = await supabase.from('coupons')
+        .select('id, active').eq('code', cleanCode).maybeSingle()
+      if (!row) {
+        await supabase.from('coupons')
+          .insert({ code: cleanCode, discount_percent: 10, active: true, description: 'Cupom de afiliado' })
+      } else if (!row.active) {
+        await supabase.from('coupons').update({ active: true }).eq('id', row.id)
+      }
       return json({ success: true, couponCode: cleanCode })
     }
     // Códigos da casa (campanhas de follow-up) são reservados.

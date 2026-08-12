@@ -7,7 +7,14 @@ import {
   ArrowLeft, FolderUp, Upload, Search, Loader2, Eye, Heart, MessageSquare,
   FileText, PlayCircle, File as FileIcon, Image as ImageIcon, FolderOpen,
   Globe, Lock, Pencil, Trash2, Send, Clock, Flame, ThumbsUp, User,
+  ChevronDown, SquareStack, ClipboardList, Star,
 } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { FlashcardGeneratorModal, type FlashcardSource, type GeneratedDeck, type GeneratorMode } from '@/components/member/FlashcardGeneratorModal';
+import { FlashcardViewer } from '@/components/member/FlashcardViewer';
+import { QuestionBankViewer } from '@/components/member/QuestionBankViewer';
+import { AiUpsellModal } from '@/components/member/AiUpsellModal';
+import { SaveToPlaylistButton } from '@/components/member/SaveToPlaylistButton';
 import { useAuth } from '@/context/AuthContext';
 import { useMemberStatus } from '@/hooks/useMemberStatus';
 import { useRequireName } from '@/hooks/useRequireName';
@@ -168,6 +175,33 @@ export default function ArchivePage() {
 
   const isTrial = status === 'trial';
 
+  // Favoritar materiais do acervo — mesmo padrão dos favoritos de curso/aula
+  // (tabela própria com RLS de dono, toggle otimista). Aparece também na aba
+  // Favoritos da página inicial.
+  const [favIds, setFavIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (!user?.id || isTrial) return;
+    let alive = true;
+    supabase.from('user_archive_favorites' as never).select('item_id').eq('user_id', user.id)
+      .then(({ data }: { data: unknown }) => {
+        if (alive) setFavIds(new Set(((data || []) as { item_id: string }[]).map(r => r.item_id)));
+      });
+    return () => { alive = false; };
+  }, [user?.id, isTrial]);
+
+  const toggleFavorite = async (itemId: string) => {
+    if (!user?.id) return;
+    const fav = favIds.has(itemId);
+    setFavIds(prev => { const n = new Set(prev); if (fav) n.delete(itemId); else n.add(itemId); return n; });
+    if (fav) {
+      await supabase.from('user_archive_favorites' as never).delete().match({ user_id: user.id, item_id: itemId } as never);
+    } else {
+      const { error } = await supabase.from('user_archive_favorites' as never)
+        .insert({ user_id: user.id, item_id: itemId } as never);
+      if (error) setFavIds(prev => { const n = new Set(prev); n.delete(itemId); return n; });
+    }
+  };
+
   const load = useCallback(async () => {
     setLoading(true);
     const buscar = async () => {
@@ -244,7 +278,7 @@ export default function ArchivePage() {
       <Seo title="Acervo Público | OneMed" description="Materiais de estudo compartilhados entre assinantes." path="/membros/acervo" noindex />
 
       <header className="border-b border-border bg-background-paper sticky top-0 z-30">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3.5 flex items-center gap-3">
+        <div className="shell-list px-4 sm:px-6 py-3.5 flex items-center gap-3">
           <button onClick={() => navigate('/membros')} title="Voltar" className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
             <ArrowLeft className="w-5 h-5" />
           </button>
@@ -263,7 +297,7 @@ export default function ArchivePage() {
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-5">
+      <main className="shell-list px-4 sm:px-6 py-6 space-y-5">
         {/* busca */}
         <div className="relative">
           <Search className="w-4 h-4 text-muted-foreground absolute left-4 top-1/2 -translate-y-1/2" />
@@ -330,16 +364,17 @@ export default function ArchivePage() {
             </p>
           </div>
         ) : (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 3xl:grid-cols-4 gap-4">
             {items.map(item => {
               const Icon = mimeIcon(item.first_mime, item.kind);
+              const isFav = favIds.has(item.id);
               return (
+                <div key={item.id} className="relative">
                 <button
-                  key={item.id}
                   onClick={() => openDetail(item.id)}
-                  className="rounded-2xl border border-border bg-card hover:border-primary/40 p-5 text-left transition-colors flex flex-col gap-3"
+                  className="w-full h-full rounded-2xl border border-border bg-card hover:border-primary/40 p-5 text-left transition-colors flex flex-col gap-3"
                 >
-                  <div className="flex items-start gap-3">
+                  <div className="flex items-start gap-3 pr-8">
                     <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
                       <Icon className="w-5 h-5 text-primary" />
                     </div>
@@ -363,6 +398,23 @@ export default function ArchivePage() {
                     {Number(item.total_size) > 0 && <span>{fmtSize(item.total_size)}</span>}
                   </div>
                 </button>
+                {/* estrela de favoritar — irmã do card (botão dentro de botão
+                    é HTML inválido), no canto que o pr-8 do cabeçalho reserva */}
+                <button
+                  onClick={() => toggleFavorite(item.id)}
+                  title={isFav ? 'Remover dos favoritos' : 'Adicionar aos favoritos'}
+                  aria-label={isFav ? `Remover ${item.title} dos favoritos` : `Favoritar ${item.title}`}
+                  className={`absolute top-3.5 right-3.5 p-1.5 rounded-full transition-colors ${
+                    isFav ? 'text-accent-warning hover:text-accent-warning/70' : 'text-muted-foreground/60 hover:text-accent-warning hover:bg-secondary'
+                  }`}
+                >
+                  <Star className="w-4 h-4" fill={isFav ? 'currentColor' : 'none'} />
+                </button>
+                {/* salvar em playlist — irmão do card, abaixo da estrela */}
+                <div className="absolute top-12 right-3.5">
+                  <SaveToPlaylistButton itemType="archive_item" itemId={item.id} label="Salvar material em playlist" />
+                </div>
+                </div>
               );
             })}
           </div>
@@ -385,6 +437,8 @@ export default function ArchivePage() {
           onClose={closeDetail}
           onChanged={load}
           ensureName={ensureName}
+          favorited={favIds.has(detailId)}
+          onToggleFavorite={() => toggleFavorite(detailId)}
         />
       )}
 
@@ -590,9 +644,10 @@ function UploadDialog({ onClose, onDone, ensureName }: {
 }
 
 // ─── DETALHE ─────────────────────────────────────────────────────────────────
-function DetailDialog({ itemId, initialFileId, currentUserId, onClose, onChanged, ensureName }: {
+function DetailDialog({ itemId, initialFileId, currentUserId, onClose, onChanged, ensureName, favorited, onToggleFavorite }: {
   itemId: string; initialFileId?: string | null; currentUserId: string; onClose: () => void; onChanged: () => void;
   ensureName: (action: () => void) => void;
+  favorited: boolean; onToggleFavorite: () => void;
 }) {
   const [item, setItem] = useState<FeedItem | null>(null);
   const [files, setFiles] = useState<ArchiveFile[]>([]);
@@ -608,7 +663,67 @@ function DetailDialog({ itemId, initialFileId, currentUserId, onClose, onChanged
   const [playing, setPlaying] = useState<ArchiveFile | null>(null);
   const autoOpened = useRef(false);
 
+  // Gerador de flashcards/banco de questões a partir de um arquivo do acervo
+  // (dropdown na linha do arquivo) — mesmo fluxo das aulas dos cursos.
+  const { plan: memberPlan } = useMemberStatus();
+  const podeGerarIa = memberPlan !== 'monthly';
+  const [aiUpsell, setAiUpsell] = useState<null | 'flashcards' | 'questoes'>(null);
+  const [genMode, setGenMode] = useState<GeneratorMode | null>(null);
+  const [genSources, setGenSources] = useState<FlashcardSource[]>([]);
+  const [fcDeck, setFcDeck] = useState<GeneratedDeck | null>(null);
+  const [fcSaved, setFcSaved] = useState(false);
+  const [fcSavedId, setFcSavedId] = useState<string | null>(null);
+  const [fcSaving, setFcSaving] = useState(false);
+  const [qbBank, setQbBank] = useState<GeneratedDeck | null>(null);
+  const [qbSaved, setQbSaved] = useState(false);
+  const [qbSavedId, setQbSavedId] = useState<string | null>(null);
+  const [qbSaving, setQbSaving] = useState(false);
+
+  const abrirGerador = (f: ArchiveFile, modo: GeneratorMode) => {
+    if (!podeGerarIa) { setAiUpsell(modo === 'questions' ? 'questoes' : 'flashcards'); return; }
+    setGenSources([{ id: f.id, title: f.name, archive: true }]);
+    setGenMode(modo);
+  };
+
+  const saveDeck = async () => {
+    if (!fcDeck || fcSaved || fcSaving) return;
+    setFcSaving(true);
+    const { data: savedRow, error } = await (supabase as any).from('flashcard_decks').insert({
+      user_id: currentUserId,
+      title: fcDeck.title,
+      difficulty: fcDeck.difficulty,
+      cards: fcDeck.cards,
+      source: fcDeck.source,
+    }).select('id').single();
+    setFcSaving(false);
+    if (error) { toast.error('Não foi possível salvar o baralho'); return; }
+    setFcSavedId(savedRow?.id || null);
+    setFcSaved(true);
+    toast.success('Baralho salvo! Ele fica na aba Flashcards, na página inicial.');
+  };
+
+  const saveBank = async () => {
+    if (!qbBank || qbSaved || qbSaving) return;
+    setQbSaving(true);
+    const { data: savedRow, error } = await (supabase as any).from('question_banks').insert({
+      user_id: currentUserId,
+      title: qbBank.title,
+      difficulty: qbBank.difficulty,
+      questions: qbBank.cards,
+      source: qbBank.source,
+    }).select('id').single();
+    setQbSaving(false);
+    if (error) { toast.error('Não foi possível salvar o banco de questões'); return; }
+    setQbSavedId(savedRow?.id || null);
+    setQbSaved(true);
+    toast.success('Banco salvo! Ele fica na aba Banco de Questões, na página inicial.');
+  };
+
   const isOwner = item?.user_id === currentUserId;
+
+  // Alguma tela cheia por cima do diálogo? (player de arquivo, baralho de
+  // flashcards ou prova gerados a partir de um arquivo do acervo)
+  const sobreposto = !!playing || !!fcDeck || !!qbBank;
 
   // Abrir = tocar/visualizar DENTRO da plataforma, com o mesmo player das
   // aulas. CADA abertura de arquivo conta uma visualização (qualquer cliente,
@@ -637,6 +752,11 @@ function DetailDialog({ itemId, initialFileId, currentUserId, onClose, onChanged
       const row = ((feedRes.data || []) as FeedItem[])[0];
       if (!row) { toast.error('Material não encontrado.'); onClose(); return; }
       setItem(row);
+      // Erro na consulta de arquivos ≠ "ainda processando": sem esta checagem
+      // uma falha de rede renderizava a mensagem de processamento, que engana.
+      if (filesRes.error) {
+        toast.error('Não foi possível carregar os arquivos deste material. Tente novamente.');
+      }
       const fileRows = (filesRes.data || []) as unknown as ArchiveFile[];
       setFiles(fileRows);
       setComments((commentsRes.data || []) as unknown as ArchiveComment[]);
@@ -650,7 +770,12 @@ function DetailDialog({ itemId, initialFileId, currentUserId, onClose, onChanged
     } finally {
       setLoading(false);
     }
-  }, [itemId, initialFileId, onClose, openFile]);
+    // onClose/openFile ficam FORA das deps de propósito: o pai recria essas
+    // funções a cada render (digitar UMA letra na busca com o material aberto
+    // refazia as 3 consultas e piscava o diálogo de volta pro spinner). Só a
+    // troca de item deve recarregar o detalhe.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [itemId, initialFileId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -747,8 +872,21 @@ function DetailDialog({ itemId, initialFileId, currentUserId, onClose, onChanged
   };
 
   return (
-    <Dialog open onOpenChange={v => { if (!v) onClose(); }}>
-      <DialogContent className="bg-background-paper border-border sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+    // `modal={!sobreposto}`: enquanto QUALQUER tela cheia está por cima
+    // (player, baralho de flashcards, prova), o diálogo de detalhe precisa
+    // DEIXAR de ser modal. Modal do Radix trava a rolagem da página e põe
+    // `pointer-events: none` em tudo fora do DialogContent — e essas telas
+    // ficam fora dele (o player num portal no body, os visualizadores como
+    // irmãos deste diálogo). Era o que o cliente via: o PDF abria mas não
+    // rolava e o clique não pegava.
+    <Dialog open modal={!sobreposto} onOpenChange={v => { if (!v) onClose(); }}>
+      <DialogContent
+        className="bg-background-paper border-border sm:max-w-2xl max-h-[90vh] overflow-y-auto"
+        // Sem o modo modal, um clique dentro dessas telas conta como "fora" do
+        // diálogo — sem isso o detalhe fecharia junto e as levaria embora.
+        onInteractOutside={e => { if (sobreposto) e.preventDefault(); }}
+        onEscapeKeyDown={e => { if (sobreposto) e.preventDefault(); }}
+      >
         {loading || !item ? (
           <div className="py-16 flex justify-center"><Loader2 className="w-6 h-6 text-primary animate-spin" /></div>
         ) : (
@@ -792,6 +930,14 @@ function DetailDialog({ itemId, initialFileId, currentUserId, onClose, onChanged
                 }`}>
                 <Heart className={`w-4 h-4 ${item.liked_by_me ? 'fill-primary' : ''}`} /> {item.like_count}
               </button>
+              <button onClick={onToggleFavorite}
+                title={favorited ? 'Remover dos favoritos' : 'Adicionar aos favoritos'}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
+                  favorited ? 'bg-accent-warning/15 text-accent-warning border-accent-warning/40' : 'bg-secondary text-muted-foreground border-border hover:border-accent-warning/40'
+                }`}>
+                <Star className="w-4 h-4" fill={favorited ? 'currentColor' : 'none'} /> {favorited ? 'Favoritado' : 'Favoritar'}
+              </button>
+              <SaveToPlaylistButton itemType="archive_item" itemId={item.id} variant="button" label="Salvar em playlist" />
               <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"><Eye className="w-3.5 h-3.5" /> {item.views} acessos</span>
               {isOwner && (
                 <div className="ml-auto flex items-center gap-1.5">
@@ -814,17 +960,46 @@ function DetailDialog({ itemId, initialFileId, currentUserId, onClose, onChanged
               {files.map(f => {
                 const Icon = mimeIcon(f.mime_type);
                 return (
-                  <button key={f.id} onClick={() => openFile(f)}
-                    className="w-full flex items-center gap-3 px-4 py-3 bg-card hover:bg-secondary text-left transition-colors group">
-                    <Icon className="w-4 h-4 text-primary shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-foreground truncate">{f.path || f.name}</p>
-                      <p className="text-[11px] text-muted-foreground">{fmtSize(f.size_bytes)}</p>
-                    </div>
-                    <span className="p-2 rounded-lg text-muted-foreground group-hover:text-primary transition-colors" title="Abrir na plataforma">
-                      <PlayCircle className="w-4 h-4" />
-                    </span>
-                  </button>
+                  <div key={f.id} className="flex items-center gap-1 pr-2 bg-card hover:bg-secondary transition-colors group">
+                    <button onClick={() => openFile(f)}
+                      className="flex-1 min-w-0 flex items-center gap-3 pl-4 pr-1 py-3 text-left">
+                      <Icon className="w-4 h-4 text-primary shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-foreground truncate">{f.path || f.name}</p>
+                        <p className="text-[11px] text-muted-foreground">{fmtSize(f.size_bytes)}</p>
+                      </div>
+                      <span className="p-2 rounded-lg text-muted-foreground group-hover:text-primary transition-colors" title="Abrir na plataforma">
+                        <PlayCircle className="w-4 h-4" />
+                      </span>
+                    </button>
+                    {/* Seta com as opções de IA — gera flashcards ou banco de
+                        questões a partir DESTE arquivo do acervo. */}
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <button
+                          title="Gerar com IA"
+                          aria-label={`Opções de IA para ${f.name}`}
+                          className="shrink-0 p-2 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                        >
+                          <ChevronDown className="w-4 h-4" />
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent align="end" className="w-72 p-1.5 bg-background-paper border-border z-[95]">
+                        <button
+                          onClick={() => abrirGerador(f, 'flashcards')}
+                          className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm text-foreground hover:bg-secondary transition-colors text-left"
+                        >
+                          <SquareStack className="w-4 h-4 text-primary shrink-0" /> Gerar flashcards deste arquivo
+                        </button>
+                        <button
+                          onClick={() => abrirGerador(f, 'questions')}
+                          className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm text-foreground hover:bg-secondary transition-colors text-left"
+                        >
+                          <ClipboardList className="w-4 h-4 text-primary shrink-0" /> Gerar banco de questões deste arquivo
+                        </button>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
                 );
               })}
               {files.length === 0 && (
@@ -878,6 +1053,42 @@ function DetailDialog({ itemId, initialFileId, currentUserId, onClose, onChanged
           bypassDownloadGate
         />,
         document.body,
+      )}
+
+      {/* geradores de IA a partir de arquivos do acervo */}
+      {aiUpsell && (
+        <AiUpsellModal open onOpenChange={(o) => { if (!o) setAiUpsell(null); }} feature={aiUpsell} />
+      )}
+      <FlashcardGeneratorModal
+        mode={genMode === 'questions' ? 'questions' : 'flashcards'}
+        open={genMode !== null}
+        onOpenChange={(o) => { if (!o) setGenMode(null); }}
+        initialSources={genSources}
+        onGenerated={(deck) => {
+          if (genMode === 'questions') { setQbBank(deck); setQbSaved(false); setQbSavedId(null); }
+          else { setFcDeck(deck); setFcSaved(false); setFcSavedId(null); }
+          setGenMode(null);
+        }}
+      />
+      {qbBank && (
+        <QuestionBankViewer
+          bank={{ title: qbBank.title, difficulty: qbBank.difficulty, questions: qbBank.cards }}
+          bankId={qbSavedId}
+          onClose={() => setQbBank(null)}
+          onSave={saveBank}
+          saved={qbSaved}
+          saving={qbSaving}
+        />
+      )}
+      {fcDeck && (
+        <FlashcardViewer
+          deck={fcDeck}
+          deckId={fcSavedId}
+          onClose={() => setFcDeck(null)}
+          onSave={saveDeck}
+          saved={fcSaved}
+          saving={fcSaving}
+        />
       )}
     </Dialog>
   );

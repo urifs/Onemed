@@ -11,6 +11,8 @@ export interface Flashcard {
   correct?: number;
   // Explicação por alternativa (mesma ordem de options): por que está certa/errada.
   why?: string[];
+  // Figura da carta (data URI extraída do PDF de origem), exibida acima da pergunta.
+  image?: string;
 }
 
 export interface FlashcardDeck {
@@ -141,8 +143,11 @@ export function FlashcardViewer({ deck, deckId, onClose, onSave, saved, saving }
     }).then(({ error }: { error: unknown }) => {
       if (error) console.error('flashcard_sessions insert', error);
     });
+    // `user` na dep: se a sessão terminasse (current=null) enquanto o user
+    // ainda carregava, o guard !user saía sem gravar e, sem user aqui, o
+    // efeito não re-rodava quando ele chegasse — a sessão nunca era gravada.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [current]);
+  }, [current, user]);
 
   return (
     <div className="fixed inset-0 z-[90] bg-background flex flex-col">
@@ -192,9 +197,17 @@ export function FlashcardViewer({ deck, deckId, onClose, onSave, saved, saving }
         <div className="flex-1 flex flex-col items-center justify-center px-4 sm:px-8 py-6 overflow-y-auto">
           <div
             onClick={() => !isMcq && !revealed && setRevealed(true)}
-            className={`w-full max-w-2xl glass rounded-2xl border border-border p-6 sm:p-8 text-left transition-colors ${!isMcq && !revealed ? 'hover:border-primary/40 cursor-pointer' : ''}`}
+            className={`w-full max-w-2xl 3xl:max-w-3xl glass rounded-2xl border border-border p-6 sm:p-8 text-left transition-colors ${!isMcq && !revealed ? 'hover:border-primary/40 cursor-pointer' : ''}`}
           >
             <p className="text-[11px] uppercase tracking-wider font-bold text-muted-foreground mb-3">Pergunta</p>
+            {current.image && (
+              <img
+                src={current.image}
+                alt="Figura da carta"
+                draggable={false}
+                className="max-h-72 max-w-full rounded-lg border border-border bg-white mb-4"
+              />
+            )}
             <p className="text-lg sm:text-xl font-semibold text-foreground whitespace-pre-wrap leading-relaxed">
               {current.front}
             </p>
@@ -269,7 +282,7 @@ export function FlashcardViewer({ deck, deckId, onClose, onSave, saved, saving }
             )}
           </div>
 
-          <div className="mt-6 w-full max-w-2xl">
+          <div className="mt-6 w-full max-w-2xl 3xl:max-w-3xl">
             {isMcq ? (
               picked === null ? (
                 <p className="text-[11px] text-muted-foreground text-center">

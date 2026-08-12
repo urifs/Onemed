@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { Play, Star } from 'lucide-react';
 import { CourseCover } from './CourseCover';
+import { SaveToPlaylistButton } from './SaveToPlaylistButton';
 import { formatDuration } from '@/lib/utils';
 import type { Database } from '@/integrations/supabase/types';
 
@@ -59,6 +60,14 @@ export function CourseCard({ course, progressPercent, isFavorite, onToggleFavori
           <Star className="w-4 h-4" fill={isFavorite ? 'currentColor' : 'none'} />
         </button>
       )}
+
+      {/* Salvar o curso em playlist — abaixo da estrela, também flutuando. */}
+      <div className="absolute top-11 right-2 z-10" onClick={e => { e.preventDefault(); e.stopPropagation(); }}>
+        <SaveToPlaylistButton
+          itemType="course" itemId={course.id}
+          className="p-1.5 rounded-full backdrop-blur bg-red-950/50 dark:bg-black/40 text-white/70 hover:text-white hover:bg-red-950/70 dark:hover:bg-black/60 transition-colors"
+        />
+      </div>
 
       <button
         onClick={() => navigate(`/membros/curso/${course.slug}`)}

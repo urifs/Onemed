@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useMemberStatus } from '@/hooks/useMemberStatus';
 import { MindMap, type MindNode } from '@/components/member/MindMap';
+import { SaveToPlaylistButton } from '@/components/member/SaveToPlaylistButton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Seo } from '@/seo/Seo';
 
@@ -34,25 +35,32 @@ const TASK_LABEL: Record<string, string> = {
 
 export default function StudyPlanPage() {
   const navigate = useNavigate();
-  const { status, plan: memberPlan } = useMemberStatus();
+  const { plan: memberPlan } = useMemberStatus();
   const [searchParams, setSearchParams] = useSearchParams();
   const [plans, setPlans] = useState<StudyPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(searchParams.get('id'));
 
-  const isTrial = status === 'trial';
+  // Trial agora PODE gerar cronograma (limite de 5 usos aplicado no servidor,
+  // como todas as ferramentas de IA). Só o Mensal fica sem — bloqueado no
+  // diálogo de criação abaixo.
   const isMonthly = memberPlan === 'monthly';
+
+  const [loadError, setLoadError] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     const { data, error } = await supabase.from('study_plans' as never)
       .select('*').order('created_at', { ascending: false });
-    if (!error) setPlans((data || []) as unknown as StudyPlan[]);
+    // Engolir o erro mostrava "Monte seu primeiro cronograma" pra quem TEM
+    // cronogramas salvos — como se tivessem sumido.
+    if (!error) { setPlans((data || []) as unknown as StudyPlan[]); setLoadError(false); }
+    else setLoadError(true);
     setLoading(false);
   }, []);
 
-  useEffect(() => { if (!isTrial) load(); }, [load, isTrial]);
+  useEffect(() => { load(); }, [load]);
 
   const selected = useMemo(() => plans.find(p => p.id === selectedId) || null, [plans, selectedId]);
 
@@ -76,29 +84,12 @@ export default function StudyPlanPage() {
     toast.success('Cronograma excluído.');
   };
 
-  if (isTrial) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center px-4">
-        <div className="max-w-md text-center">
-          <CalendarClock className="w-10 h-10 text-primary mx-auto mb-4" />
-          <h1 className="font-secondary text-2xl font-bold text-foreground mb-2">Cronograma de Estudos</h1>
-          <p className="text-sm text-muted-foreground mb-6">
-            O gerador de cronograma com IA é exclusivo para assinantes. Assine para montar seu plano de estudos personalizado.
-          </p>
-          <Link to="/checkout" className="inline-flex rounded-xl bg-primary hover:bg-primary-hover text-primary-foreground font-semibold px-8 py-3.5 transition-colors">
-            Adquirir acesso completo
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-background">
       <Seo title="Cronograma de Estudos | OneMed" description="Gere um cronograma de estudos personalizado com IA." path="/membros/cronograma" noindex />
 
       <header className="border-b border-border bg-background-paper sticky top-0 z-30">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3.5 flex items-center gap-3">
+        <div className="shell-form px-4 sm:px-6 py-3.5 flex items-center gap-3">
           <button onClick={() => selected ? closePlan() : navigate('/membros')} title="Voltar"
             className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
             <ArrowLeft className="w-5 h-5" />
@@ -118,11 +109,20 @@ export default function StudyPlanPage() {
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
+      <main className="shell-form px-4 sm:px-6 py-6">
         {selected ? (
           <PlanDetail plan={selected} onChange={updatePlanLocal} onDelete={removePlan} />
         ) : loading ? (
           <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 text-primary animate-spin" /></div>
+        ) : loadError && plans.length === 0 ? (
+          <div className="rounded-2xl border border-border bg-card px-6 py-14 text-center">
+            <h2 className="font-secondary text-lg font-bold text-foreground mb-1">Não foi possível carregar seus cronogramas</h2>
+            <p className="text-sm text-muted-foreground mb-5">Verifique sua conexão e tente novamente.</p>
+            <button onClick={load}
+              className="inline-flex items-center gap-2 rounded-xl bg-primary hover:bg-primary-hover text-primary-foreground font-semibold px-6 py-3 transition-colors">
+              Tentar novamente
+            </button>
+          </div>
         ) : plans.length === 0 ? (
           <div className="rounded-2xl border border-border bg-card px-6 py-14 text-center">
             <CalendarClock className="w-9 h-9 text-primary mx-auto mb-3" />
@@ -143,27 +143,32 @@ export default function StudyPlanPage() {
               const done = (p.completed_tasks || []).length;
               const pct = total ? Math.round((done / total) * 100) : 0;
               return (
-                <button key={p.id} onClick={() => openPlan(p.id)}
-                  className="rounded-2xl border border-border bg-card hover:border-primary/40 p-5 text-left transition-colors">
-                  <div className="flex items-start gap-3 mb-3">
-                    <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-                      <CalendarClock className="w-5 h-5 text-primary" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-foreground line-clamp-2">{p.title}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {p.duration_weeks} semanas{p.weekly_hours ? ` · ${p.weekly_hours}h/sem` : ''}
-                      </p>
-                    </div>
+                <div key={p.id}
+                  className="relative rounded-2xl border border-border bg-card hover:border-primary/40 transition-colors">
+                  <div className="absolute top-3 right-3 z-10">
+                    <SaveToPlaylistButton itemType="study_plan" itemId={p.id} label="Salvar cronograma em playlist" />
                   </div>
-                  <p className="text-xs text-muted-foreground line-clamp-2 mb-3">{p.objective}</p>
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 h-2 rounded-full bg-border overflow-hidden">
-                      <div className="h-full bg-primary transition-all" style={{ width: `${pct}%` }} />
+                  <button onClick={() => openPlan(p.id)} className="w-full p-5 text-left">
+                    <div className="flex items-start gap-3 mb-3 pr-8">
+                      <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                        <CalendarClock className="w-5 h-5 text-primary" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-foreground line-clamp-2">{p.title}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {p.duration_weeks} semanas{p.weekly_hours ? ` · ${p.weekly_hours}h/sem` : ''}
+                        </p>
+                      </div>
                     </div>
-                    <span className="text-[11px] text-muted-foreground tabular-nums">{done}/{total}</span>
-                  </div>
-                </button>
+                    <p className="text-xs text-muted-foreground line-clamp-2 mb-3">{p.objective}</p>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 h-2 rounded-full bg-border overflow-hidden">
+                        <div className="h-full bg-primary transition-all" style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className="text-[11px] text-muted-foreground tabular-nums">{done}/{total}</span>
+                    </div>
+                  </button>
+                </div>
               );
             })}
           </div>
@@ -312,10 +317,13 @@ function PlanDetail({ plan, onChange, onDelete }: {
             <h2 className="font-secondary text-xl font-bold text-foreground">{plan.title}</h2>
             <p className="text-sm text-muted-foreground mt-1">{plan.plan.overview}</p>
           </div>
-          <button onClick={() => onDelete(plan)} title="Excluir cronograma"
-            className="p-2 rounded-lg text-muted-foreground hover:text-primary hover:bg-secondary transition-colors shrink-0">
-            <Trash2 className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-1 shrink-0">
+            <SaveToPlaylistButton itemType="study_plan" itemId={plan.id} label="Salvar cronograma em playlist" />
+            <button onClick={() => onDelete(plan)} title="Excluir cronograma"
+              className="p-2 rounded-lg text-muted-foreground hover:text-primary hover:bg-secondary transition-colors">
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mt-4 text-xs text-muted-foreground">
           <span className="inline-flex items-center gap-1.5"><CalendarClock className="w-3.5 h-3.5 text-primary" /> {plan.duration_weeks} semanas</span>

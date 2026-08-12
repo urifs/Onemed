@@ -1,4 +1,4 @@
-import { Search, Film, FileText, LayoutGrid } from 'lucide-react';
+import { Search, Film, FileText, LayoutGrid, X } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export type ContentTypeFilter = 'all' | 'videos' | 'files';
@@ -20,15 +20,26 @@ export function MemberSearchBar({
 }: MemberSearchBarProps) {
   return (
     <div className="bg-background/60 border-b border-border">
-      <div className="max-w-[1400px] mx-auto px-4 md:px-8 py-3 flex items-center gap-3">
+      <div className="shell-wide px-4 md:px-8 py-3 flex items-center gap-3">
         <div className="relative w-full max-w-md flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input
             value={query}
             onChange={e => onQueryChange(e.target.value)}
             placeholder={placeholder}
-            className="w-full h-10 pl-9 pr-3 rounded-xl bg-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors"
+            aria-label={placeholder}
+            className="w-full h-10 pl-9 pr-9 rounded-xl bg-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors"
           />
+          {query && (
+            <button
+              onClick={() => onQueryChange('')}
+              aria-label="Limpar busca"
+              title="Limpar busca"
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-full text-muted-foreground hover:text-foreground hover:bg-background/60 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
         
         {onContentTypeFilterChange && (

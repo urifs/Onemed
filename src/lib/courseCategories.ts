@@ -1,7 +1,7 @@
 import {
   HeartPulse, Siren, Pill, Baby, Scissors, ScanLine, Stethoscope, FlaskConical,
   Layers, Bone, Library, BookMarked, ListChecks, GraduationCap, BadgeCheck, Plane, Briefcase, FolderOpen,
-  Star, SquareStack, ClipboardList, FolderUp, Handshake, CalendarClock,
+  Star, SquareStack, ClipboardList, FolderUp, Handshake, CalendarClock, ListVideo,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -48,6 +48,7 @@ export const CATEGORY_ICON: Record<string, LucideIcon> = {
   'Carreira, Gestão & Marketing': Briefcase,
   'Outros cursos': FolderOpen,
   'Favoritos': Star,
+  'Playlists': ListVideo,
   'Flashcards': SquareStack,
   'Banco de Questões': ClipboardList,
   'Acervo Público': FolderUp,

@@ -39,6 +39,19 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabase = createClient(supabaseUrl, supabaseKey)
 
+    // Só admin: enumera as pastas do Drive da conta de conteúdo — qualquer
+    // JWT de membro/trial passava pelo verify_jwt padrão sem esta checagem.
+    const jwt = (req.headers.get('Authorization') || '').replace('Bearer ', '')
+    const { data: { user } } = await supabase.auth.getUser(jwt)
+    const { data: roleData } = user
+      ? await supabase.from('user_roles').select('role').eq('user_id', user.id).eq('role', 'admin').maybeSingle()
+      : { data: null }
+    if (!roleData) {
+      return new Response(JSON.stringify({ error: 'Apenas administradores' }), {
+        status: 403, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
+      })
+    }
+
     const { query = '' } = await req.json().catch(() => ({}))
 
     const { data: config, error } = await supabase.from('drive_config').select('*').single()

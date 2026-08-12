@@ -203,7 +203,7 @@ export default function DatabasePage() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 3xl:max-w-[1400px]">
             {Object.entries(tables).map(([table, count]) => (
               <Card key={table} className="bg-background-paper border-border">
                 <CardContent className="p-5">

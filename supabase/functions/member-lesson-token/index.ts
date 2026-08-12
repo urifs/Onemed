@@ -79,21 +79,54 @@ serve(async (req) => {
     if (userErr || !userData?.user) return jsonResponse(req, { error: 'Sessão inválida' }, 401)
     const user = userData.user
 
-    const { lessonId } = await req.json().catch(() => ({}))
+    const { lessonId, intent } = await req.json().catch(() => ({}))
     if (!lessonId) return jsonResponse(req, { error: 'lessonId obrigatório' }, 400)
+    const querDownload = intent === 'download'
 
     const { data: lesson, error: lessonErr } = await supabase.from('lessons')
-      .select('id, course_id, drive_file_id, mime_type, storage_path').eq('id', lessonId).maybeSingle()
+      .select('id, course_id, type, drive_file_id, mime_type, storage_path').eq('id', lessonId).maybeSingle()
     if (lessonErr || !lesson) return jsonResponse(req, { error: 'Aula não encontrada' }, 404)
     if (!lesson.drive_file_id && !lesson.storage_path) return jsonResponse(req, { error: 'Arquivo não configurado' }, 404)
 
     const email = (user.email || '').toLowerCase()
-    const [{ data: activeAccess }, { data: buyer }, { data: isAdmin }] = await Promise.all([
-      supabase.from('accesses').select('id').eq('email', email).eq('status', 'active').limit(1).maybeSingle(),
+    const [{ data: activeAccesses }, { data: buyer }, { data: isAdmin }] = await Promise.all([
+      // expires_at é indispensável: entre o trial expirar e o cron de revogação
+      // (a cada 5min) virar o status, um trial vencido ainda conseguia emitir
+      // token de 2h e continuar assistindo. status='active' sozinho não basta.
+      //
+      // Traz TODAS as linhas ativas (não só uma): a conta pode ter mais de uma
+      // e quem manda é a de maior tier — mesmo critério do member_plan_tier.
+      supabase.from('accesses').select('access_type').eq('email', email).eq('status', 'active')
+        .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`),
       supabase.from('buyers').select('id').eq('email', email).eq('access_granted', true).limit(1).maybeSingle(),
       supabase.rpc('has_role', { _user_id: user.id, _role: 'admin' }),
     ])
-    if (!activeAccess && !buyer && !isAdmin) return jsonResponse(req, { error: 'Sem acesso ativo' }, 403)
+    if (!activeAccesses?.length && !buyer && !isAdmin) return jsonResponse(req, { error: 'Sem acesso ativo' }, 403)
+
+    // ── Direito de DOWNLOAD ──────────────────────────────────────────────
+    // Espelha src/lib/plans.ts (regra de 11/08): ARQUIVO (apostila, PDF,
+    // .apkg, planilha, imagem, áudio) baixa do Vitalício pra cima — Vitalício,
+    // Plus e Pro; AULA EM VÍDEO é exclusiva do Pro. Mensal/Anual não baixam.
+    // Precisa existir AQUI porque o `dl` do Worker é só um parâmetro de URL:
+    // sem esta checagem, esconder o botão no frontend não impediria ninguém
+    // de acrescentar `&dl=nome` numa URL de streaming e salvar o arquivo.
+    const TIER_RANK: Record<string, number> = {
+      lifetime_pro: 6, lifetime_plus: 5, lifetime: 4, annual: 3, monthly: 2, trial: 1,
+    }
+    const PLANOS_BAIXAM_ARQUIVO = new Set(['lifetime', 'lifetime_plus', 'lifetime_pro'])
+    const plano = (activeAccesses || [])
+      .map(a => String(a.access_type || ''))
+      .sort((a, b) => (TIER_RANK[b] || 0) - (TIER_RANK[a] || 0))[0] || ''
+    const ehVideo = lesson.type === 'video'
+    const podeBaixar = !!isAdmin || (ehVideo ? plano === 'lifetime_pro' : PLANOS_BAIXAM_ARQUIVO.has(plano))
+
+    if (querDownload && !podeBaixar) {
+      return jsonResponse(req, {
+        error: ehVideo
+          ? 'O download das aulas em vídeo é exclusivo do Plano Vitalício Pro.'
+          : 'O download de arquivos está disponível a partir do Plano Vitalício.',
+      }, 403)
+    }
 
     if (lesson.storage_path) {
       const { data: signed, error: signErr } = await supabase.storage
@@ -102,6 +135,7 @@ serve(async (req) => {
       if (signErr || !signed?.signedUrl) return jsonResponse(req, { error: 'Não foi possível gerar o link do arquivo' }, 502)
       return jsonResponse(req, { url: signed.signedUrl, expiresAt: Math.floor(Date.now() / 1000) + STREAM_TTL_SECONDS })
     }
+
 
     const streamSecret = Deno.env.get('LESSON_STREAM_SECRET')!
     // Cloudflare Workers não cobra por tráfego de saída (diferente de
@@ -115,8 +149,19 @@ serve(async (req) => {
     // API do Drive só pra descobrir o mimeType.
     const mimeType = lesson.mime_type || ''
     const expiresAt = Math.floor(Date.now() / 1000) + STREAM_TTL_SECONDS
-    const sig = await hmacHex(streamSecret, `${fileId}.${expiresAt}.${mimeType}`)
+
+    // A permissão de baixar entra na ASSINATURA, não fica solta na URL: o
+    // sufixo `.dl` só é assinado para quem passou na checagem acima, e o
+    // Worker só transforma a resposta em download quando a assinatura cobre
+    // esse sufixo. Assim `&dl=nome` numa URL de streaming não vale nada.
+    //
+    // URL de streaming continua assinada exatamente como antes — é o que
+    // mantém válidos os tokens de 2h emitidos antes deste deploy.
+    const liberaDownload = querDownload && podeBaixar
+    const mensagem = `${fileId}.${expiresAt}.${mimeType}${liberaDownload ? '.dl' : ''}`
+    const sig = await hmacHex(streamSecret, mensagem)
     const url = `${streamBaseUrl}/?id=${encodeURIComponent(fileId)}&exp=${expiresAt}&sig=${sig}&mime=${encodeURIComponent(mimeType)}`
+      + (liberaDownload ? '&dlok=1' : '')
 
     return jsonResponse(req, { url, expiresAt })
   } catch (err: any) {

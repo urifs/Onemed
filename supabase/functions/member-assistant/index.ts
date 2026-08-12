@@ -78,9 +78,13 @@ VISÃO GERAL: A OneMed (onemedcursos.com.br) é uma plataforma de cursos de medi
 
 NAVEGAÇÃO PRINCIPAL (área de membros, /membros):
 - Página inicial: destaque no topo, faixa "Continuar assistindo" (ícone de lixeira remove cursos da faixa), e as categorias de cursos.
-- Barra lateral esquerda: seção MENU (Favoritos, Flashcards, Banco de Questões) e seção CATEGORIAS (todas as categorias do acervo + Minhas anotações). No celular, dois botões no topo: "Menu" e "Categorias".
+- Barra lateral esquerda: seção MENU (Favoritos, Playlists, Flashcards, Banco de Questões) e seção CATEGORIAS (todas as categorias do acervo + Minhas anotações). No celular, dois botões no topo: "Menu" e "Categorias".
 - Busca no topo: procura cursos e também aulas/arquivos pelo nome (marque "conteúdos" para buscar dentro dos cursos).
 - Dentro de um curso: abas Aulas, Arquivos e Comunidade; Mapa do curso na lateral; busca interna.
+
+PLAYLISTS (Menu → Playlists, caminho /membros/playlists): o espaço de estudo do aluno. Ele cria playlists e salva nelas cursos, aulas, arquivos, materiais do Acervo Público, flashcards, bancos de questões e cronogramas. Em cada um desses lugares há um botão de salvar (ícone de lista com +) que abre um dropdown com as playlists do aluno para marcar/desmarcar ou criar nova. Já vem uma playlist pré-criada chamada "Assistir depois". Cada playlist tem um campo de anotações (salva sozinho). Abrir um item da playlist leva ao conteúdo; abrir uma aula toca no player e, ao terminar o vídeo, a próxima aula começa sozinha.
+
+PLAYER (vídeo e arquivos): botões de +10s/-10s (e setas do teclado), velocidade de reprodução, marcar como concluída, baixar (conforme o plano), abrir em outra aba, gerar flashcards/questões. Botão de MINIMIZAR: vira uma janelinha flutuante arrastável e libera a plataforma atrás para continuar navegando com o conteúdo rodando (funciona também com arquivos/PDF). Botão de VÍDEO FLUTUANTE (picture-in-picture): joga o vídeo para uma janela do sistema, que pode ir para outra tela e seguir tocando em segundo plano. Ao terminar um vídeo, o próximo da sequência começa automaticamente (dá para cancelar ou pular).
 
 EM CADA AULA/ARQUIVO (ícones na linha e dentro do player):
 - Baixar (planos Vitalício, Plus e Pro; um arquivo por vez).
@@ -98,7 +102,7 @@ PDF/APOSTILAS: o leitor tem caneta, marca-texto e borracha — as anotações fi
 
 COMUNIDADE: aba própria (/membros/comunidade) e aba Comunidade em cada curso. Tópicos, respostas aninhadas, curtidas. Exclusiva para assinantes (teste grátis não participa).
 
-PLANOS: Mensal R$49 (1 tela, 1 mês, sem downloads, sem geradores de IA); Anual R$199 (2 telas, 1 ano); Vitalício R$299,90 (2 telas, download um a um); Vitalício Plus R$599 (4 telas, downloads + em massa, backup no Drive próprio, geradores de IA anunciados); Vitalício Pro R$997 (6 telas, tudo do Plus + atualizações semanais + IA Meduf). Upgrade: menu da conta (ícone de pessoa) → paga só a diferença de tabela entre os planos. Teste grátis: 30 minutos de acesso ao acervo.
+PLANOS (regras de 11/08): Mensal R$99 (1 tela, 1 mês, acervo atual, SEM ferramentas de IA, sem download, sem atualizações); Anual R$299 (2 telas, 1 ano, acervo atual, ferramentas de IA até 5 usos/dia em cada, sem download, sem atualizações); Vitalício R$499 (2 telas, vitalício, atualizações anuais dos cursos básicos, download de arquivos e apostilas, IA até 10 usos/dia em cada); Vitalício Plus R$798 (4 telas, vitalício, atualizações anuais dos cursos intermediários, backup no Drive próprio, download de arquivos e apostilas, IA até 20 usos/dia em cada); Vitalício Pro R$1.497 (6 telas, vitalício, atualizações mensais de 95% do conteúdo + novos cursos, backup no Drive próprio, download de arquivos E TAMBÉM das aulas em vídeo — aula é exclusiva do Pro, IA ILIMITADA, IA Meduf). REGRA DE DOWNLOAD: arquivos (apostila, PDF, Anki etc.) baixam no Vitalício, Plus e Pro; aulas em vídeo só no Pro; Mensal e Anual não baixam. Upgrade: menu da conta (ícone de pessoa) → paga só a diferença de tabela. Teste grátis: 30 minutos de acesso ao acervo.
 
 LOJA (ícone de sacola no topo): recursos adicionais avulsos, compra via Mercado Pago (assinantes).
 
@@ -145,15 +149,46 @@ serve(async (req) => {
     const { data: { user }, error: authErr } = await supabase.auth.getUser(jwt)
     if (authErr || !user) return json(req, { error: 'Sessão inválida' }, 401)
 
-    // ── limite de uso: 60 mensagens/dia por conta ──────────────────────────
+    // Limite de IA por plano (decisão do dono, 10/08): Mensal BLOQUEADO;
+    // Anual 5/dia; Vitalício 10; Plus 20; Pro/admin sem limite de plano.
+    // Resolve o plano ANTES do rate limit (o assistente é uma das ferramentas).
+    let planoAluno = ''
+    try {
+      const asUser = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY') || '', {
+        global: { headers: { Authorization: `Bearer ${jwt}` } },
+      })
+      const { data: st } = await asUser.rpc('my_member_status')
+      planoAluno = String((Array.isArray(st) ? st[0] : st)?.plan || '')
+      if (planoAluno === 'monthly') {
+        return json(req, { error: 'O Plano Mensal não inclui o assistente de IA. Faça upgrade de plano para liberar.' }, 403)
+      }
+    } catch { /* segue liberado no teto de segurança */ }
+
+    // ── limite de mensagens/dia: o do plano (5/10/20) ou o teto de 100 ──────
+    const LIMITE_IA_POR_PLANO: Record<string, number> = { trial: 5, annual: 5, lifetime: 10, lifetime_plus: 20 }
+    const TETO_SEGURANCA = 100
+    const LIMITE_DIARIO = LIMITE_IA_POR_PLANO[planoAluno] ?? TETO_SEGURANCA
     try {
       const now = new Date()
       const { data: rl } = await supabase.from('rate_limits')
         .select('attempts, window_start')
         .eq('identifier', user.id).eq('action', 'assistant').maybeSingle()
       if (rl && (now.getTime() - new Date(rl.window_start).getTime()) < 24 * 3600 * 1000) {
-        if (rl.attempts >= 60) {
-          return json(req, { error: 'Você atingiu o limite diário do assistente. Volte amanhã ou fale com o suporte no WhatsApp.' }, 429)
+        if (rl.attempts >= LIMITE_DIARIO) {
+          // Janela de 24h desde a PRIMEIRA mensagem, não o fim do dia.
+          const faltamMin = Math.max(
+            1,
+            Math.ceil((new Date(rl.window_start).getTime() + 24 * 3600 * 1000 - now.getTime()) / 60000),
+          )
+          const quando = faltamMin >= 60
+            ? `em ${Math.ceil(faltamMin / 60)}h`
+            : `em ${faltamMin} minuto${faltamMin === 1 ? '' : 's'}`
+          const msg = planoAluno === 'trial'
+            ? `Você usou as ${LIMITE_DIARIO} utilizações liberadas no teste grátis. Assine um plano para continuar usando as ferramentas de IA da plataforma.`
+            : LIMITE_DIARIO < TETO_SEGURANCA
+              ? `Você usou as ${LIMITE_DIARIO} mensagens de hoje do seu plano no assistente. O limite renova ${quando}. Planos superiores liberam mais — o Pro é sem limite.`
+              : `Você já enviou ${LIMITE_DIARIO} mensagens ao assistente nas últimas 24 horas, que é o limite diário. Você poderá conversar de novo ${quando}.`
+          return json(req, { error: msg }, 429)
         }
         await supabase.from('rate_limits').update({ attempts: rl.attempts + 1 })
           .eq('identifier', user.id).eq('action', 'assistant')
@@ -166,7 +201,7 @@ serve(async (req) => {
     } catch { /* não derruba o chat */ }
 
     // ── entrada ────────────────────────────────────────────────────────────
-    const { messages, currentLesson, includeLessonContent } = await req.json()
+    const { messages, currentLesson, currentPlaylist, includeLessonContent } = await req.json()
     const historico: { role: string; content: string }[] = (Array.isArray(messages) ? messages : [])
       .filter((m: { role?: unknown; content?: unknown }) =>
         (m?.role === 'user' || m?.role === 'assistant') && typeof m?.content === 'string')
@@ -175,16 +210,7 @@ serve(async (req) => {
     const pergunta = [...historico].reverse().find(m => m.role === 'user')?.content || ''
     if (!pergunta.trim()) return json(req, { error: 'Escreva uma pergunta' }, 400)
 
-    // ── contexto: plano do aluno ───────────────────────────────────────────
-    let planoAluno = ''
-    try {
-      const asUser = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY') || '', {
-        global: { headers: { Authorization: `Bearer ${jwt}` } },
-      })
-      const { data: st } = await asUser.rpc('my_member_status')
-      const row = Array.isArray(st) ? st[0] : st
-      if (row?.plan) planoAluno = String(row.plan)
-    } catch { /* segue sem */ }
+    // (planoAluno já foi resolvido no gate de limite, acima.)
 
     // ── contexto: categorias (agregado barato) ─────────────────────────────
     const { data: cats } = await supabase
@@ -312,6 +338,34 @@ serve(async (req) => {
       }
     }
 
+    // ── contexto: playlist aberta ──────────────────────────────────────────
+    // O aluno pode ter uma playlist aberta (o "espaço de estudo" dele). A IA
+    // recebe o NOME, os ITENS (títulos) e as ANOTAÇÕES pra saber do que ele
+    // fala ao perguntar "sobre essa playlist". Só a própria playlist do aluno.
+    let playlistTxt = ''
+    if (currentPlaylist?.id && typeof currentPlaylist.id === 'string') {
+      const { data: pl } = await supabase
+        .from('playlists')
+        .select('id, name, notes')
+        .eq('id', currentPlaylist.id)
+        .eq('user_id', user.id)
+        .maybeSingle()
+      if (pl) {
+        // A RPC confere a posse por auth.uid(), então roda COMO O ALUNO.
+        const asUserPl = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY') || '', {
+          global: { headers: { Authorization: `Bearer ${jwt}` } },
+        })
+        const { data: its } = await asUserPl.rpc('playlist_items_resolved', { _playlist_id: pl.id })
+        const linhas = ((its || []) as { title: string; kind: string; course_slug: string | null }[])
+          .slice(0, 60)
+          .map(x => `- ${x.kind}: "${x.title}"${x.course_slug ? ` (/membros/curso/${x.course_slug})` : ''}`)
+        playlistTxt = `O aluno está com a PLAYLIST "${pl.name}" aberta — é o espaço de estudo dele. Itens da playlist${linhas.length ? ':\n' + linhas.join('\n') : ': (vazia).'}`
+        const notas = String((pl as { notes?: string }).notes || '').trim()
+        if (notas) playlistTxt += `\nAnotações do aluno nesta playlist: ${notas.slice(0, 800)}`
+        playlistTxt += `\nQuando ele perguntar sobre "a playlist", "esses itens" ou pedir ajuda pra estudar o que está aqui, use esta lista.`
+      }
+    }
+
     // ── prompt ─────────────────────────────────────────────────────────────
     const system = [
       `Você é o assistente oficial da OneMed, plataforma brasileira de cursos de medicina. Responda SEMPRE em português do Brasil, com tom cordial e direto.`,
@@ -337,6 +391,7 @@ serve(async (req) => {
       `CATEGORIAS DO ACERVO: ${categoriasTxt}`,
       planoAluno ? `PLANO DO ALUNO: ${planoAluno} (responda dúvidas de recursos conforme este plano).` : '',
       aulaAbertaTxt,
+      playlistTxt,
       catalogoTxt ? `CATÁLOGO RELEVANTE PARA ESTA CONVERSA (resultado de busca — pode estar incompleto):\n${catalogoTxt}` : '',
     ].filter(Boolean).join('\n')
 

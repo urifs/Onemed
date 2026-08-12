@@ -230,8 +230,14 @@ serve(async (req) => {
     const now = new Date()
 
     for (const cfg of FOLLOWUP_CONFIGS) {
-      const windowStart = new Date(now.getTime() - (cfg.days * 24 * 60 * 60 * 1000) - (2 * 60 * 60 * 1000))
-      const windowEnd   = new Date(now.getTime() - (cfg.days * 24 * 60 * 60 * 1000) + (2 * 60 * 60 * 1000))
+      // A janela precisa cobrir as 24h desde a última rodada diária do cron
+      // (com 2h de folga pra atraso do próprio cron). A janela antiga de ±2h
+      // só enxergava 4 das 24 horas do dia — trial que expirou às 20h UTC
+      // nunca caía dentro de [11h, 15h] do dia seguinte e NUNCA recebia
+      // follow-up nenhum. A deduplicação real continua sendo a tabela
+      // email_followups, então a janela mais larga não repete envio.
+      const windowStart = new Date(now.getTime() - (cfg.days * 24 * 60 * 60 * 1000) - (26 * 60 * 60 * 1000))
+      const windowEnd   = new Date(now.getTime() - (cfg.days * 24 * 60 * 60 * 1000))
 
       const { data: trialUsers, error: fetchErr } = await supabase
         .from('accesses')
@@ -239,6 +245,7 @@ serve(async (req) => {
         .eq('access_type', 'trial')
         .gte('expires_at', windowStart.toISOString())
         .lte('expires_at', windowEnd.toISOString())
+        .limit(400)
 
       if (fetchErr) {
         console.error(`Error fetching for ${cfg.type}:`, fetchErr)
@@ -253,14 +260,19 @@ serve(async (req) => {
       for (const user of trialUsers) {
         const email = user.email
 
-        const { data: alreadySent } = await supabase
+        // limit(1) em vez de maybeSingle: se algum dia existir linha
+        // duplicada, o maybeSingle devolve ERRO com data nula — que era lido
+        // como "nunca recebeu" e reenviava o email todo dia.
+        const { data: alreadySent, error: dedupeErr } = await supabase
           .from('email_followups')
           .select('id')
           .eq('email', email)
           .eq('type', cfg.type)
-          .maybeSingle()
+          .limit(1)
 
-        if (alreadySent) continue
+        // Não dá pra afirmar que nunca recebeu — pula em vez de arriscar spam.
+        if (dedupeErr) { errors.push(`${email} (${cfg.type}): dedupe falhou`); continue }
+        if (alreadySent && alreadySent.length > 0) continue
 
         const { data: buyer } = await supabase
           .from('buyers')

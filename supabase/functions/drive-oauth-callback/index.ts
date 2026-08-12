@@ -23,6 +23,27 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabase = createClient(supabaseUrl, supabaseKey)
 
+    // Só admin: esta função sobrescreve os tokens da conta Google que serve
+    // a biblioteca INTEIRA. Sem esta checagem (e com verify_jwt desligado),
+    // qualquer pessoa que completasse um OAuth com o client público podia
+    // apontar a plataforma pro próprio Drive — ou simplesmente derrubá-la.
+    const authHeader = req.headers.get('Authorization') || ''
+    const jwt = authHeader.replace('Bearer ', '')
+    const { data: { user } } = await supabase.auth.getUser(jwt)
+    if (!user) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
+      })
+    }
+    const { data: roleData } = await supabase
+      .from('user_roles').select('role')
+      .eq('user_id', user.id).eq('role', 'admin').maybeSingle()
+    if (!roleData) {
+      return new Response(JSON.stringify({ error: 'Apenas administradores' }), {
+        status: 403, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
+      })
+    }
+
     const { code, redirect_uri } = await req.json()
 
     // Exchange code for tokens
@@ -52,13 +73,18 @@ serve(async (req) => {
     const { data: existing } = await supabase.from('drive_config').select('id').single()
     
     if (existing) {
-      await supabase.from('drive_config').update({
+      // O Google só devolve refresh_token na PRIMEIRA autorização (ou com
+      // prompt=consent). Gravar `|| null` numa reconexão apagava o único
+      // credencial de longa duração — streaming e sync inteiros caíam quando
+      // o access_token de 1h vencia. Só sobrescreve se veio um novo.
+      const patch: Record<string, unknown> = {
         connected: true,
         access_token: tokens.access_token,
-        refresh_token: tokens.refresh_token || null,
         token_expiry: expiry,
         updated_at: new Date().toISOString(),
-      }).eq('id', existing.id)
+      }
+      if (tokens.refresh_token) patch.refresh_token = tokens.refresh_token
+      await supabase.from('drive_config').update(patch).eq('id', existing.id)
     } else {
       await supabase.from('drive_config').insert({
         connected: true,

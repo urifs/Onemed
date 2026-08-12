@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 
 export interface MemberLocationPoint {
@@ -22,29 +22,21 @@ const POLL_MS = 60000;
 // auth.sessions (o refresh do token só bate essa coluna perto da expiração,
 // não a cada atividade real, então usar ela pra "online" sempre subestimava
 // muito quem estava genuinamente conectado).
+// react-query com chave única: o mapa e a lista de localizações (cards
+// irmãos no dashboard) consomem este hook ao mesmo tempo — sem o cache
+// compartilhado cada instância fazia a própria chamada E o próprio polling,
+// dobrando as RPCs a cada minuto com a aba aberta.
 export function useMemberLocationsMap() {
-  const [points, setPoints] = useState<MemberLocationPoint[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState(false);
-
-  const fetchPoints = useCallback(async () => {
-    try {
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ['member-locations-map'],
+    refetchInterval: POLL_MS,
+    staleTime: POLL_MS - 5000,
+    queryFn: async (): Promise<MemberLocationPoint[]> => {
       const { data, error } = await supabase.rpc('get_member_locations_map');
       if (error) throw error;
-      setPoints((data || []) as MemberLocationPoint[]);
-      setLoadError(false);
-    } catch {
-      setLoadError(true);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+      return (data || []) as MemberLocationPoint[];
+    },
+  });
 
-  useEffect(() => {
-    fetchPoints();
-    const interval = setInterval(fetchPoints, POLL_MS);
-    return () => clearInterval(interval);
-  }, [fetchPoints]);
-
-  return { points, loading, loadError, refetch: fetchPoints };
+  return { points: data ?? [], loading: isLoading, loadError: isError, refetch };
 }

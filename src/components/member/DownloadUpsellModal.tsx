@@ -1,16 +1,18 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Download, Lock, Check } from 'lucide-react';
+import { Lock, Check } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { UpgradePlanModal } from './UpgradePlanModal';
 import { PLAN_LABELS } from '@/lib/plans';
 
-export type DownloadBlockReason = 'trial' | 'upgrade';
+// 'lesson-pro' = assinante que JÁ baixa arquivo e tentou baixar uma aula em
+// vídeo; o download de aula é exclusivo do Vitalício Pro.
+export type DownloadBlockReason = 'trial' | 'upgrade' | 'lesson-pro';
 
 const VANTAGENS = [
-  'Baixar qualquer aula ou arquivo',
+  'Baixar os arquivos e apostilas do acervo',
   'Acervo completo, sem limite de tempo',
   'Comunidade e grupo no WhatsApp',
 ];
@@ -36,7 +38,25 @@ export function DownloadUpsellModal({ open, onOpenChange, reason, plan }: {
   };
 
   const ehTrial = reason === 'trial';
+  const ehAulaPro = reason === 'lesson-pro';
   const nomePlano = plan ? PLAN_LABELS[plan] || plan : null;
+
+  // Regra de 11/08: arquivo baixa do Vitalício pra cima; aula em vídeo é
+  // exclusiva do Pro. 'lesson-pro' é o caso de aula; 'upgrade' é o de arquivo
+  // (Mensal/Anual), que aponta pro Vitalício.
+  const titulo = ehTrial
+    ? 'Downloads são exclusivos para assinantes'
+    : ehAulaPro
+      ? 'Baixar aulas é exclusivo do Vitalício Pro'
+      : 'Baixar arquivos é um recurso do Vitalício';
+
+  const descricao = ehTrial
+    ? 'Sua conta é de teste grátis. O download de arquivos está disponível a partir do Plano Vitalício — assine para liberar a plataforma completa.'
+    : ehAulaPro
+      ? `${nomePlano ? `No ${nomePlano}` : 'No seu plano'} as aulas ficam disponíveis para assistir na plataforma, sem limite. `
+        + 'O download das aulas em vídeo é exclusivo do Vitalício Pro. No upgrade você paga só a diferença.'
+      : `${nomePlano ? `No ${nomePlano}` : 'No seu plano'} os arquivos ficam disponíveis para ler na plataforma. `
+        + 'O download de arquivos e apostilas está disponível a partir do Plano Vitalício. No upgrade você paga só a diferença.';
 
   return (
     <>
@@ -44,17 +64,10 @@ export function DownloadUpsellModal({ open, onOpenChange, reason, plan }: {
         <DialogContent className="bg-background-paper border-border max-w-md">
           <DialogHeader>
             <div className="w-11 h-11 rounded-full bg-primary/15 border border-primary/30 flex items-center justify-center mb-1">
-              {ehTrial ? <Lock className="w-5 h-5 text-primary" /> : <Download className="w-5 h-5 text-primary" />}
+              <Lock className="w-5 h-5 text-primary" />
             </div>
-            <DialogTitle className="text-foreground text-lg">
-              {ehTrial ? 'Downloads são exclusivos para assinantes' : 'Seu plano não inclui downloads'}
-            </DialogTitle>
-            <DialogDescription>
-              {ehTrial
-                ? 'Sua conta é de teste grátis. Para baixar aulas e arquivos, assine um plano e libere a plataforma completa.'
-                : `${nomePlano ? `O ${nomePlano}` : 'Seu plano'} dá acesso a todo o conteúdo para assistir na plataforma. `
-                  + 'Para baixar aulas e arquivos, faça upgrade — você paga só a diferença.'}
-            </DialogDescription>
+            <DialogTitle className="text-foreground text-lg">{titulo}</DialogTitle>
+            <DialogDescription>{descricao}</DialogDescription>
           </DialogHeader>
 
           {ehTrial && (

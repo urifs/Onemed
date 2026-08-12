@@ -27,6 +27,11 @@ async function refreshAccessToken(refreshToken: string, clientSecret: string): P
     }),
   })
   const data = await res.json()
+  // Sem esta checagem, um refresh recusado devolvia undefined e a chamada
+  // seguinte ao Drive ia com "Bearer undefined" — erro genérico enganoso.
+  if (!res.ok || !data.access_token) {
+    throw new Error(`Falha ao renovar token do Google: ${JSON.stringify(data).slice(0, 200)}`)
+  }
   return data.access_token
 }
 
@@ -61,10 +66,13 @@ serve(async (req) => {
           if (roleData) isAuthorized = true
         }
       }
-    } else {
-      // Sem header — chamada interna via supabase.functions.invoke
-      isAuthorized = true
     }
+    // Sem header de Authorization NÃO é "chamada interna": o
+    // supabase.functions.invoke SEMPRE manda o header (service role no
+    // webhook, JWT do admin no painel). Com verify_jwt desligado no
+    // config.toml, o branch antigo que liberava requisição sem header
+    // deixava QUALQUER pessoa na internet compartilhar a pasta da
+    // biblioteca inteira com um curl.
 
     if (!isAuthorized) {
       console.error('drive-share-folder: chamada não autorizada rejeitada')

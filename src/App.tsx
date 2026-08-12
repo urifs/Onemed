@@ -2,14 +2,29 @@ import { useEffect, useRef } from "react";
 import { ThemeProvider } from "next-themes";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Route, Routes, Navigate, useLocation } from "react-router-dom";
+import { SpeedInsights } from "@vercel/speed-insights/react";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { trackPageView } from "@/lib/pixel";
 
-// Pages
+// NOTA (2026-08-07): o code-splitting por rota (React.lazy) foi REVERTIDO em
+// emergência — a fronteira de chunk expunha uma dependência circular no
+// bundle ("can't access lexical declaration 'H' before initialization"), um
+// erro de TDZ entre o chunk lazy e o chunk principal que derrubava a
+// plataforma inteira em produção. Com tudo num bundle só, o bundler ordena
+// os módulos e o ciclo não dispara (é como a plataforma rodou por meses).
+// Reintroduzir splitting exige antes quebrar o ciclo de imports na fonte.
 import Index from "./pages/Index";
+import TermsPage from "./pages/TermsPage";
+import PrivacyPage from "./pages/PrivacyPage";
+import NotFound from "./pages/NotFound";
+import CoursesIndexPage from "./pages/public/CoursesIndexPage";
+import CategoryPage from "./pages/public/CategoryPage";
+import PillarHubPage from "./pages/public/PillarHubPage";
+import PlansPage from "./pages/public/PlansPage";
+import { captureAffiliateRefFromUrl } from "./lib/affiliateRef";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import MemberLoginPage from "./pages/MemberLoginPage";
@@ -32,8 +47,8 @@ import AdminCommunityPage from "./pages/AdminCommunityPage";
 import StorePage from "./pages/StorePage";
 import ArchivePage from "./pages/ArchivePage";
 import StudyPlanPage from "./pages/StudyPlanPage";
+import MemberPlaylistsPage from "./pages/MemberPlaylistsPage";
 import StudyPlansAdminPage from "./pages/StudyPlansAdminPage";
-import { captureAffiliateRefFromUrl } from "./lib/affiliateRef";
 import AffiliateRegisterPage from "./pages/affiliate/AffiliateRegisterPage";
 import AffiliateLoginPage from "./pages/affiliate/AffiliateLoginPage";
 import AffiliatePanelPage from "./pages/affiliate/AffiliatePanelPage";
@@ -42,17 +57,11 @@ import StoreAdminPage from "./pages/StoreAdminPage";
 import FlashcardsAdminPage from "./pages/FlashcardsAdminPage";
 import AcervoAdminPage from "./pages/AcervoAdminPage";
 import AnnouncementsPage from "./pages/AnnouncementsPage";
-import TermsPage from "./pages/TermsPage";
-import PrivacyPage from "./pages/PrivacyPage";
+import PanelAccountsPage from "./pages/PanelAccountsPage";
 import DatabasePage from "./pages/DatabasePage";
 import EmailCampaignPage from "./pages/EmailCampaignPage";
 import SMSPage from "./pages/SMSPage";
 import WhatsAppPage from "./pages/WhatsAppPage";
-import NotFound from "./pages/NotFound";
-import CoursesIndexPage from "./pages/public/CoursesIndexPage";
-import CategoryPage from "./pages/public/CategoryPage";
-import PillarHubPage from "./pages/public/PillarHubPage";
-import PlansPage from "./pages/public/PlansPage";
 import { PILLAR_HUBS, isNoIndexPath } from "@/seo/siteConfig";
 import { Seo } from "@/seo/Seo";
 import WhatsAppButton from "./components/WhatsAppButton";
@@ -88,6 +97,22 @@ const FbclidCapture = () => {
     if (fbclid) localStorage.setItem('om_fbclid', fbclid)
   }, [])
   return null
+}
+
+// Speed Insights (Vercel) — mede a experiência REAL de carregamento dos
+// alunos. Sem o `route`, cada URL vira uma linha própria no painel: são 403
+// cursos e milhares de aulas, então o relatório viraria uma lista inútil de
+// caminhos únicos. Aqui os trechos dinâmicos são normalizados para o padrão da
+// rota (/membros/curso/[slug]), que é como a Vercel agrupa as medições.
+const ROTAS_DINAMICAS: [RegExp, string][] = [
+  [/^\/membros\/curso\/[^/]+$/, '/membros/curso/[slug]'],
+  [/^\/cursos\/[^/]+$/, '/cursos/[categoria]'],
+]
+
+const SpeedInsightsRotas = () => {
+  const location = useLocation()
+  const rota = ROTAS_DINAMICAS.find(([re]) => re.test(location.pathname))?.[1] ?? location.pathname
+  return <SpeedInsights route={rota} />
 }
 
 // O `fbq('track','PageView')` do index.html roda uma vez só, no carregamento
@@ -167,6 +192,7 @@ const App = () => (
           <BrowserRouter>
             <FbclidCapture />
             <PixelPageViews />
+            <SpeedInsightsRotas />
             <PrivateRouteSeo />
             <Routes>
             {/* Public routes */}
@@ -199,6 +225,7 @@ const App = () => (
             <Route path="/membros/loja" element={<MemberProtectedRoute><StorePage /></MemberProtectedRoute>} />
             <Route path="/membros/acervo" element={<MemberProtectedRoute><ArchivePage /></MemberProtectedRoute>} />
             <Route path="/membros/cronograma" element={<MemberProtectedRoute><StudyPlanPage /></MemberProtectedRoute>} />
+            <Route path="/membros/playlists" element={<MemberProtectedRoute><MemberPlaylistsPage /></MemberProtectedRoute>} />
 
             {/* Protected admin routes */}
             <Route path="/admin" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
@@ -214,6 +241,7 @@ const App = () => (
             <Route path="/admin/cronogramas" element={<ProtectedRoute><StudyPlansAdminPage /></ProtectedRoute>} />
             <Route path="/admin/flashcards" element={<ProtectedRoute><FlashcardsAdminPage /></ProtectedRoute>} />
             <Route path="/admin/acervo" element={<ProtectedRoute><AcervoAdminPage /></ProtectedRoute>} />
+            <Route path="/admin/contas" element={<ProtectedRoute><PanelAccountsPage /></ProtectedRoute>} />
             <Route path="/admin/avisos" element={<ProtectedRoute><AnnouncementsPage /></ProtectedRoute>} />
             <Route path="/admin/database" element={<ProtectedRoute><DatabasePage /></ProtectedRoute>} />
             <Route path="/admin/email-campaign" element={<ProtectedRoute><EmailCampaignPage /></ProtectedRoute>} />

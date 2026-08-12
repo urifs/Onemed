@@ -32,6 +32,7 @@ import {
 import { formatWhatsApp, extractFunctionErrorMessage } from '@/lib/utils';
 import { getAffiliateRef } from '@/lib/affiliateRef';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { PlanComparisonTable } from '@/components/PlanComparisonTable';
 
 const MEDUF_URL = 'https://meduf.com.br/about';
 
@@ -68,8 +69,10 @@ const COUNTRIES = [
   { code: '+57', country: 'Colômbia', flag: 'CO' },
 ];
 
-const UPSELL_PRICE = 19.90;
-const UPSELL2_PRICE = 9.90;
+// Precisam bater com o mp-create-payment (quem cobra de verdade) — mudar
+// preço de upsell exige alterar os DOIS e redeployar a function.
+const UPSELL_PRICE = 94.00;   // Atualizações Semanais + Lançamentos Instantâneos
+const UPSELL2_PRICE = 39.80;  // Proteção Proxy + Backups Instantâneos
 
 const PLANS: Record<string, {
   name: string; originalPrice?: number; price: number; period: string;
@@ -77,73 +80,71 @@ const PLANS: Record<string, {
 }> = {
   monthly: {
     name: 'Plano Mensal',
-    price: 49.00,
+    price: 99.00,
     period: '/mês',
     icon: Calendar,
     features: [
       'Acesso por 1 mês',
       '1 tela simultânea',
+      'Acesso a todo o acervo atual da plataforma',
     ],
   },
   annual: {
     name: 'Plano Anual',
     originalPrice: 399,
-    price: 199,
+    price: 299,
     period: '/ano',
     icon: Clock,
     features: [
       'Acesso por 1 ano',
       '2 telas simultâneas',
-      'Atualizações mensais',
+      'Acesso a todo o acervo atual da plataforma',
+      'Ferramentas de IA (flashcards, banco de questões, cronograma e assistente): até 5 usos por dia em cada',
     ],
   },
   lifetime: {
     name: 'Plano Vitalício',
     originalPrice: 667,
-    price: 299.90,
+    price: 499.00,
     period: ' único',
     icon: Infinity,
     features: [
       'Acesso vitalício',
       '2 telas simultâneas',
-      'Atualizações mensais',
-      'Download de arquivos, um a um',
+      'Atualizações anuais dos cursos básicos',
+      'Download de arquivos e apostilas (PDF, Anki e mais)',
+      'Ferramentas de IA (flashcards, banco de questões, cronograma e assistente): até 10 usos por dia em cada',
     ],
     badge: 'MAIS POPULAR',
   },
   lifetime_plus: {
     name: 'Plano Vitalício Plus',
-    price: 599.00,
+    price: 798.00,
     period: ' único',
     icon: HardDrive,
     features: [
       'Acesso vitalício',
       '4 telas simultâneas',
-      'Atualizações mensais',
+      'Atualizações anuais dos cursos intermediários',
       'Backup de tudo da plataforma no seu próprio Google Drive',
-      'Download de arquivos, um a um',
-      'Download em massa, cursos e pastas inteiras',
-      'Gerador de flashcards a partir de qualquer conteúdo da plataforma',
-      'Gerador de banco de questões a partir de qualquer conteúdo da plataforma',
-      'Assistente de IA que lê em tempo real a aula ou arquivo que você está estudando e tira qualquer dúvida',
+      'Download de arquivos e apostilas (PDF, Anki e mais)',
+      'Ferramentas de IA (flashcards, banco de questões, cronograma e assistente): até 20 usos por dia em cada',
     ],
   },
   lifetime_pro: {
     name: 'Plano Vitalício Pro',
-    price: 997.00,
+    originalPrice: 2000,
+    price: 1497.00,
     period: ' único',
     icon: Crown,
     features: [
       'Acesso vitalício',
       '6 telas simultâneas',
-      'Atualizações mensais + semanais',
+      'Atualizações mensais de 95% de todo o conteúdo + adição de novos cursos',
       'Backup de tudo da plataforma no seu próprio Google Drive',
-      'Download de arquivos, um a um',
-      'Download em massa, cursos e pastas inteiras',
-      'Gerador de flashcards a partir de qualquer conteúdo da plataforma',
-      'Gerador de banco de questões a partir de qualquer conteúdo da plataforma',
-      'Assistente de IA que lê em tempo real a aula ou arquivo que você está estudando e tira qualquer dúvida',
-      'Acesso a todas as atualizações sem precisar de nenhuma colaboração',
+      'Download de arquivos e apostilas (PDF, Anki e mais)',
+      'Download das aulas em vídeo — exclusivo do Pro',
+      'Ferramentas de IA (flashcards, banco de questões, cronograma e assistente): uso ilimitado',
       'Acesso à IA de diagnósticos Meduf (meduf.com.br)',
     ],
     badge: 'MAIS COMPLETO',
@@ -421,7 +422,7 @@ export default function CheckoutPage() {
             <div className="mb-6">
               <div className="flex items-baseline gap-2">
                 {plan.originalPrice && (
-                  <span className="text-lg text-muted-foreground line-through">R${plan.originalPrice}</span>
+                  <span className="text-lg text-muted-foreground line-through">R${plan.originalPrice.toLocaleString('pt-BR')}</span>
                 )}
                 <span className="text-4xl font-bold text-foreground">R${plan.price.toFixed(2).replace('.', ',')}</span>
               </div>
@@ -442,6 +443,9 @@ export default function CheckoutPage() {
           );
         })}
       </div>
+
+      {/* Tabela comparativa dos planos */}
+      <PlanComparisonTable />
 
       {/* Coupon */}
       <div className="bg-card border border-border rounded-xl p-6">
@@ -647,6 +651,10 @@ export default function CheckoutPage() {
                 <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
               </button>
               {showCountryDropdown && (
+                <>
+                {/* Clique fora fecha — sem este véu, o painel ficava aberto
+                    por cima do formulário até clicar de novo no gatilho. */}
+                <div className="fixed inset-0 z-40" onClick={() => setShowCountryDropdown(false)} />
                 <div className="absolute top-full left-0 mt-1 w-48 bg-background-paper border border-border rounded-lg shadow-xl z-50 overflow-hidden">
                   {COUNTRIES.map(c => (
                     <button
@@ -661,6 +669,7 @@ export default function CheckoutPage() {
                     </button>
                   ))}
                 </div>
+                </>
               )}
             </div>
             <Input
@@ -795,7 +804,7 @@ export default function CheckoutPage() {
     <div className="min-h-screen bg-background">
       {/* Header */}
       <header className="px-6 py-6 border-b border-border/50">
-        <nav className="max-w-4xl mx-auto flex items-center justify-between">
+        <nav className="shell-form flex items-center justify-between">
           <Link to="/" className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-primary/15 flex items-center justify-center">
               <Stethoscope className="w-5 h-5 text-primary" />
@@ -817,7 +826,7 @@ export default function CheckoutPage() {
 
       {/* Progress Steps */}
       <div className="px-6 py-4 border-b border-border/30">
-        <div className="max-w-4xl mx-auto">
+        <div className="shell-form">
           <div className="flex items-center justify-center gap-2 md:gap-4">
             {[
               { n: 1, label: 'Plano' },
@@ -839,7 +848,7 @@ export default function CheckoutPage() {
 
       {/* Content */}
       <main className="px-6 py-12">
-        <div className={step === 1 ? 'max-w-5xl mx-auto' : 'max-w-2xl mx-auto'}>
+        <div className={step === 1 ? 'shell-form' : 'shell-read'}>
           {step === 1 && renderPlanSelection()}
           {step === 2 && renderUpsellStep()}
           {step === 3 && renderCustomerDataForm()}
@@ -848,7 +857,7 @@ export default function CheckoutPage() {
       </main>
 
       <footer className="px-6 py-8 border-t border-border/30">
-        <div className="max-w-4xl mx-auto text-center">
+        <div className="shell-form text-center">
           <p className="text-muted-foreground text-sm">© 2026 OneMed - Comunidade Médica</p>
         </div>
       </footer>

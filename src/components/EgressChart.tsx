@@ -103,7 +103,7 @@ export function EgressChart() {
   return (
     <div className="space-y-5">
       {/* 3 categorias, espelhando o dashboard da Supabase, + Cloudflare Workers */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 3xl:max-w-[1400px]">
         <div className="rounded-lg border border-border bg-secondary/40 p-4">
           <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Auth Egress</p>
           <p className="text-sm text-muted-foreground">Não disponível via API — consulte o dashboard da Supabase (historicamente irrelevante: ~2MB/dia)</p>

@@ -63,6 +63,12 @@ export default function MemberLoginPage() {
         const msg = data?.error || await extractFunctionErrorMessage(error, 'Erro ao entrar');
         throw new Error(msg);
       }
+      // Sem esta checagem, um retorno sem tokens (data nulo, ou 200 sem
+      // access_token) caía num TypeError cru dentro do setSession, que
+      // aparecia como a mensagem genérica do catch em vez de algo claro.
+      if (!data?.access_token || !data?.refresh_token) {
+        throw new Error('Não foi possível concluir o login. Tente novamente.');
+      }
       const { error: sessionErr } = await supabase.auth.setSession({
         access_token: data.access_token,
         refresh_token: data.refresh_token,
@@ -76,7 +82,17 @@ export default function MemberLoginPage() {
       // the session setSession() already persisted to localStorage — no race.
       window.location.href = '/membros';
     } catch (err: any) {
-      toast.error(err.message || 'Não encontramos acesso ativo para este email');
+      // "Failed to send a request to the Edge Function" = o navegador nem
+      // conseguiu falar com o servidor (rede/VPN/bloqueador, ou o app aberto
+      // por um domínio fora do oficial). Mensagem em português com o que
+      // fazer, em vez do erro cru em inglês.
+      const cru = String(err?.message || '');
+      const falhaDeRede = /Failed to send a request|Failed to fetch|NetworkError|Load failed/i.test(cru);
+      toast.error(
+        falhaDeRede
+          ? 'Não foi possível conectar ao servidor. Verifique sua internet, desative VPN ou bloqueador de anúncios e tente de novo — e confira se está acessando por onemedcursos.com.br.'
+          : cru || 'Não encontramos acesso ativo para este email',
+      );
       setLoading(false);
     }
   };

@@ -61,7 +61,7 @@ export const CoursesSection = () => {
 
   return (
     <section className="py-24 bg-background">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="shell-page px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-14">
           <h2 className="font-secondary text-3xl md:text-4xl font-bold text-foreground mb-3">
             +530 cursos médicos, {categories.length} categorias
@@ -82,7 +82,7 @@ export const CoursesSection = () => {
         </div>
 
         {searching ? (
-          <div className="max-w-4xl mx-auto">
+          <div className="max-w-4xl 3xl:max-w-5xl mx-auto">
             <p className="text-sm text-muted-foreground mb-4">
               {searchResults.length} curso{searchResults.length !== 1 ? 's' : ''} encontrado{searchResults.length !== 1 ? 's' : ''} para "{query}"
             </p>
@@ -104,7 +104,7 @@ export const CoursesSection = () => {
           </div>
         ) : (
         <>
-        <div className="space-y-3 max-w-4xl mx-auto">
+        <div className="space-y-3 max-w-4xl 3xl:max-w-5xl mx-auto">
           {displayed.map(category => {
             const Icon = CATEGORY_ICON[category] || LayoutGrid;
             const items = byCategory.get(category) || [];

@@ -277,25 +277,44 @@ async function processAffiliateSale(
   paymentId: string,
 ): Promise<void> {
   try {
-    // Atribuição: primeiro pelo cupom efetivamente usado na compra; sem cupom
-    // (ou cupom que não é de afiliado), pela referência do link ?ref= guardada
-    // no navegador do indicado — cobre quem fez o teste e comprou dias depois,
-    // até sem digitar cupom nenhum.
-    let affiliate: { id: string; name: string; email: string } | null = null
-    for (const code of [buyer?.coupon_code, buyer?.affiliate_ref]) {
-      if (!code) continue
+    // Atribuição, em ordem de prioridade:
+    //   1. cupom efetivamente usado na compra (match em coupon_code);
+    //   2. ref do link ?ref= — o ref_code IMUTÁVEL primeiro (link que não
+    //      quebra quando o afiliado troca o cupom), depois o coupon_code
+    //      como legado (links antigos que carregavam o cupom no ?ref=).
+    // Cobre quem fez o teste e comprou dias depois, até sem digitar cupom.
+    const lookup = async (col: 'coupon_code' | 'ref_code', code: string) => {
       const { data } = await supabase.from('affiliates')
-        .select('id, name, email')
-        .eq('coupon_code', code)
-        .maybeSingle()
-      if (data) { affiliate = data as any; break }
+        .select('id, name, email').eq(col, code).maybeSingle()
+      return (data as { id: string; name: string; email: string } | null) || null
+    }
+    let affiliate: { id: string; name: string; email: string } | null = null
+    if (buyer?.coupon_code) affiliate = await lookup('coupon_code', buyer.coupon_code)
+    if (!affiliate && buyer?.affiliate_ref) {
+      affiliate = await lookup('ref_code', buyer.affiliate_ref)
+        || await lookup('coupon_code', buyer.affiliate_ref)
     }
     if (!affiliate) return
 
+    // Auto-indicação: afiliado comprando com o PRÓPRIO cupom/ref. Sem esta
+    // trava ele ganhava 15-30% de volta em toda compra própria e destravava
+    // o Vitalício Pro grátis com 5 compras suas (ou de laranjas). Comissão só
+    // vale pra venda a OUTRA pessoa.
+    if (affiliate.email && buyer.email &&
+        affiliate.email.trim().toLowerCase() === buyer.email.trim().toLowerCase()) {
+      console.log('Auto-indicação ignorada (comprador = afiliado):', buyer.email)
+      return
+    }
+
     const percent = AFFILIATE_COMMISSION_PERCENT[buyer.plan]
     if (!percent) return
+    // Base da comissão = valor do PLANO (plan_amount), NÃO o total pago
+    // (transaction_amount inclui upsells). Decisão do dono: comissão não
+    // incide sobre complementos. Fallback pro valor pago em linhas antigas
+    // sem plan_amount preenchido.
     const amount = Number(transactionAmount ?? buyer.amount ?? 0)
-    const commission = Math.round(amount * percent) / 100
+    const commissionBase = buyer.plan_amount != null ? Number(buyer.plan_amount) : amount
+    const commission = Math.round(commissionBase * percent) / 100
 
     const { data: inserted, error: insErr } = await supabase.from('affiliate_sales')
       .upsert({
@@ -303,7 +322,7 @@ async function processAffiliateSale(
         buyer_email: buyer.email,
         buyer_name: buyer.name || null,
         plan: buyer.plan,
-        amount,
+        amount: commissionBase,
         commission_percent: percent,
         commission_amount: commission,
         payment_id: paymentId,
@@ -316,9 +335,12 @@ async function processAffiliateSale(
       return
     }
 
+    // Conta pro benefício das 5 vendas EXCLUINDO reembolsadas — uma venda
+    // estornada não pode contar pro Vitalício Pro grátis.
     const { count } = await supabase.from('affiliate_sales')
       .select('id', { count: 'exact', head: true })
       .eq('affiliate_id', affiliate.id)
+      .neq('status', 'reversed')
     const totalSales = count ?? 1
 
     // Benefício das 5 vendas: conta Vitalício Pro pro e-mail do afiliado,
@@ -500,8 +522,11 @@ serve(async (req) => {
     console.log('MP payment status:', payment.status, 'external_ref:', payment.external_reference)
 
     if (!mpRes.ok) {
+      // 500 de propósito: responder 'ok' marcava a notificação como entregue
+      // e o MP nunca reenviava — uma falha passageira da API do MP virava
+      // pagamento aprovado sem acesso, pra sempre.
       console.error('Failed to fetch payment from MP:', JSON.stringify(payment))
-      return new Response('ok', { headers: getCorsHeaders(req) })
+      return new Response('retry', { status: 500, headers: getCorsHeaders(req) })
     }
 
     const externalRef = payment.external_reference
@@ -519,7 +544,11 @@ serve(async (req) => {
       .eq('external_reference', externalRef)
 
     if (fetchErr) {
+      // Erro de consulta ≠ comprador inexistente: seguir adiante com buyer
+      // nulo caía no caminho de "sem comprador" e devolvia 200 — o MP não
+      // reenviava e o acesso nunca era concedido. 500 força o retry.
       console.error('Error fetching buyer:', fetchErr.message)
+      return new Response('retry', { status: 500, headers: getCorsHeaders(req) })
     }
 
     const buyer = buyerRows?.[0] || null
@@ -571,6 +600,28 @@ serve(async (req) => {
       console.log('Buyer updated:', buyer.id, 'status:', status)
     }
 
+    // Reembolso / estorno: reverte a comissão de afiliado ainda não paga —
+    // uma venda que a OneMed devolveu não pode gerar comissão a pagar nem
+    // contar pro Vitalício Pro grátis. Só mexe em linhas 'pending' (se já foi
+    // paga via PIX, marcar aqui não desfaz o pagamento — fica pro admin
+    // acertar; o log registra o caso).
+    if (['refunded', 'charged_back', 'cancelled'].includes(status)) {
+      const { data: reversed, error: revErr } = await supabase.from('affiliate_sales')
+        .update({ status: 'reversed' })
+        .eq('external_reference', externalRef)
+        .eq('status', 'pending')
+        .select('id, commission_amount')
+      if (revErr) console.error('Erro ao reverter comissão:', revErr.message)
+      else if (reversed && reversed.length > 0) {
+        console.log('Comissão de afiliado revertida:', externalRef, status)
+      } else {
+        // Nenhuma linha pending — ou não havia comissão, ou já foi paga.
+        const { data: paid } = await supabase.from('affiliate_sales')
+          .select('id').eq('external_reference', externalRef).eq('status', 'paid').maybeSingle()
+        if (paid) console.warn('ATENÇÃO: venda estornada mas comissão já PAGA ao afiliado:', externalRef)
+      }
+    }
+
     // If approved, grant access and send email
     if (status === 'approved') {
       // Atomically mark access_granted = true ONLY if it was false
@@ -618,11 +669,17 @@ serve(async (req) => {
         const { error: updateErr } = await supabase.from('accesses').update({
           access_type: accessType, status: 'active', expires_at: expiresAt, whatsapp: buyer.whatsapp,
         }).eq('id', existingAccess.id)
-        if (updateErr) console.error('Error renewing access:', updateErr.message)
-        else {
-          console.log('Access renewed for:', buyer.email)
-          if (BACKUP_FOLDER_PLANS.has(accessType)) await shareBackupFolder(supabase, buyer.email)
+        if (updateErr) {
+          // A flag de idempotência já foi tomada lá em cima; se a concessão
+          // falhou, ela PRECISA voltar pra false — senão todo retry do MP
+          // bate no "already granted" e o cliente pago fica sem acesso pra
+          // sempre. Devolve 500 pra o MP tentar de novo.
+          console.error('Error renewing access:', updateErr.message)
+          await supabase.from('buyers').update({ access_granted: false }).eq('id', buyer.id)
+          return new Response('retry', { status: 500, headers: getCorsHeaders(req) })
         }
+        console.log('Access renewed for:', buyer.email)
+        if (BACKUP_FOLDER_PLANS.has(accessType)) await shareBackupFolder(supabase, buyer.email)
       } else {
         const { error: accessErr } = await supabase.from('accesses').insert({
           email: buyer.email,
@@ -633,11 +690,13 @@ serve(async (req) => {
         })
 
         if (accessErr) {
+          // Mesmo caso do update acima: libera a flag e força o retry do MP.
           console.error('Error inserting access:', accessErr.message)
-        } else {
-          console.log('Access granted for:', buyer.email)
-          if (BACKUP_FOLDER_PLANS.has(accessType)) await shareBackupFolder(supabase, buyer.email)
+          await supabase.from('buyers').update({ access_granted: false }).eq('id', buyer.id)
+          return new Response('retry', { status: 500, headers: getCorsHeaders(req) })
         }
+        console.log('Access granted for:', buyer.email)
+        if (BACKUP_FOLDER_PLANS.has(accessType)) await shareBackupFolder(supabase, buyer.email)
       }
 
       // Send Meta CAPI Purchase event (server-side — independente de cookies do browser)

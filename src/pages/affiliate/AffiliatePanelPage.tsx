@@ -19,6 +19,7 @@ interface Affiliate {
   name: string;
   email: string;
   coupon_code: string | null;
+  ref_code: string | null;
   pix_key: string | null;
   pix_name: string | null;
   pix_bank: string | null;
@@ -35,7 +36,8 @@ interface Sale {
   created_at: string;
 }
 
-const brl = (v: number) => `R$ ${Number(v).toFixed(2).replace('.', ',')}`;
+// Padrão da moeda real: milhar com ponto e centavos com vírgula (R$ 4.469,00).
+const brl = (v: number) => Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
 export default function AffiliatePanelPage() {
   const navigate = useNavigate();
@@ -95,9 +97,11 @@ export default function AffiliatePanelPage() {
   // O link leva pra LANDING, não pro checkout: o indicado conhece o produto,
   // pode fazer o teste grátis e comprar depois — a referência fica guardada
   // por 30 dias no navegador dele e a venda continua sendo do afiliado.
-  const shareLink = affiliate?.coupon_code
-    ? `${SITE_URL}/?ref=${affiliate.coupon_code}`
-    : null;
+  // Link de indicação usa o ref_code IMUTÁVEL, não o cupom: trocar o cupom
+  // não quebra mais a atribuição de quem já clicou no link. Fallback pro
+  // cupom em contas antigas cujo ref_code ainda não foi preenchido.
+  const shareToken = affiliate?.ref_code || affiliate?.coupon_code || null;
+  const shareLink = shareToken ? `${SITE_URL}/?ref=${shareToken}` : null;
 
   const copy = (text: string, what: string) => {
     navigator.clipboard.writeText(text)
@@ -172,7 +176,7 @@ export default function AffiliatePanelPage() {
 
       {/* topo */}
       <header className="border-b border-border bg-background-paper">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4 flex items-center gap-3">
+        <div className="shell-form px-4 sm:px-6 py-4 flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/25 flex items-center justify-center shrink-0">
             <Handshake className="w-5 h-5 text-primary" />
           </div>
@@ -192,7 +196,7 @@ export default function AffiliatePanelPage() {
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-8 space-y-6">
+      <main className="shell-form px-4 sm:px-6 py-8 space-y-6">
         {/* badges de vendas */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {[

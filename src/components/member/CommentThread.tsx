@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Send, ChevronDown, BadgeCheck, Pencil } from 'lucide-react';
@@ -199,16 +200,23 @@ export function CommentThread({ rootId, replyCount }: { rootId: string; replyCou
 
   const submitReply = async (parentId: string, body: string, onSuccess: () => void) => {
     if (!body.trim() || !user) return;
+    if (posting) return; // guarda o ESTADO, não só o disabled do botão: as
+                         // respostas enviam no Enter, e Enter repetido/duplo
+                         // clique disparava dois inserts antes do re-render.
     setPosting(true);
     const { error } = await supabase.from('course_comments').insert({
       parent_id: parentId, user_id: user.id, body: body.trim(),
     });
     setPosting(false);
     if (!error) { onSuccess(); loadReplies(); }
+    else toast.error('Não foi possível enviar sua resposta. Tente novamente.');
   };
 
+  // ensureName também na resposta ANINHADA: sem isto, quem nunca definiu nome
+  // conseguia responder um nó específico (aparecia como "Aluno", author_name
+  // null) — o gate só existia na resposta ao comentário raiz.
   const submitNodeReply = (parentId: string) =>
-    submitReply(parentId, replyBody, () => { setReplyBody(''); setReplyingTo(null); });
+    ensureName(() => submitReply(parentId, replyBody, () => { setReplyBody(''); setReplyingTo(null); }));
 
   const startEdit = (node: ReplyNode) => { setEditingId(node.id); setEditBody(node.body); };
   const cancelEdit = () => setEditingId(null);
@@ -221,7 +229,7 @@ export function CommentThread({ rootId, replyCount }: { rootId: string; replyCou
     if (!error) {
       setReplies(prev => (prev || []).map(r => r.id === editingId ? { ...r, body: editBody.trim() } : r));
       setEditingId(null);
-    }
+    } else toast.error('Não foi possível salvar a edição. Tente novamente.');
   };
 
   const childrenByParent = useMemo(() => {

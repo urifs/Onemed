@@ -77,6 +77,8 @@ export function StorageAccountsCard() {
   // nos dois casos. O client_id é o único identificador confiável.
   const [clientId, setClientId] = useState<string | null>(null);
 
+  const [loadError, setLoadError] = useState(false);
+
   const load = async () => {
     setLoading(true);
     try {
@@ -87,7 +89,12 @@ export function StorageAccountsCard() {
         throw new Error(data?.error || await extractFunctionErrorMessage(error, 'Falha ao carregar contas'));
       }
       setAccounts(data.accounts || []);
+      setLoadError(false);
     } catch (err) {
+      // Sem o estado de erro, uma falha de rede caía no vazio "Nenhuma conta
+      // conectada" — e o admin podia concluir que perdeu as contas e
+      // reconectar duplicado.
+      setLoadError(true);
       toast.error((err as Error).message);
     } finally {
       setLoading(false);
@@ -183,6 +190,11 @@ export function StorageAccountsCard() {
         {loading && accounts.length === 0 ? (
           <div className="flex items-center gap-2 text-muted-foreground text-sm">
             <Loader2 className="w-4 h-4 animate-spin" /> Carregando contas...
+          </div>
+        ) : loadError && accounts.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-border p-6 text-center">
+            <p className="text-sm text-muted-foreground mb-4">Não foi possível carregar as contas de armazenamento.</p>
+            <Button onClick={load} variant="outline" className="gap-2">Tentar novamente</Button>
           </div>
         ) : accounts.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border p-6 text-center">

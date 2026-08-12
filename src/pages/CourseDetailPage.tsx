@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams, Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
@@ -26,6 +26,7 @@ import { useDownloadGate } from '@/hooks/useDownloadGate';
 import { useMemberStatus } from '@/hooks/useMemberStatus';
 import { setOpenLesson } from '@/lib/assistantContext';
 import { AiUpsellModal } from '@/components/member/AiUpsellModal';
+import { SaveToPlaylistButton } from '@/components/member/SaveToPlaylistButton';
 import { CourseTree } from '@/components/member/CourseTree';
 import type { Database } from '@/integrations/supabase/types';
 
@@ -280,27 +281,37 @@ export default function CourseDetailPage() {
     return () => { alive = false; };
   }, [slug, user?.id, retryTick]);
 
+  // O ?lesson= só pode abrir o player UMA vez: sem esta trava, qualquer
+  // refetch que recriasse o array de aulas reabria uma aula que o aluno
+  // já tinha fechado.
+  const autoOpenConsumed = useRef(false);
   useEffect(() => {
-    if (autoOpenId && lessons.length > 0 && !activeLesson) {
+    if (autoOpenId && lessons.length > 0 && !activeLesson && !autoOpenConsumed.current) {
       const found = lessons.find(l => l.id === autoOpenId);
       if (found) {
+        autoOpenConsumed.current = true;
         setActiveLesson(found);
         setTab(found.type === 'video' ? 'aulas' : 'arquivos');
       }
     }
   }, [autoOpenId, lessons]);
 
+  // A busca filtra ATÉ 31 mil aulas em memória — com o valor cru, cada tecla
+  // digitada paga o filtro inteiro de forma síncrona e trava a digitação nos
+  // cursos grandes. O valor deferido deixa o input responder na hora e roda o
+  // filtro quando a thread desocupa.
+  const deferredQuery = useDeferredValue(query);
   const videoLessons = useMemo(() => lessons.filter(l => l.type === 'video'), [lessons]);
   const fileLessons = useMemo(() => lessons.filter(l => l.type !== 'video'), [lessons]);
   const filteredVideoLessons = useMemo(() => {
     if (contentTypeFilter === 'files') return [];
-    return filterLessons(videoLessons, query);
-  }, [videoLessons, query, contentTypeFilter]);
+    return filterLessons(videoLessons, deferredQuery);
+  }, [videoLessons, deferredQuery, contentTypeFilter]);
 
   const filteredFileLessons = useMemo(() => {
     if (contentTypeFilter === 'videos') return [];
-    return sortImagesLast(filterLessons(fileLessons, query));
-  }, [fileLessons, query, contentTypeFilter]);
+    return sortImagesLast(filterLessons(fileLessons, deferredQuery));
+  }, [fileLessons, deferredQuery, contentTypeFilter]);
   const videoGroups = useMemo(() => groupLessonsByModule(filteredVideoLessons, modules), [filteredVideoLessons, modules]);
   const fileGroups = useMemo(() => groupLessonsByModule(filteredFileLessons, modules), [filteredFileLessons, modules]);
   const orderedVideoLessons = useMemo(() => videoGroups.flatMap(g => g.lessons), [videoGroups]);
@@ -312,6 +323,44 @@ export default function CourseDetailPage() {
   // módulo (ou o "Conteúdo geral" pra aulas soltas sem módulo).
   // A árvore marca as aulas já concluídas com um check, do mesmo jeito que a
   // lista principal.
+  // Enquanto o player está aberto, o tique de progresso (a cada poucos
+  // segundos de vídeo) NÃO pode virar setState: a lista de aulas continua
+  // montada atrás do overlay e, nos cursos de 30 mil aulas, cada atualização
+  // re-renderizava a página inteira. O progresso fica num ref e só vira estado
+  // quando o player fecha/troca de aula (ou quando "concluída" muda).
+  //
+  // ⚠️ Estas declarações PRECISAM vir antes do useMemo/useEffect abaixo que as
+  // usam: o useMemo executa o callback já na 1ª renderização, e um `const`
+  // referenciado antes da própria linha de declaração estoura TDZ
+  // ("can't access lexical declaration before initialization") — foi o que
+  // derrubou a plataforma em 2026-08-07.
+  const pendingProgress = useRef<Record<string, Progress>>({});
+  const flushPendingProgress = () => {
+    if (Object.keys(pendingProgress.current).length === 0) return;
+    const pend = pendingProgress.current;
+    pendingProgress.current = {};
+    setProgressMap(prev => ({ ...prev, ...pend }));
+  };
+
+  // Congelado no momento em que a aula abre: se acompanhasse o progressMap,
+  // cada gravação de progresso mudaria a prop e o player refaria o efeito de
+  // seek no meio da reprodução. Troca de aula (id novo) recalcula.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const initialWatchedSeconds = useMemo(
+    () => activeLesson
+      ? (pendingProgress.current[activeLesson.id] || progressMap[activeLesson.id])?.watched_seconds
+      : undefined,
+    [activeLesson?.id],
+  );
+
+  // Fechar o player (ou trocar de aula) é a hora de aplicar o progresso
+  // acumulado no ref — é o que atualiza a barrinha e o "continuar de onde
+  // parou" da lista sem pagar re-render durante a reprodução.
+  useEffect(() => {
+    flushPendingProgress();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeLesson?.id]);
+
   const completedLessonIds = useMemo(() => {
     const ids = new Set<string>();
     for (const [lessonId, p] of Object.entries(progressMap)) if (p.completed) ids.add(lessonId);
@@ -331,14 +380,18 @@ export default function CourseDetailPage() {
 
   const handleProgress = async (lessonId: string, watchedSeconds: number, completed: boolean) => {
     if (!user || !course) return;
-    setProgressMap(prev => ({
-      ...prev,
-      [lessonId]: {
-        ...(prev[lessonId] || { id: '', user_id: user.id, course_id: course.id, lesson_id: lessonId, last_watched_at: new Date().toISOString() }),
-        watched_seconds: watchedSeconds,
-        completed,
-      } as Progress,
-    }));
+    const prevRow = pendingProgress.current[lessonId] || progressMap[lessonId];
+    const row = {
+      ...(prevRow || { id: '', user_id: user.id, course_id: course.id, lesson_id: lessonId }),
+      watched_seconds: watchedSeconds,
+      completed,
+      last_watched_at: new Date().toISOString(),
+    } as Progress;
+    if (!!prevRow?.completed !== completed) {
+      setProgressMap(prev => ({ ...prev, [lessonId]: row }));
+    } else {
+      pendingProgress.current[lessonId] = row;
+    }
     await supabase.from('lesson_progress').upsert({
       user_id: user.id, course_id: course.id, lesson_id: lessonId,
       watched_seconds: watchedSeconds, completed, last_watched_at: new Date().toISOString(),
@@ -395,14 +448,18 @@ export default function CourseDetailPage() {
 
   // Baixar direto da lista, sem precisar abrir a aula.
   const handleDownloadLesson = async (lesson: Lesson) => {
-    if (!ensureCanDownload()) return;
+    // O porteiro decide pelo TIPO: aula em vídeo só no Vitalício Pro,
+    // arquivo segue liberado do Vitalício pra cima.
+    if (!ensureCanDownload(lesson)) return;
     if (downloadingId) return;
     setDownloadingId(lesson.id);
     try {
       await downloadLesson(lesson);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Falha ao baixar', lesson.title, err);
-      toast.error(`Não foi possível baixar "${lesson.title}"`);
+      // O servidor também recusa por plano (o porteiro acima é só a interface).
+      // Quando ele explica o motivo, quem manda é a mensagem dele.
+      toast.error(err?.message || `Não foi possível baixar "${lesson.title}"`);
     } finally {
       setDownloadingId(null);
     }
@@ -494,7 +551,10 @@ export default function CourseDetailPage() {
           <CourseCover title={course.title} showTitle={false} />
           <div className="absolute inset-0 bg-gradient-to-t from-red-950/80 via-red-950/20 to-transparent dark:from-black/75 dark:via-black/25" />
         </div>
-        <div className="max-w-[1000px] mx-auto px-4 md:px-8 -mt-16 relative">
+        {/* Mesma casca do conteúdo abaixo e do header acima: o bloco do
+            título vinha com 1000px contra 1280px do conteúdo, então o botão
+            "Todos os cursos" e o título começavam à direita do mapa do curso. */}
+        <div className="shell-wide px-4 md:px-8 -mt-16 relative">
           <div className="flex items-center justify-between gap-4 mb-4">
             <button
               onClick={() => navigate('/membros')}
@@ -513,6 +573,12 @@ export default function CourseDetailPage() {
               <Star className="w-3.5 h-3.5" fill={isFavorite ? 'currentColor' : 'none'} />
               {isFavorite ? 'Favorito' : 'Marcar como favorito'}
             </button>
+            {course && (
+              <SaveToPlaylistButton
+                itemType="course" itemId={course.id} variant="button" label="Salvar na playlist"
+                className="inline-flex items-center gap-2 text-xs font-medium backdrop-blur px-3 py-1.5 rounded-full border border-border bg-background/60 text-foreground/80 hover:bg-background/75 hover:text-foreground transition-colors"
+              />
+            )}
           </div>
           <div className="flex items-center gap-2 mb-2">
             <CategoryIcon className="w-4 h-4 text-primary" />
@@ -529,7 +595,7 @@ export default function CourseDetailPage() {
         </div>
       </section>
 
-      <main className="max-w-[1280px] mx-auto px-4 md:px-8 pb-16">
+      <main className="shell-wide px-4 md:px-8 pb-16">
         <div className="md:flex md:items-start md:gap-8">
           <CourseSummarySidebar
             modules={modules}
@@ -539,7 +605,10 @@ export default function CourseDetailPage() {
             onSelectLesson={handleTreeSelect}
           />
 
-          <div className="flex-1 min-w-0">
+          {/* Teto na coluna de conteúdo: a linha de aula é "título … duração
+              ícones", então sem limite ela vira um vão enorme entre o nome da
+              aula e os controles. O que sobra vai para o mapa do curso. */}
+          <div className="flex-1 min-w-0 4xl:max-w-[1560px]">
             <div className="flex items-center justify-between gap-2 border-b border-border mb-6">
               <div className="flex items-center gap-1">
                 <button
@@ -617,7 +686,7 @@ export default function CourseDetailPage() {
         <LessonPlayer
           lesson={activeLesson}
           courseTitle={stripYearFromTitle(course.title)}
-          initialWatchedSeconds={progressMap[activeLesson.id]?.watched_seconds}
+          initialWatchedSeconds={initialWatchedSeconds}
           onClose={() => setActiveLesson(null)}
           onProgress={handleProgress}
           completed={!!progressMap[activeLesson.id]?.completed}
@@ -704,7 +773,7 @@ function CourseSummarySidebar({
   return (
     <>
       {/* Desktop: coluna fixa à esquerda, acompanha o scroll da página. */}
-      <aside className="hidden md:block w-[280px] shrink-0">
+      <aside className="hidden md:block w-[280px] 3xl:w-[320px] 4xl:w-[380px] shrink-0">
         <div className="sticky top-[84px] max-h-[calc(100vh-104px)] overflow-y-auto pr-1">
           <p className="px-3 pb-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
             Mapa do curso
@@ -766,6 +835,13 @@ function LessonGroupList({
   // Mobile: as ações ficam atrás de uma seta por linha — com todas visíveis,
   // os ícones engoliam o título da aula em telas estreitas.
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  // Os megacursos passam de 30 mil aulas num grupo só ("Conteúdo geral") —
+  // montar tudo de uma vez são centenas de milhares de nós de DOM e a aba
+  // congela por vários segundos. Cada grupo mostra um lote e cresce sob
+  // demanda; todas as aulas continuam alcançáveis pelo botão (e a busca
+  // filtra sobre a lista completa, não só sobre o que está montado).
+  const LOTE = 200;
+  const [visibleCount, setVisibleCount] = useState<Record<string, number>>({});
   return (
     <div className="space-y-8">
       {groups.map(group => (
@@ -776,7 +852,7 @@ function LessonGroupList({
         <div key={group.id} id={group.id} className="scroll-mt-20">
           <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-2.5">{group.title}</h3>
           <div className="rounded-xl border border-border overflow-hidden divide-y divide-border">
-            {group.lessons.map(lesson => {
+            {group.lessons.slice(0, visibleCount[group.id] ?? LOTE).map(lesson => {
               const Icon = TYPE_ICON[lesson.type] || File;
               const p = progressMap[lesson.id];
               const pct = p && lesson.duration_seconds ? Math.min(100, (p.watched_seconds / lesson.duration_seconds) * 100) : 0;
@@ -858,6 +934,7 @@ function LessonGroupList({
                     >
                       <Star className="w-4 h-4" fill={isLessonFavorite ? 'currentColor' : 'none'} />
                     </button>
+                    <SaveToPlaylistButton itemType="lesson" itemId={lesson.id} label={`Salvar "${lesson.title}" em playlist`} />
                   </div>
 
                   {/* Caixa de concluída — única ação sempre visível, em
@@ -912,6 +989,14 @@ function LessonGroupList({
                 </div>
               );
             })}
+            {group.lessons.length > (visibleCount[group.id] ?? LOTE) && (
+              <button
+                onClick={() => setVisibleCount(prev => ({ ...prev, [group.id]: (prev[group.id] ?? LOTE) + 500 }))}
+                className="w-full py-3 text-sm font-medium text-primary hover:bg-secondary transition-colors"
+              >
+                Mostrar mais aulas ({(group.lessons.length - (visibleCount[group.id] ?? LOTE)).toLocaleString('pt-BR')} restantes)
+              </button>
+            )}
           </div>
         </div>
       ))}

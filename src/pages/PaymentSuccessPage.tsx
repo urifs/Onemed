@@ -25,7 +25,15 @@ export default function PaymentSuccessPage() {
       try {
         const info = JSON.parse(pending);
         setPurchaseInfo(info);
-        if (status === 'approved') {
+        // O pending_purchase NÃO é removido aqui de propósito: apagar na
+        // primeira passada fazia um simples F5 nesta página perder o nome do
+        // plano e o prefill de email do botão de login. A trava anti-duplo
+        // disparo é a chave abaixo por payment_id (e a Meta ainda deduplica
+        // pelo event_id de qualquer forma); o checkout sobrescreve o
+        // pending_purchase na próxima compra.
+        const trackedKey = paymentId ? `om_purchase_tracked_${paymentId}` : 'om_purchase_tracked';
+        if (status === 'approved' && !localStorage.getItem(trackedKey)) {
+          localStorage.setItem(trackedKey, '1');
           // O email vai junto pra correspondência avançada: nesta página não
           // existe formulário, então sem isso o Purchase chegava só com IP,
           // user-agent e fbp (EMQ 6.1, contra 8.7 do Lead).
@@ -37,7 +45,6 @@ export default function PaymentSuccessPage() {
             { email: info.email ?? null }
           );
         }
-        localStorage.removeItem('pending_purchase');
       } catch { /* ignore */ }
     }
   }, [status, paymentId]);
@@ -48,7 +55,7 @@ export default function PaymentSuccessPage() {
   return (
     <div className="min-h-screen bg-background">
       <header className="px-6 py-6 border-b border-border/50">
-        <nav className="max-w-6xl mx-auto flex items-center justify-between">
+        <nav className="shell-list flex items-center justify-between">
           <Link to="/" className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-primary/15 flex items-center justify-center">
               <Stethoscope className="w-5 h-5 text-primary" />
@@ -114,7 +121,7 @@ export default function PaymentSuccessPage() {
       </main>
 
       <footer className="px-6 py-8 border-t border-border/30">
-        <div className="max-w-6xl mx-auto text-center">
+        <div className="shell-list text-center">
           <p className="text-muted-foreground text-sm">© 2026 OneMed - Comunidade Médica</p>
         </div>
       </footer>

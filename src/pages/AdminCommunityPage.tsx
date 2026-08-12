@@ -215,7 +215,7 @@ export default function AdminCommunityPage() {
 
         <WhatsAppGroupSettingsCard />
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 3xl:max-w-[1400px]">
           {[
             { label: 'Total', value: comments.length },
             { label: 'Tópicos', value: comments.filter(c => !c.parent_id && !c.course_id).length },

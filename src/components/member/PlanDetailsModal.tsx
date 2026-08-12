@@ -1,7 +1,7 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Check, Mail, Phone, Calendar, DollarSign, Monitor, Crown } from 'lucide-react';
 import { PLAN_LABELS, PLAN_FEATURES, PLAN_DEVICE_LIMITS, DEFAULT_DEVICE_LIMIT } from '@/lib/plans';
-import { formatDateSP } from '@/lib/utils';
+import { formatDateSP, formatBRL } from '@/lib/utils';
 
 interface PlanDetailsModalProps {
   open: boolean;
@@ -50,8 +50,10 @@ export function PlanDetailsModal({ open, onOpenChange, plan, email, whatsapp, am
 
           <div className="rounded-xl border border-border divide-y divide-border overflow-hidden">
             <div className="flex items-center justify-between px-4 py-2.5 text-sm">
-              <span className="text-muted-foreground flex items-center gap-2"><DollarSign className="w-3.5 h-3.5" /> Valor</span>
-              <span className="text-foreground font-medium">R$ {amountPaid.toFixed(2).replace('.', ',')}</span>
+              {/* Valor de TABELA do plano atual — nunca a diferença paga num
+                  upgrade (o servidor já manda o preço cheio em amountPaid). */}
+              <span className="text-muted-foreground flex items-center gap-2"><DollarSign className="w-3.5 h-3.5" /> Valor do plano</span>
+              <span className="text-foreground font-medium">{formatBRL(amountPaid)}</span>
             </div>
             <div className="flex items-center justify-between px-4 py-2.5 text-sm">
               <span className="text-muted-foreground flex items-center gap-2"><Calendar className="w-3.5 h-3.5" /> Vencimento</span>

@@ -56,15 +56,15 @@ async function checkRateLimit(
 
 // ─── Preços canônicos definidos SERVER-SIDE ───────────────────────────────────
 const PLAN_PRICES: Record<string, number> = {
-  monthly:       49.00,
-  annual:        199.00,
-  lifetime:      299.90,
-  lifetime_plus: 599.00,
-  lifetime_pro:  997.00,
+  monthly:       99.00,
+  annual:        299.00,
+  lifetime:      499.00,
+  lifetime_plus: 798.00,
+  lifetime_pro:  1497.00,
 }
 
-const UPSELL_PRICE  = 19.90
-const UPSELL2_PRICE = 9.90
+const UPSELL_PRICE  = 94.00  // Atualizações Semanais + Lançamentos Instantâneos
+const UPSELL2_PRICE = 39.80  // Proteção Proxy + Backups Instantâneos
 
 const PLAN_LABELS: Record<string, string> = {
   monthly:       'OneMed Mensal - 30 Dias de Acesso',
@@ -231,6 +231,12 @@ serve(async (req) => {
         discountPercent = coupon.discount_percent
         appliedCoupon   = coupon.id
         appliedCouponCode = coupon.code
+      } else {
+        // Cupom inexistente/inativo NÃO pode passar em silêncio: a UI mostrou
+        // um total com desconto e o cliente seria cobrado no preço cheio.
+        return new Response(JSON.stringify({ error: 'Cupom inválido ou expirado' }), {
+          status: 400, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
+        })
       }
     }
 
@@ -305,26 +311,51 @@ serve(async (req) => {
       || null
     const clientUserAgent = req.headers.get('user-agent') || null
 
-    await supabase.from('buyers').update({
+    // `plan` entra AQUI de propósito, com o valor já validado pela tabela de
+    // preços: a linha de buyers é inserida pelo NAVEGADOR (RLS permite), então
+    // sem sobrescrever o plano validado um cliente malicioso podia gravar
+    // plan:'lifetime_pro' na linha, pagar o preço do mensal e o webhook — que
+    // concede acesso pelo buyers.plan — liberaria o plano caro.
+    const { data: updatedBuyers, error: buyerUpdateErr } = await supabase.from('buyers').update({
+      plan,
       payment_id: mpData.id,
       amount: totalAmount,
+      // Valor do PLANO após desconto, SEM os upsells: é a base da comissão de
+      // afiliado (decisão do dono — comissão não incide sobre complementos).
+      plan_amount: Math.round(discountedPrice * 100) / 100,
       client_ip: clientIp,
       client_user_agent: clientUserAgent,
       coupon_code: appliedCouponCode,
-    }).eq('external_reference', externalReference)
+    }).eq('external_reference', externalReference).select('id')
 
-    // Incrementar uso do cupom se aplicado
+    // Se nenhuma linha casou, o webhook nunca vai achar esse comprador e o
+    // pagamento aprovado ficaria sem acesso — melhor falhar agora, antes do
+    // cliente pagar, do que depois.
+    if (buyerUpdateErr || !updatedBuyers || updatedBuyers.length === 0) {
+      console.error('Buyer row missing for external_reference', externalReference, buyerUpdateErr?.message)
+      return new Response(JSON.stringify({ error: 'Registro da compra não encontrado. Recarregue a página e tente novamente.' }), {
+        status: 400, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
+      })
+    }
+
+    // Incrementar uso do cupom se aplicado — atômico no banco: o
+    // SELECT-depois-UPDATE antigo perdia incrementos com checkouts
+    // simultâneos e deixava max_uses ser ultrapassado. Se a RPC ainda não
+    // existir (migration pendente), cai no caminho antigo.
     if (appliedCoupon) {
-      const { data: couponRow } = await supabase
-        .from('coupons')
-        .select('times_used')
-        .eq('id', appliedCoupon)
-        .maybeSingle()
+      const { error: incErr } = await supabase.rpc('increment_coupon_use', { _coupon_id: appliedCoupon })
+      if (incErr) {
+        const { data: couponRow } = await supabase
+          .from('coupons')
+          .select('times_used')
+          .eq('id', appliedCoupon)
+          .maybeSingle()
 
-      await supabase
-        .from('coupons')
-        .update({ times_used: (couponRow?.times_used ?? 0) + 1 })
-        .eq('id', appliedCoupon)
+        await supabase
+          .from('coupons')
+          .update({ times_used: (couponRow?.times_used ?? 0) + 1 })
+          .eq('id', appliedCoupon)
+      }
     }
 
     return new Response(JSON.stringify({

@@ -27,3 +27,28 @@ export function subscribeOpenLesson(fn: (l: OpenLessonRef | null) => void): () =
   fn(atual);
   return () => { ouvintes.delete(fn); };
 }
+
+// ── Playlist aberta ─────────────────────────────────────────────────────────
+// Mesma ponte, para o assistente saber em qual playlist o aluno está.
+export interface OpenPlaylistRef {
+  id: string;
+  name: string;
+}
+
+let playlistAtual: OpenPlaylistRef | null = null;
+const ouvintesPlaylist = new Set<(p: OpenPlaylistRef | null) => void>();
+
+export function setOpenPlaylist(p: OpenPlaylistRef | null) {
+  playlistAtual = p;
+  for (const fn of ouvintesPlaylist) fn(playlistAtual);
+}
+
+export function getOpenPlaylist(): OpenPlaylistRef | null {
+  return playlistAtual;
+}
+
+export function subscribeOpenPlaylist(fn: (p: OpenPlaylistRef | null) => void): () => void {
+  ouvintesPlaylist.add(fn);
+  fn(playlistAtual);
+  return () => { ouvintesPlaylist.delete(fn); };
+}

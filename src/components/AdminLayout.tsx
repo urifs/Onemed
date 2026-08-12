@@ -25,6 +25,7 @@ import {
   Handshake,
   CalendarClock,
   FolderUp,
+  UserCog,
 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -51,12 +52,15 @@ const navItems = [
   { path: '/admin/sms', label: 'SMS', icon: Smartphone },
   { path: '/admin/whatsapp', label: 'WhatsApp Business', icon: MessageCircle },
   { path: '/admin/database', label: 'Database', icon: Database },
+  // Gestão das contas do painel — só admin de verdade vê (o item some pro
+  // visualizador; a RPC e a Edge Function também recusam por trás).
+  { path: '/admin/contas', label: 'Contas do Painel', icon: UserCog, adminOnly: true },
 ];
 
 export const AdminLayout = ({ children }: { children: React.ReactNode }) => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user, logout, isViewer } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const handleLogout = async () => {
@@ -73,6 +77,13 @@ export const AdminLayout = ({ children }: { children: React.ReactNode }) => {
   return (
     <div className="flex min-h-screen bg-background">
       <AdminPWAHead />
+      {/* Conta visualizadora: aviso fixo — só Loja e Área de Membros editam;
+          o resto é leitura (imposto no banco, não só na interface). */}
+      {isViewer && (
+        <div className="fixed bottom-0 left-0 right-0 z-[60] bg-accent-warning/95 text-black text-center text-xs font-semibold py-1.5 px-4">
+          Modo visualização — você pode editar apenas Loja e Área de Membros. O restante é somente leitura.
+        </div>
+      )}
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div
@@ -104,7 +115,7 @@ export const AdminLayout = ({ children }: { children: React.ReactNode }) => {
 
         {/* Navigation */}
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-          {navItems.map(item => (
+          {navItems.filter(item => !(item as { adminOnly?: boolean }).adminOnly || !isViewer).map(item => (
             <Link
               key={item.path}
               to={item.path}
@@ -169,8 +180,15 @@ export const AdminLayout = ({ children }: { children: React.ReactNode }) => {
         </header>
 
         {/* Page content */}
-        <main className="flex-1 p-6 overflow-auto">
-          {children}
+        {/* O painel tinha o problema OPOSTO ao da área de membros: era 100%
+            fluido, então num monitor de 3440px as fileiras de 4 cards de
+            métrica esticavam para ~740px cada, com o número num canto e o
+            resto vazio. A casca põe um teto generoso (as tabelas de dados
+            continuam ganhando espaço até 2240px) sem deixar esticar sem fim. */}
+        <main className="flex-1 overflow-auto">
+          <div className="shell-wide p-6">
+            {children}
+          </div>
         </main>
       </div>
     </div>

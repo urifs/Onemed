@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Send, MessageCircle, AlertTriangle, RefreshCw, BookOpen, Play, BadgeCheck, Tag, ListFilter, ArrowUpDown, MessagesSquare, ExternalLink, Pin, Pencil } from 'lucide-react';
@@ -256,7 +257,10 @@ export default function CommunityPage() {
       setLoadError(false);
     } catch (err) {
       console.error('Failed to load community feed', err);
-      setLoadError(true);
+      // Falha na PÁGINA 2 não pode trocar os tópicos já carregados por uma
+      // tela de erro inteira — avisa e deixa tentar o "Carregar mais" de novo.
+      if (offset === 0) setLoadError(true);
+      else toast.error('Não foi possível carregar mais tópicos. Tente novamente.');
     } finally {
       setLoading(false);
       setLoadingMore(false);
@@ -267,9 +271,11 @@ export default function CommunityPage() {
     // Trial não carrega nada: o servidor recusa os feeds, então buscar só
     // renderia um erro por trás do bloqueio.
     if (trialLoading || isTrial) return;
+    let alive = true;
     load(0);
     supabase.from('courses').select('id, title, category').eq('active', true).order('title')
-      .then(({ data }) => setCourses((data || []) as CourseOption[]));
+      .then(({ data }) => { if (alive) setCourses((data || []) as CourseOption[]); });
+    return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trialLoading, isTrial]);
 
@@ -333,7 +339,7 @@ export default function CommunityPage() {
     return (
       <div className="min-h-screen bg-background">
         <MemberHeader />
-        <div className="max-w-2xl mx-auto px-4 md:px-0 py-8 space-y-6">
+        <div className="shell-read px-4 md:px-0 py-8 space-y-6">
           <div>
             <h1 className="font-secondary text-2xl font-bold text-foreground flex items-center gap-2">
               <MessageCircle className="w-6 h-6 text-primary" /> Comunidade
@@ -351,7 +357,7 @@ export default function CommunityPage() {
   return (
     <div className="min-h-screen bg-background">
       <MemberHeader />
-      <div className="max-w-2xl mx-auto px-4 md:px-0 py-8 space-y-6">
+      <div className="shell-read px-4 md:px-0 py-8 space-y-6">
         <div>
           <h1 className="font-secondary text-2xl font-bold text-foreground flex items-center gap-2">
             <MessageCircle className="w-6 h-6 text-primary" /> Comunidade

@@ -141,6 +141,7 @@ export default function AnnouncementsPage() {
   };
 
   const removeItem = async (item: NotificationItem) => {
+    if (!confirm(`Excluir a notificação "${item.label}"?`)) return;
     const { error } = await supabase.from('notification_items' as never).delete().eq('id', item.id);
     if (error) { toast.error('Erro ao excluir: ' + error.message); return; }
     setItems(prev => prev.filter(i => i.id !== item.id));

@@ -37,6 +37,19 @@ serve(async (req) => {
   )
 
   try {
+    // O cabeçalho da função sempre disse "Requer autenticação admin", mas a
+    // checagem não existia: qualquer conta logada (trial de 30 min incluso)
+    // lia a evolution_api_key e as últimas mensagens de clientes com um
+    // get-config. Agora exige role admin de verdade.
+    const jwt = (req.headers.get('Authorization') || '').replace('Bearer ', '')
+    const { data: { user } } = await supabase.auth.getUser(jwt)
+    const { data: roleData } = user
+      ? await supabase.from('user_roles').select('role').eq('user_id', user.id).eq('role', 'admin').maybeSingle()
+      : { data: null }
+    if (!roleData) {
+      return json(req, { error: 'Apenas administradores' }, 403)
+    }
+
     const body = await req.json().catch(() => ({}))
     const { mode } = body
 

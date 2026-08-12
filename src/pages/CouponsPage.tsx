@@ -90,14 +90,39 @@ export default function CouponsPage() {
     finally { setSubmitting(false); }
   };
 
+  // Cupom de AFILIADO nunca pode ser apagado por aqui: o link de divulgação
+  // (?ref=CUPOM) e a atribuição de comissão dependem dele — apagar quebra o
+  // checkout de todo indicado ("Cupom inválido ou expirado"). Foi exatamente
+  // o que derrubou 18 cupons de afiliados em 04/08. Pra tirar de circulação,
+  // desative — o afiliado troca o código pelo painel dele.
   const deleteCoupon = async (id: string) => {
-    await supabase.from('coupons').delete().eq('id', id);
+    const alvo = coupons.find(c => c.id === id);
+    if (alvo) {
+      const { data: dono, error: donoErr } = await supabase.from('affiliates' as never)
+        .select('email').eq('coupon_code', alvo.code).maybeSingle() as any;
+      // FAIL-CLOSED: se a checagem de afiliado FALHAR (rede/RLS), não dá pra
+      // afirmar que o cupom é seguro pra apagar — bloqueia. Sem isto, um erro
+      // transitório pulava a guarda e deixava apagar o cupom de um afiliado
+      // (foi o que derrubou 18 cupons em 04/08).
+      if (donoErr) {
+        toast.error('Não foi possível verificar se este cupom é de afiliado. Tente de novo antes de excluir.');
+        return;
+      }
+      if (dono) {
+        toast.error(`Este é o cupom do afiliado ${dono.email} — apagar quebraria o link de divulgação dele. Desative em vez de excluir.`);
+        return;
+      }
+    }
+    if (!confirm('Excluir este cupom de vez? Quem tentar usá-lo verá "cupom inválido". Para só tirar de circulação, prefira desativar.')) return;
+    const { error } = await supabase.from('coupons').delete().eq('id', id);
+    if (error) { toast.error('Erro ao excluir: ' + error.message); return; }
     toast.success('Cupom deletado');
     fetchCoupons();
   };
 
   const toggleActive = async (id: string, active: boolean) => {
-    await supabase.from('coupons').update({ active: !active }).eq('id', id);
+    const { error } = await supabase.from('coupons').update({ active: !active }).eq('id', id);
+    if (error) { toast.error('Erro ao atualizar: ' + error.message); return; }
     fetchCoupons();
   };
 
@@ -188,11 +213,11 @@ export default function CouponsPage() {
                   </SelectTrigger>
                   <SelectContent className="bg-background-paper border-border">
                     <SelectItem value="all">Todos os planos</SelectItem>
-                    <SelectItem value="monthly">Só Plano Mensal (R$ 49)</SelectItem>
-                    <SelectItem value="annual">Só Plano Anual (R$ 199)</SelectItem>
-                    <SelectItem value="lifetime">Só Plano Vitalício (R$ 299,90)</SelectItem>
-                    <SelectItem value="lifetime_plus">Só Plano Vitalício Plus (R$ 599)</SelectItem>
-                    <SelectItem value="lifetime_pro">Só Plano Vitalício Pro (R$ 997)</SelectItem>
+                    <SelectItem value="monthly">Só Plano Mensal (R$ 99)</SelectItem>
+                    <SelectItem value="annual">Só Plano Anual (R$ 299)</SelectItem>
+                    <SelectItem value="lifetime">Só Plano Vitalício (R$ 499)</SelectItem>
+                    <SelectItem value="lifetime_plus">Só Plano Vitalício Plus (R$ 798)</SelectItem>
+                    <SelectItem value="lifetime_pro">Só Plano Vitalício Pro (R$ 1.497)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

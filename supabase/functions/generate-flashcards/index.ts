@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { PDFDocument, PDFDict, PDFName, PDFRawStream } from 'https://esm.sh/pdf-lib@1.17.1'
 
 // Gera flashcards (estilo Anki) a partir de aulas e arquivos do acervo, com
 // Gemini 2.5 Flash pela chave universal da Emergent (endpoint compatível com
@@ -102,6 +103,69 @@ function mp4TemMoov(bytes: Uint8Array): boolean {
 
 const MP4_FAMILY = /^(video\/(mp4|quicktime)|audio\/(mp4|x-m4a))/i
 
+// ── imagens embutidas no PDF ──────────────────────────────────────────────
+// Questão de prova que depende de figura (ECG, radiografia, foto clínica)
+// virava texto com um marcador "IMG" — o modelo enxerga a imagem no PDF mas
+// não tem como devolvê-la em JSON. A saída: extrair as imagens JPEG do
+// próprio PDF (stream DCTDecode é um .jpg pronto, sem reencodar), mapeadas
+// por página; o modelo marca em qual PÁGINA está a imagem da questão e o
+// servidor anexa a imagem de verdade ao card.
+//
+// Limites deliberados: só JPEG puro (FlateDecode+DCT ou PNG-like exigiriam
+// decodificação, caro no edge); ignora imagens minúsculas (ícones/bullets)
+// e as repetidas em 3+ páginas (logo/marca d'água de editora).
+const IMG_MIN_BYTES = 10 * 1024
+const IMG_MAX_BYTES = 500 * 1024
+const IMG_TOTAL_BUDGET = 2_500 * 1024
+const IMG_MAX_COUNT = 24
+
+async function extrairImagensPdf(bytes: Uint8Array): Promise<Map<number, Uint8Array[]>> {
+  const porPagina = new Map<number, Uint8Array[]>()
+  try {
+    const doc = await PDFDocument.load(bytes, { ignoreEncryption: true, throwOnInvalidObject: false })
+    // 1ª passada: em quais páginas cada objeto de imagem aparece (pra pular
+    // logos repetidos) e o JPEG de cada um.
+    const usoPorTag = new Map<string, { jpeg: Uint8Array; paginas: number[] }>()
+    doc.getPages().forEach((page, pi) => {
+      let xo: unknown
+      try {
+        const res = page.node.Resources()
+        xo = res instanceof PDFDict ? res.lookup(PDFName.of('XObject')) : undefined
+      } catch { return }
+      if (!(xo instanceof PDFDict)) return
+      for (const [, ref] of xo.entries()) {
+        try {
+          const tag = String(ref)
+          const ja = usoPorTag.get(tag)
+          if (ja) { ja.paginas.push(pi + 1); continue }
+          const obj = doc.context.lookup(ref)
+          if (!(obj instanceof PDFRawStream)) continue
+          const d = obj.dict
+          if (String(d.lookup(PDFName.of('Subtype')) || '') !== '/Image') continue
+          const filtro = String(d.lookup(PDFName.of('Filter')) || '')
+          // Só DCTDecode puro: o conteúdo bruto do stream JÁ É o JPEG.
+          if (!/DCTDecode/.test(filtro) || /Flate/.test(filtro)) continue
+          const jpeg = obj.contents
+          if (jpeg.length < IMG_MIN_BYTES || jpeg.length > IMG_MAX_BYTES) continue
+          usoPorTag.set(tag, { jpeg, paginas: [pi + 1] })
+        } catch { /* objeto quebrado: ignora */ }
+      }
+    })
+    // 2ª passada: descarta o que aparece em 3+ páginas e monta o mapa final.
+    let total = 0, count = 0
+    for (const { jpeg, paginas } of usoPorTag.values()) {
+      if (paginas.length >= 3) continue
+      if (count >= IMG_MAX_COUNT || total + jpeg.length > IMG_TOTAL_BUDGET) break
+      total += jpeg.length; count++
+      for (const p of paginas) {
+        if (!porPagina.has(p)) porPagina.set(p, [])
+        porPagina.get(p)!.push(jpeg)
+      }
+    }
+  } catch { /* PDF que o pdf-lib não abre: segue sem imagens */ }
+  return porPagina
+}
+
 function b64(bytes: Uint8Array): string {
   let out = ''
   const CHUNK = 0x8000
@@ -112,6 +176,9 @@ function b64(bytes: Uint8Array): string {
 }
 
 serve(async (req) => {
+  // Relógio da requisição: usado para decidir se ainda cabe uma segunda
+  // chamada ao modelo sem estourar o limite de execução da function.
+  const inicioReq = Date.now()
   if (req.method === 'OPTIONS') return new Response('ok', { headers: getCorsHeaders(req) })
 
   try {
@@ -125,26 +192,29 @@ serve(async (req) => {
     const { data: { user }, error: authErr } = await supabase.auth.getUser(jwt)
     if (authErr || !user) return json(req, { error: 'Sessão inválida' }, 401)
 
-    // Plano Mensal não usa as ferramentas de IA — o mesmo my_member_status
-    // das telas decide (chamado com o JWT do aluno, então auth.uid() vale).
-    // Falha na consulta NÃO bloqueia: pior negar a um assinante com direito
-    // do que deixar passar uma geração.
+    // Limite de uso das ferramentas de IA por plano (decisão do dono, 10/08):
+    // Mensal BLOQUEADO; Anual 5/dia; Vitalício 10; Plus 20; Pro e admin sem
+    // limite de plano — só o teto de segurança contra abuso/script. O
+    // my_member_status é o mesmo das telas (chamado com o JWT do aluno, então
+    // auth.uid() vale). Falha na consulta NÃO bloqueia nem restringe: cai no
+    // teto de segurança, permissivo — pior negar a quem tem direito.
+    let planoAtual = ''
     try {
       const anonKey = Deno.env.get('SUPABASE_ANON_KEY') || ''
       const asUser = createClient(supabaseUrl, anonKey, {
         global: { headers: { Authorization: `Bearer ${jwt}` } },
       })
       const { data: st } = await asUser.rpc('my_member_status')
-      const planoAtual = (Array.isArray(st) ? st[0] : st)?.plan
+      planoAtual = String((Array.isArray(st) ? st[0] : st)?.plan || '')
       if (planoAtual === 'monthly') {
         return json(req, {
           error: 'O Plano Mensal não inclui as ferramentas de geração por IA. Faça upgrade de plano para liberar.',
         }, 403)
       }
-    } catch { /* segue liberado */ }
+    } catch { /* segue liberado no teto de segurança */ }
 
     // ── entrada ────────────────────────────────────────────────────────────
-    const { lessonIds, difficulty, count, extraText, format, uploads, mode, importExisting } = await req.json()
+    const { lessonIds, archiveFileIds, difficulty, count, extraText, format, uploads, mode, importExisting, importStart } = await req.json()
     // 'questions' = banco de questões: sempre múltipla escolha, com enunciado
     // no estilo de prova de residência. Reusa todo o pipeline dos flashcards.
     const modo = mode === 'questions' ? 'questions' : 'flashcards'
@@ -152,18 +222,52 @@ serve(async (req) => {
     // questões novas, TRANSCREVE as do PDF selecionado — quantidade e gabarito
     // são os do documento; explicações só são geradas quando o PDF não traz.
     const importar = modo === 'questions' && importExisting === true
-    // Limites separados por modo — 15 gerações/dia de cada.
     const rlAction = modo === 'questions' ? 'questions' : 'flashcards'
 
-    // ── limite de uso: gerar chama uma IA paga, 15 gerações/dia por modo ───
-    try {
+    // Importação PAGINADA: um banco de 100-150 questões não cabe numa única
+    // chamada (a function é cortada aos 150s). O cliente chama em sequência,
+    // cada uma transcrevendo o bloco que couber no tempo, e junta tudo. Esta
+    // chamada começa na questão nº `startImport` do documento. startImport > 1
+    // é uma CONTINUAÇÃO — não conta de novo no limite diário (a operação
+    // inteira é UMA geração, cobrada na primeira chamada).
+    const startImport = importar ? Math.max(1, Math.floor(Number(importStart) || 1)) : 1
+    const ehContinuacao = importar && startImport > 1
+
+    // Limite efetivo do dia: o do plano (5/10/20) ou o teto de segurança de
+    // 100 para Pro/admin (e para quem a resolução de plano não pegou). Cada
+    // "ferramenta" tem seu contador (rlAction 'flashcards' vs 'questions'),
+    // como o dono pediu — 5 flashcards E 5 questões no Anual, não 5 no total.
+    const LIMITE_IA_POR_PLANO: Record<string, number> = { trial: 5, annual: 5, lifetime: 10, lifetime_plus: 20 }
+    const TETO_SEGURANCA = 100
+    const LIMITE_DIARIO = LIMITE_IA_POR_PLANO[planoAtual] ?? TETO_SEGURANCA
+    // Continuação de importação paginada não passa pelo contador — a primeira
+    // chamada já cobrou a operação inteira.
+    if (!ehContinuacao) try {
       const now = new Date()
       const { data: rl } = await supabase.from('rate_limits')
         .select('attempts, window_start')
         .eq('identifier', user.id).eq('action', rlAction).maybeSingle()
       if (rl && (now.getTime() - new Date(rl.window_start).getTime()) < 24 * 3600 * 1000) {
-        if (rl.attempts >= 15) {
-          return json(req, { error: 'Você atingiu o limite de 15 gerações por dia. Tente novamente amanhã.' }, 429)
+        if (rl.attempts >= LIMITE_DIARIO) {
+          // A janela é de 24h a partir da PRIMEIRA geração, não do fim do dia —
+          // dizer só "tente amanhã" mandava o aluno voltar na hora errada.
+          const faltamMin = Math.max(
+            1,
+            Math.ceil((new Date(rl.window_start).getTime() + 24 * 3600 * 1000 - now.getTime()) / 60000),
+          )
+          const quando = faltamMin >= 60
+            ? `em ${Math.ceil(faltamMin / 60)}h`
+            : `em ${faltamMin} minuto${faltamMin === 1 ? '' : 's'}`
+          const oQue = modo === 'questions' ? 'bancos de questões' : 'baralhos de flashcards'
+          // Trial → convite pra assinar (é um teto de experimentação, não
+          // renovável). Plano pago com limite baixo → aponta o upgrade. Teto de
+          // segurança (Pro/admin) → mensagem antiga de "limite diário".
+          const msg = planoAtual === 'trial'
+            ? `Você usou as ${LIMITE_DIARIO} utilizações liberadas no teste grátis. Assine um plano para continuar usando as ferramentas de IA da plataforma.`
+            : LIMITE_DIARIO < TETO_SEGURANCA
+              ? `Você usou as ${LIMITE_DIARIO} gerações de ${oQue} de hoje do seu plano. O limite renova ${quando}. Planos superiores liberam mais gerações por dia — o Pro é sem limite.`
+              : `Você já gerou ${LIMITE_DIARIO} ${oQue} nas últimas 24 horas, que é o limite diário. Você poderá gerar de novo ${quando}.`
+          return json(req, { error: msg }, 429)
         }
         await supabase.from('rate_limits').update({ attempts: rl.attempts + 1 })
           .eq('identifier', user.id).eq('action', rlAction)
@@ -174,7 +278,10 @@ serve(async (req) => {
         )
       }
     } catch { /* tabela indisponível não pode derrubar a geração */ }
-    const ids: string[] = Array.isArray(lessonIds) ? lessonIds.slice(0, MAX_LESSONS) : []
+    // Fontes: aulas da biblioteca E/OU arquivos do Acervo Público — o teto de
+    // 8 fontes vale pro conjunto.
+    const archIds: string[] = Array.isArray(archiveFileIds) ? archiveFileIds.slice(0, MAX_LESSONS) : []
+    const ids: string[] = Array.isArray(lessonIds) ? lessonIds.slice(0, Math.max(MAX_LESSONS - archIds.length, 0)) : []
 
     const enviados: { name: string; mime: string; data: string }[] = (Array.isArray(uploads) ? uploads : [])
       .slice(0, MAX_UPLOADS)
@@ -184,7 +291,7 @@ serve(async (req) => {
         name: u.name.slice(0, 120), mime: u.mime, data: u.data,
       }))
 
-    if (ids.length === 0 && enviados.length === 0) {
+    if (ids.length === 0 && archIds.length === 0 && enviados.length === 0) {
       return json(req, { error: 'Selecione ao menos uma aula, arquivo ou envie um arquivo seu' }, 400)
     }
     const nCards = Math.min(Math.max(Number(count) || 10, 1), MAX_CARDS)
@@ -201,6 +308,29 @@ serve(async (req) => {
         .in('id', ids)
       : { data: [] as never[] }
     if (ids.length > 0 && !lessons?.length) return json(req, { error: 'Conteúdo não encontrado' }, 404)
+
+    // Arquivos do Acervo Público: consultados com o JWT DO ALUNO — a RLS do
+    // acervo (assinante-nunca-trial + item público-ou-próprio) decide o que
+    // ele pode usar; nada de service role aqui.
+    let archFiles: { id: string; name: string; mime_type: string | null; size_bytes: number | null; drive_file_id: string; item_title: string }[] = []
+    if (archIds.length > 0) {
+      const anonKey = Deno.env.get('SUPABASE_ANON_KEY') || ''
+      const asUser = createClient(supabaseUrl, anonKey, {
+        global: { headers: { Authorization: `Bearer ${jwt}` } },
+      })
+      const { data: rows } = await asUser
+        .from('archive_files')
+        .select('id, name, mime_type, size_bytes, drive_file_id, archive_items(title)')
+        .in('id', archIds)
+        .eq('status', 'ready')
+      archFiles = (rows || []).map((r: { id: string; name: string; mime_type: string | null; size_bytes: number | null; drive_file_id: string; archive_items?: { title?: string } }) => ({
+        id: r.id, name: r.name, mime_type: r.mime_type, size_bytes: r.size_bytes,
+        drive_file_id: r.drive_file_id, item_title: r.archive_items?.title || '',
+      }))
+      if (!archFiles.length && ids.length === 0 && enviados.length === 0) {
+        return json(req, { error: 'Conteúdo do acervo não encontrado' }, 404)
+      }
+    }
 
     // ── monta as partes multimodais dentro do orçamento ────────────────────
     const warnings: string[] = []
@@ -219,6 +349,15 @@ serve(async (req) => {
     }
 
     const sourceTitles: string[] = []
+    // PDFs cujo conteúdo foi lido — candidatos à extração de imagens. A
+    // extração só roda com UM PDF na geração: a referência do modelo é o
+    // número da página, que ficaria ambíguo entre dois documentos.
+    const pdfLidos: { nome: string; bytes: Uint8Array }[] = []
+    // Quantas fontes tiveram o CONTEÚDO realmente lido (não só o título).
+    // Sem isto, uma aula em vídeo que a IA não consegue abrir virava 15
+    // questões inventadas a partir do NOME do arquivo — com cara de legítimas,
+    // para um aluno de medicina estudar. É pior do que não gerar nada.
+    let fontesLidas = 0
 
     // ── arquivos enviados pelo aluno (nunca persistidos) ───────────────────
     let uploadRaw = 0
@@ -246,6 +385,10 @@ serve(async (req) => {
       budget -= rawSize
       parts.push({ type: 'text', text: `Material enviado pelo aluno: "${up.name}":` })
       parts.push({ type: 'file', file: { file_data: `data:${up.mime};base64,${up.data}` } })
+      fontesLidas++
+      if (up.mime === 'application/pdf') {
+        pdfLidos.push({ nome: up.name, bytes: Uint8Array.from(atob(up.data), c => c.charCodeAt(0)) })
+      }
     }
 
     for (const lesson of (lessons || [])) {
@@ -312,7 +455,99 @@ serve(async (req) => {
       budget -= bytes.length
       parts.push({ type: 'text', text: `Material: "${lesson.title}" (curso: ${courseTitle})${isAv ? ' — trecho inicial da aula em vídeo/áudio' : ''}:` })
       parts.push({ type: 'file', file: { file_data: `data:${mime};base64,${b64(bytes)}` } })
+      fontesLidas++
+      if (mime === 'application/pdf') pdfLidos.push({ nome: lesson.title, bytes })
     }
+
+    // ── arquivos do Acervo Público (mesma régua das aulas) ─────────────────
+    // Os bytes moram no Drive da conta de armazenamento, mas a pasta-raiz do
+    // acervo é compartilhada como leitura com a conta de conteúdo — o mesmo
+    // token do drive-access-token que serve o streaming lê esses arquivos.
+    for (const af of archFiles) {
+      sourceTitles.push(af.name)
+      const mime = af.mime_type || 'application/octet-stream'
+      const isAv = /^(video|audio)\//i.test(mime)
+
+      if (!GEMINI_OK.test(mime)) {
+        warnings.push(`"${af.name}" tem um formato que a IA não lê direto — usado só o nome.`)
+        parts.push({ type: 'text', text: `Material do Acervo Público (somente nome): "${af.name}" (em «${af.item_title}»)` })
+        continue
+      }
+
+      const want = isAv ? Math.min(VIDEO_CHUNK, budget) : (af.size_bytes || 0)
+      if (!isAv && want > budget) {
+        warnings.push(`"${af.name}" é grande demais para esta geração — usado só o nome.`)
+        parts.push({ type: 'text', text: `Material do Acervo Público (somente nome): "${af.name}" (em «${af.item_title}»)` })
+        continue
+      }
+      if (want <= 0) continue
+
+      let bytes: Uint8Array | null = null
+      try {
+        const tok = await getDriveToken()
+        if (tok) {
+          const res = await fetch(
+            `https://www.googleapis.com/drive/v3/files/${af.drive_file_id}?alt=media`,
+            {
+              headers: {
+                Authorization: `Bearer ${tok}`,
+                ...(isAv ? { Range: `bytes=0-${want - 1}` } : {}),
+              },
+            },
+          )
+          if (res.ok || res.status === 206) bytes = new Uint8Array(await res.arrayBuffer())
+        }
+      } catch { /* cai no aviso abaixo */ }
+
+      if (!bytes || bytes.length === 0) {
+        warnings.push(`Não foi possível ler "${af.name}" — usado só o nome.`)
+        parts.push({ type: 'text', text: `Material do Acervo Público (somente nome): "${af.name}" (em «${af.item_title}»)` })
+        continue
+      }
+
+      if (isAv && bytes.length < (af.size_bytes || Infinity) && MP4_FAMILY.test(mime) && !mp4TemMoov(bytes)) {
+        warnings.push(`"${af.name}" é um vídeo num formato que a IA não lê em trecho — usado só o nome.`)
+        parts.push({ type: 'text', text: `Material do Acervo Público (somente nome): "${af.name}" (em «${af.item_title}»)` })
+        continue
+      }
+
+      budget -= bytes.length
+      parts.push({ type: 'text', text: `Material do Acervo Público: "${af.name}" (em «${af.item_title}»)${isAv ? ' — trecho inicial do vídeo/áudio' : ''}:` })
+      parts.push({ type: 'file', file: { file_data: `data:${mime};base64,${b64(bytes)}` } })
+      fontesLidas++
+      if (mime === 'application/pdf') pdfLidos.push({ nome: af.name, bytes })
+    }
+
+    // Nenhuma fonte foi lida de verdade: sem o complemento escrito pelo aluno,
+    // o modelo só teria os NOMES dos arquivos para trabalhar. Recusar aqui é
+    // melhor do que devolver questões inventadas a partir de um título — o
+    // aluno estuda em cima disso achando que veio da aula.
+    if (fontesLidas === 0 && !complemento) {
+      const soVideo = sourceTitles.length > 0
+      return json(req, {
+        error: soVideo
+          ? 'Não consegui ler o conteúdo do material selecionado (é comum em aulas em vídeo). Escolha a apostila ou o PDF do módulo, ou envie um arquivo — assim as questões saem do conteúdo, e não do título da aula.'
+          : 'Selecione um conteúdo ou envie um arquivo para gerar.',
+        warnings,
+      }, 422)
+    }
+
+    // ── imagens do PDF: extrai e ensina o modelo a referenciá-las ──────────
+    // Só com UM PDF lido — com dois, "página 5" seria ambígua. O modelo marca
+    // a página; o servidor anexa a imagem daquela página ao card no final.
+    let imagensPdf: Map<number, Uint8Array[]> | null = null
+    if (pdfLidos.length === 1) {
+      imagensPdf = await extrairImagensPdf(pdfLidos[0].bytes)
+      if (imagensPdf.size === 0) imagensPdf = null
+    }
+    const regraImagens = imagensPdf
+      ? [
+        `IMAGENS DO DOCUMENTO: as figuras das páginas ${[...imagensPdf.keys()].sort((a, b) => a - b).join(', ')} foram extraídas e podem ser EXIBIDAS junto das questões.`,
+        `- Quando uma questão depender de uma imagem/figura do documento (ECG, radiografia, foto clínica, esquema, tabela em imagem), adicione ao objeto JSON dela os campos "img" (o número da PÁGINA do documento onde a figura está) e "imgDesc" (descrição objetiva da figura em 1 frase).`,
+        `- A figura será mostrada ACIMA do enunciado — escreva o enunciado referindo-se a ela naturalmente ("Observe a imagem acima…").`,
+        `- NUNCA escreva marcadores como "IMG", [IMAGEM] ou [FIGURA] no texto — se o documento mostrar um marcador desses no lugar de uma figura, não o transcreva.`,
+      ].join('\n')
+      : `Se uma questão depender de uma figura que você não pode exibir, descreva a figura no enunciado entre colchetes ("[Imagem: …]") — NUNCA escreva marcadores soltos como "IMG", [IMAGEM] ou [FIGURA].`
 
     // ── prompt ─────────────────────────────────────────────────────────────
     const promptNormal = {
@@ -337,16 +572,21 @@ serve(async (req) => {
           : '',
         `- Cada carta testa UM conceito. Sem cartas duplicadas ou triviais.`,
         `- Se um material for um trecho de vídeo/áudio, use o que foi falado nele.`,
+        regraImagens,
         formato === 'multiple_choice'
-          ? `- Responda APENAS um array JSON válido: [{"front":"...","options":["...","...","...","..."],"correct":0,"back":"...","why":["...","...","...","..."]}] — "correct" é o índice (0-3) da alternativa certa. Sem markdown, sem comentários.`
-          : `- Responda APENAS um array JSON válido: [{"front":"...","back":"..."}] — sem markdown, sem comentários.`,
+          ? `- Responda APENAS um array JSON válido: [{"front":"...","options":["...","...","...","..."],"correct":0,"back":"...","why":["...","...","...","..."]}] — "correct" é o índice (0-3) da alternativa certa; "img"/"imgDesc" só nas cartas que dependem de figura. Sem markdown, sem comentários.`
+          : `- Responda APENAS um array JSON válido: [{"front":"...","back":"..."}] — "img"/"imgDesc" só nas cartas que dependem de figura. Sem markdown, sem comentários.`,
       ].filter(Boolean).join('\n'),
     }
 
     // Prompt de TRANSCRIÇÃO (importar banco existente): fidelidade total ao
     // PDF — enunciados, alternativas na mesma ordem e gabarito do documento.
     // Só as explicações podem ser geradas, e apenas quando o PDF não as tem.
-    const LOTE_IMPORT = 20
+    // 10, não 20: transcrever questão de prova (enunciado longo + alternativas
+    // + justificativa de cada uma) é caro, e lote de 20 estourava o limite de
+    // saída do modelo — a resposta vinha cortada e o parser salvava só um
+    // pedaço. Lote menor cabe inteiro e ainda deixa o laço avançar rápido.
+    const LOTE_IMPORT = 10
     const promptImport = (inicio: number) => ({
       type: 'text',
       text: [
@@ -359,8 +599,11 @@ serve(async (req) => {
         `- "correct": o índice (começando em 0) da alternativa correta SEGUNDO O GABARITO do próprio documento. Nunca invente gabarito: se o documento não indicar a resposta de uma questão em lugar nenhum, resolva-a com máximo rigor técnico.`,
         `- "back": a explicação de por que a correta está certa. Se o documento tiver comentário/explicação, use-o como base; se NÃO tiver, escreva você a explicação (2-3 frases, técnica e direta).`,
         `- "why": array paralelo a "options" — why[i] explica em 1 frase por que a alternativa i está errada (na posição da correta, por que está certa). Use os comentários do documento quando existirem; senão, gere.`,
+        `- "n": o NÚMERO da questão no documento original (ex.: a "Questão 7" do documento tem "n": 7).`,
         `- NÃO pule questões, NÃO mude a ordem, NÃO altere o texto das alternativas.`,
-        `- Responda APENAS um array JSON válido: [{"front":"...","options":["..."],"correct":0,"back":"...","why":["..."]}] — sem markdown, sem comentários. Se as questões pedidas não existirem no documento, responda [].`,
+        `- Se o documento tiver MENOS questões que o intervalo pedido, transcreva só as que existem de fato e PARE — NUNCA repita uma questão já transcrita, nunca crie variações dela e nunca invente questões para completar o intervalo.`,
+        regraImagens,
+        `- Responda APENAS um array JSON válido: [{"n":1,"front":"...","options":["..."],"correct":0,"back":"...","why":["..."]}] — "img"/"imgDesc" só nas questões que dependem de figura. Sem markdown, sem comentários. Se as questões pedidas não existirem no documento, responda [].`,
       ].filter(Boolean).join('\n'),
     })
 
@@ -377,11 +620,20 @@ serve(async (req) => {
         temperature: importar ? 0.1 : 0.4,
         // Sem isto, resposta longa (30 questões com justificativas) vinha
         // CORTADA no limite padrão do provedor e o JSON quebrava no meio.
-        max_tokens: 16384,
+        // 16384 ainda cortava: uma questão de múltipla escolha com "back" e
+        // "why" para 4 alternativas gasta ~500 tokens, então 30 questões não
+        // cabiam e o aluno pedia 30 e recebia ~21 (o parser salvava o pedaço
+        // completo e o resto se perdia em silêncio).
+        max_tokens: 32768,
       }),
     })
 
-    type Carta = { front: string; back: string; options?: string[]; correct?: number; why?: string[] }
+    // `img`/`imgDesc`/`n` são efêmeros (vêm do modelo e morrem no pós-
+    // processo); `image` é o que persiste — a figura em data URI nos viewers.
+    type Carta = {
+      front: string; back: string; options?: string[]; correct?: number; why?: string[];
+      img?: number; imgDesc?: string; image?: string; n?: number;
+    }
 
     // O modelo às vezes embrulha em ```json ... ```, põe texto antes/depois,
     // ou é cortado no meio da última carta. Este parser recupera o máximo:
@@ -420,6 +672,7 @@ serve(async (req) => {
     let avisoMidiaDado = false
     const obterCartas = async (promptFinal: unknown, teto: number): Promise<Carta[] | null> => {
       const conteudo = [...parts, promptFinal]
+      const t0Chamada = Date.now()
       let llmRes = await chamarLLM(conteudo)
       let llmData = await llmRes.json()
 
@@ -440,7 +693,13 @@ serve(async (req) => {
         return null
       }
       let cartas = validar(extrairCartas(llmData.choices?.[0]?.message?.content || '') || [], teto)
-      if (cartas.length === 0) {
+      // A repetição automática DOBRA o tempo da rodada. Num PDF grande cada
+      // chamada leva ~75s, então repetir levava a requisição a 150s — o limite
+      // em que a function é cortada com 504 e o aluno não recebe nada. Só
+      // repete se o que já se passou couber mais uma chamada do mesmo tamanho.
+      const gastoNaChamada = Date.now() - t0Chamada
+      const cabeRepetir = (Date.now() - inicioReq) + gastoNaChamada * 1.2 < 130_000
+      if (cartas.length === 0 && cabeRepetir) {
         console.warn('Resposta inválida do modelo; repetindo a chamada uma vez')
         llmRes = await chamarLLM(conteudo)
         llmData = await llmRes.json()
@@ -450,29 +709,127 @@ serve(async (req) => {
     }
 
     let cards: Carta[]
+    // Paginação da importação: preenchidos no ramo importar; no ramo normal
+    // ficam como "operação concluída numa chamada só".
+    let importDone = true
+    let importNextStart: number | null = null
     if (importar) {
-      // Importação: transcreve o banco inteiro em lotes até o documento
-      // acabar (lote incompleto) ou bater o teto de segurança.
+      // Importação: transcreve o banco em lotes até o documento acabar, o
+      // relógio apertar ou bater o teto de segurança.
+      //
+      // Duas armadilhas já custaram caro aqui, as duas reproduzidas com provas
+      // de residência reais (43 páginas, ~100 questões):
+      //
+      // 1. Parar quando o lote vem incompleto (`lote.length < LOTE_IMPORT`)
+      //    entregava UMA questão. Transcrever questão de prova é caro em
+      //    tokens (enunciado com caso clínico + 5 alternativas + justificativa
+      //    de cada uma), então o primeiro lote de 20 estourava o limite de
+      //    saída, o parser recuperava só a primeira questão inteira, e o laço
+      //    encerrava achando que o documento tinha acabado. Era o "só gerou 01"
+      //    relatado pelos alunos. Agora só encerra quando o lote não traz
+      //    NENHUMA questão nova.
+      // 2. Sem trava de tempo, o laço rodava 6 lotes e a function morria com
+      //    504 aos 150s — o aluno não recebia nada. Agora para antes disso e
+      //    entrega o que já transcreveu, dizendo quantas vieram.
       const MAX_IMPORT = 120
+      // A function é cortada com 504 aos 150s. Só vale começar um lote novo se
+      // ele couber INTEIRO no que sobra — checar o relógio antes de chamar não
+      // basta: com 100s no relógio e um lote de 50s, a chamada terminaria em
+      // 150s e o aluno não receberia nada. A estimativa vem do lote anterior
+      // (o primeiro assume 55s, medido em provas reais) com 30% de folga.
+      const LIMITE_MS = 132_000
+      let duracaoLote = 55_000
       cards = []
-      for (let inicio = 1; inicio <= MAX_IMPORT; inicio += LOTE_IMPORT) {
+      // Assinatura anti-enchimento: quando o documento tem menos questões que
+      // o intervalo pedido, o modelo às vezes "completa" repetindo uma questão
+      // com variação mínima de texto ("imagem abaixo" → "imagem acima") — que
+      // escapa do dedupe por texto exato. A repetição verdadeira tem as MESMAS
+      // alternativas e um enunciado quase igual; questões legítimas diferentes
+      // que compartilham alternativas (séries "julgue os itens") têm
+      // enunciados diferentes e passam.
+      // Acentos são removidos DE VERDADE (o modelo duplica a mesma questão
+      // "corrigindo" a acentuação do PDF: "acao" numa cópia, "ação" na outra —
+      // sem isto, as duas versões pareceriam textos diferentes).
+      const normalizar = (s: string) => s.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '')
+      const tokensDe = (s: string) => new Set(
+        normalizar(s).replace(/[^\p{L}\p{N} ]/gu, ' ').split(/\s+/).filter(Boolean),
+      )
+      // CONTENÇÃO, não Jaccard de união: a cópia às vezes vem com uma frase a
+      // mais ("...dor torácica:" vs "...dor torácica: Qual é o diagnóstico?"),
+      // e a frase extra dilui a união pra baixo do corte. Interseção sobre o
+      // MENOR conjunto dá 1.0 quando um enunciado contém o outro.
+      const similaridade = (a: Set<string>, b: Set<string>) => {
+        let inter = 0
+        for (const t of a) if (b.has(t)) inter++
+        return inter / (Math.min(a.size, b.size) || 1)
+      }
+      const porAssinatura = new Map<string, Set<string>[]>()
+      const ehRepeticaoDisfarcada = (c: Carta): boolean => {
+        if (!Array.isArray(c.options)) return false
+        const assin = normalizar(c.options.join('|'))
+        const toks = tokensDe(c.front)
+        const irmas = porAssinatura.get(assin)
+        if (irmas?.some(t => similaridade(t, toks) >= 0.8)) return true
+        if (!porAssinatura.has(assin)) porAssinatura.set(assin, [])
+        porAssinatura.get(assin)!.push(toks)
+        return false
+      }
+      // Onde parar/continuar: começa em startImport (1 na 1ª chamada, ou o
+      // ponto que a chamada anterior devolveu em importNextStart).
+      let proximoInicio = startImport
+      let cortadoPorTempo = false
+      let documentoAcabou = false
+      for (let inicio = startImport; inicio < startImport + MAX_IMPORT; inicio += LOTE_IMPORT) {
+        const decorrido = Date.now() - inicioReq
+        if (decorrido + duracaoLote * 1.3 > LIMITE_MS) { cortadoPorTempo = true; proximoInicio = inicio; break }
+        const t0Lote = Date.now()
         const lote = await obterCartas(promptImport(inicio), LOTE_IMPORT + 5)
+        duracaoLote = Date.now() - t0Lote
         if (lote === null) {
-          // falha de LLM no meio: entrega o que já foi transcrito, com aviso
-          if (cards.length > 0) {
-            warnings.push('A leitura parou antes do fim do documento — gere de novo se faltarem questões.')
-            break
-          }
+          // falha de LLM no meio: entrega o que já foi transcrito nesta chamada
+          // e sinaliza para o cliente continuar do mesmo ponto.
+          if (cards.length > 0) { cortadoPorTempo = true; proximoInicio = inicio; break }
           return json(req, { error: 'A IA não conseguiu ler este banco de questões agora. Tente novamente em instantes.' }, 502)
         }
-        // dedupe do lote de fronteira (o modelo às vezes repete a última questão)
+        // Dedupe em duas camadas:
+        // - Entre lotes, por ENUNCIADO (o modelo às vezes repete a questão de
+        //   fronteira). Não por número: provas com numeração reiniciada por
+        //   seção repetem "Questão 1" legitimamente em lotes diferentes.
+        // - DENTRO do lote, também pelo NÚMERO "n" do documento: documento
+        //   menor que o intervalo pedido fazia o modelo "completar" repetindo
+        //   questões com variações de texto ("imagem abaixo" → "imagem
+        //   acima"), que escapam do dedupe por enunciado — o n repetido no
+        //   mesmo lote não mente: é enchimento.
         const vistos = new Set(cards.map(c => c.front))
-        const novos = lote.filter(c => !vistos.has(c.front))
+        const numerosNoLote = new Set<number>()
+        const novos = lote.filter(c => {
+          if (vistos.has(c.front)) return false
+          if (typeof c.n === 'number') {
+            if (numerosNoLote.has(c.n)) return false
+            numerosNoLote.add(c.n)
+          }
+          if (ehRepeticaoDisfarcada(c)) return false
+          vistos.add(c.front)
+          return true
+        })
         cards.push(...novos)
-        if (lote.length < LOTE_IMPORT) break
-        if (novos.length === 0) break
+        // Lote sem nada novo = documento acabou (ou o modelo travou). Lote
+        // curto NÃO é sinal de fim: pode ser só o limite de tokens da resposta.
+        if (novos.length === 0) { documentoAcabou = true; break }
+        proximoInicio = inicio + LOTE_IMPORT
       }
+      // importDone = a operação inteira terminou (documento acabou ou bateu o
+      // teto). Só o corte por tempo pede continuação. Numa continuação sem
+      // nenhuma questão nova, é o fim — o cliente para.
+      importDone = !cortadoPorTempo || (ehContinuacao && cards.length === 0)
+      importNextStart = importDone ? null : proximoInicio
+
       if (cards.length === 0) {
+        // Continuação que veio vazia: o documento acabou na chamada anterior —
+        // não é erro, só encerra. Primeira chamada vazia: PDF não é banco.
+        if (ehContinuacao) {
+          return json(req, { title: 'Banco de questões', difficulty: nivel, format: formato, cards: [], warnings, importDone: true, importNextStart: null, source: [] })
+        }
         return json(req, { error: 'Não encontrei questões no documento selecionado. Confira se o PDF é mesmo um banco de questões.' }, 422)
       }
       // A transcrição fiel traz junto os prefixos do documento ("Questão 3.",
@@ -493,6 +850,91 @@ serve(async (req) => {
         return json(req, { error: 'A IA devolveu uma resposta inválida. Tente gerar de novo.' }, 502)
       }
       cards = geradas
+
+      // Completa o que faltou. Mesmo com o teto de tokens maior, uma resposta
+      // longa pode voltar curta — e entregar 21 quando o aluno pediu 30, sem
+      // dizer nada, é o tipo de falha que ele lê como "não funciona". Aqui a
+      // diferença é pedida numa segunda chamada, informando o que já existe
+      // para o modelo não repetir.
+      // A chamada de complemento dobra o tempo (uma geração pesada já leva
+      // ~80s sozinha). Só vale a pena quando faltou bastante E ainda há folga
+      // no relógio da function — estourar o limite entregaria ZERO questões,
+      // que é bem pior do que entregar algumas a menos.
+      const faltouMuito = cards.length < nCards * 0.9
+      // 75s, não 90s: com 6 fontes a primeira chamada já leva ~80s, e uma
+      // segunda em cima disso chegou a 146s — perto demais do limite de 150s
+      // em que a function é cortada com 504 e o aluno não recebe nada.
+      const temFolga = Date.now() - inicioReq < 75_000
+      if (faltouMuito && temFolga) {
+        const jaFeitas = cards.map(c => `- ${c.front}`).join('\n')
+        // Nome próprio (não `complemento`): esse identificador já existe no
+        // escopo de fora, com outro significado — o texto extra do aluno.
+        const promptFaltantes = {
+          type: 'text',
+          text: [
+            `${(promptNormal as { text: string }).text}`,
+            ``,
+            `ATENÇÃO: já existem as ${cards.length} ${modo === 'questions' ? 'questões' : 'cartas'} abaixo. Gere APENAS as ${nCards - cards.length} que faltam, sobre pontos AINDA NÃO cobertos. Não repita nenhuma delas:`,
+            jaFeitas.slice(0, 6000),
+          ].join('\n'),
+        }
+        const extras = await obterCartas(promptFaltantes, nCards - cards.length)
+        if (extras?.length) {
+          const vistos = new Set(cards.map(c => c.front))
+          cards.push(...extras.filter(c => !vistos.has(c.front)))
+        }
+      }
+      cards = cards.slice(0, nCards)
+      if (cards.length < nCards) {
+        warnings.push(`O material rendeu ${cards.length} de ${nCards} ${modo === 'questions' ? 'questões' : 'cartas'} — gere de novo ou escolha mais conteúdo para completar.`)
+      }
+    }
+
+    // ── anexa as figuras de verdade aos cards que as pedem ─────────────────
+    // O modelo devolveu "img" (página da figura) e "imgDesc" (descrição). Se a
+    // imagem daquela página foi extraída, vira data URI no card; senão, a
+    // descrição entra no enunciado pra questão continuar respondível.
+    const limparPlaceholder = (s: string) => s
+      .replace(/["'“”\[\(]\s*(?:IMG|IMAGEM|FIGURA)\s*["'“”\]\)]/gi, ' ')
+      .replace(/\bIMG\b/g, ' ')
+      .replace(/[ \t]{2,}/g, ' ')
+      .trim()
+    // Cursor por página: duas questões na mesma página pegam figuras
+    // diferentes quando existem; quando só há uma, compartilham ("as questões
+    // 5 e 6 referem-se à imagem").
+    const cursorPagina = new Map<number, number>()
+    const pegarImagem = (pagina: number): Uint8Array | null => {
+      if (!imagensPdf) return null
+      // O modelo às vezes conta capa/numeração visual diferente da física —
+      // tenta a página exata e as vizinhas.
+      for (const p of [pagina, pagina + 1, pagina - 1]) {
+        const arr = imagensPdf.get(p)
+        if (!arr?.length) continue
+        const i = cursorPagina.get(p) ?? 0
+        cursorPagina.set(p, i + 1)
+        return arr[Math.min(i, arr.length - 1)]
+      }
+      return null
+    }
+    let figuraPerdidaAvisada = false
+    for (const c of cards) {
+      const pagina = typeof c.img === 'number' && isFinite(c.img) ? Math.round(c.img) : null
+      const desc = typeof c.imgDesc === 'string' ? c.imgDesc.trim() : ''
+      delete c.img
+      delete c.imgDesc
+      delete c.n
+      c.front = limparPlaceholder(c.front)
+      if (pagina === null) continue
+      const jpeg = pegarImagem(pagina)
+      if (jpeg) {
+        c.image = `data:image/jpeg;base64,${b64(jpeg)}`
+      } else if (desc) {
+        c.front = `[Imagem: ${desc}]\n\n${c.front}`
+        if (!figuraPerdidaAvisada) {
+          warnings.push('Algumas figuras do material não puderam ser extraídas — nessas questões a imagem foi descrita em texto no enunciado.')
+          figuraPerdidaAvisada = true
+        }
+      }
     }
 
     // Embaralha as alternativas de cada carta AQUI, não no prompt: o modelo
@@ -530,8 +972,13 @@ serve(async (req) => {
       format: formato,
       cards,
       warnings,
+      // Importação paginada: o cliente usa importDone/importNextStart para
+      // decidir se pede o próximo bloco. No modo normal, importDone=true.
+      importDone,
+      importNextStart,
       source: [
         ...(lessons || []).map((l: { id: string; title: string }) => ({ id: l.id, title: l.title })),
+        ...archFiles.map(af => ({ id: af.id, title: `${af.name} (Acervo Público)` })),
         ...enviados.map(u => ({ id: null, title: `${u.name} (arquivo enviado)` })),
       ],
     })

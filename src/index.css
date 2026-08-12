@@ -145,6 +145,44 @@
   }
 }
 
+/* ---------------------------------------------------------------------------
+   Cascas de largura da plataforma.
+
+   Todas as páginas centralizam o conteúdo dentro de uma destas quatro cascas.
+   Ficam AQUI, num lugar só, por dois motivos:
+
+   1. Header, barra de busca e conteúdo de uma mesma página precisam crescer
+      JUNTOS. Quando cada arquivo tinha o seu `max-w-*` solto, eles já saíam
+      desalinhados (o header da área de membros era 1400px, o conteúdo do curso
+      1280px e o bloco do título 1000px — três alinhamentos diferentes na mesma
+      tela). Em ultra-wide esse descasamento só piorava.
+   2. O degrau de ultra-wide é uma decisão de produto, não de página. Mudar
+      aqui muda a plataforma inteira de uma vez.
+
+   A largura BASE de cada casca é a que a plataforma já usava — em telas de até
+   1919px nada muda. O crescimento começa só em 3xl (1920px) e 4xl (2560px),
+   que é onde sobrava metade do monitor vazia.
+--------------------------------------------------------------------------- */
+@layer components {
+  /* Grades de conteúdo: área de membros e painel admin. */
+  .shell-wide { @apply w-full mx-auto max-w-[1400px] 3xl:max-w-[1800px] 4xl:max-w-[2240px]; }
+
+  /* Páginas públicas (landing e silo de SEO): cresce, mas menos — é texto
+     de venda, e linha longa demais fica cansativa de ler. */
+  .shell-page { @apply w-full mx-auto max-w-7xl 3xl:max-w-[1560px] 4xl:max-w-[1840px]; }
+
+  /* Listas e cards de largura média (acervo, pós-pagamento). */
+  .shell-list { @apply w-full mx-auto max-w-6xl 3xl:max-w-[1400px] 4xl:max-w-[1680px]; }
+
+  /* Formulários e leitura longa (cronograma, painel de afiliado, checkout). */
+  .shell-form { @apply w-full mx-auto max-w-5xl 3xl:max-w-[1240px] 4xl:max-w-[1440px]; }
+
+  /* Feed de discussão: coluna única de leitura. Cresce pouco de propósito —
+     comentário em linha muito larga vira uma faixa de texto difícil de
+     acompanhar, e dividir uma conversa encadeada em colunas seria pior. */
+  .shell-read { @apply w-full mx-auto max-w-2xl 3xl:max-w-[860px] 4xl:max-w-[1000px]; }
+}
+
 /* Fonts */
 .font-primary { font-family: 'Inter', sans-serif; }
 .font-secondary { font-family: 'Outfit', sans-serif; }

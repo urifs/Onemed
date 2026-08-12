@@ -14,7 +14,14 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 const ALLOWED_ORIGINS = ['https://onemedcursos.com.br', 'http://localhost:5173', 'http://localhost:3000']
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
 // Vitalício Plus libera 4 telas simultâneas e Pro libera 6, em vez das 2 padrão.
-const PLAN_DEVICE_LIMITS: Record<string, number> = { lifetime_plus: 4, lifetime_pro: 6 }
+// Telas simultâneas por plano — espelha src/lib/plans.ts e o que os cards do
+// checkout prometem. TODO plano precisa estar aqui: quando o mapa só tinha os
+// dois vitalícios superiores, um plano de fora dele simplesmente sumia da
+// conta (`.filter(!!n)`), e bastava uma linha de acesso mapeada para o limite
+// de outra ignorar o plano real da pessoa.
+const PLAN_DEVICE_LIMITS: Record<string, number> = {
+  monthly: 1, annual: 2, lifetime: 2, lifetime_plus: 4, lifetime_pro: 6,
+}
 const DEFAULT_DEVICE_LIMIT = 2
 
 function getCorsHeaders(req: Request) {
@@ -92,14 +99,20 @@ serve(async (req) => {
 
     if (!EMAIL_REGEX.test(email)) return jsonResponse(req, { error: 'Email inválido' }, 400)
 
-    const ip = (req.headers.get('x-forwarded-for') || '').split(',')[0].trim() || req.headers.get('x-real-ip') || 'unknown'
+    // x-real-ip PRIMEIRO: é setado pela plataforma e não é forjável. O
+    // x-forwarded-for esquerdo é a parte controlada pelo cliente — um
+    // atacante mandando um XFF diferente por requisição zerava o rate limit
+    // por IP (5/15min), liberando enumeração/abuso do login sem trava.
+    const ip = req.headers.get('x-real-ip')
+      || (req.headers.get('x-forwarded-for') || '').split(',').map(s => s.trim()).filter(Boolean).pop()
+      || 'unknown'
 
     // Sem .limit(1).maybeSingle() de propósito: uma conta pode ter mais de
     // uma linha "active" em accesses (ex: grant manual antigo nunca
     // desativado ao fazer upgrade) — pegar só uma arbitrária já causou o
     // limite de telas cair pro plano errado. Busca todas e decide com .some().
     const [{ data: activeAccesses }, { data: buyerRows }, { data: isAdminEmail }] = await Promise.all([
-      supabase.from('accesses').select('id, access_type').eq('email', email).eq('status', 'active'),
+      supabase.from('accesses').select('id, access_type, expires_at').eq('email', email).eq('status', 'active'),
       supabase.from('buyers').select('id, plan').eq('email', email).eq('access_granted', true),
       supabase.rpc('is_admin_email', { _email: email }),
     ])
@@ -158,10 +171,19 @@ serve(async (req) => {
     // recentes (a que acabou de ser criada entra nessa contagem), o que
     // derruba o refresh token do dispositivo mais antigo no próximo refresh.
     if (linkData.user?.id) {
+      // Cada acesso/compra vale o limite do SEU plano — tipo desconhecido
+      // ('paid' do webhook antigo, 'trial') cai no padrão — e a conta usa o
+      // MAIOR entre eles. Linha vencida não entra: um anual expirado (que o
+      // cron ainda não revogou) não pode continuar valendo telas.
+      const agora = Date.now()
+      const valido = (expiresAt: string | null | undefined) =>
+        !expiresAt || new Date(expiresAt).getTime() > agora
+      const limiteDe = (plano: string | null | undefined) =>
+        (plano && PLAN_DEVICE_LIMITS[plano]) || DEFAULT_DEVICE_LIMIT
       const planLimits = [
-        ...(activeAccesses || []).map(a => PLAN_DEVICE_LIMITS[a.access_type]),
-        ...(buyerRows || []).map(b => PLAN_DEVICE_LIMITS[b.plan]),
-      ].filter((n): n is number => !!n)
+        ...(activeAccesses || []).filter(a => valido(a.expires_at)).map(a => limiteDe(a.access_type)),
+        ...(buyerRows || []).map(b => limiteDe(b.plan)),
+      ]
       const maxSessions = planLimits.length > 0 ? Math.max(...planLimits) : DEFAULT_DEVICE_LIMIT
       const { error: limitErr } = await supabase.rpc('enforce_session_limit', { _user_id: linkData.user.id, _max_sessions: maxSessions })
       if (limitErr) console.error('enforce_session_limit error', limitErr)

@@ -109,11 +109,17 @@ export default function DriveSettings() {
 
   const disconnectDrive = async () => {
     if (!driveStatus?.id) return;
-    await supabase.from('drive_config').update({
+    // Este é o Drive de CONTEÚDO — desconectar apaga os tokens e derruba o
+    // streaming de TODAS as aulas para TODOS os alunos, e o Google só devolve
+    // o refresh_token numa nova autorização completa. Nunca pode ser um
+    // clique só.
+    if (!confirm('Desconectar o Google Drive vai DERRUBAR o acervo para TODOS os alunos (nenhuma aula abre até reconectar). Tem certeza?')) return;
+    const { error } = await supabase.from('drive_config').update({
       connected: false,
       access_token: null,
       refresh_token: null,
     }).eq('id', driveStatus.id);
+    if (error) { toast.error('Erro ao desconectar: ' + error.message); return; }
     toast.success('Drive desconectado');
     fetchStatus();
   };

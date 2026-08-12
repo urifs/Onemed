@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -14,7 +14,6 @@ import { WhatsAppLink } from '@/components/WhatsAppLink';
 export default function TrialUsersPage() {
   const { session } = useAuth();
   const [trials, setTrials] = useState<any[]>([]);
-  const [filtered, setFiltered] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -81,6 +80,12 @@ export default function TrialUsersPage() {
         return;
       }
 
+      // Nada no rótulo "Sincronizar" avisa que isto é um DELETE em massa —
+      // mostra o tamanho do estrago e pede confirmação antes.
+      if (!confirm(`${toDelete.length} trial(s) pertencem a compradores aprovados e serão excluído(s) PERMANENTEMENTE. Continuar?`)) {
+        return;
+      }
+
       const ids = toDelete.map((t: any) => t.id);
       const { error } = await supabase.from('accesses').delete().in('id', ids);
       if (error) throw error;
@@ -117,11 +122,16 @@ export default function TrialUsersPage() {
     }
   }, []);
 
-  useEffect(() => {
+  // Derivado com useMemo (era um useEffect espelhando a lista inteira num
+  // segundo estado: dobrava a memória e renderizava duas vezes por tecla).
+  // Busca em minúsculas dos dois lados — "Joao@" digitado com maiúscula
+  // voltava zero resultados.
+  const filtered = useMemo(() => {
     let result = trials;
-    if (search) result = result.filter(t => t.email.includes(search) || (t.whatsapp || '').includes(search));
+    const term = search.toLowerCase();
+    if (term) result = result.filter(t => t.email.toLowerCase().includes(term) || (t.whatsapp || '').includes(term));
     if (statusFilter !== 'all') result = result.filter(t => t.status === statusFilter);
-    setFiltered(result);
+    return result;
   }, [trials, search, statusFilter]);
 
   const statusBadge = (status: string) => {
@@ -170,7 +180,7 @@ export default function TrialUsersPage() {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 3xl:max-w-[1400px]">
           {[
             { label: 'Trial Hoje', value: stats?.total ?? '—', icon: Users },
             { label: 'Ativos Hoje', value: stats?.active ?? '—', icon: Clock },

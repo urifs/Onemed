@@ -143,7 +143,7 @@ export default function Index() {
       {/* Porta de entrada do silo: leva a home para os hubs de maior
           intenção de busca, distribuindo autoridade a partir da página
           mais forte do domínio. */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="shell-page px-4 sm:px-6 lg:px-8">
         <PillarLinks />
       </div>
       {/* Última seção antes do rodapé: recrutamento de afiliados. */}

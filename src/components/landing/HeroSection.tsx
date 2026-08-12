@@ -55,7 +55,7 @@ export const HeroSection = ({
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-background" />
       </div>
 
-      <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid lg:grid-cols-[1.1fr_0.9fr] gap-16 items-center">
+      <div className="relative shell-page px-4 sm:px-6 lg:px-8 grid lg:grid-cols-[1.1fr_0.9fr] gap-16 items-center">
         {/* Left: Content */}
         <div>
           <div className="flex items-center gap-2 text-primary text-xs font-mono uppercase tracking-widest mb-6">
@@ -107,6 +107,10 @@ export const HeroSection = ({
                     <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
                   </button>
                   {showCountryDropdown && (
+                    <>
+                    {/* Clique fora fecha — sem este véu, o painel ficava
+                        aberto por cima do formulário. */}
+                    <div className="fixed inset-0 z-40" onClick={() => setShowCountryDropdown(false)} />
                     <div className="absolute top-full left-0 mt-1 w-48 bg-popover border border-border rounded-lg shadow-xl z-50 overflow-hidden">
                       {COUNTRIES.map(c => (
                         <button
@@ -121,6 +125,7 @@ export const HeroSection = ({
                         </button>
                       ))}
                     </div>
+                    </>
                   )}
                 </div>
                 <Input

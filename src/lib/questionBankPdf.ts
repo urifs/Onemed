@@ -115,10 +115,31 @@ export async function exportQuestionBankPdf(bank: {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10.5);
     const enunciado = doc.splitTextToSize(q.front, LARGURA - 9);
-    garanteEspaco(enunciado.length * 4.7 + 14);
+
+    // Figura da questão (quando o banco veio de um PDF com imagens): entra
+    // acima do enunciado, redimensionada pra caber. Falha no decode nunca
+    // derruba a exportação — a questão sai só com o texto.
+    let imgW = 0, imgH = 0;
+    if (q.image) {
+      try {
+        const props = doc.getImageProperties(q.image);
+        const ratio = props.height / props.width;
+        imgW = Math.min(LARGURA - 9, 110);
+        imgH = imgW * ratio;
+        if (imgH > 80) { imgH = 80; imgW = imgH / ratio; }
+      } catch { imgW = 0; imgH = 0; }
+    }
+
+    garanteEspaco(enunciado.length * 4.7 + (imgH ? imgH + 5 : 0) + 14);
 
     doc.setTextColor(...VERMELHO);
     doc.text(`${qIdx + 1}.`, MARGEM, y);
+    if (q.image && imgH > 0) {
+      try {
+        doc.addImage(q.image, 'JPEG', MARGEM + 9, y - 3.5, imgW, imgH);
+        y += imgH + 3;
+      } catch { /* segue sem a figura */ }
+    }
     doc.setTextColor(...PRETO);
     doc.text(enunciado, MARGEM + 9, y);
     y += enunciado.length * 4.7 + 2.5;

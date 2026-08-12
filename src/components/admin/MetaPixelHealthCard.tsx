@@ -38,6 +38,7 @@ export function MetaPixelHealthCard() {
   const [health, setHealth] = useState<Health | null>(null);
   const [counters, setCounters] = useState<Counters | null>(null);
   const [loading, setLoading] = useState(false);
+  const [backfilling, setBackfilling] = useState(false);
   const [failed, setFailed] = useState(false);
 
   const load = useCallback(async () => {
@@ -145,19 +146,37 @@ export function MetaPixelHealthCard() {
           {gap > 0 && health?.ok && (
             <Button
               size="sm"
+              disabled={backfilling}
               className="bg-primary hover:bg-primary-hover text-primary-foreground gap-2"
               onClick={async () => {
                 // Simulação primeiro: mostra quanto seria reenviado antes de
-                // mexer em qualquer dado de campanha.
-                const { data: preview } = await supabase.functions.invoke('admin-capi-backfill', { body: {} });
-                const n = preview?.a_reenviar ?? 0;
-                if (!n) { toast.info('Não há compras pendentes de envio.'); return; }
-                if (!window.confirm(`Reenviar ${n} compra(s) para a Meta?`)) return;
-                const { data: applied } = await supabase.functions.invoke('admin-capi-backfill', { body: { apply: true } });
-                toast.success(`Reenvio concluído: ${applied?.envios_ok ?? 0} ok, ${applied?.envios_com_falha ?? 0} falha(s).`);
-                load();
+                // mexer em qualquer dado de campanha. O erro do invoke NÃO
+                // pode ser descartado: falha de rede virava "0 pendentes" —
+                // exatamente o modo de falha silenciosa que este card existe
+                // pra pegar. O disabled evita dois backfills num clique duplo.
+                setBackfilling(true);
+                try {
+                  const { data: preview, error: previewErr } = await supabase.functions.invoke('admin-capi-backfill', { body: {} });
+                  if (previewErr || preview?.error) {
+                    toast.error(preview?.error || 'Falha ao consultar compras pendentes. Tente novamente.');
+                    return;
+                  }
+                  const n = preview?.a_reenviar ?? 0;
+                  if (!n) { toast.info('Não há compras pendentes de envio.'); return; }
+                  if (!window.confirm(`Reenviar ${n} compra(s) para a Meta?`)) return;
+                  const { data: applied, error: applyErr } = await supabase.functions.invoke('admin-capi-backfill', { body: { apply: true } });
+                  if (applyErr || applied?.error) {
+                    toast.error(applied?.error || 'Falha no reenvio. Verifique e tente de novo.');
+                    return;
+                  }
+                  toast.success(`Reenvio concluído: ${applied?.envios_ok ?? 0} ok, ${applied?.envios_com_falha ?? 0} falha(s).`);
+                  load();
+                } finally {
+                  setBackfilling(false);
+                }
               }}
             >
+              {backfilling && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               Reenviar compras não enviadas
             </Button>
           )}

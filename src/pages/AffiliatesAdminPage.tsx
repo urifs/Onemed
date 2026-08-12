@@ -33,7 +33,8 @@ interface Sale {
   paid_at: string | null;
 }
 
-const brl = (v: number) => `R$ ${Number(v).toFixed(2).replace('.', ',')}`;
+// Padrão da moeda real: milhar com ponto e centavos com vírgula (R$ 4.469,00).
+const brl = (v: number) => Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
 export default function AffiliatesAdminPage() {
   const [affiliates, setAffiliates] = useState<Affiliate[]>([]);
@@ -65,8 +66,11 @@ export default function AffiliatesAdminPage() {
       const e = map.get(s.affiliate_id);
       if (!e) continue;
       e.vendas.push(s);
+      // 'reversed' (venda reembolsada) NÃO entra em pago nem em pendente —
+      // sem este if explícito, o else jogava a comissão estornada de volta
+      // no "a pagar".
       if (s.status === 'paid') e.pago += Number(s.commission_amount);
-      else e.pendente += Number(s.commission_amount);
+      else if (s.status === 'pending') e.pendente += Number(s.commission_amount);
     }
     return map;
   }, [affiliates, sales]);
@@ -110,7 +114,7 @@ export default function AffiliatesAdminPage() {
         </div>
 
         {/* resumo */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 3xl:max-w-[1400px]">
           {[
             { icon: Users, label: 'Afiliados', value: String(affiliates.length) },
             { icon: Tag, label: 'Vendas por afiliados', value: String(totais.vendas) },

@@ -426,6 +426,13 @@ serve(async (req) => {
             childFolders.push({ id: resolved.id, name: f.name })
           } else if (resolved.mimeType === 'text/html') {
             continue // páginas .html soltas do Drive não são aula
+          } else if (/\.gdrive$/i.test(f.name || '')) {
+            // Arquivos `.gdrive` são PONTEIROS de 168 bytes (JSON com o doc_id
+            // do vídeo real em OUTRA conta), criados por ferramentas de sync do
+            // Drive — NÃO são a mídia. Importá-los enche o curso de "aulas" que
+            // não tocam (o vídeo real vive numa conta que a plataforma não
+            // acessa). Nunca são conteúdo; pula igual ao .html.
+            continue
           } else {
             let type = lessonType(resolved.mimeType, f.name)
             if (f.videoMediaMetadata) type = 'video'
@@ -455,8 +462,15 @@ serve(async (req) => {
             if (error) {
               // Falha de gravação também não pode passar batido: devolve a
               // pasta para a fila em vez de dar o conteúdo como importado.
+              // Igual ao catch do driveList: depois de MAX_FOLDER_ATTEMPTS
+              // marca 'error' — sem isso a pasta ficava 'pending' pra sempre,
+              // relistando do Drive a cada rodada (queima de cota) e o curso
+              // nunca fechava como completo.
+              const attempts = (row.attempts || 0) + 1
+              const failed = attempts >= MAX_FOLDER_ATTEMPTS
               await supabase.from('sync_folder_queue').update({
-                attempts: (row.attempts || 0) + 1,
+                attempts,
+                state: failed ? 'error' : 'pending',
                 error: `Falha ao gravar aulas: ${error.message}`.slice(0, 500),
                 updated_at: new Date().toISOString(),
               }).eq('course_id', row.course_id).eq('drive_folder_id', row.drive_folder_id)

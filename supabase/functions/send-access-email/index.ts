@@ -11,6 +11,28 @@ function getCorsHeaders(req: Request) {
   }
 }
 
+// Comparação em tempo constante — esta função só é chamada internamente
+// (mp-webhook, create-trial-access) com a service-role key. Sem o gate, com
+// verify_jwt=false, qualquer um na internet mandava "pagamento aprovado"
+// pelo domínio verificado da OneMed (phishing + queima de cota do Resend).
+async function secureCompare(a: string, b: string): Promise<boolean> {
+  const encoder = new TextEncoder()
+  const key = await crypto.subtle.importKey(
+    'raw', encoder.encode('timing-safe-compare'),
+    { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
+  )
+  const [sigA, sigB] = await Promise.all([
+    crypto.subtle.sign('HMAC', key, encoder.encode(a)),
+    crypto.subtle.sign('HMAC', key, encoder.encode(b)),
+  ])
+  const a8 = new Uint8Array(sigA)
+  const b8 = new Uint8Array(sigB)
+  if (a.length !== b.length) return false
+  let diff = 0
+  for (let i = 0; i < 32; i++) diff |= a8[i] ^ b8[i]
+  return diff === 0
+}
+
 const SITE_URL = 'https://onemedcursos.com.br'
 const SITE_NAME = 'OneMed'
 const FROM_EMAIL = 'contato@onemedcursos.com.br'
@@ -202,6 +224,16 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: getCorsHeaders(req) })
 
   try {
+    // Gate de service-role: só as funções internas (que já rodam com essa
+    // chave) podem disparar email.
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    const token = (req.headers.get('Authorization') || '').replace('Bearer ', '')
+    if (!token || !(await secureCompare(token, serviceKey))) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
+      })
+    }
+
     const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')!
     const body = await req.json()
     const { name, type, plan, amount } = body

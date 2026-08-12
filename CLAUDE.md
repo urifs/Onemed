@@ -38,8 +38,8 @@
 
 | Serviço | Token / Valor |
 |---------|--------------|
-| **Supabase Management API** | `sbp_0e4b7bf71a6909b65e1d928af78863a35e811ee8` |
-| **Vercel API Token** | `vcp_20YyrugF3ObL0f1W9bMxIOCgwWOduJ0euny7PuYBfC3HMeY4lV0K9wOb` |
+| **Supabase Management API** | `sbp_d4e0be5b7dd285b557fb136fdb2ab65045ef74a1` |
+| **Vercel API Token** | `vcp_1flOV1BNzH45cGJZWrbWBntxpTiKK7a9OEq7BbNwpqcHH4fAmX16x8u1` |
 | **Cloudflare API Token** | `cfut_U6GR6uJmiuON1dNVvBCra46fNVpy4H2d4OO6dq4Mb9b7ed40` |
 
 ### IDs e Referências dos Projetos
@@ -77,7 +77,7 @@
 
 ```bash
 # Autenticar Supabase CLI
-export SUPABASE_ACCESS_TOKEN="sbp_0e4b7bf71a6909b65e1d928af78863a35e811ee8"
+export SUPABASE_ACCESS_TOKEN="sbp_d4e0be5b7dd285b557fb136fdb2ab65045ef74a1"
 
 # Deploy de uma Edge Function específica
 supabase functions deploy <nome> --project-ref jrrybiohwqabsdurqudc --use-api
@@ -131,12 +131,22 @@ curl -o /dev/null -w "%{http_code}\n" -X OPTIONS "https://onemed-stream-lesson.o
 
 ## Planos e Preços (sempre calculados no servidor)
 
+> Atualizados em 10/08/2026 (Mensal já tinha subido para R$99 em ~06/08).
+
 ```
-lifetime:  R$ 299,90  — acesso permanente
-annual:    R$ 199,00  — acesso por 12 meses
-upsell:    R$  19,90  — complemento 1
-upsell2:   R$   9,90  — complemento 2
+monthly:        R$    99,00  — acesso por 1 mês
+annual:         R$   299,00  — acesso por 12 meses
+lifetime:       R$   499,00  — acesso permanente
+lifetime_plus:  R$   798,00  — vitalício + backup Drive + 4 telas
+lifetime_pro:   R$ 1.497,00  — tudo do Plus + IA Meduf + download de aulas
+upsell:         R$    94,00  — Atualizações Semanais + Lançamentos (desde 11/08; era 19,90)
+upsell2:        R$    39,80  — Proteção Proxy + Backups (desde 11/08; era 9,90)
 ```
+
+⚠️ Preço vive em 4 fontes que precisam andar JUNTAS (`src/lib/plans.ts` ·
+`CheckoutPage` display · `mp-create-payment`, quem cobra · `member-account-info`)
++ prompt do `member-assistant` e rótulos de `/admin/cupons`. Mudar preço exige
+redeploy das 3 functions e conferir o valor no eszip da função NO AR.
 
 ---
 
@@ -240,7 +250,7 @@ Usuário acessa / (landing)
 Usuário clica em comprar
   → redireciona para /checkout
   → Step 1: seleciona plano (Annual R$199 ou Lifetime R$299,90)
-  → Step 2: seleciona upsells opcionais (R$19,90 e R$9,90)
+  → Step 2: seleciona upsells opcionais (R$94,00 e R$39,80)
   → Step 3: preenche nome, email, WhatsApp, país
       ├── frontend gera externalReference (UUID)
       ├── insere registro em buyers (status='pending', access_granted=false)
@@ -657,7 +667,7 @@ na API mas falhava ao subir). Corrigido redeployando todas via multipart
 aprovado foi perdido no incidente — todos os `buyers` afetados estavam `status:'pending'` sem
 `payment_id`.
 
-**3 novos planos:** `monthly` (R$49,90/30 dias), `lifetime_plus` (R$599 — vitalício + backup no
+**3 novos planos:** `monthly` (R$99/30 dias — era R$49,90 no lançamento, subiu para R$49 e depois R$99 em 05/08), `lifetime_plus` (R$599 — vitalício + backup no
 Drive do usuário + 4 telas), `lifetime_pro` (R$997 — tudo do Plus + IA Meduf + download em massa
 na plataforma). Preços/labels/features centralizados em `src/lib/plans.ts`; `mp-create-payment` e
 `mp-webhook` reescritos com lookups por tabela (`PLAN_PRICES`, `LIFETIME_TIER_RANK`) em vez de
@@ -1464,6 +1474,1231 @@ Correção de UMA linha em `ui/dialog.tsx`: `[grid-template-columns:minmax(0,1fr
 (gerador de flashcards, cronograma, acervo…) de uma vez.
 
 ---
+
+### 2026-08-05 (sessão remota) — benefício de cronograma nos planos, pulo de 10s no player
+
+**Benefício novo no Plus e Pro:** "Gerador de cronograma de estudos e mapa mental personalizados
+para o seu interesse de estudo" adicionado a `PLAN_FEATURES` (plans.ts) e aos cards do checkout —
+SÓ nesses dois planos (o dono vai restringir a função a eles futuramente; hoje o
+`generate-study-plan` ainda bloqueia só o Mensal). Mesmo texto literal nos dois planos de
+propósito (o diff do UpgradePlanModal esconde benefícios repetidos entre origem e destino).
+
+**Pulo fixo de 10 segundos no player:** cliente reclamou que "adiantar/voltar pula tempo demais" —
+não existiam botões próprios; só a barra nativa do `<video>`, que pula pro ponto clicado.
+`LessonPlayer` ganhou botões laterais de −10s/+10s no vídeo (círculos com RotateCcw/RotateCw e o
+rótulo "10"), botões equivalentes ao lado do `<audio>`, e as setas ← → do teclado fazem o mesmo
+pulo (com `preventDefault` pra sobrepor o seek nativo de 5s; ignoradas dentro de
+input/textarea/select). `skip()` trava em 0 e na duração. Verificado em produção: clique →
+`currentTime` 0→10→0 exato.
+
+**Cliente sem conseguir logar ("Failed to send a request to the Edge Function"):** o app era
+servido INTEIRO também em `onemed-jade.vercel.app` (domínio automático da Vercel), mas as Edge
+Functions só liberam `onemedcursos.com.br` no CORS — quem entrava pelo domínio da Vercel tinha
+TODO chamado de função bloqueado pelo navegador, com esse erro cru no login (pro dono "funcionava"
+porque ele testa no domínio oficial). Corrigido no `vercel.json`: redirect permanente por host —
+qualquer `*.vercel.app` → `onemedcursos.com.br` preservando caminho e query (a raiz `/` precisa de
+regra própria; `/:path*` sozinho não casa com ela). A tela de login também troca os erros de rede
+(Failed to send/fetch/NetworkError) por mensagem em português com o que fazer. Verificado: `/`,
+`/login`, `/membros` e `/checkout` no domínio vercel.app respondem 308 pro oficial.
+
+**Gerador de flashcards/banco de questões com arquivos do Acervo Público:** cada arquivo no
+detalhe do item ganhou a seta de dropdown com "Gerar flashcards deste arquivo" e "Gerar banco de
+questões deste arquivo" (Popover; mesmo fluxo/viewers/salvamento das aulas, replicado no
+`DetailDialog`; Mensal cai no AiUpsellModal). `generate-flashcards` aceita `archiveFileIds` junto
+de `lessonIds` (teto conjunto de 8 fontes): a consulta dos arquivos roda com o JWT DO ALUNO — a
+RLS do acervo decide acesso (testado: arquivo privado alheio → "não encontrado") — e os bytes
+saem com o token da conta de conteúdo, que lê a pasta compartilhada do acervo (mesmo caminho do
+worker de streaming). `FlashcardSource` ganhou `archive?: boolean` (chip com badge "Acervo
+Público" no gerador; `selected` virou Map de objetos). Testado em produção de ponta a ponta:
+geração real de questões a partir de PDF do acervo (~110s), fonte gravada como "«nome» (Acervo
+Público)".
+
+**Favoritar materiais do Acervo Público:** tabela `user_archive_favorites` (migration
+`20260805030000_user_archive_favorites.sql`, mesmo padrão dos favoritos de curso/aula: RLS de
+dono, toggle otimista direto na tabela, sem RPC). Estrela no canto dos cards do feed (irmã do
+card — botão dentro de botão é HTML inválido) e botão "Favoritar" no detalhe do item; a aba
+Favoritos da página inicial ganhou a seção "Acervo Público favoritado" (join com `archive_items`
+passa pela RLS do acervo — item que virou privado some da lista sozinho; clicar navega pro item).
+Verificado em produção: favoritar no card → badge no detalhe → seção na aba → navegação.
+
+**Cupons de afiliados apagados — links dando "expirado" (04-05/08):** 18 dos 22 afiliados
+estavam com `coupon_code` no cadastro mas SEM a linha em `coupons` (apagada da tabela — os
+sobreviventes eram só os cadastrados depois de ~18h de 04/08 + um recriado à mão às 23:38).
+Sintoma: todo indicado via `?ref=` ou digitando o cupom via "Cupom inválido ou expirado".
+Cupons recriados em produção (10%, ativos) e fluxo E2E testado: link `?ref=` → landing guarda →
+checkout auto-aplica em silêncio (R$ 269,91 no Vitalício) → `mp-create-payment` 200 → redirect
+real pro Mercado Pago → `buyers` com `coupon_code` E `affiliate_ref`. Proteções: `/admin/cupons`
+recusa excluir cupom que pertence a um afiliado (orienta desativar; confirmação nas demais
+exclusões) e `affiliate-coupon` recria/reativa a linha se o afiliado re-salvar o próprio código.
+Detalhe do fluxo: o checkout exige e-mail @gmail.com na etapa de dados (por design).
+
+**Aulas .mov sem conversão abrem no player do Google (imediato) + lote de conversão retomado:**
+cliente reportou "Não há nenhum vídeo com formato ou tipo MIME suportados" no medcof-2026 — era
+uma das 46 aulas `.mov` (93 GB) que ficaram pendentes em 31/07 pela cota de download do Drive.
+Solução imediata (pedido do dono): `LessonPlayer` ganhou `formatoSemSuporte` — vídeo com mime
+quicktime/wmv/msvideo SEM `storage_path` vai DIRETO pro embed oficial do Drive (mesmo iframe do
+fallback de cota; o Google transcodifica no servidor). Quando a conversão preenche `storage_path`,
+o player próprio assume sozinho. Verificado em produção na aula exata do print (iframe carregou e
+reproduz). Em paralelo, a cota resetou (sonda barata com Range aberto → 206) e o lote
+`fix-unplayable-videos.mjs --ext=mov` foi relançado em produção (setsid/nohup + checagem agendada
+via send_later) — idempotente, filtra `storage_path IS NULL`.
+
+**Embed do Google promovido a solução DEFINITIVA para vídeo em formato sem suporte (decisão do
+dono — lote de conversão dos 46 .mov encerrado):** a regra do `LessonPlayer` virou lista de
+PERMITIDOS invertida — qualquer `video/*` fora de mp4/webm/ogg/mp2t, sem `storage_path` e com
+`drive_file_id`, abre direto no player embutido do Drive; formato exótico futuro cai lá sozinho.
+De quebra, a varredura achou **134 aulas com mime `text/texmacs`** (rótulo do Drive pra arquivos
+`.ts`) que eram MPEG-TS disfarçado (sondagem por bytes 0x47 em 0/188): mime corrigido pra
+`video/mp2t` no banco — essas tocam no player PRÓPRIO via mpegts.js, não no embed. Estado final
+dos vídeos sem conversão: mp4 (99k, nativo), mp2t (12k, mpegts.js), quicktime (46, embed), webm
+(3, nativo) — zero formatos sem tratamento. Áudios conferidos: só mpeg/ogg, todos nativos.
+
+---
+
+### 2026-08-05 (sessão remota) — auditoria completa de desempenho, segurança e UX (branch `claude/performance-audit-complete-7g5y9n`)
+
+**Auditoria de ponta a ponta** (frontend, Edge Functions, SQL/RLS, build) com correções na
+branch acima. **Nada foi deployado em produção nesta sessão** — deploy só depois do merge:
+frontend sobe sozinho com o push na `main`; as ~10 Edge Functions alteradas precisam de
+redeploy multipart; a migration `20260805120000_perf_indexes_rls_initplan.sql` precisa ser
+aplicada. Detalhe no relatório da sessão. Destaques:
+
+**Bundle:** `App.tsx` importava as ~40 páginas estaticamente — TODO visitante da landing
+baixava 1.949 kB (537 kB gzip) com painel admin, Leaflet e player dentro. Rotas de
+membro/admin/checkout/afiliado viraram `lazy()` (públicas prerenderizadas continuam
+estáticas de propósito, senão o HTML do prerender piscava); `PdfViewer` (pdfjs, ~376 kB +
+worker 1,4 MB) só baixa ao abrir um PDF. Bundle inicial: **690 kB (205 kB gzip), −62%**.
+Chunk 404 pós-deploy recarrega a página uma vez em vez de tela branca.
+
+**Segurança (CRÍTICOS, corrigidos):** `mp-create-payment` não regravava o `plan` validado —
+como a linha de `buyers` é inserida pelo navegador, dava pra gravar `plan:'lifetime_pro'`,
+pagar R$49,90 e o webhook liberava o Pro; `drive-share-folder` autorizava requisição SEM
+header (com `verify_jwt=false`, qualquer curl compartilhava a biblioteca);
+`drive-oauth-callback` não exigia auth nenhuma pra sobrescrever a conexão do Drive (e apagava
+o `refresh_token` na reconexão — Google só o devolve na 1ª autorização);
+`drive-save-folder`/`drive-list-folders`/`whatsapp-manager` aceitavam qualquer JWT logado
+(trial lia a `evolution_api_key` e mensagens de clientes). Todos exigem admin agora.
+
+**Pagamento confiável:** `mp-webhook` devolvia 200 em falha transitória (MP não reenviava →
+cliente pago sem acesso pra sempre) — agora 500 força retry; se a concessão falha depois de
+tomar a flag `access_granted`, a flag volta e o retry refaz (antes batia em "already granted"
+e pulava tudo). `send-followup-emails`: janela de ±2h só cobria 4/24h do dia — a maioria dos
+trials NUNCA recebia follow-up; agora 26h com dedupe pela tabela.
+
+**Área de membros:** lista de aulas renderiza em lotes de 200 + "Mostrar mais" (megacurso de
+31k aulas congelava a aba por segundos); progresso de vídeo acumula em ref e só vira estado ao
+fechar/trocar de aula (re-render da página INTEIRA a cada 5s de reprodução); busca do curso com
+`useDeferredValue`; timers de retry do player cancelados na troca de aula (retry da aula
+anterior reiniciava a nova do zero); `member-account-info` em cache react-query compartilhado
+(era 1 chamada de Edge Function POR NAVEGAÇÃO pra todo aluno, via TrialCountdownBar).
+
+**Banco (migration 20260805120000, ⏳ aplicar):** índices funcionais `lower(email)` em
+accesses/buyers/profiles (`is_trial_member()`/`my_member_status()` faziam 3 seq scans por
+consulta em quase toda página); `lessons(course_id, sort_order, id)` (cada página do curso
+reordenava 30k linhas); índices de FK cascade, archive_likes/views(item_id), etc.; ~30
+políticas RLS com `has_role()`/`auth.uid()` cru embrulhadas em `(SELECT ...)` — inclui as 5
+políticas admin FOR ALL que a 20260804040000 não cobriu (o has_role cru continuava rodando
+POR LINHA em lessons via OR de política permissiva); RPC `increment_coupon_use` atômica.
+
+**UX/erros silenciosos:** excluir comprador e "Sincronizar" trials pedem confirmação (eram
+DELETEs permanentes de 1 clique); `ClaimAccessPage` distinguia falha de rede de "compra não
+encontrada" (cliente que ACABOU de pagar via erro falso, sem retry); StudyPlan/StorageAccounts
+com estado de erro (falha mostrava "vazio" como se os dados tivessem sumido); "Carregar mais"
+da comunidade não apaga mais o feed; digitar na busca do acervo com material aberto não refaz
+mais 3 consultas; F5 no /payment/success não perde mais plano/email; dropdowns de país fecham
+ao clicar fora; rollback+aviso em favoritos/exclusões que falham; carrossel do dashboard 6s
+com pausa por toque/foco e `prefers-reduced-motion`.
+
+**Deploy em produção (feito nesta sessão, depois do relatório):** a migration
+`20260805120000_perf_indexes_rls_initplan.sql` foi aplicada via Management API (19 índices
+criados, 36 políticas com has_role/is_member agora em InitPlan, RPC `increment_coupon_use`
+com EXECUTE só pra service_role) e as 10 Edge Functions alteradas foram redeployadas via
+multipart preservando o `verify_jwt` de cada uma (8 false, 2 true — drive-save-folder e
+drive-list-folders), todas com OPTIONS 200 (sem BOOT_ERROR). Verificação adversarial em
+produção confirmou os gates de auth recusando (drive-share-folder sem header → 401 etc.) e o
+planner usando os índices novos. **O frontend NÃO foi deployado** — depende do merge da branch
+na `main` (Vercel detecta o push). Tokens do Supabase Management e do Vercel foram rotacionados
+nesta sessão; a tabela de credenciais no topo já reflete os valores novos.
+
+**Pendências documentadas (não corrigidas nesta sessão, por risco/escopo):** rewrites dos
+feeds `community_feed`/`archive_feed` (subqueries correlacionadas por linha computadas antes
+do LIMIT — os índices novos amortecem; rewrite exige cuidado com `_sort='relevant'`);
+rate-limits não-atômicos das Edge Functions (RPC única resolveria os 7); `search_lessons` com
+`unaccent` por linha (precisa de índice trigram + wrapper IMMUTABLE); cache de token do Google
+no worker de streaming (hoje 1 chamada de Edge Function por range request); `types.ts` gerado
+do Supabase desatualizado (16 tabelas de ~40 — regenerar com
+`supabase gen types typescript --project-id jrrybiohwqabsdurqudc`).
+
+---
+
+### 2026-08-07 (sessão remota) — 2ª auditoria profunda (afiliados, loja, admin, auth, edge functions)
+
+**Segunda varredura** cobrindo tudo que a primeira não aprofundou: sistema de afiliados,
+loja, geradores de IA, todas as páginas admin restantes, fluxos de auth, componentes de
+comunidade e o restante das Edge Functions + worker. As correções desta sessão FORAM
+deployadas em produção (9 Edge Functions redeployadas via multipart, OPTIONS 200; frontend
+aguarda merge na `main`). Destaques:
+
+**Dinheiro / segurança (edge):**
+- `mp-webhook`: trava de **auto-indicação de afiliado** — comprador usando o próprio
+  cupom/ref ganhava 15-30% de volta e destravava o Vitalício Pro grátis com 5 compras
+  próprias. Agora comissão só vale pra venda a outra pessoa.
+- `send-access-email`: era um **relay de email aberto** (`verify_jwt=false`, sem checagem) —
+  qualquer um mandava "pagamento aprovado" pelo domínio verificado da OneMed. Fechado com
+  gate de service-role (mesmo mecanismo do drive-share-folder). Verificado: 401 sem auth.
+- `run-email-campaign`: **claim atômico** (scheduled→running com guard) — invocações
+  concorrentes mandavam o mesmo lote 2×; removido o fallback aberto quando `CRON_SECRET`
+  em branco (idem `run-sms-job`).
+- `member-lesson-token`/`member-stream-file`: entitlement passou a checar `expires_at` —
+  trial vencido emitia token de 2h e assistia até o cron de revogação rodar.
+- `whatsapp-webhook`: exige `apikey` (omitir o campo pulava a validação).
+- `member-auth-request`: rate limit por IP usa `x-real-ip` (XFF esquerdo era forjável,
+  zerando a trava de brute-force do login).
+- `member-sync-library`: falha de gravação de aulas marca `error` após N tentativas (ficava
+  `pending` pra sempre relistando o Drive).
+- Worker Cloudflare: rejeita `accessToken` ausente (evita `Bearer undefined`). **Precisa de
+  deploy manual do worker** (não sobe com as functions).
+
+**Auth / UX (frontend):**
+- `AuthContext`: parou de fazer `await` de supabase DENTRO do `onAuthStateChange` (risco de
+  deadlock do supabase-js em refresh/entre-abas); só recomputa admin em mudança de identidade.
+- `RegisterPage`: honesto sobre a concessão de admin. **Confirmado que a RLS de `user_roles`
+  já bloqueia auto-concessão** (WITH CHECK exige has_role admin) — não era exploit, mas a
+  página dizia "sucesso" quando o insert era negado.
+- `CommentThread`/`CommunityTab`: `ensureName` na resposta aninhada, guard anti-duplo-submit
+  no estado, toasts nos erros silenciosos.
+- `PdfViewer`: destrói o documento pdf.js no cleanup (vazava worker/páginas por aula).
+- `DriveSettings`: "Desconectar" pede confirmação (derrubava o acervo de todos num clique).
+- `EmailCampaign`/`SMS`: confirmação antes de disparo em massa; polling do EmailCampaign
+  para no unmount. `Coupons`: guarda de afiliado fail-closed. `WhatsApp`: typo `onomed`.
+- Vários estados de erro com "tentar novamente" (Flashcards/StudyPlans/Acervo admin);
+  `MemberLoginPage` valida tokens antes do setSession; `AccessManagement` pagina buyers.
+
+**Pendências de decisão do dono (afiliados — mexem em pagamento real, NÃO alteradas):**
+1. Comissão paga sobre upsells junto do plano (`transaction_amount` inteiro) — manter ou só
+   sobre o plano?
+2. Venda reembolsada continua com comissão a pagar (webhook só trata `approved`; não há
+   reversão em refund/chargeback).
+3. Token de indicação `?ref=` é o cupom (mutável) — trocar o cupom quebra a atribuição de
+   quem clicou no link antigo. Um id imutável resolveria.
+
+> **Atualização 2026-08-07 (fim desta sessão):** as 3 pendências acima foram RESOLVIDAS a
+> pedido do dono — comissão passou a incidir só sobre o plano (`buyers.plan_amount`),
+> reembolso/chargeback reverte a comissão (`affiliate_sales.status='reversed'`), e o link de
+> indicação passou a usar `affiliates.ref_code` imutável. Migration
+> `20260807120000_affiliate_commission_refund_refcode.sql` aplicada; mp-create-payment,
+> mp-webhook e affiliate-register redeployados.
+
+---
+
+**"Edge Function returned a non-2xx status code" ao gerar banco de questões** (cliente com PDF
+próprio): a frase é do supabase-js, não da nossa função. Em status não-2xx ele devolve `data`
+NULO e só essa frase em `error.message` — a razão real vai no CORPO da resposta. O
+`FlashcardGeneratorModal` lia só `error.message`, então QUALQUER recusa da função chegava ao aluno
+como erro cru em inglês. Corrigido com `extractFunctionErrorMessage` (mesmo utilitário que
+checkout/upgrade/stream já usavam).
+**Causa real no caso relatado: o limite diário de 15 gerações (429).** Confirmado nos dados —
+dois clientes com exatamente 15 tentativas na janela, um deles em 07/08, mesma data do print.
+Descartadas por teste em produção: tamanho do arquivo (2/5/8/12 MB de upload → todos 200; o teto
+prático é ~16 MB de payload) e PDF de editora (apostila real de 4,6 MB gerou 5 questões em 39s).
+**Tetos de IA unificados em 100/dia (decisão do dono, 07/08):** o de 15/dia foi removido e, no
+mesmo dia, substituído por um teto ALTO de segurança em TODAS as funções de IA — 100 por conta a
+cada 24h em `generate-flashcards` (por modo: flashcards e questões), `generate-study-plan`
+(era 10) e `member-assistant` (era 60). Não limita uso real (o aluno que mais usou fez 15 em
+24h); serve só de rede contra abuso/script, já que a IA é paga por chamada. As três mensagens de
+429 seguem o mesmo padrão: dizem quantas horas faltam (a janela é de 24h desde a PRIMEIRA
+chamada, não o fim do dia) e citam o tipo certo. Verificado em produção nas três funções, nos
+dois lados do teto: 30 gerações de questões → 200; 20 cronogramas → 200; 70 mensagens do
+assistente → respondeu; e com o contador em 100 cada uma devolve a mensagem correta.
+A mensagem do 429 também foi reescrita: dizia "tente amanhã", mas a janela é de 24h a partir da
+PRIMEIRA geração — agora informa quantas horas faltam e cita o tipo certo ("bancos de questões"
+× "baralhos de flashcards"). ⚠️ Tentativa que FALHA (erro de IA) também consome uma das 15.
+
+---
+
+**Arquivo do acervo abria mas NÃO rolava e o clique "saía do documento"** (cliente com PDF de
+apostila): o `LessonPlayer` do acervo é portalizado no `document.body`, ou seja, FORA do
+`DialogContent` do detalhe do item. Com o diálogo em modo **modal**, o Radix aplica
+`react-remove-scroll` + `pointer-events: none` em tudo que está fora do content — o PDF renderiza
+mas fica inerte. Reproduzido em produção antes de mexer (`body` com `pointer-events: none`,
+`scrollTop` preso em 0). Correção: `<Dialog modal={!sobreposto}>` no `DetailDialog`, onde
+`sobreposto` = player OU FlashcardViewer OU QuestionBankViewer aberto (os dois últimos são irmãos
+do diálogo e sofriam o mesmo), mais `onInteractOutside`/`onEscapeKeyDown` bloqueados nesse período
+— sem isso um clique dentro do player contaria como "fora" e fecharia o detalhe junto. Verificado
+em produção no MESMO arquivo do print do cliente: rolagem 0 → 2.740px de 8.202px, clique na página
+e na margem sem fechar, e ao fechar o player o detalhe volta a ser modal normalmente.
+**Regra:** overlay em portal + Radix Dialog modal não convivem — quando um sobe, o diálogo de trás
+tem que sair do modo modal.
+
+---
+
+**"SEMANA 10 aparecendo junto com a 1" — ordenação alfabética virou NATURAL:** o dono viu no
+mapa do MEDCURSO 2026 que a Semana 10 caía entre a 1 e a 2. Causa: `recalc_course_totals`
+numerava módulos e aulas com `ORDER BY` de TEXTO, e em texto "SEMANA 10" < "SEMANA 2". Não era
+específico desse curso — **8.960 módulos em 82 cursos** e **108.641 aulas** estavam fora de ordem
+("Aula 2" × "Aula 10", "Bloco 3" × "Bloco 12"). Migration `20260805060000_natural_sort_modules.sql`:
+nova função `natural_key(texto)` (quebra em pedaços dígito/não-dígito e zera à esquerda os
+números em 12 casas, então a comparação de texto respeita o valor numérico) usada nos dois
+`ORDER BY` do recalc. Reordenação aplicada em produção em TODOS os cursos (módulos de uma vez,
+aulas curso a curso pra não estourar o timeout da API).
+**Desempate obrigatório:** 18 cursos têm pastas de nome idêntico (ex: dois "Gastrologia" no
+MEDCurso) — sem `id` no fim do `ORDER BY` o `row_number()` alternava a cada recálculo e a
+verificação nunca convergia. Com o desempate, converge em zero. Correção é 100% de banco:
+nenhum deploy de frontend foi necessário (a UI já lia `sort_order`).
+
+---
+
+### 2026-08-05 (sessão remota) — MEDCURSO 2026: semanas 8, 9, 10 e a 6 completa
+
+**Pedido:** sincronizar o MEDCURSO com a pasta `1aWl1UsFms5_W9n1rAkRY_yWGBL8Ug515` (plataforma
+tinha até a Semana 6 parcial; a pasta tem 6, 8, 9 e 10 — **não existe Semana 7** na origem).
+
+**Descoberta que destravou tudo:** a pasta nova ("MED Curso 2026") é da PRÓPRIA conta de
+armazenamento da plataforma (`ufgravity@gmail.com`), mas não estava compartilhada com a conta de
+CONTEÚDO (`onemedcursos@gmail.com`) — que é justamente quem o worker de streaming usa pra servir
+os bytes. Daí o 404 na API. Compartilhada como leitura (permissão criada com o token da conta de
+armazenamento, via função temporária depois removida); sem isso as aulas importariam mas NÃO
+tocariam.
+
+**Importação (62 arquivos, 19,3 GB, 35 módulos):** Semana 6 ganhou a estrutura completa
+(Ped 1 · Preventiva, com Video Aulas / Aula Bônus / No Papo) dentro do módulo `SEMANA 6` que já
+existia; Semanas 8, 9 e 10 viraram módulos novos, nomeados em CAIXA ALTA (`SEMANA 8`) pra casar
+com as 1-6. Curso foi de 123 → **185 aulas**. Script `scratchpad/importar.mjs` espelha o
+`member-sync-library` (mesmo `lessonType`, `path`, `depth`, `parent_module_id`, `drive_path`,
+`last_seen_at`), com simulação por padrão e `--aplicar` pra gravar.
+
+**Duplicata conhecida e deliberada:** "AULA ESPECIAL- TRIAGEM NEONATAL" existe duas vezes na
+Semana 6 — a antiga (2,15 GB, solta na raiz do módulo, vinda da pasta do `medbrasil31`, com
+**13 alunos com progresso**) e a nova (442 MB, dentro de `Ped 1/Video Aulas`). Não apaguei a
+antiga porque `lesson_progress` cai por CASCADE; a nova, muito mais leve, é a que menos sofre com
+a cota de download do Drive.
+
+⚠️ **Duas fontes no mesmo curso:** `courses.drive_folder_id` continua apontando pra pasta ANTIGA
+(`medbrasil31`, semanas 1-6 + banco de questões). As semanas novas moram na pasta do ufgravity.
+Consequência: `scripts/deep-library-sync.mjs` rodado SEM `--only` marcaria as 62 aulas novas com
+`missing_since` (não apaga, e o aluno continua vendo — a página do curso não filtra por esse
+campo; o botão "Sincronizar biblioteca" do painel também nunca marca). Se for rodar o script
+completo, restaure o `missing_since = null` dessas aulas depois.
+
+---
+
+**Plano Mensal: R$49 → R$99.** Preço vive em 4 fontes de verdade que precisam andar juntas
+(`src/lib/plans.ts` PLAN_PRICES · `CheckoutPage` PLANS · `mp-create-payment` PLAN_PRICES, que é
+quem realmente cobra · `member-account-info` PLAN_PRICES, usado no desconto do upgrade de quem
+não tem linha em `buyers`). Citações que precisaram acompanhar: rótulo "Só Plano Mensal (R$ 99)"
+no seletor de cupom, prompt do `member-assistant` (a IA respondia o preço antigo) e o teste
+`upgradePriceFor('monthly','annual')` (150 → 100). Herdam sozinhos: JSON-LD de SEO, pixel/CAPI e
+UpgradePlanModal (todos leem PLAN_PRICES). Verificado em produção: `mp-create-payment` gravou
+`amount: 99.00` numa preferência real do Mercado Pago e o checkout exibe R$99,00.
+⚠️ **Efeito colateral aceito:** o upgrade é diferença de TABELA, então quem pagou R$49 no Mensal
+passa a receber R$99 de crédito ao subir para o Anual (paga R$100 em vez de R$150).
+
+---
+
+**Área "Contas do Painel" (`/admin/contas`, só admin):** gestão de quem entra no painel.
+RPC `admin_panel_accounts` (migration `20260805050000_admin_panel_accounts.sql`; user_roles
+admin/viewer × auth.users com último login) + Edge Function `admin-panel-accounts` (service
+role): `create` (e-mail já existente ganha o papel SEM trocar a senha — senão seria roubo de
+conta de assinante), `set_role`, `reset_password`, `remove` (tira só o papel; a conta de usuário
+fica). Trava: recusa demover/remover o ÚLTIMO admin. Visualizador não vê o item de nav
+(`adminOnly` no navItems) e é recusado na RPC e na função (testado em produção: lista admin ok,
+viewer barrado nos dois caminhos, criar/remover conta ok, UI conferida logada como viewer).
+
+---
+
+### 2026-08-05 (sessão remota) — conta VISUALIZADORA do painel admin
+
+**Papel `viewer`** (pedido do dono): conta `medestudosplusmedicina@gmail.com` (senha definida
+pelo dono) entra no painel `/admin` inteiro em modo leitura; edição SÓ na **Loja** (criar/gerir
+produtos) e na **Área de Membros** (conceder/renovar/revogar acesso — sem DELETE de linha).
+Migration `20260805040000_viewer_role.sql`: valor `viewer` no enum `app_role` (ALTER TYPE em
+statement separado!); policies de SELECT pra viewer em accesses/buyers/coupons/visits/affiliates/
+affiliate_sales/email_followups/user_roles/store_orders; FOR ALL em `store_products`; INSERT+
+UPDATE em `accesses`. `is_member()` e `can_read_library_audit()` ganharam bypass do viewer (o
+painel de comunidade/acervo/biblioteca lê por eles); RPCs admin_* de leitura re-gateadas pra
+admin-OU-viewer via `pg_get_functiondef` + replace direto em produção. `AuthContext` expõe
+`isViewer` (admin OU viewer abrem o painel); `AdminLayout` mostra faixa fixa "Modo visualização".
+**`drive_config` fica FORA do viewer de propósito** (tokens OAuth do Drive — a página Google
+Drive aparece como desconectada pra ele). Enforcement é NO BANCO: sondas confirmaram leitura ok,
+criar produto ok, conceder acesso ok, e PATCH em coupons/buyers e DELETE em accesses afetando 0
+linhas. Login real testado no navegador em produção (dashboard + faixa + loja + membros).
+
+---
+
+### 2026-08-07 (sessão remota) — INCIDENTE: TDZ no CourseDetailPage derrubou a área de membros
+
+**Sintoma:** após o deploy do frontend, os alunos viram "Algo deu errado ao
+carregar a página" ao abrir qualquer curso; console com
+`ReferenceError: can't access lexical declaration 'X' before initialization`
+(trace em `CourseDetailPage` + `index.js`, dentro de um `useMemo`).
+
+**CAUSA REAL (não era o code-splitting):** no `CourseDetailPage`, o
+`useMemo` de `initialWatchedSeconds` executava o callback já na 1ª renderização
+referenciando `pendingProgress`/`flushPendingProgress`, que estavam declarados
+(`const`) ~30 linhas ABAIXO. `const` tem TDZ: usar antes da linha de declaração
+estoura `ReferenceError` — e o `useMemo` invoca o callback SÍNCRONO no render.
+`madge --circular` confirmou ZERO dependência circular; o erro aparecia tanto
+no bundle dividido quanto no único (por isso reverter o splitting NÃO resolveu).
+
+> ⚠️ **`tsc` e `vite build` NÃO pegam esse bug** — não sabem que o `useMemo`
+> chama o callback sincronamente, então "const usado antes da declaração dentro
+> de um callback" passa reto. Só quebra em runtime, ao RENDERIZAR a página.
+> Testes unitários que não montam a página também não pegam. **Regra: hooks que
+> rodam no render (`useMemo`/`useDeferredValue`/código inline) só podem
+> referenciar coisas declaradas ACIMA deles no componente.**
+
+**Correção (hotfix `04a183e`):** mover a declaração de
+`pendingProgress`/`flushPendingProgress` para ANTES do `useMemo`/`useEffect`
+que as usam. Deploy verificado (bundle novo servido, rotas 200).
+
+**Sobre o code-splitting:** foi revertido no meio da investigação (commit
+`6acb8a2`) por suspeita errada — a plataforma segue hoje com bundle único
+(~1,9MB), imports estáticos no `App.tsx` e `PdfViewer` estático no
+`LessonPlayer`. Como o splitting NÃO era a causa, dá pra reintroduzir com
+segurança depois (a otimização de −62% fica pendente); `madge` já confirma que
+não há ciclo de import pra atrapalhar.
+
+---
+
+### 2026-08-07 (sessão remota) — 3º incidente do mesmo lote: `<Suspense>` órfão + varredura da classe de erro
+
+**Sintoma:** `ReferenceError: Suspense is not defined` ao abrir aula tipo PDF em
+`/membros/curso/*` (print do cliente, bundle `index-Bvi1JO0u`/`-DzptLWzL`). Terceiro
+`ReferenceError` da mesma leva de reversões (depois de `fetchRoster` e do TDZ do
+CourseDetailPage).
+
+**Causa:** ao reverter o code-splitting do `PdfViewer` (voltar pro import estático),
+o import de `Suspense` foi removido do `LessonPlayer` mas o JSX
+`<Suspense>…</Suspense>` em volta do `<PdfViewer>` ficou órfão. Corrigido removendo
+o wrapper (commit `fe4a3ed`) — `PdfViewer` renderiza direto.
+
+**Causa-raiz de por que os 3 vazaram pra produção:** `npm run build` = `vite build`
+(SWC), que **STRIPA os tipos sem type-check**. Os três (`Suspense`, `fetchRoster`,
+identificadores) seriam pegos por `tsc --noEmit`, que **nunca fazia parte do deploy**.
+Agora `tsc --noEmit` é gate obrigatório antes de qualquer push de frontend.
+
+**Varredura completa da classe de erro (para fechar de vez):**
+- `tsc --noEmit`: **limpo** — zero identificador indefinido em qualquer arquivo/branch
+  (pega `Suspense`/`fetchRoster` e qualquer irmão).
+- `eslint no-use-before-define` (variables:true) no `src` inteiro: todos os hits são
+  referências dentro de `useEffect`/handlers/`async` que rodam DEPOIS do corpo do
+  componente — **nenhum TDZ de render** (o do CourseDetailPage, já corrigido, não tem
+  irmão). Verificado caso a caso (MemberDashboard `userId`, CourseDetail `podeGerarIa`,
+  Checkout `getTotalPrice`, Archive `reallyStart`, DriveSettings `canResume`).
+- Redes de segurança novas: `src/test/lessonPlayerRender.test.tsx` (renderiza o
+  LessonPlayer por tipo de aula, reprova ReferenceError — testado: falha COM o bug,
+  passa SEM); `src/test/setup.ts` ganhou polyfills de
+  ResizeObserver/IntersectionObserver/scrollIntoView (gaps do jsdom).
+- 102 testes verdes; build de produção OK (prerender 27/27). Deploy verificado no
+  bundle vivo: a assinatura do bug (`animate-spin text-white/70`, que só existia no
+  fallback do `<Suspense>`) NÃO está mais no `index-*.js` servido em produção.
+
+**Regra reforçada:** hooks que rodam no render (`useMemo`/`useDeferredValue`/JSX inline)
+só referenciam coisas declaradas ACIMA deles; e **`tsc --noEmit` antes de todo deploy**
+(o build com SWC não substitui type-check).
+
+---
+
+### 2026-08-07 (sessão remota) — 145 aulas `.mp4.gdrive` removidas do "Anatomia [MuscleFLIX]"
+
+**Relato:** arquivos `.mp4.gdrive` no meio dos cursos que não reproduzem, "destruindo a
+experiência". Todas as 145 estavam num único curso: **Anatomia [MuscleFLIX]**
+(`course_id 553995eb-61ae-4173-8056-bc1bd220f946`), que tem 283 aulas = **138 vídeos
+reais + 145 ponteiros**.
+
+**O que são:** cada `.gdrive` é um arquivo-TEXTO de 168 bytes (`{"":"WARNING! DO NOT
+EDIT THIS FILE!","doc_id":"…","resource_key":"","email":"medconteudos21@gmail.com"}`) —
+ponteiro deixado por uma ferramenta de backup quando NÃO conseguiu copiar o vídeo de
+origem. Não são vídeo; o worker de streaming baixava os 168 bytes e o `<video>` não
+tocava.
+
+**Por que não dá pra fazer tocar (medido, não suposto):** o vídeo real mora em
+`medconteudos21@gmail.com` e **nunca foi compartilhado com a conta de conteúdo**. Testei
+os **145 doc_ids**: `onemedcursos` → **0/145 (todos 404)**; `ufgravity` → 403; público →
+401. A pasta do curso é de `medcinerdrive@gmail.com`, compartilhada com `onemedcursos`
+(os 138 vídeos reais tocam: metadata 200, range 206) — mas os 145 alvos não. A plataforma
+só tem token de `onemedcursos` (conteúdo) e `ufgravity` (storage); nenhum de
+`medconteudos21`/`medcinerdrive`. **Sem os bytes compartilhados/copiados, não há o que
+servir.**
+
+**Ação (escolha do dono: "esconder por ora, reversível"):** DELETE das 145 linhas-ponteiro
+(cascata: só 1 `lesson_progress`, 0 anotações/comentários/favoritos) + DELETE iterativo de
+146→149 módulos que ficaram vazios (o feed já esconde módulo vazio, mas o `CourseTree` não).
+`recalc_course_totals` rodado. Curso ficou **138 aulas, 143 módulos, 0 vazios** — só DB, sem
+deploy (produção lê o mesmo banco, então já sumiram pra todos). Mapa completo de restauração
+(lesson→doc_id + módulos removidos) em **`scripts/muscleflix-gdrive-pointers.json`** — quando
+o acesso for concedido (compartilhar origem com `onemedcursos` OU token de
+`medcinerdrive`/`medconteudos21`), reimportar apontando `drive_file_id=doc_id`.
+
+**Import futuro protegido:** `member-sync-library` e `scripts/deep-library-sync.mjs` já
+PULAM arquivos `.gdrive` (não reimportam os ponteiros). Ressalva: um re-sync manual pode
+recriar as PASTAS vazias (a subpasta ainda existe no Drive só com o `.gdrive` dentro) —
+reaparecem como pasta vazia no `CourseTree`, nunca como aula quebrada.
+
+---
+
+### 2026-08-07 (sessão remota) — Mensal cobrando R$49 em vez de R$99 (deploy defasado do mp-create-payment)
+
+**Relato:** cliente usou o cupom `ONE50` e o Mensal de R$99 saiu por "20 e pouco".
+
+**Causa:** `24,50 = 49,00 × 0,5`. O `mp-create-payment` **em produção** ainda tinha
+`PLAN_PRICES.monthly = 49.00` (extraído do eszip da função no ar, versão 65) enquanto o
+REPO já estava em `99.00`. Ou seja: a mudança de preço pra R$99 foi feita no código mas o
+`mp-create-payment` **não foi redeployado** — provavelmente revertido por um redeploy da
+própria função no dia 07/08 (trabalho de afiliados) a partir de uma cópia com o preço antigo.
+O Vitalício saía certo (`149,95 = 299,90 × 0,5`) porque só o preço do Mensal mudou.
+
+**Correção:** redeploy do `mp-create-payment` (repo → versão 66, `verify_jwt=false`, OPTIONS
+200). Confirmado em produção com chamada real (monthly + ONE50): `buyers.amount = 49,50`,
+`plan_amount = 49,5` — R$99 − 50% correto. As outras 3 fontes de preço já estavam em 99
+(`plans.ts`, `CheckoutPage` display, `member-account-info` deployado).
+
+**Regra:** mudar preço de plano exige redeploy do `mp-create-payment` (quem cobra) E conferir
+o preço no eszip da função no ar — não basta o repo. Ideal: extrair `PLAN_PRICES` pra um lugar
+só; hoje vive em 4 fontes.
+
+**Cobranças abaixo do valor na janela do bug (07/08, entre o redeploy defasado e a correção):**
+`liaregocr@gmail.com` pagou R$49 (devia R$99, sem cupom) e `ronaibandrade@gmail.com` pagou
+R$24,50 (devia R$49,50, ONE50). Decisão sobre cobrar a diferença é do dono — nenhuma ação
+financeira tomada. (Os vários `49,00` ANTERIORES a 06/08 estavam certos: o Mensal era R$49 até
+a subida pra R$99 em ~06/08.)
+
+---
+
+### 2026-08-09 (sessão remota) — Vercel Speed Insights
+
+**Pedido:** o painel da Vercel mostrava o card "Speed Insights / Get Started" sem nenhum dado.
+
+Speed Insights mede a experiência REAL de carregamento dos alunos (LCP, CLS, INP coletados no
+navegador de quem acessa), diferente do Analytics de visitas. O card do painel ensina o passo do
+**Next.js** (`@vercel/speed-insights/next`) — aqui é **React + Vite**, então a integração é pelo
+subcaminho `/react`, com o componente montado dentro do `BrowserRouter`.
+
+| Arquivo | Mudança |
+|---|---|
+| `package.json` | `@vercel/speed-insights@2` |
+| `src/App.tsx` | `<SpeedInsightsRotas />` ao lado do `<PixelPageViews />`, dentro do `BrowserRouter` |
+
+**O detalhe que importa — agrupar as rotas dinâmicas.** Sem passar `route`, o pacote reporta a
+URL crua e cada curso vira uma linha própria no painel: são **403 cursos**, e o relatório viraria
+uma lista de caminhos únicos com 1 amostra cada, sem média utilizável. `ROTAS_DINAMICAS`
+normaliza antes de reportar:
+
+```
+/membros/curso/<slug>   → /membros/curso/[slug]
+/cursos/<categoria>     → /cursos/[categoria]
+```
+
+Rota estática é reportada como está. É o mesmo padrão que a Vercel usa nativamente no Next.
+
+**Verificado em produção** (deploy `013c71b` READY): `/_vercel/speed-insights/script.js` responde
+200 e o `window.si` fica pronto; `data-route` conferido no navegador — `/cursos/cardiologia-ecg` e
+`/cursos/pediatria` reportam ambos `/cursos/[categoria]`; com sessão de teste (criada e apagada na
+mesma execução), dois cursos diferentes reportam ambos `/membros/curso/[slug]`, enquanto
+`/membros` e `/membros/acervo` reportam a si mesmos.
+
+> O prerender NÃO carrega o beacon (o `dist/index.html` não tem a tag) — é client-only por
+> design, então nem o SSR nem o sitemap mudam. Os primeiros números aparecem no painel conforme
+> os alunos navegam.
+
+---
+
+### 2026-08-09 (sessão remota) — plataforma adaptada a monitores ultra-wide
+
+**Relato:** print de um monitor de ~2000px com tudo espremido no meio. Medido antes de mexer,
+em 1920/2560/3440: o conteúdo ficava preso a **1400px** (dashboard), 1280px (curso), 1152px
+(acervo) e 1024px (cronograma) — em 3440px isso é **1020px de tela vazia de cada lado, 59% do
+monitor**. O painel admin tinha o problema OPOSTO: era 100% fluido (`flex-1 p-6`), então as
+fileiras de 4 cards de métrica esticavam para **~740px cada**, com o número num canto e o resto
+vazio.
+
+**Sistema de larguras (o ponto principal — fica num lugar só):**
+- Breakpoints `3xl: 1920px` e `4xl: 2560px` em `tailwind.config.ts` (o Tailwind parava no 2xl,
+  1536px).
+- Cinco cascas em `@layer components` no `index.css`: `.shell-wide` (1400→1800→2240, área de
+  membros e admin), `.shell-page` (max-w-7xl→1560→1840, landing e silo de SEO), `.shell-list`
+  (max-w-6xl→1400→1680, acervo), `.shell-form` (max-w-5xl→1240→1440, checkout/cronograma/
+  afiliado) e `.shell-read` (max-w-2xl→860→1000, comunidade/loja).
+
+> A largura BASE de cada casca é a que a plataforma já usava — **em telas de até 1919px nada
+> muda**. Conferido por medição em 390/768/1366: idêntico ao anterior, zero vazamento horizontal.
+
+**Corrigiu de quebra um desalinhamento que já existia** (visível nos prints "antes"): na área de
+membros o header era 1400px, o conteúdo do curso 1280px e o bloco do título do curso 1000px —
+três alinhamentos diferentes na mesma tela. Agora os três compartilham a mesma casca. Mesma
+coisa no checkout (nav/etapas/rodapé eram `max-w-4xl` contra `max-w-5xl` dos cards de plano).
+
+**Proporção, não só largura.** Casca larga com 4 colunas fixas não resolve nada, e mais colunas
+sem casca maior só encolhe os cards. As duas coisas crescem juntas, então o card fica MAIOR:
+
+| viewport | colunas | largura do card |
+|---|---|---|
+| 1366 (notebook) | 4 | 249px |
+| 1920 | 5 | 276px |
+| 3440 | 6 | 301px |
+
+⚠️ **As colunas extras entram só em `3xl`+, nunca em `xl`.** Na primeira tentativa usei
+`xl:grid-cols-5` (1280px) — como a casca só cresce a partir de 1920, isso ESPREMIA o card de
+257px para 202px em qualquer desktop de 1440px. Regra: coluna nova só no mesmo breakpoint em
+que a casca cresce.
+
+**Outros ajustes de proporção:** banner de destaque ganhou altura (340→400→460px) e o texto
+deixou de ficar preso num quarto da esquerda; mapa do curso foi a 380px (os nomes de módulo
+vinham truncados) e a coluna de aulas ganhou teto de 1560px (senão a linha vira um vão de 800px
+entre o título e os ícones); cards das prateleiras 192→232px; faixas de métrica do admin com
+teto de 1400px (as tabelas seguem usando os 2240px).
+
+**Comunidade e cronograma crescem pouco de propósito** (672→1000px e 1024→1440px): são coluna
+de leitura. Esticar um feed de discussão para 3000px piora a leitura, e dividir conversa
+encadeada em colunas seria pior ainda. Continuam com margem larga em 3440 — é decisão, não
+esquecimento.
+
+**Verificado em produção** (deploy `d93e18d`): dashboard e curso 1400→2240px, acervo
+1152→1680px, grade de categoria em 6 colunas, admin capado em 2240 com card de métrica caindo
+de 720px para 456px. Contas de teste (assinante e um admin temporário) criadas e apagadas na
+mesma execução.
+
+**🔴 Achado grave: o gate de deploy `tsc --noEmit` não checava NADA.** O `tsconfig.json` da raiz
+é solution-style (`"files": []` + `references`), então `tsc --noEmit` nele compila zero arquivo e
+sempre sai 0. Comprovado nesta sessão: quebrei um JSX de propósito, `tsc --noEmit` passou e o
+`vite build` falhou. É por isso que os três `ReferenceError` de 07/08 (`Suspense`, `fetchRoster`,
+TDZ) chegaram em produção mesmo depois do gate ter sido "adicionado". O comando real é
+**`tsc -p tsconfig.app.json --noEmit`**, agora nos scripts:
+
+```bash
+npm run typecheck        # o projeto de verdade (hoje: 141 erros de TIPO pré-existentes)
+npm run typecheck:refs   # só a classe que derruba produção — hoje limpo
+```
+
+O typecheck completo está VERMELHO por causa do `types.ts` desatualizado (16 tabelas de ~40 —
+pendência já documentada): 141 erros, todos de tipo (TS2769/TS2345/TS2339/TS2322…) em 29
+arquivos. **Zero** da classe que quebra em runtime (TS2304 identificador indefinido, TS1005
+sintaxe, TS2448 TDZ) — por isso `typecheck:refs` filtra exatamente esses códigos e serve como
+gate utilizável hoje. Regenerar o `types.ts` destravaria o gate completo.
+
+---
+
+### 2026-08-09 (sessão remota) — download de aula em vídeo vira exclusividade do Vitalício Pro
+
+**Regra nova:** nenhum plano baixa **aula em vídeo**, exceto o **Vitalício Pro** (e admin).
+**Arquivo** (apostila, PDF, planilha, imagem, áudio) segue como estava: do Vitalício pra cima.
+O corte aula×arquivo é `lessons.type === 'video'` — o MESMO que a página do curso já usa nas
+abas "Aulas" e "Arquivos", então o aluno vê a regra batendo com o que a tela mostra.
+
+`src/lib/plans.ts` continua sendo a fonte única, agora com DUAS listas
+(`PLANS_WITH_DOWNLOAD` para arquivo, `PLANS_WITH_LESSON_DOWNLOAD` para aula) e um porteiro
+`canDownloadItem(plano, item)`. Trocar quem pode baixar é editar um `Set`.
+
+**🔴 O buraco que isso fechou (o principal desta mudança):** o `dl` do Worker de streaming era
+**só um parâmetro de URL, sem assinatura**. Como todo aluno que assiste recebe uma URL de
+streaming, bastava acrescentar `&dl=aula.mp4` a ela para o Worker devolver
+`Content-Disposition: attachment` e salvar o vídeo — **em qualquer plano, inclusive trial**.
+Esconder o botão no frontend não resolveria nada.
+
+Agora a permissão de baixar entra na **assinatura**: `member-lesson-token` resolve o plano
+(maior tier entre as linhas ativas, mesmo critério do `member_plan_tier`), recusa o pedido com
+403 quando não há direito, e só então assina o sufixo `.dl` e devolve a URL com `&dlok=1`. O
+Worker verifica com a mensagem que inclui `.dl` quando `dlok=1` vem na URL, e **ignora o `dl`**
+em qualquer outro caso. O cliente pede `intent: 'download'` explicitamente.
+
+> Compatibilidade: URL SEM `dlok` continua verificada com a mensagem antiga
+> (`id.exp.mime`) — os tokens de 2h emitidos antes do deploy seguiram tocando normalmente.
+> Por isso a ordem de deploy é **Worker primeiro, Edge Function depois**: o Worker novo aceita
+> os dois formatos, enquanto o Worker antigo recusaria a assinatura nova (403 para quem baixa).
+
+**Verificado em produção** com contas reais dos 5 planos (criadas e apagadas no próprio teste):
+
+| plano | aula: stream | aula: download | arquivo: download |
+|---|---|---|---|
+| monthly / annual | 200 | **403** | **403** |
+| lifetime / lifetime_plus | 200 | **403** | 200 |
+| lifetime_pro | 200 | **200** | 200 |
+
+E as três sondas de bypass: URL de streaming + `&dl=` → **206 inline** (streaming intacto, sem
+`Content-Disposition`); URL do Pro com `dlok` assinado → **attachment**; `&dlok=1` forjado numa
+URL de streaming → **403 assinatura inválida**. Na interface, conta Vitalício clicando no
+download de uma aula vê "Baixar aulas é exclusivo do Vitalício Pro"; conta Pro baixa direto.
+
+**Textos de venda acompanharam:** `PLAN_FEATURES` e os cards do checkout ganharam "Download das
+aulas em vídeo — exclusivo do Pro" SÓ no Pro (o teste `downloadPlans.test.ts` que exigia zero
+novidade de download entre Plus→Pro codificava a regra antiga e foi atualizado para exigir
+exatamente essa linha). O convite de upgrade ganhou uma terceira versão: quem já baixa arquivo
+e esbarra numa aula vê que falta o Pro, em vez de "seu plano não inclui downloads".
+
+⚠️ **Duas brechas que continuam abertas de propósito** (são decisão de produto, não bug):
+1. **Backup no Drive próprio** é benefício de Plus **e** Pro (`BACKUP_FOLDER_PLANS` no
+   `mp-webhook`) e entrega a biblioteca inteira, vídeos inclusive. Ou seja: o Plus não baixa
+   aula pela plataforma, mas alcança os vídeos pelo backup. Fechar isso é tirar o backup do
+   Plus.
+2. **Aulas com `storage_path`** (~240, as convertidas para o bucket `lesson-media`) são servidas
+   por signed URL do Supabase Storage, que honra `?download=` como parâmetro solto — o mesmo
+   truque do `dl` antigo. Fechar exigiria proxy próprio para esses arquivos.
+
+> E o limite físico: vídeo que **toca** no navegador pode ser capturado por quem insistir. O que
+> essa mudança garante é que não sai mais um arquivo pronto, com um clique, para quem não pagou.
+
+---
+
+### 2026-08-09 (sessão remota) — MEDCURSO 2026: semanas 11 e 12
+
+**Pedido:** o dono subiu mais semanas na MESMA pasta de antes
+(`1aWl1UsFms5_W9n1rAkRY_yWGBL8Ug515`, no Drive de armazenamento `ufgravity`) — sincronizar o que
+faltava.
+
+**Varredura completa da pasta** (recursiva, atalhos resolvidos, zero erros de listagem):
+6 pastas de topo (Semanas 6, 8, 9, 10, **11 e 12**), 54 pastas, **97 arquivos, 34,21 GB**.
+
+**Comparação arquivo a arquivo por ID do Drive:**
+
+| semana | arquivos | já na plataforma | a importar |
+|---|---|---|---|
+| 6, 8, 9, 10 | 62 | **62** | 0 |
+| **11** | 19 | 0 | **19** (4,32 GB) |
+| **12** | 16 | 0 | **16** (10,55 GB) |
+
+Paridade exata com a importação de 05/08 nas semanas antigas — nada tinha se perdido. Zero
+arquivos `.gdrive`, zero stubs de 55.855 bytes, zero colisão de nome (as três armadilhas que já
+morderam esta biblioteca antes foram checadas explicitamente).
+
+**Importado:** 35 aulas e 18 módulos (`SEMANA 11|12 / <DISCIPLINA> / {Video Aulas, Aulas Bônus,
+No Papo}` — mesma estrutura das semanas 8-10), com semana em CAIXA ALTA para casar com as 1-10.
+Curso foi de **185 → 220 aulas** (129 vídeos, 90 PDFs, 1 doc), 99,8 GB. Zero duplicata por
+`drive_file_id`.
+
+**Antes de gravar, conferido que a conta de CONTEÚDO (`onemedcursos`) lê os bytes** — a pasta é
+do `ufgravity`, e foi exatamente isso que quase impediu a importação de 05/08. O
+compartilhamento daquela sessão propagou para as subpastas novas: `alt=media` com `Range` curto
+devolveu `206` e assinatura `ftypisom` (MP4 de verdade, não TS disfarçado nem stub).
+
+**Ordenação:** `recalc_course_totals` renumerou com `natural_key` — SEMANA 10, 11 e 12 ficam
+DEPOIS da 9, não entre a 1 e a 2. Conferido na página do curso em produção, com conta de teste
+criada e apagada na mesma execução: o mapa lista SEMANA 1…12 na ordem certa e o streaming de uma
+aula nova de cada semana responde 206 com bytes de MP4.
+
+**Durações:** as 34 aulas novas em vídeo entraram sem `duration_seconds`. Preenchidas em 34/34
+lendo SÓ `videoMediaMetadata.durationMillis` do Drive — chamada de metadado, **não baixa bytes**,
+então não consome a franquia de download de nenhum vídeo (o
+`admin-backfill-lesson-durations` faria o mesmo, mas com fallback que lê trechos do arquivo).
+Curso passou a somar 35,9h. O resto do curso segue com cobertura parcial de duração (31/95
+vídeos antigos), situação anterior a esta sessão.
+
+⚠️ **Segue valendo o aviso de 05/08:** `courses.drive_folder_id` deste curso aponta para a pasta
+ANTIGA (`medbrasil31`, semanas 1-6 + banco de questões). As semanas 8-12 moram na pasta do
+`ufgravity`. Rodar `scripts/deep-library-sync.mjs` SEM `--only` marcaria as 97 aulas dessas
+semanas com `missing_since` (não apaga, e o aluno continua vendo — a página do curso não filtra
+por esse campo; o botão "Sincronizar biblioteca" do painel também nunca marca). Se rodar o
+script completo, restaure o `missing_since = null` dessas aulas depois.
+
+---
+
+### 2026-08-10 (sessão remota) — gerador de questões: 3 defeitos distintos
+
+**Relato:** "não está funcionando, gerando apenas 1 questão e às vezes nem gera".
+
+**O motor está são.** Antes de mexer, medi em produção com conta real: apostila PDF pedindo 15,
+30 e 5 → **15/15, 30/30, 5/5**, todas completas (4 alternativas + `why` paralelo). Upload próprio
+do aluno → 15/15. O limite diário também foi descartado: ninguém passou de **15/100**. Os
+sintomas vinham de outro lugar.
+
+**1. "apenas 1 questão" — o campo de quantidade não podia ser limpo.** Reproduzido no navegador:
+
+| ação do aluno | campo | botão |
+|---|---|---|
+| inicial | `10` | Gerar 10 questões |
+| 1 backspace | `1` | **Gerar 1 questão** |
+| 2 backspaces (queria limpar) | `1` | **Gerar 1 questão** |
+| digita "20" em seguida | `120`→clamp | **Gerar 30 questões** |
+
+O estado era numérico com clamp a CADA tecla: `Number('') || 1` devolvia 1 no instante em que o
+campo esvaziava, e o valor voltava para o input controlado. Quem queria 20 gerava **1** (se não
+percebia) ou **30** — nunca 20. Corrigido guardando o valor como TEXTO enquanto se digita, com o
+ajuste só no `blur` e no envio. Verificado depois do deploy: apagar deixa vazio, digitar "20" dá
+20.
+
+**2. Pedir 30 entregava ~21, em silêncio.** Com várias fontes, `max_tokens: 16384` cortava a
+resposta no meio e o parser (que recupera o último objeto completo) salvava só o pedaço — sem
+avisar. Teto subiu para **32768** e, se ainda faltar, uma segunda chamada pede só a diferença
+listando o que já existe para o modelo não repetir. Verificado: **30/30** e **25/25**.
+⚠️ A segunda chamada dobra o tempo (uma geração pesada já leva ~80s), então ela só roda se
+faltou mais de 10% E o relógio da function ainda tem folga (<90s) — estourar o limite entregaria
+ZERO questões, que é pior do que entregar algumas a menos.
+
+**3. Aula em vídeo virava questão inventada a partir do NOME do arquivo.** O pior dos três.
+A função manda os primeiros 10 MB do vídeo para a IA, mas **7 de 12 vídeos amostrados têm o
+átomo `moov` no fim do arquivo** (não são "faststart"), então esse trecho é indecifrável e
+sobrava só o título. O aluno pedia 15 questões sobre a aula e recebia 15 questões plausíveis
+inventadas em cima de um nome de arquivo — com cara de legítimas, para estudar medicina.
+Agora, quando NENHUMA fonte teve o conteúdo lido de verdade (contador `fontesLidas`), a geração
+é recusada com 422 e orientação para escolher a apostila do módulo. Verificado em produção.
+
+> Corrigir a leitura do vídeo em si exigiria remuxar para faststart (mover o `moov` para o
+> começo) — não dá para concatenar prefixo + `moov` e obter um MP4 válido. Enquanto isso, o
+> caminho honesto é recusar em vez de inventar.
+
+**4. A causa REAL do relato, achada depois com o print do cliente: o modo IMPORTAR.** O aluno
+enviava "um PDF com +100 questões" e recebia 1 — sempre pelo caminho **"usar banco de questões
+já existente"**. Reproduzido com provas de residência reais (UFSC 2022, 43 páginas; um simulado
+de 11 páginas), enviadas por upload como o aluno faz:
+
+| | antes | depois |
+|---|---|---|
+| prova de 43 páginas | **504 aos 151s** (nada) | **200, 20 questões, 88s** |
+| simulado de 11 páginas | **504 aos 150s** (nada) | **200, 18-20 questões, ~93s** |
+
+Eram **três** defeitos empilhados no mesmo laço:
+
+- `if (lote.length < LOTE_IMPORT) break` — transcrever questão de prova é caro em tokens
+  (enunciado com caso clínico + 5 alternativas + justificativa de cada uma), então o primeiro
+  lote de 20 estourava o limite de saída, o parser recuperava só a primeira questão inteira e o
+  laço encerrava achando que o documento tinha acabado. **Era o "só gerou 01".** Agora só encerra
+  quando o lote não traz NENHUMA questão nova; lote curto não é sinal de fim.
+- **Sem trava de tempo**, o laço rodava 6 lotes e a function morria com **504 aos 150s**. Checar
+  o relógio ANTES do lote não bastou (a primeira tentativa ainda deu 504): com 100s no relógio e
+  um lote de 50s, a chamada termina em 150s. Agora só começa um lote que **caiba inteiro** no que
+  sobra, estimando pela duração do lote anterior.
+- A **repetição automática** dentro de `obterCartas` dobrava a rodada: num PDF grande, duas
+  chamadas de ~75s davam exatamente 150s. Ela agora só acontece se couber no relógio.
+
+`LOTE_IMPORT` caiu de 20 para **10** — lote menor cabe inteiro na resposta e o laço avança mais
+rápido. Quando o tempo acaba, a resposta traz as questões já transcritas e um aviso honesto
+("Importei as 20 primeiras… envie o documento dividido em partes"): **não existe retomada**, uma
+nova geração recomeça da primeira questão, então o aviso não promete o que o sistema não faz.
+
+⚠️ Um PDF grande no modo GERAR chegou a **145s** numa medição — perto do corte de 150s. É
+comportamento anterior a esta sessão (uma única chamada ao modelo, sem laço), mas fica o registro:
+documento muito maior que isso pode estourar. O teto do complemento no modo normal foi apertado
+de 90s para **75s** por causa disso.
+
+---
+
+### 2026-08-10 (sessão remota) — curso "AnestReview" (1 arquivo) removido da plataforma
+
+Havia **dois** cursos com esse nome: `anestreview` (1 aula, 1 KB) e
+`anestesiologia-anestreview` (**1.214 aulas, 140 GB** — o curso de verdade). O da reclamação era
+o primeiro; a "aula" era um Google Doc chamado **"Acessar pelo telegram, link abaixo:"**, ou
+seja, um ponteiro para canal externo, não conteúdo.
+
+**Desativado (`active=false`), não deletado — de propósito.** O aluno só vê `active=true` (o
+dashboard e a página de curso filtram por isso), então o efeito visível é o mesmo. A diferença
+está na durabilidade: `member-sync-library` casa curso existente por `drive_folder_id` e **nunca
+toca em `active`**; se a linha fosse APAGADA, a próxima "Sincronizar biblioteca" acharia a pasta
+`190AKwx4SmRUQB0JKyagrpE2a27f6cG_L` de novo e **recriaria o curso ativo**. Deletar parece
+resolvido hoje e volta sozinho depois. Mesmo critério dos 5 cursos vazios de 04/08.
+
+Perdas: nenhuma de conteúdo. Ficaram presos ao curso oculto 1 registro de progresso e 1 favorito
+(preservados — reativar em `courses` traz tudo de volta). Verificado em produção com conta real:
+a busca por "anest" agora devolve só o curso de 1.214 aulas, e `/membros/curso/anestreview`
+responde "Curso não encontrado". Mudança só de banco, sem deploy.
+
+---
+
+### 2026-08-10 (sessão remota) — reajuste geral dos planos
+
+**Preços novos** (Mensal já estava em R$99): Anual 199→**299** · Vitalício 299,90→**499** ·
+Plus 599→**798** · Pro 997→**1.497**. As 4 fontes + assistente + rótulos de cupom atualizados
+juntos; `AccountMenu` parou de ter o amount da renovação hardcoded (lê `PLAN_PRICES`). Âncoras
+riscadas do checkout (R$399/R$667) mantidas — seguem acima dos preços novos. Testes de
+`upgradePriceFor` refeitos para os degraus novos (Plus→Pro 699 · Vitalício→Plus 299 ·
+Anual→Vitalício 200 · Mensal→Anual 200).
+
+**Verificado em produção, 12/12 casos** com preferências REAIS do Mercado Pago (buyers de teste
+apagados após): preço cheio dos 5 planos exato; **ONEMED30 (30%)** em annual/lifetime/pro
+cobrando exatamente o que o checkout exibe (R$209,30 / R$349,30 / R$1.047,90 — conferido também
+visualmente no resumo do checkout); upgrades por diferença de tabela com sessão logada
+(299/699/200) e upgrade+cupom (R$209,30). Eszip do `mp-create-payment` NO AR extraído e
+conferido com os valores novos — a lição do incidente de 07/08, quando o repo tinha R$99 e a
+função no ar cobrava R$49.
+
+---
+
+### 2026-08-10 (sessão remota) — planos redefinidos: download só Pro, IA por plano, tabela comparativa
+
+**Download** (decisão do dono): QUALQUER download — arquivo OU aula em vídeo — passa a ser
+EXCLUSIVO do Vitalício Pro (e admin). `PLANS_WITH_DOWNLOAD` e `PLANS_WITH_LESSON_DOWNLOAD` viram
+os dois `{lifetime_pro, admin}`; `member-lesson-token` acompanha (`podeBaixar = isAdmin || plano
+=== 'lifetime_pro'`). Vitalício e Plus deixaram de baixar arquivo. O `dl` do Worker segue
+assinado no HMAC, então continua sem como burlar pela URL. Verificado em produção com contas dos
+5 planos: aula e arquivo com `intent=download` → **403 em todos menos o Pro (200)**.
+
+**Ferramentas de IA — limite por plano (enforcement REAL nas 3 functions:** `generate-flashcards`
+nos dois modos, `generate-study-plan`, `member-assistant`): Mensal **BLOQUEADO** (403); Anual
+**5/dia**; Vitalício **10**; Plus **20**; Pro e admin sem limite de plano (só o teto de segurança
+de 100). O limite é POR FERRAMENTA — cada uma tem seu contador em `rate_limits` (action
+`flashcards`/`questions`/`study_plan`/`assistant`), como o dono pediu. O `member-assistant` passou
+a bloquear o Mensal também (antes só lia o plano pra contexto). Cada função resolve o plano via
+`my_member_status` (mesma RPC das telas) e usa `LIMITE_IA_POR_PLANO[plano] ?? 100`. Verificado em
+produção pré-carregando o contador na fronteira: no limite → 429 com a mensagem certa; um abaixo →
+passa; Pro com 30 no contador não trava; Mensal 403 nas três ferramentas.
+
+**Benefícios reescritos** (`plans.ts` PLAN_FEATURES + cards do `CheckoutPage` + prompt do
+`member-assistant`): atualizações — Mensal/Anual **nenhuma** ("acervo atual"), Vitalício **anuais
+dos cursos básicos**, Plus **anuais dos intermediários**, Pro **mensais de 95% + novos cursos**.
+Download e IA como acima. Os textos IGUAIS entre planos vizinhos (`Acesso vitalício`, o backup no
+Drive) são idênticos de propósito — o diff do `UpgradePlanModal` esconde o que a pessoa já tem; os
+que MUDAM de valor (telas, limite de IA, atualizações) têm texto próprio e aparecem como novidade
+no upgrade.
+
+**Tabela comparativa** dos 5 planos no checkout: novo `src/components/PlanComparisonTable.tsx`,
+abaixo dos cards, com scroll horizontal próprio no mobile (a página nunca rola de lado), ✓/✗ e
+condições por célula, coluna do Pro destacada. É uma verdade só — bate com PLAN_FEATURES e com o
+enforcement do servidor.
+
+⚠️ **Brecha mantida de propósito:** o **backup no Drive próprio** (Plus e Pro) entrega a
+biblioteca inteira, vídeos inclusos — então o Plus não baixa pela plataforma mas alcança tudo pelo
+backup. O dono não pediu pra mexer no backup; fechar isso seria tirar o benefício do Plus.
+
+---
+
+### 2026-08-10 (sessão remota) — importar banco grande: a plataforma divide sozinha (paginação)
+
+**Pedido:** um banco de 100-150 questões no modo "usar banco existente" entregava só ~20 — o
+resto era cortado pelo limite de 150s da Edge Function. O dono pediu que a própria plataforma
+dividisse e gerasse por partes.
+
+**Solução — importação PAGINADA orquestrada pelo cliente:**
+- `generate-flashcards` aceita `importStart` (nº da 1ª questão do bloco), transcreve o que couber
+  no tempo e devolve `importDone` + `importNextStart`.
+- O `FlashcardGeneratorModal` chama em sequência a partir do `importNextStart`, acumula (dedupe
+  por enunciado) e mostra o progresso ao vivo ("Transcrevendo o banco… N questões"). Para quando
+  `importDone` ou nenhuma questão nova; tetos de 300 questões e 24 chamadas.
+- **A operação inteira conta como UMA geração** no limite diário: só a primeira chamada
+  (`importStart<=1`) passa pelo contador; continuações (`ehContinuacao`, importStart>1) pulam o
+  rate limit. Sem isso, um banco de 150 questões gastaria ~8 do limite do plano.
+
+**Verificado em produção** com a prova UFSC 2022 (43 páginas, ~60 questões): **60/60 em 4
+chamadas** (~6 min total, com progresso subindo), todas completas, zero duplicata. Antes: 20 no
+máximo. Modo GERAR normal intacto (chamada única, `importDone=true`).
+
+> Custo assumido: bancos grandes levam minutos (cada bloco é uma chamada ao modelo, ~60-115s). O
+> aluno vê o número subir e precisa manter a tela aberta — foi o trade-off aceito para entregar o
+> banco inteiro em vez de pedir pra dividir o PDF à mão.
+
+---
+
+### 2026-08-11 (sessão remota) — caixa de boas-vindas do trial, IA 5× no trial, receita de ontem
+
+**Caixa flutuante ao iniciar o trial** (`TrialWelcomeModal.tsx`, montada no `MemberDashboardPage`
+— destino do fluxo de trial): aparece UMA vez, avisando que "os cursos nas versões mais
+atualizadas e totalmente completos ficam disponíveis apenas após a assinatura, para evitar
+cópias", com botão "Entendi". Marcado como visto em `localStorage` por conta (`om_trial_welcome_
+seen_<uid>`); só existe para `status === 'trial'`. Verificado em produção: trial vê e não
+reaparece após "Entendi"+reload; conta paga não vê.
+
+**Trial nas ferramentas de IA: 5 usos por ferramenta** (decisão do dono — "só pra conferir o
+funcionamento"). `LIMITE_IA_POR_PLANO` ganhou `trial: 5` nas 3 functions
+(`generate-flashcards` nos dois modos, `generate-study-plan`, `member-assistant`); no 6º uso →
+429 com mensagem específica de trial ("Você usou as 5 utilizações liberadas no teste grátis.
+Assine um plano para continuar…"). O **cronograma bloqueava trial totalmente no frontend**
+(`if (isTrial)` → tela de "exclusivo para assinantes") — removido, agora o trial gera e o limite
+de 5 é aplicado no servidor como nas demais. Flashcards/questões já liberavam trial
+(`podeGerarIa = memberPlan !== 'monthly'`). Verificado em produção nas 4 ferramentas: no 5º → 429,
+no 4º → passa.
+
+**Receita de ONTEM no admin** (`BuyersPage`): novos badges "Receita Ontem" e "Aprovados Ontem"
+ao lado dos de hoje. Novo helper `yesterdayStartISO()` — janela fechada `[ontem 00h, hoje 00h)`
+no fuso de São Paulo (não pode incluir hoje). Verificado em produção contra o banco: R$ 4.469,00
+e 14 aprovados ontem, batendo exatamente.
+
+---
+
+### 2026-08-11 (sessão remota) — Playlists de estudo, player popup/PiP, autoplay e chatbot com contexto
+
+**Função nova "Playlist"** (Menu → Playlists, `/membros/playlists`) — o espaço de estudo do
+aluno. Modelo polimórfico `(item_type, item_id)` sem FK por tipo; a resolução de títulos é uma RPC
+`SECURITY DEFINER` que ignora a RLS mas confere a posse da playlist. Migration
+`20260811100000_playlists.sql`: tabelas `playlists` (name, notes, is_default) e `playlist_items`
+(UNIQUE por playlist+tipo+item); RPCs `my_playlists` (cria a "Assistir depois" padrão na 1ª
+chamada), `playlist_items_resolved` (LEFT JOIN em courses/lessons/flashcard_decks/question_banks/
+study_plans/archive_items, título com fallback "(item removido)", kind/course_slug/lesson_type),
+`playlist_create/add/remove/rename/set_notes/delete` (delete barra `is_default`) e
+`playlists_of_item`. RLS dono via `(select auth.uid())`.
+
+| Arquivo | Mudança |
+|---------|---------|
+| `src/hooks/usePlaylists.ts` (novo) | Hook react-query (`['playlists', user.id]`) + helpers `playlistsOfItem/addToPlaylist/removeFromPlaylist/createPlaylist` |
+| `src/components/member/SaveToPlaylistButton.tsx` (novo) | Dropdown "Salvar na playlist" (Popover): checa em quais playlists o item já está, marca/desmarca e cria nova. Variantes `icon`/`button` |
+| `src/pages/MemberPlaylistsPage.tsx` (novo) | Lista de playlists + criar; playlist selecionada com rename/delete, anotações (autosave 1,2s + flush no unmount), itens resolvidos. Aula abre no curso com `?lesson=&fila=`; flashcard/banco abrem inline nos viewers; cronograma `/membros/cronograma?id=`; acervo `/membros/acervo?item=` |
+| `SaveToPlaylistButton` plugado em | `CourseCard` (grade), `CourseDetailPage` (cabeçalho do curso + cada aula/arquivo), `MemberDashboardPage` (abas Flashcards e Banco de Questões), `StudyPlanPage` (cards + detalhe), `ArchivePage` (cards + diálogo) |
+| `courseCategories.ts` / `MemberDashboardPage` / `App.tsx` | Item "Playlists" no menu (ícone `ListVideo`), rota `/membros/playlists` |
+
+**Player — popup/minimizar, vídeo flutuante e autoplay** (`LessonPlayer.tsx`):
+- **Minimizar** vira janelinha flutuante arrastável (`fixed`, sem backdrop → a plataforma atrás
+  fica clicável). O elemento `<video>` é o MESMO nos dois modos (só troca a classe do wrapper),
+  então não recarrega nem perde o ponto. Vale pra QUALQUER tipo — arquivo/PDF também minimiza
+  ("arquivos também devem haver popups").
+- **Vídeo flutuante nativo (Picture-in-Picture)**: removido o `disablePictureInPicture`, botão
+  chama `requestPictureInPicture()` — janela do SO, vai pra outra tela e toca em 2º plano.
+- **Autoplay**: ao terminar vídeo/áudio com próxima aula, contagem de 5s cancelável ("Pular"/
+  "Cancelar") e emenda via `onNext()` (sequência do curso). Teclado/Escape não são sequestrados
+  quando minimizado (a página atrás está em uso).
+
+**Chatbot enxerga a playlist aberta:** `assistantContext.ts` ganhou `setOpenPlaylist`/
+`subscribeOpenPlaylist`; `MemberPlaylistsPage` publica a playlist selecionada; `AssistantWidget`
+mostra o chip "Playlist: X" e manda `currentPlaylist:{id}`. `member-assistant` confere a posse
+(`playlists` por `user_id`), lista os itens via `playlist_items_resolved` rodando COMO O ALUNO, e
+injeta nome+itens+anotações no contexto. Manual do assistente atualizado (Playlists + capacidades
+do player).
+
+**Deploy e verificação em produção** (autorizado pelo dono): migration já estava aplicada;
+`member-assistant` redeployado (v9, `verify_jwt=false`, OPTIONS 200); frontend na `main` (Vercel
+`cd4c025` READY). Verificado com conta de teste real (criada e apagada na sessão): `my_playlists`
+cria a "Assistir depois"; salvou curso/aula/acervo e `playlist_items_resolved` devolveu os 3 com
+título; `playlists_of_item` confirmou; assistente listou os itens da playlist aberta; smoke de UI
+no bundle vivo (Playwright) — `/membros/playlists` e `/membros` sem NENHUM erro de runtime, menu
+"Playlists" presente, 402 botões "Salvar na playlist" na grade. 103/103 testes verdes, build
+27/27 rotas, `typecheck:refs` limpo.
+
+⚠️ **`?fila=` (fila da playlist) ainda não é consumida** pelo `CourseDetailPage` — o autoplay
+segue a ordem DO CURSO (onNext/hasNext já existentes), não a ordem da playlist. Playlist com aulas
+de cursos diferentes não encadeia entre cursos (cada `CourseDetailPage` só tem um curso). Fica
+como melhoria futura; o param é inofensivo (ignorado).
+
+---
+
+### 2026-08-11 (sessão remota) — questões com IMAGEM de verdade (fim do placeholder "IMG")
+
+**Relato:** no gerador de banco de questões, questão que dependia de figura aparecia com o texto
+"IMG" no lugar da imagem. Causa estrutural: o card era 100% texto
+(`front/options/correct/back/why`) — o Gemini VÊ a figura no PDF mas não tinha onde devolvê-la,
+então saía um marcador.
+
+**Solução — extração das imagens do próprio PDF (`generate-flashcards` v31):**
+- `extrairImagensPdf()` (pdf-lib): varre os XObjects por página e extrai os streams
+  **DCTDecode puros — o conteúdo bruto JÁ É o .jpg**, sem reencodar. Ignora imagens <10KB
+  (ícones), >500KB, repetidas em 3+ páginas (logo/marca d'água); tetos 24 imagens / 2,5MB.
+  Só roda com **UM PDF lido** na geração (a referência é o nº da página, ambígua com dois docs).
+- O prompt (modo gerar E importar) lista as páginas com figura; questão que depende de imagem
+  devolve `img` (página) + `imgDesc` (descrição). O servidor casa página→imagem (cursor por
+  página, tenta página±1 — o modelo às vezes conta capa diferente) e grava
+  **`image` (data URI JPEG) no card**. Sem imagem extraível → `[Imagem: descrição]` no enunciado
+  + warning. `img`/`imgDesc`/`n` são efêmeros (deletados antes de responder).
+- Placeholders residuais ("IMG", [IMAGEM], [FIGURA]) são varridos do enunciado sempre.
+
+**Viewers:** `BankQuestion`/`Flashcard` ganharam `image?: string`; `QuestionBankViewer` e
+`FlashcardViewer` renderizam a figura ACIMA do enunciado; `exportQuestionBankPdf` embute a
+imagem no PDF exportado (redimensionada, nunca falha a exportação). O save já passava os cards
+verbatim → `image` persiste no jsonb sem migration. Bancos antigos (sem o campo) seguem normais.
+
+**Bug achado no caminho — enchimento na importação de banco pequeno:** pedir "questões 1 a 10"
+de um documento com 3 fazia o modelo COMPLETAR repetindo questões com variações que escapavam do
+dedupe por texto: acentuação "corrigida" ("acao"→"ação") e frase extra no fim do enunciado.
+Três guardas novas no laço de importação:
+1. Prompt: campo `n` (nº da questão no documento) + ordem explícita de PARAR no fim do documento.
+2. Dedupe por `n` repetido DENTRO do lote (não entre lotes — prova com numeração reiniciada por
+   seção repete "Questão 1" legitimamente).
+3. **`ehRepeticaoDisfarcada()`**: mesma assinatura de alternativas (normalizada SEM acentos —
+   `normalize('NFD').replace(/\p{M}/gu,'')`, senão "ação"≠"acao" vira token diferente) +
+   **CONTENÇÃO** de tokens do enunciado ≥0.8 (interseção sobre o MENOR conjunto — Jaccard de
+   união falhava quando a cópia tinha uma frase a mais, 0.71<0.75). Série "julgue os itens"
+   (mesmas alternativas, enunciados diferentes) mede 0.29-0.45 e passa.
+
+**Verificado em produção** (conta de teste criada e apagada; PDF de prova sintético com JPEG
+embutido + gabarito): importação **8/8 runs exatos** — 3 questões, imagem SÓ na questão da
+figura, **SHA-256 da imagem anexada idêntico ao JPEG original**, gabarito preservado (1-B, 2-B,
+3-C), zero campos efêmeros vazando; modo GERAR normal: 5 questões, a da figura veio com `image`.
+103/103 testes, build 27/27, typecheck:refs limpo.
+
+⚠️ Limitação conhecida: imagens em outros formatos dentro do PDF (FlateDecode/PNG-like, JPX)
+não são extraídas — caem no fallback `[Imagem: descrição]`. Cobrir exigiria decodificar/reencodar
+no edge. A grande maioria das figuras de provas médicas é JPEG (DCTDecode).
+
+---
+
+### 2026-08-11 (sessão remota) — download de ARQUIVO volta pro Vitalício+ (aula segue só no Pro)
+
+**Regra nova (decisão do dono, substitui a de 10/08 "tudo só Pro"):** ARQUIVO — apostila, PDF,
+`.apkg`, planilha, imagem, áudio — baixa do **Vitalício pra cima** (Vitalício, Plus e Pro);
+**AULA EM VÍDEO continua exclusiva do Pro**; Mensal/Anual/trial não baixam nada.
+
+| plano | arquivo (dl) | aula vídeo (dl) | stream |
+|---|---|---|---|
+| monthly / annual | **403** | **403** | 200 |
+| lifetime / lifetime_plus | **200** | **403** | 200 |
+| lifetime_pro | **200** | **200** | 200 |
+
+(Tabela = verificação REAL em produção com contas dos 5 planos, criadas e apagadas na sessão.)
+
+**Mudanças:** `plans.ts` (`PLANS_WITH_DOWNLOAD` volta a ter lifetime/plus/pro;
+`PLANS_WITH_LESSON_DOWNLOAD` segue só pro) · `member-lesson-token` v26 (checagem por TIPO:
+vídeo→Pro, arquivo→Vitalício+; mensagens de 403 atualizadas) · PLAN_FEATURES/cards do checkout
+(linha idêntica "Download de arquivos e apostilas (PDF, Anki e mais)" nos 3 vitalícios — o diff
+do upgrade esconde o repetido; "Download das aulas em vídeo — exclusivo do Pro" só no Pro) ·
+`PlanComparisonTable` (duas linhas de download) · `DownloadUpsellModal` (arquivo bloqueado
+aponta pro Vitalício, não mais pro Pro) · FAQ do `/planos` · manual do `member-assistant` v10.
+`downloadPlans.test.ts` reescrito pra regra nova (108 testes no total). O Worker não mudou —
+o `dl` continua entrando na assinatura HMAC, só a decisão de quem assina mudou na function.
+
+---
+
+### 2026-08-11 (sessão remota) — Detalhes do Plano mostra o valor CHEIO do plano (não a diferença do upgrade)
+
+**Relato:** após um upgrade, os detalhes do plano mostravam como "Valor" só a diferença paga
+(ex.: R$ 200 do Anual→Vitalício) — parecia que o plano valia R$ 200.
+
+**Causa:** a última linha de `buyers` de quem faz upgrade guarda só a diferença cobrada, e o
+`member-account-info` devolvia esse `amount` como `amountPaid`.
+
+**Correção (decisão do dono): `amountPaid` passa a ser SEMPRE o preço de TABELA do plano
+atual** (`PLAN_PRICES[plan]` na própria function, v16); plano sem preço conhecido (legado) cai
+no valor realmente pago. `PlanDetailsModal` renomeou o rótulo para "Valor do plano" e formata
+com `formatBRL` (senão o Pro mostraria "R$ 1497,00" sem ponto de milhar). `UpgradePlanModal`
+não usa `amountPaid` (upgrade é diferença de tabela) — nada muda no preço de upgrade.
+Verificado em produção com conta simulando upgrade real (buyers 299 + 200, accesses lifetime):
+`plan=lifetime, amountPaid=499`. Conta de teste apagada.
+
+---
+
+### 2026-08-11 (sessão remota) — "Você precisa ter acesso" no player (embed de cota × arquivo sem link)
+
+**Relato (vários clientes, prints):** aulas .mp4 (Manole Clínica Médica, Medcof) abrindo com a
+tela do Google Drive "Você precisa ter acesso" DENTRO do player — com o aluno podendo pedir
+acesso de EDITOR ao dono do arquivo.
+
+**Causa (duas condições juntas):** (1) a aula estourou a franquia diária de download do arquivo
+no Drive → worker responde 429 → o player cai no plano B, o embed `drive.google.com/.../preview`;
+(2) esses arquivos pertencem a contas de origem (`driveacesso55@`, `acessolivros25@`) que
+compartilham SÓ com a conta de leitura da plataforma — **não são "qualquer pessoa com o link"**.
+O embed então exige login/permissão e mostra o pedido de acesso. O fallback foi validado em
+31/07 com arquivos do `medbrasil31` (esses SÃO por link) e generalizado indevidamente. Sinal
+discriminante medido: preview ANÔNIMO responde **200** quando é por link e **401** quando não é.
+
+**Correção:**
+- `cloudflare/stream-lesson/worker.js` (deploy manual feito, keep_bindings preservado, 3 bindings
+  conferidos, OPTIONS 200): no 429 de cota, sonda o preview anonimamente (`redirect: manual`) e
+  responde o header **`X-Embed-Ok: 1|0`** (+ exposto no CORS).
+- `LessonPlayer.sondarFalha` lê o header: embed SÓ quando `X-Embed-Ok` ≠ '0'; senão mostra a
+  mensagem honesta de limite diário. Header ausente (worker antigo) mantém o comportamento de
+  sempre — ordem de deploy segura (worker primeiro, frontend depois).
+
+**Verificado em produção:** worker live era byte-idêntico ao repo antes da mudança (diff via
+multipart); pós-deploy, streaming normal da aula EXATA do print (206, bytes `ftyp` de MP4 real,
+com conta de teste criada e apagada). A cota dos arquivos reportados já tinha resetado (206 na
+sonda) — quando estourar de novo, o aluno verá a mensagem de limite em vez do pedido de acesso
+do Google. ⚠️ Sondar cota de arquivo grande: NUNCA `-o /dev/null` com range aberto (baixa bytes
+até o timeout e consome a franquia) — use `Range: bytes=0-1023` pra teste de vida.
+
+---
+
+### 2026-08-11 (sessão remota) — auditoria de cobrança completa + upsells reajustados (94,00 / 39,80)
+
+**Auditoria a pedido do dono ("valores certos indo pro MP? cupons no preço atual?"):**
+eszip da `mp-create-payment` NO AR extraído e conferido (99/299/499/798/1497 + upsells);
+13/13 cobranças reais de teste exatas (5 preços cheios, 4 cupons — ONEMED10/30, 50OFF —
+descontando sobre o preço ATUAL, 2 combos de upsell, 2 upgrades por diferença de tabela com
+sessão real, inclusive upgrade+cupom `(1497-299)×0,7 = 838,60`); auditoria das 36 compras
+reais desde o reajuste: 29 exatas na tabela nova, e as 7 "fora do padrão" são todas ANTERIORES
+ao deploy do reajuste em 10/08 18:14 UTC (batem exatamente na tabela antiga — janela de
+transição, não bug). `mp-webhook` não tem preço embutido (usa `buyers.plan_amount`) e as
+comissões de afiliado conferem (15/20/20/25/30%). Zero correção necessária na cobrança.
+Detalhe de teste: restaurar `times_used` dos cupons por DECREMENTO relativo, nunca valor
+absoluto — um cliente real usou ONEMED30 no meio da janela de teste.
+
+**Upsells reajustados (decisão do dono):** "Atualizações Semanais + Lançamentos Instantâneos"
+19,90 → **R$ 94,00**; "Proteção Proxy + Backups Instantâneos" 9,90 → **R$ 39,80**. Duas fontes
+atualizadas juntas (`CheckoutPage` UPSELL_PRICE/UPSELL2_PRICE + `mp-create-payment` idem, v68
+deployada, eszip no ar conferido). Verificado com 4 cobranças reais: 499+94=593,00 ·
+499+39,80=538,80 · 499+94+39,80=632,80 · 99+94+39,80=232,80 — todas exatas, com link real do
+MP. `plan_amount` segue só o plano (comissão de afiliado não incide sobre upsell, regra de
+07/08). Buyers de teste apagados.
+
+---
+
+### 2026-08-11 (sessão remota) — cache de trechos no worker: a solução da franquia diária por arquivo
+
+**Relato:** vários clientes com "Esta aula atingiu o limite de acessos de hoje" em vários vídeos
+(Hepatite B do Medcurso Comp etc.) — a mensagem honesta da correção anterior, mas o problema de
+fundo continuava: aula popular estoura a franquia diária de download POR ARQUIVO na origem e fica
+horas fora do ar para todo mundo.
+
+**Solução — cache por trecho na Cloudflare (`caches.default`, Cache API):** o worker já fatiava
+pedido aberto em janelas fixas de 24MB; agora cada janela é servida do cache do datacenter e só
+vai ao Drive UMA vez por colo a cada 3 dias (TTL). Cem alunos assistindo passam a custar ~1
+download na franquia em vez de cem — o estouro deixa de acontecer. Detalhes de implementação:
+- Assinatura HMAC conferida ANTES do cache (o cache não afrouxa a autenticação); a chave de
+  cache é `fileId + range` (exclui assinatura/`dl`), então alunos DIFERENTES compartilham os
+  trechos — verificado em produção (URL nova de outro token → HIT).
+- A Cache API **recusa respostas 206**: o trecho é guardado como 200 com `x-orig-status`/
+  `x-orig-content-range` e reconstruído na leitura. `tee()` no corpo: o mesmo fluxo vai pro
+  aluno e pro cache sem segurar 24MB em memória; `ctx.waitUntil` completa a gravação.
+- Cache HIT também pula a chamada à `drive-access-token` (menos uma invocação de function por
+  range request — amortiza a pendência antiga de cache de token).
+- Só corpos com `content-length` conhecido ≤32MB entram (janelas de 24MB sempre cabem; PDFs e
+  arquivos pequenos também são cacheados; export sem content-length fica de fora).
+- Header `x-cache: HIT|MISS` para diagnóstico.
+
+**Verificado em produção:** mesmo trecho 2× → MISS depois HIT com bytes SHA-256 idênticos e
+content-range correto; URL assinada nova (outro "aluno") → HIT; **trecho em cache continuou
+respondendo 206 mesmo com o arquivo JÁ BLOQUEADO na origem** (o 429 só aparece em trecho que
+nunca foi visto). Medido também que arquivo com franquia esgotada de verdade recusa QUALQUER
+tamanho de range (64KB → 429), então não existe fallback de "trecho menor" — o cache é a única
+mitigação real, e o que já foi assistido uma vez continua no ar.
+
+⚠️ O cache é POR DATACENTER (alunos do Brasil ≈ mesmo colo, efetivo) e sujeito a eviction LRU —
+não é garantia absoluta, é redução de ~N× no consumo da franquia. Aulas bloqueadas HOJE voltam
+sozinhas no reset diário; daí em diante o cache absorve a carga. Se ainda assim algum arquivo
+muito quente voltar a estourar, o caminho definitivo documentado continua sendo migrar o arquivo
+para conta própria (ufgravity/Storage) — o dono não tem franquia no próprio arquivo.
+
+---
+
+### 2026-08-12 (sessão remota) — telas simultâneas: contar TELA ATIVA, não linha de sessão
+
+**Pedido:** auditar o controle de telas por plano; só tela ATIVA deve contar — sessão já fechada
+não pode ocupar vaga.
+
+**Três defeitos, todos medidos em produção antes de mexer:**
+
+1. **Sessão nunca morria.** O projeto está com `sessions_inactivity_timeout = 0`, então
+   `auth.sessions` só perde linha se alguém apagar. **1.101 sessões (35% do total) nunca tiveram
+   um único refresh** — são logins que o aluno abriu e fechou em menos de ~1h (o refresh só
+   acontece de hora em hora). Ficavam ocupando vaga PARA SEMPRE. Efeito: **990 das 2.020 contas**
+   (metade da base) apareciam usando 2+ telas sem estar usando.
+2. **A regra derrubava a tela ERRADA.** `ORDER BY created_at DESC` mantinha as sessões mais
+   recentes POR CRIAÇÃO — então o aparelho que o aluno usa todo dia (sessão antiga, mas viva)
+   caía, e uma sessão criada ontem e abandonada sobrevivia. **289 contas** estavam nessa inversão.
+   Caso real conferido: aluno com iPhone usado ontem e Mac usado anteontem perdia o iPhone e
+   mantinha uma sessão fantasma do servidor.
+3. **Mensal prometia 1 tela e liberava 2.** `PLAN_DEVICE_LIMITS` só tinha os dois vitalícios
+   superiores; todo o resto caía no padrão 2. Pior: o cálculo do login fazia
+   `.filter(!!n)` sobre o mapa, então **um plano fora do mapa sumia da conta** — bastava uma
+   linha de acesso mapeada para o limite ignorar o plano real da pessoa.
+
+**Correções:**
+
+| Onde | Mudança |
+|---|---|
+| `supabase/migrations/20260812010000_active_session_limit.sql` | `enforce_session_limit` reescrita: (1) apaga sessões sem sinal de vida há **7 dias**; (2) entre as ativas, mantém as N de **atividade mais recente** (`greatest(refreshed_at AT TIME ZONE 'UTC', updated_at, created_at)`) |
+| `member-auth-request` v26 | Mapa com TODOS os planos (`monthly:1, annual:2, lifetime:2, plus:4, pro:6`); cada linha vale o limite do SEU plano (`?? DEFAULT`) e a conta usa o maior; linha **vencida não conta mais telas** (um anual expirado que o cron ainda não revogou entrava na conta) |
+| `src/lib/plans.ts` | Mesmo mapa completo — a tela "Detalhes do Plano" mostrava 2 para o Mensal, contradizendo o próprio card |
+| `src/test/deviceLimits.test.ts` (novo) | Lê o número DO TEXTO do benefício ("2 telas simultâneas") e exige que `PLAN_DEVICE_LIMITS` bata — é o teste que teria pego o bug do Mensal |
+
+**Janela de 7 dias, escolhida com dados:** liberava 887 sessões (28%) claramente mortas sem tocar
+em ninguém ativo; 3 dias derrubaria 51% e 1 dia 69% — punindo quem usa o notebook uma vez por
+semana. Como o login do aluno é só o e-mail (sem senha), voltar depois de 7 dias parados custa um
+clique. Janela curta demais também **facilitaria compartilhamento** (5 pessoas em dias alternados
+nunca bateriam no limite).
+
+**Verificado em produção** (contas de teste criadas e apagadas):
+- Cenários com timestamps reais, limite 2: sobrevivem a sessão *antiga porém ativa (2h atrás)* e a
+  do *login novo*; a *morta há 10 dias* e a *abandonada ontem* saem. **A regra antiga preservaria
+  as duas erradas.**
+- O aparelho derrubado **perde o acesso de verdade**: refresh token das duas removidas → HTTP 400;
+  das mantidas → 200.
+- Limite por plano pelo fluxo REAL de login (`member-auth-request`), 7-8 logins cada:
+  monthly 1 · annual 2 · lifetime 2 · plus 4 · **pro 6** — todos exatos.
+  ⚠️ O primeiro teste do Pro deu "2" e era **falso negativo**: o rate limit de login por IP
+  (`member_login`) barrou as chamadas seguintes depois de 35 logins seguidos do mesmo IP. Testar
+  limite de telas exige limpar `rate_limits` entre os lotes.
+- **Limpeza única em produção:** 884 sessões mortas removidas (3.106 → 2.222), contas com sessão
+  1.492, contas ocupando 2+ vagas caiu de **990 → 665**. Só telas mortas — nenhum aluno em uso
+  foi deslogado. O corte de excedentes NÃO foi aplicado em massa de propósito: acontece
+  organicamente no próximo login de cada conta, evitando uma onda de "fui deslogado do nada".
+
+⚠️ `create-trial-access` segue com `_max_sessions: 2` fixo (trial não anuncia telas nos cards);
+o limite continua sendo aplicado **no login**, então rebaixamento de plano só reflete no próximo
+acesso. E o `logout` do app usa o padrão do supabase-js (escopo global, derruba todos os
+aparelhos) — não foi alterado nesta sessão por não fazer parte do pedido, mas é candidato a virar
+escopo local (sair só daquele aparelho) numa próxima.
 
 ## Meta Ads — Contexto Geral
 

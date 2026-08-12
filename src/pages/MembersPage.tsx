@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import AdminLayout from '@/components/AdminLayout';
@@ -307,7 +307,6 @@ function BulkImportDialog({ open, onOpenChange, onImported }: {
 
 export default function MembersPage() {
   const [members, setMembers] = useState<MemberRow[]>([]);
-  const [filtered, setFiltered] = useState<MemberRow[]>([]);
   const [courseStats, setCourseStats] = useState<{ active: number; categories: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -358,9 +357,11 @@ export default function MembersPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  useEffect(() => {
+  // Derivado com useMemo — o useEffect anterior espelhava a lista inteira
+  // num segundo estado (memória em dobro + dois renders por tecla digitada).
+  const filtered = useMemo(() => {
     const term = search.toLowerCase();
-    setFiltered(term ? members.filter(m => m.email.toLowerCase().includes(term)) : members);
+    return term ? members.filter(m => m.email.toLowerCase().includes(term)) : members;
   }, [members, search]);
 
   const revokeAccess = async (accessId: string) => {
@@ -399,7 +400,7 @@ export default function MembersPage() {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 3xl:max-w-[1400px]">
           <Card className="bg-background-paper border-border">
             <CardContent className="p-5">
               <div className="flex items-center justify-between mb-2">

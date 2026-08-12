@@ -218,9 +218,10 @@ serve(async (req) => {
         const { data: isAdmin } = await supabase.rpc('has_role', { _user_id: user.id, _role: 'admin' })
         authed = !!isAdmin
       }
-    } else if (!cronSecret) {
-      authed = true
     }
+    // Removido o fallback "sem CRON_SECRET → libera geral": se a variável
+    // ficasse em branco no ambiente, QUALQUER um na internet dispararia envio
+    // de email em massa. Falha fechada — o cron sempre manda o secret.
 
     if (!authed) {
       console.error('run-email-campaign: unauthorized')
@@ -257,7 +258,19 @@ serve(async (req) => {
       })
     }
 
-    await supabase.from('email_campaigns').update({ status: 'running' }).eq('id', campaign.id)
+    // Claim atômico: só prossegue quem CONSEGUIU virar a linha de scheduled
+    // para running. Sem o .eq('status','scheduled') + .select(), duas
+    // invocações concorrentes (cron sobreposto, ou cron + disparo manual)
+    // pegavam a mesma campanha e mandavam o mesmo lote DUAS vezes.
+    const { data: claimed } = await supabase.from('email_campaigns')
+      .update({ status: 'running' })
+      .eq('id', campaign.id).eq('status', 'scheduled')
+      .select('id').maybeSingle()
+    if (!claimed) {
+      return new Response(JSON.stringify({ ok: true, message: 'Campanha já sendo processada' }), {
+        status: 200, headers: { ...cors, 'Content-Type': 'application/json' },
+      })
+    }
 
     const emails: string[] = campaign.recipient_emails || []
     const start = campaign.processed_index as number

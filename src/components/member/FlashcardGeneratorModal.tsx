@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { ChevronDown, ChevronRight, Loader2, Plus, SquareStack, ClipboardList, Upload, FileText, X } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { extractFunctionErrorMessage } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import type { FlashcardDeck } from './FlashcardViewer';
@@ -9,6 +10,8 @@ import type { FlashcardDeck } from './FlashcardViewer';
 export interface FlashcardSource {
   id: string;
   title: string;
+  // true = arquivo do Acervo Público (vai em archiveFileIds, não em lessonIds).
+  archive?: boolean;
 }
 
 export interface GeneratedDeck extends FlashcardDeck {
@@ -90,7 +93,7 @@ interface SearchResult {
 // expandir um curso busca os módulos e as aulas soltas dele; expandir um
 // módulo busca as aulas daquele módulo.
 function ContentTree({ selected, onToggle }: {
-  selected: Map<string, string>;
+  selected: Map<string, FlashcardSource>;
   onToggle: (lesson: FlashcardSource) => void;
 }) {
   const [courses, setCourses] = useState<CourseNode[] | null>(null);
@@ -287,13 +290,21 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
 }) {
   const ehQuestoes = mode === 'questions';
   const ModeIcon = ehQuestoes ? ClipboardList : SquareStack;
-  const [selected, setSelected] = useState<Map<string, string>>(new Map());
+  const [selected, setSelected] = useState<Map<string, FlashcardSource>>(new Map());
   const [difficulty, setDifficulty] = useState('intermediario');
   const [format, setFormat] = useState<'classic' | 'multiple_choice'>('classic');
-  const [count, setCount] = useState(10);
+  // A quantidade vive como TEXTO enquanto o aluno digita. Com número puro e
+  // clamp no onChange, o campo não podia ficar vazio: apagar "10" virava 1 na
+  // hora (Number('') || 1) e o campo travava em "1" — quem queria 20 acabava
+  // gerando 1 questão, ou 30 (o "1" preso + "20" digitado = 120, clampado).
+  // O clamp acontece ao sair do campo e no envio, não a cada tecla.
+  const [countTexto, setCountTexto] = useState('10');
+  const count = Math.min(Math.max(Number(countTexto) || 10, 1), 30);
   const [extraText, setExtraText] = useState('');
   const [showTree, setShowTree] = useState(false);
   const [generating, setGenerating] = useState(false);
+  // Progresso da importação paginada de banco de questões ("Transcrevendo… N").
+  const [progresso, setProgresso] = useState<string | null>(null);
   const [uploads, setUploads] = useState<UploadedFile[]>([]);
   const [reading, setReading] = useState(false);
   // Só no modo questões: em vez de GERAR questões novas (padrão), importar um
@@ -341,7 +352,7 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
   // Reabrir o modal para outra aula recomeça do zero, com a aula clicada.
   useEffect(() => {
     if (!open) return;
-    setSelected(new Map(initialSources.map(s => [s.id, s.title])));
+    setSelected(new Map(initialSources.map(s => [s.id, s])));
     setUploads([]);
     // Aberto pela aba Flashcards (sem aula pré-selecionada), a árvore já
     // aparece — escolher o conteúdo é o primeiro passo, não um opcional.
@@ -354,7 +365,7 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
     setSelected(prev => {
       const next = new Map(prev);
       if (next.has(lesson.id)) next.delete(lesson.id);
-      else if (next.size < MAX_SOURCES) next.set(lesson.id, lesson.title);
+      else if (next.size < MAX_SOURCES) next.set(lesson.id, lesson);
       return next;
     });
   };
@@ -362,20 +373,72 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
   const generate = async () => {
     if (selected.size === 0 && uploads.length === 0) { toast.error('Selecione um conteúdo ou envie um arquivo'); return; }
     setGenerating(true);
+    setProgresso(null);
     try {
-      const { data, error } = await supabase.functions.invoke('generate-flashcards', {
-        body: {
-          lessonIds: [...selected.keys()],
-          difficulty,
-          format: ehQuestoes ? 'multiple_choice' : format,
-          mode,
-          count,
-          extraText: extraText.trim() || undefined,
-          uploads: uploads.map(u => ({ name: u.name, mime: u.mime, data: u.data })),
-          importExisting: ehQuestoes && importExisting ? true : undefined,
-        },
-      });
-      if (error || data?.error) throw new Error(data?.error || error?.message);
+      const fontes = [...selected.values()];
+      const bodyBase = {
+        lessonIds: fontes.filter(s => !s.archive).map(s => s.id),
+        archiveFileIds: fontes.filter(s => s.archive).map(s => s.id),
+        difficulty,
+        format: ehQuestoes ? 'multiple_choice' : format,
+        mode,
+        count,
+        extraText: extraText.trim() || undefined,
+        uploads: uploads.map(u => ({ name: u.name, mime: u.mime, data: u.data })),
+        importExisting: ehQuestoes && importExisting ? true : undefined,
+      };
+
+      // Erro do servidor vem no CORPO da resposta; quando o status é não-2xx o
+      // supabase-js devolve só "Edge Function returned a non-2xx status code"
+      // em error.message e deixa `data` nulo. Sem ler o corpo, o aluno via essa
+      // frase crua no lugar do motivo real (ex: o limite diário de gerações).
+      const erroDe = async (data: any, error: any) =>
+        new Error(data?.error || await extractFunctionErrorMessage(error, 'Não foi possível gerar agora'));
+
+      // ── Importação de banco existente: PAGINADA ──────────────────────────
+      // Um banco de 100-150 questões não cabe numa chamada só (a function é
+      // cortada aos ~150s). A plataforma chama em sequência, cada uma
+      // transcrevendo o bloco que couber, e junta tudo aqui — o aluno vê o
+      // progresso subir e recebe o banco inteiro no fim.
+      if (ehQuestoes && importExisting) {
+        const MAX_CHAMADAS = 24;     // 24 × ~20 questões = teto folgado
+        const TETO_QUESTOES = 300;
+        const acumulado: any[] = [];
+        const vistos = new Set<string>();
+        const avisos = new Set<string>();
+        let primeiro: any = null;
+        let start = 1;
+        let done = false;
+
+        for (let i = 0; i < MAX_CHAMADAS && !done; i++) {
+          setProgresso(acumulado.length ? `Transcrevendo o banco… ${acumulado.length} questões` : 'Lendo o banco de questões…');
+          const { data, error } = await supabase.functions.invoke('generate-flashcards', {
+            body: { ...bodyBase, importStart: start },
+          });
+          if (error || data?.error) {
+            // Já temos questões: entrega o que deu, com aviso. Nada ainda: erro.
+            if (acumulado.length) { toast.warning('A leitura parou antes do fim — entregando o que já foi transcrito.'); break; }
+            throw await erroDe(data, error);
+          }
+          if (!primeiro) primeiro = data;
+          const novas = (data.cards || []).filter((c: any) => c?.front && !vistos.has(c.front));
+          for (const c of novas) vistos.add(c.front);
+          acumulado.push(...novas);
+          for (const w of data.warnings || []) avisos.add(w);
+          done = data.importDone || !data.importNextStart || novas.length === 0;
+          start = data.importNextStart || start;
+          if (acumulado.length >= TETO_QUESTOES) break;
+        }
+        if (acumulado.length === 0) throw new Error('Não encontrei questões no documento selecionado. Confira se o PDF é mesmo um banco de questões.');
+        for (const w of avisos) toast.warning(w);
+        onOpenChange(false);
+        onGenerated({ ...(primeiro as GeneratedDeck), cards: acumulado });
+        return;
+      }
+
+      // ── Geração normal: chamada única ────────────────────────────────────
+      const { data, error } = await supabase.functions.invoke('generate-flashcards', { body: bodyBase });
+      if (error || data?.error) throw await erroDe(data, error);
       for (const w of data.warnings || []) toast.warning(w);
       onOpenChange(false);
       onGenerated(data as GeneratedDeck);
@@ -384,6 +447,7 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
       const rede = /Failed to send a request|Failed to fetch|NetworkError|aborted/i.test(cru);
       toast.error(rede ? 'A conexão caiu durante a geração. Tente de novo.' : cru || 'Não foi possível gerar os flashcards');
       setGenerating(false);
+      setProgresso(null);
     }
   };
 
@@ -404,10 +468,13 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
         {generating ? (
           <div className="py-10 text-center">
             <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto mb-4" />
-            <p className="text-sm font-semibold text-foreground mb-1">{ehQuestoes ? 'Gerando suas questões…' : 'Gerando seus flashcards…'}</p>
+            <p className="text-sm font-semibold text-foreground mb-1">
+              {progresso || (ehQuestoes ? 'Gerando suas questões…' : 'Gerando seus flashcards…')}
+            </p>
             <p className="text-xs text-muted-foreground">
-              Esse processo pode levar alguns minutos — a IA está lendo o conteúdo selecionado.
-              Mantenha esta tela aberta.
+              {ehQuestoes && importExisting
+                ? 'Bancos grandes são transcritos em partes automaticamente — pode levar alguns minutos. Mantenha esta tela aberta.'
+                : 'Esse processo pode levar alguns minutos — a IA está lendo o conteúdo selecionado. Mantenha esta tela aberta.'}
             </p>
           </div>
         ) : (
@@ -418,13 +485,18 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
                 Conteúdo ({selected.size}/{MAX_SOURCES})
               </p>
               <div className="space-y-1.5">
-                {[...selected.entries()].map(([id, title]) => (
-                  <div key={id} className="flex items-center gap-2 text-sm bg-secondary border border-border rounded-lg px-3 py-1.5">
-                    <span className="flex-1 truncate text-foreground/90">{title}</span>
+                {[...selected.values()].map(s => (
+                  <div key={s.id} className="flex items-center gap-2 text-sm bg-secondary border border-border rounded-lg px-3 py-1.5">
+                    <span className="flex-1 truncate text-foreground/90">{s.title}</span>
+                    {s.archive && (
+                      <span className="shrink-0 text-[10px] uppercase font-semibold text-primary bg-primary/10 border border-primary/25 rounded px-1.5 py-0.5">
+                        Acervo Público
+                      </span>
+                    )}
                     <button
-                      onClick={() => setSelected(prev => { const n = new Map(prev); n.delete(id); return n; })}
+                      onClick={() => setSelected(prev => { const n = new Map(prev); n.delete(s.id); return n; })}
                       className="text-muted-foreground hover:text-foreground shrink-0"
-                      aria-label={`Remover ${title}`}
+                      aria-label={`Remover ${s.title}`}
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
@@ -558,11 +630,11 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
                 {ehQuestoes ? 'Quantidade de questões' : 'Quantidade de flashcards'}
               </p>
               <input
-                type="number"
-                min={1}
-                max={30}
-                value={count}
-                onChange={e => setCount(Math.min(Math.max(Number(e.target.value) || 1, 1), 30))}
+                type="text"
+                inputMode="numeric"
+                value={countTexto}
+                onChange={e => setCountTexto(e.target.value.replace(/\D/g, '').slice(0, 2))}
+                onBlur={() => setCountTexto(String(count))}
                 className="w-24 rounded-lg bg-secondary border border-border px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary/50"
               />
               <span className="text-xs text-muted-foreground ml-2">máx. 30 por geração</span>

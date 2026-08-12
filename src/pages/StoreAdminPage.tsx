@@ -152,7 +152,7 @@ export default function StoreAdminPage() {
           </div>
         </div>
 
-        <div className="grid sm:grid-cols-3 gap-4">
+        <div className="grid sm:grid-cols-3 gap-4 3xl:max-w-[1400px]">
           <Card className="bg-background-paper border-border">
             <CardContent className="p-4">
               <p className="text-xs text-muted-foreground">Produtos ativos</p>

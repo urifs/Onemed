@@ -37,7 +37,7 @@ export function CategoryLinkGrid({
         {title}
       </h2>
       {description && <p className="text-muted-foreground mb-8 max-w-2xl">{description}</p>}
-      <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 list-none p-0">
+      <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 3xl:grid-cols-4 list-none p-0">
         {items.map(category => (
           <li key={category.slug}>
             <Link
@@ -68,7 +68,7 @@ export function PillarLinks({ exclude }: { exclude?: string }) {
       <h2 className="font-secondary text-2xl md:text-3xl font-bold text-foreground mb-6">
         Escolha o seu objetivo de estudo
       </h2>
-      <ul className="grid gap-3 sm:grid-cols-2 list-none p-0">
+      <ul className="grid gap-3 sm:grid-cols-2 3xl:grid-cols-3 list-none p-0">
         {hubs.map(hub => (
           <li key={hub.slug}>
             <Link

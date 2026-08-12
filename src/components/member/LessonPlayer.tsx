@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import type Mpegts from 'mpegts.js';
-import { X, ChevronLeft, ChevronRight, Loader2, ExternalLink, Download, Printer, Gauge, Check, SquareStack, ClipboardList } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Loader2, ExternalLink, Download, Printer, Gauge, Check, SquareStack, ClipboardList, RotateCcw, RotateCw, Minimize2, Maximize2, PictureInPicture2, SkipForward, GripHorizontal } from 'lucide-react';
 import { useLessonStreamUrl } from '@/hooks/useLessonStream';
+// PdfViewer importado estaticamente: o lazy foi revertido junto com o
+// code-splitting de rotas (2026-08-07) que expunha a dependência circular.
 import { PdfViewer } from './PdfViewer';
 import { OfficeViewer } from './OfficeViewer';
 import { TxtViewer } from './TxtViewer';
@@ -70,6 +72,18 @@ export function LessonPlayer({
   // não gasta a franquia de download. É o mesmo player que abre ao clicar no
   // arquivo no Drive.
   const [usarEmbed, setUsarEmbed] = useState(false);
+  // Vídeo em formato que o navegador NÃO toca nativo (ex: .mov QuickTime,
+  // .wmv) e sem conversão pro Storage: vai DIRETO pro player oficial do
+  // Google embutido — ele transcodifica no servidor e reproduz qualquer
+  // formato. Lista de PERMITIDOS invertida de propósito: qualquer formato
+  // exótico futuro cai no embed sozinho, sem esperar ninguém reclamar.
+  // mp4/webm/ogg tocam nativo; mp2t vai pro mpegts.js (remux no navegador).
+  // Se um dia a aula for convertida (storage_path), o player próprio assume.
+  const formatoSemSuporte =
+    lesson.type === 'video' &&
+    !lesson.storage_path &&
+    !!lesson.drive_file_id &&
+    !/^video\/(mp4|webm|ogg|mp2t)/i.test(lesson.mime_type || 'video/mp4');
   const [downloading, setDownloading] = useState(false);
   const [opening, setOpening] = useState(false);
   const { upsellOpen, setUpsellOpen, ensureCanDownload, reason: downloadReason, plan: downloadPlan } = useDownloadGate();
@@ -77,6 +91,31 @@ export function LessonPlayer({
     const stored = Number(localStorage.getItem(PLAYBACK_RATE_STORAGE_KEY));
     return PLAYBACK_RATES.includes(stored) ? stored : 1;
   });
+
+  // Modo popup/mini: o player deixa de ocupar a tela inteira e vira uma
+  // janelinha flutuante arrastável — a plataforma atrás fica clicável, então
+  // dá pra continuar assistindo (ou lendo o arquivo) enquanto se faz outra
+  // coisa. O elemento <video> é o MESMO nos dois modos (só o wrapper troca de
+  // classe), então minimizar não recarrega o vídeo nem perde o ponto.
+  const [minimized, setMinimized] = useState(false);
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const dragOffset = useRef<{ dx: number; dy: number } | null>(null);
+  const [inPip, setInPip] = useState(false);
+
+  // Contagem para a próxima aula quando um vídeo/áudio termina. Dá pra
+  // cancelar ou pular na hora.
+  const [nextIn, setNextIn] = useState<number | null>(null);
+  const nextTimer = useRef<number | null>(null);
+
+  // Timers de retry de mídia/imagem pendentes — cancelados na troca de aula
+  // e no unmount, senão continuam disparando contra a aula errada (ou contra
+  // um componente já desmontado).
+  const retryTimers = useRef<number[]>([]);
+  const clearRetryTimers = () => {
+    for (const t of retryTimers.current) clearTimeout(t);
+    retryTimers.current = [];
+  };
 
   useEffect(() => {
     let alive = true;
@@ -88,10 +127,11 @@ export function LessonPlayer({
     setUsarEmbed(false);
     setForceTs(false);
     setImgRetryCount(0);
+    clearRetryTimers();
     getUrl(lesson.id)
       .then(url => { if (alive) setSrc(url); })
       .catch(err => { if (alive) setError(err.message); });
-    return () => { alive = false; };
+    return () => { alive = false; clearRetryTimers(); };
   }, [lesson.id, getUrl]);
 
   // A permissão do arquivo no Drive é concedida por trás, mas propaga pelos
@@ -119,20 +159,31 @@ export function LessonPlayer({
    * passa mesmo com a cota estourada e daria um falso "está tudo bem". A
    * leitura para no primeiro pedaço do corpo, então quase nada é baixado.
    */
-  const sondarFalha = async (url: string): Promise<{ quotaMsg: string | null; ehTs: boolean }> => {
+  const sondarFalha = async (url: string): Promise<{ quotaMsg: string | null; ehTs: boolean; embedOk: boolean }> => {
     const ctrl = new AbortController();
     try {
       const res = await fetch(url, { headers: { Range: 'bytes=0-' }, signal: ctrl.signal });
-      if (res.status === 429) return { quotaMsg: (await res.text()).slice(0, 300), ehTs: false };
-      if (!res.ok || !res.body) return { quotaMsg: null, ehTs: false };
+      if (res.status === 429) {
+        // X-Embed-Ok vem do worker: ele sonda anonimamente se o player público
+        // do armazenamento abre sem login. '0' = arquivo NÃO compartilhado por
+        // link — o embed mostraria "Você precisa ter acesso" pro aluno (com
+        // botão de pedir acesso ao dono do arquivo!), então nem oferecer.
+        // Header ausente (worker antigo) mantém o comportamento de sempre.
+        return {
+          quotaMsg: (await res.text()).slice(0, 300),
+          ehTs: false,
+          embedOk: res.headers.get('x-embed-ok') !== '0',
+        };
+      }
+      if (!res.ok || !res.body) return { quotaMsg: null, ehTs: false, embedOk: true };
       const { value } = await res.body.getReader().read();
       // Pacote TS: 0x47 no byte 0 e de novo 188 bytes depois (tamanho fixo do
       // pacote). Checar os dois evita confundir com um arquivo qualquer que
       // por acaso comece com 0x47.
       const ehTs = !!value && value.length >= 189 && value[0] === 0x47 && value[188] === 0x47;
-      return { quotaMsg: null, ehTs };
+      return { quotaMsg: null, ehTs, embedOk: true };
     } catch {
-      return { quotaMsg: null, ehTs: false }; // rede caiu no meio: falha comum, tenta de novo
+      return { quotaMsg: null, ehTs: false, embedOk: true }; // rede caiu no meio: falha comum, tenta de novo
     } finally {
       ctrl.abort();
     }
@@ -146,14 +197,15 @@ export function LessonPlayer({
     // Sonda só no primeiro erro: se for a propagação de permissão do Drive
     // (o caso comum), a resposta não é 429 nem TS e as tentativas seguem.
     if (src && mediaRetries.current === 0) {
-      void sondarFalha(src).then(({ quotaMsg, ehTs }) => {
+      void sondarFalha(src).then(({ quotaMsg, ehTs, embedOk }) => {
         if (quotaMsg) {
           quotaBlocked.current = true;
           // Só há para onde cair se o arquivo ainda estiver no Drive de
-          // origem. Aula já migrada para o nosso armazenamento não tem
-          // drive_file_id útil — nesse caso a mensagem continua sendo a
-          // resposta certa.
-          if (lesson.drive_file_id && !lesson.storage_path) setUsarEmbed(true);
+          // origem E o embed público funcionar de verdade (embedOk, sondado
+          // pelo worker) — arquivo não compartilhado por link mostraria
+          // "Você precisa ter acesso" no lugar da aula. Sem plano B, a
+          // mensagem honesta de limite é a resposta certa.
+          if (embedOk && lesson.drive_file_id && !lesson.storage_path) setUsarEmbed(true);
           else setError(quotaMsg);
           return;
         }
@@ -170,7 +222,10 @@ export function LessonPlayer({
     }
     const delay = RETRY_DELAYS_MS[mediaRetries.current];
     mediaRetries.current += 1;
-    setTimeout(() => {
+    // Guardado para poder cancelar: os atrasos chegam a 13s e, sem cancelar
+    // na troca de aula, um retry da aula ANTERIOR disparava `.load()` na
+    // aula nova — reiniciando a reprodução do zero no meio do vídeo.
+    retryTimers.current.push(window.setTimeout(() => {
       if (quotaBlocked.current) return;
       if (mpegtsPlayerRef.current) {
         mpegtsPlayerRef.current.unload();
@@ -178,7 +233,7 @@ export function LessonPlayer({
       } else {
         videoRef.current?.load();
       }
-    }, delay);
+    }, delay));
   };
 
   // Arquivos .ts (MPEG Transport Stream — comuns nas aulas "#Aprenda") não
@@ -240,7 +295,7 @@ export function LessonPlayer({
       setError('Não foi possível carregar este arquivo. Tente novamente em instantes.');
       return;
     }
-    setTimeout(() => setImgRetryCount(c => c + 1), RETRY_DELAYS_MS[imgRetryCount]);
+    retryTimers.current.push(window.setTimeout(() => setImgRetryCount(c => c + 1), RETRY_DELAYS_MS[imgRetryCount]));
   };
 
   useEffect(() => {
@@ -275,11 +330,32 @@ export function LessonPlayer({
     if (v) v.playbackRate = rate;
   };
 
+  // Pular EXATAMENTE 10 segundos, pra frente ou pra trás — o único jeito de
+  // andar no tempo além da barra de progresso (que pula pro ponto clicado).
+  const skip = (delta: number) => {
+    const v = videoRef.current;
+    if (!v) return;
+    const alvo = Math.max(v.currentTime + delta, 0);
+    v.currentTime = isFinite(v.duration) ? Math.min(alvo, v.duration) : alvo;
+  };
+
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e: KeyboardEvent) => {
+      // Minimizado, a plataforma atrás está em uso — o player não sequestra o
+      // teclado (Escape/setas pertencem à página).
+      if (minimized) return;
+      if (e.key === 'Escape') { onClose(); return; }
+      // Setas ← → também pulam 10s (fora de campos de texto). preventDefault
+      // impede o controle nativo do <video> de aplicar o pulo dele por cima.
+      const t = e.target as HTMLElement | null;
+      if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+      if (e.key === 'ArrowLeft') { e.preventDefault(); skip(-10); }
+      if (e.key === 'ArrowRight') { e.preventDefault(); skip(10); }
+    };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onClose, minimized]);
 
   const handleTimeUpdate = () => {
     const v = videoRef.current;
@@ -294,7 +370,97 @@ export function LessonPlayer({
   const handleEnded = () => {
     const v = videoRef.current;
     onProgress(lesson.id, Math.floor(v?.duration || lastReported.current), true);
+    // Terminou vídeo/áudio e existe próxima aula → emenda na sequência, com
+    // uma contagem curta que dá pra cancelar (ou pular na hora).
+    if ((lesson.type === 'video' || lesson.type === 'audio') && hasNext && onNext) {
+      setNextIn(5);
+    }
   };
+
+  const cancelAutoNext = () => {
+    if (nextTimer.current) { clearInterval(nextTimer.current); nextTimer.current = null; }
+    setNextIn(null);
+  };
+
+  const goNextNow = () => {
+    cancelAutoNext();
+    onNext?.();
+  };
+
+  // Tique a tique da contagem para a próxima aula. Quando zera, avança.
+  useEffect(() => {
+    if (nextIn === null) return;
+    if (nextIn <= 0) { goNextNow(); return; }
+    nextTimer.current = window.setInterval(() => {
+      setNextIn(n => (n === null ? null : n - 1));
+    }, 1000);
+    return () => { if (nextTimer.current) { clearInterval(nextTimer.current); nextTimer.current = null; } };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nextIn]);
+
+  // Troca de aula cancela qualquer contagem herdada da aula anterior.
+  useEffect(() => { cancelAutoNext(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [lesson.id]);
+
+  // ─── Popup/mini flutuante: arrastar a janelinha ────────────────────────────
+  const onDragMove = (e: PointerEvent) => {
+    if (!dragOffset.current) return;
+    const w = rootRef.current?.offsetWidth || 400;
+    const h = rootRef.current?.offsetHeight || 260;
+    const x = Math.min(Math.max(0, e.clientX - dragOffset.current.dx), window.innerWidth - w);
+    const y = Math.min(Math.max(0, e.clientY - dragOffset.current.dy), window.innerHeight - h);
+    setPos({ x, y });
+  };
+  const onDragEnd = () => {
+    dragOffset.current = null;
+    window.removeEventListener('pointermove', onDragMove);
+    window.removeEventListener('pointerup', onDragEnd);
+  };
+  const onDragStart = (e: React.PointerEvent) => {
+    const rect = rootRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    dragOffset.current = { dx: e.clientX - rect.left, dy: e.clientY - rect.top };
+    window.addEventListener('pointermove', onDragMove);
+    window.addEventListener('pointerup', onDragEnd);
+  };
+  useEffect(() => () => {
+    window.removeEventListener('pointermove', onDragMove);
+    window.removeEventListener('pointerup', onDragEnd);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const minimizar = () => {
+    if (!pos) {
+      // Primeira vez: encosta no canto inferior direito.
+      const w = 420, h = 268;
+      setPos({ x: Math.max(8, window.innerWidth - w - 16), y: Math.max(8, window.innerHeight - h - 16) });
+    }
+    setMinimized(true);
+  };
+
+  // ─── Picture-in-Picture nativo do navegador (janela do SO, outra tela) ──────
+  const temVideoElemento = lesson.type === 'video' && !usarEmbed && !formatoSemSuporte;
+  const togglePip = async () => {
+    const v = videoRef.current as HTMLVideoElement | null;
+    if (!v || !document.pictureInPictureEnabled) return;
+    try {
+      if (document.pictureInPictureElement) await document.exitPictureInPicture();
+      else await v.requestPictureInPicture();
+    } catch {
+      toast.error('Seu navegador não permitiu abrir o vídeo flutuante.');
+    }
+  };
+  useEffect(() => {
+    const v = videoRef.current as HTMLVideoElement | null;
+    if (!v) return;
+    const onEnter = () => setInPip(true);
+    const onLeave = () => setInPip(false);
+    v.addEventListener('enterpictureinpicture', onEnter);
+    v.addEventListener('leavepictureinpicture', onLeave);
+    return () => {
+      v.removeEventListener('enterpictureinpicture', onEnter);
+      v.removeEventListener('leavepictureinpicture', onLeave);
+    };
+  }, [src, temVideoElemento]);
 
   // Imprimir só faz sentido para o que se lê; baixar vale para tudo,
   // vídeo e áudio inclusive.
@@ -327,7 +493,9 @@ export function LessonPlayer({
   };
 
   const handleDownload = async () => {
-    if (!bypassDownloadGate && !ensureCanDownload()) return;
+    // `bypassDownloadGate` é o acervo público (material entre assinantes, sem
+    // trava de plano). Fora dele, o porteiro decide pelo tipo da aula.
+    if (!bypassDownloadGate && !ensureCanDownload(lesson)) return;
     if (downloading) return;
     setDownloading(true);
     try {
@@ -341,9 +509,9 @@ export function LessonPlayer({
       } else {
         await downloadLesson(lesson);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to download file', err);
-      toast.error('Não foi possível baixar este arquivo.');
+      toast.error(err?.message || 'Não foi possível baixar este arquivo.');
     } finally {
       setDownloading(false);
     }
@@ -364,13 +532,17 @@ export function LessonPlayer({
       const res = await fetch(src);
       const blob = await res.blob();
       const blobUrl = URL.createObjectURL(blob);
-      if (!win) return;
+      if (!win) { URL.revokeObjectURL(blobUrl); return; }
       win.location.href = blobUrl;
       const tryPrint = () => { try { win.print(); } catch { /* ignore */ } };
       win.addEventListener('load', tryPrint);
       // Fallback: o visualizador nativo de PDF do navegador às vezes não
       // dispara 'load' no window pai.
       setTimeout(tryPrint, 1200);
+      // Sem revogar, cada impressão prendia o arquivo inteiro na memória
+      // pela vida útil da aba. 5 min dão folga de sobra pra aba nova
+      // carregar o blob e imprimir.
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 5 * 60 * 1000);
     } catch (err) {
       console.error('Failed to open file for printing', err);
       win?.close();
@@ -381,7 +553,34 @@ export function LessonPlayer({
     // Chrome do player sempre escuro de propósito, independente do tema da
     // plataforma — convenção universal de players de vídeo/documento
     // (YouTube, Vimeo, Netflix), não bg-background/text-foreground.
-    <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-sm flex flex-col">
+    <div
+      ref={rootRef}
+      style={minimized && pos ? { left: pos.x, top: pos.y } : undefined}
+      className={minimized
+        ? 'fixed z-[60] w-[420px] max-w-[92vw] rounded-xl overflow-hidden shadow-2xl ring-1 ring-white/15 bg-black flex flex-col'
+        : 'fixed inset-0 z-50 bg-black/95 backdrop-blur-sm flex flex-col'}
+    >
+      {minimized && (
+        <div
+          onPointerDown={onDragStart}
+          className="flex items-center gap-2 px-3 py-2 border-b border-white/10 bg-[#0e0e0e] cursor-move select-none touch-none"
+        >
+          <GripHorizontal className="w-4 h-4 text-white/40 shrink-0" />
+          <p className="text-xs font-semibold text-white truncate flex-1 min-w-0">{lesson.title}</p>
+          {temVideoElemento && typeof document !== 'undefined' && document.pictureInPictureEnabled && (
+            <button onClick={togglePip} title="Vídeo flutuante" className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/15 flex items-center justify-center text-white transition-colors shrink-0">
+              <PictureInPicture2 className="w-3.5 h-3.5" />
+            </button>
+          )}
+          <button onClick={() => setMinimized(false)} title="Restaurar" className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/15 flex items-center justify-center text-white transition-colors shrink-0">
+            <Maximize2 className="w-3.5 h-3.5" />
+          </button>
+          <button onClick={onClose} title="Fechar" className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/15 flex items-center justify-center text-white transition-colors shrink-0">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+      {!minimized && (
       <div className="flex items-center gap-3 px-4 md:px-6 py-3.5 border-b border-white/10 shrink-0">
         <button onClick={onClose} className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/15 flex items-center justify-center text-white transition-colors">
           <X className="w-4 h-4" />
@@ -439,6 +638,28 @@ export function LessonPlayer({
           </Popover>
         )}
         <div className="flex items-center gap-2 mr-1">
+          {/* Vídeo flutuante nativo (janela do sistema): joga o vídeo pra fora
+              do navegador, pode arrastar pra outra tela e segue tocando. */}
+          {temVideoElemento && typeof document !== 'undefined' && document.pictureInPictureEnabled && (
+            <button
+              onClick={togglePip}
+              title={inPip ? 'Voltar o vídeo pra cá' : 'Vídeo flutuante (outra tela / segundo plano)'}
+              aria-label="Vídeo flutuante"
+              className={`w-9 h-9 rounded-full flex items-center justify-center text-white transition-colors ${inPip ? 'bg-primary hover:bg-primary-hover' : 'bg-white/10 hover:bg-white/15'}`}
+            >
+              <PictureInPicture2 className="w-4 h-4" />
+            </button>
+          )}
+          {/* Minimizar: vira uma janelinha flutuante e libera a plataforma
+              atrás pra continuar navegando com o conteúdo rodando. */}
+          <button
+            onClick={minimizar}
+            title="Minimizar (janela flutuante)"
+            aria-label="Minimizar"
+            className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/15 flex items-center justify-center text-white transition-colors"
+          >
+            <Minimize2 className="w-4 h-4" />
+          </button>
           {canPrint && src && (
             <button
               onClick={handlePrint}
@@ -506,9 +727,12 @@ export function LessonPlayer({
           </button>
         </div>
       </div>
+      )}
 
-      <div className="flex-1 flex items-center justify-center p-3 md:p-6 min-h-0">
-        {usarEmbed && lesson.drive_file_id ? (
+      <div className={minimized
+        ? 'relative w-full aspect-video bg-black min-h-0'
+        : 'flex-1 flex items-center justify-center p-3 md:p-6 min-h-0 relative'}>
+        {(usarEmbed || formatoSemSuporte) && lesson.drive_file_id ? (
           // `rm=minimal` tira a barra de ferramentas do Drive e deixa só o
           // vídeo. O arquivo já é compartilhado por link, então o embed abre
           // sem pedir login — não estamos afrouxando nada aqui.
@@ -526,19 +750,40 @@ export function LessonPlayer({
         ) : isTsVideo && !mpegtsLib ? (
           <Loader2 className="w-8 h-8 text-primary animate-spin" />
         ) : lesson.type === 'video' ? (
-          <video
-            ref={videoRef}
-            {...(useMpegts ? {} : { src })}
-            controls
-            controlsList="nodownload noremoteplayback"
-            disablePictureInPicture
-            autoPlay
-            className="max-w-full max-h-full rounded-lg bg-black"
-            onTimeUpdate={handleTimeUpdate}
-            onEnded={handleEnded}
-            onError={useMpegts ? undefined : handleMediaError}
-            onContextMenu={e => e.preventDefault()}
-          />
+          <div className="relative w-full h-full flex items-center justify-center">
+            <video
+              ref={videoRef}
+              {...(useMpegts ? {} : { src })}
+              controls
+              controlsList="nodownload"
+              autoPlay
+              className="max-w-full max-h-full rounded-lg bg-black"
+              onTimeUpdate={handleTimeUpdate}
+              onEnded={handleEnded}
+              onError={useMpegts ? undefined : handleMediaError}
+              onContextMenu={e => e.preventDefault()}
+            />
+            {/* Pulo fixo de 10s — botões nas laterais, sem depender do
+                controle nativo (cuja barra pula pro ponto clicado). */}
+            <button
+              onClick={() => skip(-10)}
+              title="Voltar 10 segundos"
+              aria-label="Voltar 10 segundos"
+              className={`${minimized ? 'hidden ' : ''}absolute left-2 md:left-5 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-black/50 hover:bg-black/70 border border-white/20 backdrop-blur flex flex-col items-center justify-center text-white transition-colors`}
+            >
+              <RotateCcw className="w-4 h-4" />
+              <span className="text-[9px] font-bold leading-none mt-0.5">10</span>
+            </button>
+            <button
+              onClick={() => skip(10)}
+              title="Adiantar 10 segundos"
+              aria-label="Adiantar 10 segundos"
+              className={`${minimized ? 'hidden ' : ''}absolute right-2 md:right-5 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-black/50 hover:bg-black/70 border border-white/20 backdrop-blur flex flex-col items-center justify-center text-white transition-colors`}
+            >
+              <RotateCw className="w-4 h-4" />
+              <span className="text-[9px] font-bold leading-none mt-0.5">10</span>
+            </button>
+          </div>
         ) : lesson.type === 'pdf' ? (
           <PdfViewer url={src} title={lesson.title} lessonId={lesson.id} />
         ) : lesson.type === 'doc' || lesson.type === 'sheet' ? (
@@ -555,18 +800,38 @@ export function LessonPlayer({
             draggable={false}
           />
         ) : lesson.type === 'audio' ? (
-          <audio
-            ref={videoRef as React.RefObject<HTMLAudioElement>}
-            src={src}
-            controls
-            controlsList="nodownload"
-            autoPlay
-            className="w-full max-w-md"
-            onTimeUpdate={handleTimeUpdate}
-            onEnded={handleEnded}
-            onError={handleMediaError}
-            onContextMenu={e => e.preventDefault()}
-          />
+          <div className="w-full max-w-md flex items-center gap-2">
+            <button
+              onClick={() => skip(-10)}
+              title="Voltar 10 segundos"
+              aria-label="Voltar 10 segundos"
+              className="shrink-0 w-11 h-11 rounded-full bg-white/10 hover:bg-white/15 flex flex-col items-center justify-center text-white transition-colors"
+            >
+              <RotateCcw className="w-4 h-4" />
+              <span className="text-[9px] font-bold leading-none mt-0.5">10</span>
+            </button>
+            <audio
+              ref={videoRef as React.RefObject<HTMLAudioElement>}
+              src={src}
+              controls
+              controlsList="nodownload"
+              autoPlay
+              className="flex-1 min-w-0"
+              onTimeUpdate={handleTimeUpdate}
+              onEnded={handleEnded}
+              onError={handleMediaError}
+              onContextMenu={e => e.preventDefault()}
+            />
+            <button
+              onClick={() => skip(10)}
+              title="Adiantar 10 segundos"
+              aria-label="Adiantar 10 segundos"
+              className="shrink-0 w-11 h-11 rounded-full bg-white/10 hover:bg-white/15 flex flex-col items-center justify-center text-white transition-colors"
+            >
+              <RotateCw className="w-4 h-4" />
+              <span className="text-[9px] font-bold leading-none mt-0.5">10</span>
+            </button>
+          </div>
         ) : (
           <div className="text-center">
             <p className="text-white/70 text-sm mb-4">Pré-visualização não disponível para este tipo de arquivo.</p>
@@ -576,6 +841,30 @@ export function LessonPlayer({
             >
               <ExternalLink className="w-4 h-4" /> Abrir em nova aba
             </a>
+          </div>
+        )}
+
+        {/* Contagem para a próxima aula ao terminar um vídeo/áudio. */}
+        {nextIn !== null && (
+          <div className={`absolute inset-x-0 bottom-0 ${minimized ? 'p-2' : 'p-4 md:p-6'} flex justify-center pointer-events-none`}>
+            <div className="pointer-events-auto flex items-center gap-2 rounded-full bg-black/85 border border-white/15 backdrop-blur px-3 py-2 shadow-xl">
+              <SkipForward className="w-4 h-4 text-primary shrink-0" />
+              <span className="text-xs text-white/90 whitespace-nowrap">
+                Próxima aula em <span className="font-bold tabular-nums">{nextIn}</span>s
+              </span>
+              <button
+                onClick={goNextNow}
+                className="text-[11px] font-semibold rounded-full bg-primary hover:bg-primary-hover text-white px-2.5 py-1 transition-colors"
+              >
+                Pular
+              </button>
+              <button
+                onClick={cancelAutoNext}
+                className="text-[11px] font-semibold rounded-full bg-white/10 hover:bg-white/15 text-white/80 px-2.5 py-1 transition-colors"
+              >
+                Cancelar
+              </button>
+            </div>
           </div>
         )}
       </div>

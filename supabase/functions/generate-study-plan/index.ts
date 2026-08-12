@@ -41,24 +41,45 @@ serve(async (req) => {
     const { data: { user }, error: authErr } = await supabase.auth.getUser(jwt)
     if (authErr || !user) return json(req, { error: 'Sessão inválida' }, 401)
 
-    // Plano Mensal não usa as ferramentas de IA (mesmo critério de flashcards).
+    // Limite de IA por plano (decisão do dono, 10/08): Mensal BLOQUEADO;
+    // Anual 5/dia; Vitalício 10; Plus 20; Pro/admin sem limite de plano.
+    let planoAtual = ''
     try {
       const asUser = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY') || '', {
         global: { headers: { Authorization: `Bearer ${jwt}` } },
       })
       const { data: st } = await asUser.rpc('my_member_status')
-      if ((Array.isArray(st) ? st[0] : st)?.plan === 'monthly') {
+      planoAtual = String((Array.isArray(st) ? st[0] : st)?.plan || '')
+      if (planoAtual === 'monthly') {
         return json(req, { error: 'O Plano Mensal não inclui as ferramentas de IA. Faça upgrade de plano para liberar.' }, 403)
       }
-    } catch { /* segue liberado */ }
+    } catch { /* segue liberado no teto de segurança */ }
 
-    // Limite: 10 gerações/dia por usuário (gerar chama IA paga).
+    const LIMITE_IA_POR_PLANO: Record<string, number> = { trial: 5, annual: 5, lifetime: 10, lifetime_plus: 20 }
+    const TETO_SEGURANCA = 100
+    const LIMITE_DIARIO = LIMITE_IA_POR_PLANO[planoAtual] ?? TETO_SEGURANCA
     try {
       const now = new Date()
       const { data: rl } = await supabase.from('rate_limits')
         .select('attempts, window_start').eq('identifier', user.id).eq('action', 'study_plan').maybeSingle()
       if (rl && (now.getTime() - new Date(rl.window_start).getTime()) < 24 * 3600 * 1000) {
-        if (rl.attempts >= 10) return json(req, { error: 'Você atingiu o limite de 10 cronogramas por dia. Tente amanhã.' }, 429)
+        if (rl.attempts >= LIMITE_DIARIO) {
+          // Janela de 24h desde a PRIMEIRA geração — "tente amanhã" mandava o
+          // aluno voltar na hora errada.
+          const faltamMin = Math.max(
+            1,
+            Math.ceil((new Date(rl.window_start).getTime() + 24 * 3600 * 1000 - now.getTime()) / 60000),
+          )
+          const quando = faltamMin >= 60
+            ? `em ${Math.ceil(faltamMin / 60)}h`
+            : `em ${faltamMin} minuto${faltamMin === 1 ? '' : 's'}`
+          const msg = planoAtual === 'trial'
+            ? `Você usou as ${LIMITE_DIARIO} utilizações liberadas no teste grátis. Assine um plano para continuar usando as ferramentas de IA da plataforma.`
+            : LIMITE_DIARIO < TETO_SEGURANCA
+              ? `Você usou os ${LIMITE_DIARIO} cronogramas de hoje do seu plano. O limite renova ${quando}. Planos superiores liberam mais — o Pro é sem limite.`
+              : `Você já gerou ${LIMITE_DIARIO} cronogramas nas últimas 24 horas, que é o limite diário. Você poderá gerar de novo ${quando}.`
+          return json(req, { error: msg }, 429)
+        }
         await supabase.from('rate_limits').update({ attempts: rl.attempts + 1 }).eq('identifier', user.id).eq('action', 'study_plan')
       } else {
         await supabase.from('rate_limits').upsert(

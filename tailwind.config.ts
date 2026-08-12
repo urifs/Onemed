@@ -11,6 +11,14 @@ export default {
       screens: { "2xl": "1400px" },
     },
     extend: {
+      // Monitores ultra-wide reais do mercado: 1920 (FHD/QHD largo),
+      // 2560 (21:9 de 34") e 3440 (21:9 de 34-38"). Sem estes degraus o
+      // Tailwind para no 2xl (1536px) e todo o conteúdo fica preso no
+      // meio da tela, com metade do monitor vazia.
+      screens: {
+        "3xl": "1920px",
+        "4xl": "2560px",
+      },
       fontFamily: {
         primary: ['Inter', 'sans-serif'],
         secondary: ['Outfit', 'sans-serif'],

@@ -17,11 +17,21 @@ export default function StudyPlansAdminPage() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [detail, setDetail] = useState<Record<string, any>>({});
 
+  const [loadError, setLoadError] = useState(false);
   const load = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase.rpc('admin_study_plans_overview' as never);
-    setRows(((data || []) as unknown as Overview[]));
-    setLoading(false);
+    // try/catch + checagem de erro: um rejeição deixava o spinner girando pra
+    // sempre e um erro silencioso mostrava "nenhum cronograma".
+    try {
+      const { data, error } = await supabase.rpc('admin_study_plans_overview' as never);
+      if (error) throw error;
+      setRows(((data || []) as unknown as Overview[]));
+      setLoadError(false);
+    } catch {
+      setLoadError(true);
+    } finally {
+      setLoading(false);
+    }
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -51,7 +61,7 @@ export default function StudyPlansAdminPage() {
           <p className="text-muted-foreground mt-1">Cronogramas que os alunos geraram, com o progresso de cada um</p>
         </div>
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 3xl:max-w-[1400px]">
           {[
             { icon: CalendarClock, label: 'Cronogramas', value: String(totals.planos) },
             { icon: Users, label: 'Alunos', value: String(totals.alunos) },
@@ -73,6 +83,11 @@ export default function StudyPlansAdminPage() {
           <CardContent className="p-0">
             {loading ? (
               <div className="p-10 flex justify-center"><Loader2 className="w-6 h-6 text-primary animate-spin" /></div>
+            ) : loadError ? (
+              <div className="p-10 text-center">
+                <p className="text-sm text-muted-foreground mb-4">Não foi possível carregar os cronogramas.</p>
+                <button onClick={load} className="text-sm font-medium text-primary hover:underline">Tentar novamente</button>
+              </div>
             ) : rows.length === 0 ? (
               <p className="p-10 text-sm text-muted-foreground text-center">Nenhum cronograma gerado ainda.</p>
             ) : (
