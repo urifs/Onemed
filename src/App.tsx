@@ -33,6 +33,7 @@ import CourseDetailPage from "./pages/CourseDetailPage";
 import CommunityPage from "./pages/CommunityPage";
 import Dashboard from "./pages/Dashboard";
 import AccessManagement from "./pages/AccessManagement";
+import ContentAccessPage from "./pages/ContentAccessPage";
 import MembersPage from "./pages/MembersPage";
 import DriveSettings from "./pages/DriveSettings";
 import CheckoutPage from "./pages/CheckoutPage";
@@ -231,6 +232,7 @@ const App = () => (
             <Route path="/admin" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/admin/access" element={<ProtectedRoute><AccessManagement /></ProtectedRoute>} />
             <Route path="/admin/membros" element={<ProtectedRoute><MembersPage /></ProtectedRoute>} />
+            <Route path="/admin/conteudos" element={<ProtectedRoute><ContentAccessPage /></ProtectedRoute>} />
             <Route path="/admin/drive" element={<ProtectedRoute><DriveSettings /></ProtectedRoute>} />
             <Route path="/admin/buyers" element={<ProtectedRoute><BuyersPage /></ProtectedRoute>} />
             <Route path="/admin/trials" element={<ProtectedRoute><TrialUsersPage /></ProtectedRoute>} />

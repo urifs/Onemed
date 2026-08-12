@@ -72,7 +72,7 @@ serve(async (req) => {
     }
 
     const { data: lesson, error: lessonErr } = await supabase.from('lessons')
-      .select('drive_file_id, mime_type, type, title').eq('id', claims.lid).maybeSingle()
+      .select('drive_file_id, mime_type, type, title, course_id').eq('id', claims.lid).maybeSingle()
     if (lessonErr || !lesson) return new Response('Lesson not found', { status: 404, headers: corsHeaders() })
 
     // The token stays valid for 4h so a long study session doesn't get cut
@@ -91,6 +91,18 @@ serve(async (req) => {
       supabase.rpc('has_role', { _user_id: claims.uid, _role: 'admin' }),
     ])
     if (!activeAccess && !buyer && !isAdmin) return new Response('Access revoked', { status: 403, headers: corsHeaders() })
+
+    // Curso restrito a plano: mesma checagem do member-lesson-token, refeita
+    // aqui porque o token dura 4h e o acesso ao curso pode ter sido removido
+    // (plano rebaixado, grant revogado) depois que ele foi emitido.
+    if (!isAdmin && lesson.course_id) {
+      const { data: podeVer } = await supabase.rpc('can_access_course_email', {
+        _course_id: lesson.course_id, _email: email,
+      })
+      if (podeVer === false) {
+        return new Response('Este conteúdo não está incluído no seu plano.', { status: 403, headers: corsHeaders() })
+      }
+    }
 
     const { data: config, error: cfgErr } = await supabase.from('drive_config').select('*').single()
     if (cfgErr || !config?.connected) return new Response('Drive not connected', { status: 502, headers: corsHeaders() })

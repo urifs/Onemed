@@ -103,6 +103,21 @@ serve(async (req) => {
     ])
     if (!activeAccesses?.length && !buyer && !isAdmin) return jsonResponse(req, { error: 'Sem acesso ativo' }, 403)
 
+    // ── Curso restrito a plano ───────────────────────────────────────────
+    // A RLS esconde o curso das consultas do aluno, mas ESTA função roda com
+    // service role: sem a checagem abaixo ela assinaria a URL de streaming de
+    // uma aula que o aluno não pode ver, bastando ele ter o lessonId.
+    if (!isAdmin) {
+      const { data: podeVer } = await supabase.rpc('can_access_course_email', {
+        _course_id: lesson.course_id, _email: email,
+      })
+      if (podeVer === false) {
+        return jsonResponse(req, {
+          error: 'Este conteúdo não está incluído no seu plano.',
+        }, 403)
+      }
+    }
+
     // ── Direito de DOWNLOAD ──────────────────────────────────────────────
     // Espelha src/lib/plans.ts (regra de 11/08): ARQUIVO (apostila, PDF,
     // .apkg, planilha, imagem, áudio) baixa do Vitalício pra cima — Vitalício,

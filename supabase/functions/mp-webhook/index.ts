@@ -216,12 +216,29 @@ async function shareBackupFolder(supabase: ReturnType<typeof createClient>, emai
 // mp-create-payment) → affiliates.coupon_code. Comissão sobre o valor
 // efetivamente pago. affiliate_sales.external_reference é UNIQUE — webhook
 // duplicado do MP não duplica comissão.
+// Percentuais de 12/08 (decisão do dono), sobre o preço de TABELA do plano —
+// ver AFFILIATE_PLAN_PRICES logo abaixo. Os valores anunciados no painel do
+// afiliado saem exatamente dessa conta: 99×20%=R$19,80 · 299×25%=R$74,75 ·
+// 499×25%=R$124,75 · 798×30%=R$239,40 · 1497×30%=R$449,10.
 const AFFILIATE_COMMISSION_PERCENT: Record<string, number> = {
-  monthly: 15,
-  annual: 20,
-  lifetime: 20,
-  lifetime_plus: 25,
+  monthly: 20,
+  annual: 25,
+  lifetime: 25,
+  lifetime_plus: 30,
   lifetime_pro: 30,
+}
+
+// Base da comissão = preço CHEIO do plano, não o que entrou no caixa.
+// O cupom do afiliado dá 10% de desconto ao indicado, e esse desconto é
+// bancado pela plataforma: a comissão do afiliado não encolhe por causa dele
+// (é o que o painel promete em "O desconto de 10% sai da minha comissão?").
+// Plano fora da tabela (legado) cai no valor realmente pago.
+const AFFILIATE_PLAN_PRICES: Record<string, number> = {
+  monthly: 99.00,
+  annual: 299.00,
+  lifetime: 499.00,
+  lifetime_plus: 798.00,
+  lifetime_pro: 1497.00,
 }
 // A partir de 5 vendas o afiliado ganha a conta Vitalício Pro na plataforma.
 const AFFILIATE_PRO_THRESHOLD = 5
@@ -313,7 +330,10 @@ async function processAffiliateSale(
     // incide sobre complementos. Fallback pro valor pago em linhas antigas
     // sem plan_amount preenchido.
     const amount = Number(transactionAmount ?? buyer.amount ?? 0)
-    const commissionBase = buyer.plan_amount != null ? Number(buyer.plan_amount) : amount
+    // Preço de tabela do plano; sem tabela (plano legado), o valor pago pelo
+    // plano — nunca o total da transação, que inclui upsells.
+    const commissionBase = AFFILIATE_PLAN_PRICES[buyer.plan]
+      ?? (buyer.plan_amount != null ? Number(buyer.plan_amount) : amount)
     const commission = Math.round(commissionBase * percent) / 100
 
     const { data: inserted, error: insErr } = await supabase.from('affiliate_sales')

@@ -26,6 +26,7 @@ import {
   CalendarClock,
   FolderUp,
   UserCog,
+  Lock,
 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -37,6 +38,7 @@ const navItems = [
   { path: '/admin', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/admin/access', label: 'Acessos', icon: UserCheck },
   { path: '/admin/membros', label: 'Área de Membros', icon: GraduationCap },
+  { path: '/admin/conteudos', label: 'Gerenciar Conteúdos', icon: Lock },
   { path: '/admin/buyers', label: 'Compradores', icon: DollarSign },
   { path: '/admin/trials', label: 'Usuários Trial', icon: Users },
   { path: '/admin/coupons', label: 'Cupons', icon: Tag },

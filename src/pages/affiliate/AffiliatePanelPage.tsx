@@ -6,7 +6,7 @@ import {
   Handshake, Copy, Link2, Tag, Megaphone, Banknote, Loader2, LogOut,
   TrendingUp, CalendarDays, Trophy, ExternalLink, CheckCircle2, Clock,
 } from 'lucide-react';
-import { PLAN_LABELS } from '@/lib/plans';
+import { PLAN_LABELS, PLAN_PRICES } from '@/lib/plans';
 import { Seo } from '@/seo/Seo';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
@@ -308,6 +308,8 @@ export default function AffiliatePanelPage() {
           </a>
         </div>
 
+        <ComoFuncionaAfiliados />
+
         {/* vendas */}
         <div className="rounded-2xl border border-border bg-background-paper overflow-hidden">
           <div className="px-6 py-4 border-b border-border">
@@ -409,6 +411,103 @@ export default function AffiliatePanelPage() {
           </div>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+
+// ─── Como funciona: comissões e dúvidas frequentes ───────────────────────────
+// Os valores NÃO são digitados: saem de PLAN_PRICES × o percentual que o
+// mp-webhook realmente paga. Assim o painel nunca promete um número diferente
+// do que cai no extrato do afiliado.
+const COMISSAO_POR_PLANO: Record<string, number> = {
+  monthly: 20, annual: 25, lifetime: 25, lifetime_plus: 30, lifetime_pro: 30,
+};
+const ORDEM_PLANOS = ['monthly', 'annual', 'lifetime', 'lifetime_plus', 'lifetime_pro'];
+
+const FAQ = [
+  {
+    p: 'Fiz uma venda e não vi o dinheiro.',
+    r: 'O repasse ocorre na noite do mesmo dia. Confira o extrato do painel e a conta cadastrada.',
+  },
+  {
+    p: 'O desconto de 10% sai da minha comissão?',
+    r: 'Não. Sua comissão é calculada sobre o valor cheio do plano.',
+  },
+  {
+    p: 'Link e código pagam igual?',
+    r: 'Sim. Os dois funcionam do mesmo jeito e pagam a mesma comissão.',
+  },
+];
+
+function ComoFuncionaAfiliados() {
+  return (
+    <div className="rounded-2xl border border-border bg-background-paper overflow-hidden">
+      <div className="px-6 py-4 border-b border-border">
+        <h2 className="text-sm font-semibold text-foreground">Como funciona</h2>
+      </div>
+
+      <div className="p-6 space-y-6">
+        <div>
+          <h3 className="text-sm font-semibold text-foreground mb-1.5">O que você recebe</h3>
+          <p className="text-sm text-muted-foreground">
+            Um painel com seu link de indicação e seu código de indicação. Os dois funcionam igual:
+            quem comprar por eles ganha 10% de desconto.
+          </p>
+        </div>
+
+        <div>
+          <h3 className="text-sm font-semibold text-foreground mb-2.5">Quanto você ganha</h3>
+          {/* rolagem horizontal própria: a página nunca rola de lado no celular */}
+          <div className="overflow-x-auto -mx-1 px-1">
+            <table className="w-full min-w-[380px] text-sm border-collapse">
+              <thead>
+                <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground border-b border-border">
+                  <th className="pb-2 pr-4 font-semibold">Plano</th>
+                  <th className="pb-2 pr-4 font-semibold text-right">Comissão</th>
+                  <th className="pb-2 font-semibold text-right">Seu lucro</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {ORDEM_PLANOS.map(plano => {
+                  const pct = COMISSAO_POR_PLANO[plano];
+                  const ganho = Math.round(PLAN_PRICES[plano] * pct) / 100;
+                  return (
+                    <tr key={plano}>
+                      <td className="py-2.5 pr-4 text-foreground">{PLAN_LABELS[plano] || plano}</td>
+                      <td className="py-2.5 pr-4 text-right tabular-nums text-muted-foreground">{pct}%</td>
+                      <td className="py-2.5 text-right tabular-nums font-semibold text-accent-success">{brl(ganho)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-xs text-muted-foreground mt-2.5">
+            A comissão incide sobre o valor cheio do plano — o desconto de 10% do seu cupom não sai do seu bolso.
+          </p>
+        </div>
+
+        <div>
+          <h3 className="text-sm font-semibold text-foreground mb-1.5">Quando você recebe</h3>
+          <p className="text-sm text-muted-foreground">
+            Todas as comissões são pagas automaticamente, toda noite. Não precisa solicitar saque
+            nem atingir valor mínimo.
+          </p>
+        </div>
+
+        <div>
+          <h3 className="text-sm font-semibold text-foreground mb-2.5">Dúvidas frequentes</h3>
+          <div className="space-y-3">
+            {FAQ.map((f, i) => (
+              <div key={i} className="rounded-xl border border-border bg-secondary/40 px-4 py-3">
+                <p className="text-sm font-medium text-foreground">{f.p}</p>
+                <p className="text-sm text-muted-foreground mt-1">{f.r}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
