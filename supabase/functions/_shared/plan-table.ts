@@ -12,15 +12,24 @@
 // checkout cobra ao aplicar o cupom.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ⚠️ AO MUDAR PREÇO, MUDE NOS TRÊS LUGARES — não existe fonte única hoje:
+//   1. supabase/functions/mp-create-payment/index.ts  (o que é COBRADO)
+//   2. src/lib/plans.ts                               (o que o site MOSTRA)
+//   3. este arquivo                                   (o que o e-mail PROMETE)
+// Foi exatamente essa dispersão que fez o e-mail sair com a tabela antiga
+// enquanto o checkout já cobrava a nova.
 export const PLAN_PRICES: Record<string, number> = {
-  monthly:       49.00,
-  annual:        199.00,
-  lifetime:      299.90,
-  lifetime_plus: 599.00,
-  lifetime_pro:  997.00,
+  monthly:       99.00,
+  annual:        299.00,
+  lifetime:      499.00,
+  lifetime_plus: 798.00,
+  lifetime_pro:  1497.00,
 }
 
-export const brl = (valor: number) => `R$ ${valor.toFixed(2).replace('.', ',')}`
+// Com o Pro em R$ 1.497,00 o separador de milhar deixou de ser detalhe:
+// "R$ 1497,30" num e-mail de venda parece erro de digitação.
+export const brl = (valor: number) =>
+  `R$ ${valor.toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d),)/g, '.')}`
 
 export const comDesconto = (plano: string, pct: number) =>
   Math.round((PLAN_PRICES[plano] - (PLAN_PRICES[plano] * pct / 100)) * 100) / 100
@@ -29,25 +38,31 @@ export const comDesconto = (plano: string, pct: number) =>
 // curto de propósito: e-mail não é página de vendas.
 type LinhaPlano = { id: string; nome: string; selo?: string; itens: string[] }
 
+// Resumo de src/lib/plans.ts (PLAN_FEATURES, revisão de 10/08). Mantenha
+// alinhado com aquele arquivo: é o mesmo texto que o site anuncia.
 const PLANOS: LinhaPlano[] = [
   { id: 'monthly', nome: 'Mensal', itens: [
-    'Acesso por 1 mês', '1 tela',
+    'Acesso por 1 mês', '1 tela', 'Todo o acervo atual',
   ] },
   { id: 'annual', nome: 'Anual', itens: [
-    'Acesso por 1 ano', '2 telas', 'Atualizações mensais',
+    'Acesso por 1 ano', '2 telas', 'Todo o acervo atual',
+    'Ferramentas de IA: até 5 usos por dia em cada',
   ] },
   { id: 'lifetime', nome: 'Vitalício', selo: 'MAIS ESCOLHIDO', itens: [
-    'Acesso para sempre', '2 telas', 'Atualizações mensais', 'Download um a um',
+    'Acesso para sempre', '2 telas', 'Atualizações anuais dos cursos básicos',
+    'Download de arquivos e apostilas', 'IA: até 10 usos por dia em cada',
   ] },
   { id: 'lifetime_plus', nome: 'Vitalício Plus', itens: [
-    'Tudo do Vitalício', '4 telas', 'Backup no seu próprio Drive',
-    'Download em massa', 'Flashcards e banco de questões por IA',
-    'Assistente que lê a aula com você',
+    'Tudo do Vitalício', '4 telas',
+    'Atualizações anuais dos cursos intermediários',
+    'Backup de tudo no seu próprio Google Drive',
+    'IA: até 20 usos por dia em cada',
   ] },
   { id: 'lifetime_pro', nome: 'Vitalício Pro', itens: [
-    'Tudo do Plus', '6 telas', 'Atualizações mensais + semanais',
-    'Todas as atualizações sem depender de colaboração',
-    'IA de diagnósticos Meduf',
+    'Tudo do Plus', '6 telas',
+    'Atualizações mensais de 95% do conteúdo + novos cursos',
+    'Download das aulas em vídeo — exclusivo do Pro',
+    'IA sem limite de uso', 'IA de diagnósticos Meduf',
   ] },
 ]
 
