@@ -12,6 +12,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { UserPlus, Search, Trash2, RefreshCw, XCircle, FolderOpen, Loader2, AlertTriangle } from 'lucide-react';
+
+// Acesso permanente não tem data de fim. Esta tela trabalha com duração em
+// minutos (herança do fluxo de trial), então precisa saber quais tipos ficam
+// de fora dessa conta.
+const VITALICIOS = new Set(['lifetime', 'lifetime_plus', 'lifetime_pro']);
 import { WhatsAppLink } from '@/components/WhatsAppLink';
 
 export default function AccessManagement() {
@@ -79,8 +84,16 @@ export default function AccessManagement() {
     if (!newEmail) { toast.error('Informe um email'); return; }
     setAdding(true);
     try {
+      // Vitalício NÃO tem vencimento. Esta tela nasceu no fluxo de trial (por
+      // isso a duração em minutos), mas o seletor de tipo passou a incluir os
+      // vitalícios — e a duração era aplicada a eles do mesmo jeito. Foi assim
+      // que um cliente ficou com um "vitalício" que expirou 3 horas depois de
+      // concedido: ele conseguia entrar (o login só olha status='active') e
+      // levava "Sem acesso ativo" em toda aula (o player também olha o
+      // vencimento).
+      const ehVitalicio = VITALICIOS.has(newType);
       const durationMs = parseInt(newDuration) * 60 * 1000;
-      const expiresAt = new Date(Date.now() + durationMs).toISOString();
+      const expiresAt = ehVitalicio ? null : new Date(Date.now() + durationMs).toISOString();
       const { data: access, error } = await supabase.from('accesses').insert({
         email: newEmail.toLowerCase(),
         whatsapp: newWhatsapp || null,
@@ -166,9 +179,13 @@ export default function AccessManagement() {
   };
 
   // Renova por +30 min. Se a permissão do Drive foi removida, compartilha novamente.
+  // Em acesso vitalício, "renovar" apenas reativa: pôr vencimento num vitalício
+  // é o que transformava o acesso permanente num acesso de 30 minutos.
   const renewAccess = async (access: any) => {
     try {
-      const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+      const expiresAt = VITALICIOS.has(access.access_type)
+        ? null
+        : new Date(Date.now() + 30 * 60 * 1000).toISOString();
       const { error } = await supabase
         .from('accesses')
         .update({ status: 'active', expires_at: expiresAt })

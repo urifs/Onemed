@@ -101,7 +101,22 @@ serve(async (req) => {
       supabase.from('buyers').select('id').eq('email', email).eq('access_granted', true).limit(1).maybeSingle(),
       supabase.rpc('has_role', { _user_id: user.id, _role: 'admin' }),
     ])
-    if (!activeAccesses?.length && !buyer && !isAdmin) return jsonResponse(req, { error: 'Sem acesso ativo' }, 403)
+    if (!activeAccesses?.length && !buyer && !isAdmin) {
+      // "Sem acesso ativo" não diz à pessoa o que fazer e chega ao suporte como
+      // "não consigo assistir". Só no caminho de falha (custo zero no fluxo
+      // normal) olhamos se existe uma linha VENCIDA: aí o caso é renovação, e
+      // não conta sem acesso — foi exatamente a confusão de um cliente cujo
+      // acesso vitalício tinha vencimento gravado por engano.
+      const { data: vencido } = await supabase.from('accesses')
+        .select('expires_at').eq('email', email)
+        .not('expires_at', 'is', null).lte('expires_at', new Date().toISOString())
+        .order('expires_at', { ascending: false }).limit(1).maybeSingle()
+      return jsonResponse(req, {
+        error: vencido
+          ? 'Seu acesso expirou. Renove seu plano para voltar a assistir às aulas.'
+          : 'Sem acesso ativo',
+      }, 403)
+    }
 
     // ── Curso restrito a plano ───────────────────────────────────────────
     // A RLS esconde o curso das consultas do aluno, mas ESTA função roda com
