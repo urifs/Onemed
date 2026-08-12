@@ -17,7 +17,8 @@ interface PlanDetailsModalProps {
 
 export function PlanDetailsModal({ open, onOpenChange, plan, email, whatsapp, amountPaid, expiresAt, isLifetime, grantedAt }: PlanDetailsModalProps) {
   const features = PLAN_FEATURES[plan] || [];
-  const deviceLimit = PLAN_DEVICE_LIMITS[plan] ?? DEFAULT_DEVICE_LIMIT;
+  // Admin não passa pelo enforce_session_limit, então não tem teto de telas.
+  const deviceLimit = plan === 'admin' ? 'Ilimitado' : PLAN_DEVICE_LIMITS[plan] ?? DEFAULT_DEVICE_LIMIT;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
