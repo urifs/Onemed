@@ -2639,6 +2639,67 @@ sozinhas no reset diário; daí em diante o cache absorve a carga. Se ainda assi
 muito quente voltar a estourar, o caminho definitivo documentado continua sendo migrar o arquivo
 para conta própria (ufgravity/Storage) — o dono não tem franquia no próprio arquivo.
 
+---
+
+### 2026-08-12 (sessão remota) — telas simultâneas: contar TELA ATIVA, não linha de sessão
+
+**Pedido:** auditar o controle de telas por plano; só tela ATIVA deve contar — sessão já fechada
+não pode ocupar vaga.
+
+**Três defeitos, todos medidos em produção antes de mexer:**
+
+1. **Sessão nunca morria.** O projeto está com `sessions_inactivity_timeout = 0`, então
+   `auth.sessions` só perde linha se alguém apagar. **1.101 sessões (35% do total) nunca tiveram
+   um único refresh** — são logins que o aluno abriu e fechou em menos de ~1h (o refresh só
+   acontece de hora em hora). Ficavam ocupando vaga PARA SEMPRE. Efeito: **990 das 2.020 contas**
+   (metade da base) apareciam usando 2+ telas sem estar usando.
+2. **A regra derrubava a tela ERRADA.** `ORDER BY created_at DESC` mantinha as sessões mais
+   recentes POR CRIAÇÃO — então o aparelho que o aluno usa todo dia (sessão antiga, mas viva)
+   caía, e uma sessão criada ontem e abandonada sobrevivia. **289 contas** estavam nessa inversão.
+   Caso real conferido: aluno com iPhone usado ontem e Mac usado anteontem perdia o iPhone e
+   mantinha uma sessão fantasma do servidor.
+3. **Mensal prometia 1 tela e liberava 2.** `PLAN_DEVICE_LIMITS` só tinha os dois vitalícios
+   superiores; todo o resto caía no padrão 2. Pior: o cálculo do login fazia
+   `.filter(!!n)` sobre o mapa, então **um plano fora do mapa sumia da conta** — bastava uma
+   linha de acesso mapeada para o limite ignorar o plano real da pessoa.
+
+**Correções:**
+
+| Onde | Mudança |
+|---|---|
+| `supabase/migrations/20260812010000_active_session_limit.sql` | `enforce_session_limit` reescrita: (1) apaga sessões sem sinal de vida há **7 dias**; (2) entre as ativas, mantém as N de **atividade mais recente** (`greatest(refreshed_at AT TIME ZONE 'UTC', updated_at, created_at)`) |
+| `member-auth-request` v26 | Mapa com TODOS os planos (`monthly:1, annual:2, lifetime:2, plus:4, pro:6`); cada linha vale o limite do SEU plano (`?? DEFAULT`) e a conta usa o maior; linha **vencida não conta mais telas** (um anual expirado que o cron ainda não revogou entrava na conta) |
+| `src/lib/plans.ts` | Mesmo mapa completo — a tela "Detalhes do Plano" mostrava 2 para o Mensal, contradizendo o próprio card |
+| `src/test/deviceLimits.test.ts` (novo) | Lê o número DO TEXTO do benefício ("2 telas simultâneas") e exige que `PLAN_DEVICE_LIMITS` bata — é o teste que teria pego o bug do Mensal |
+
+**Janela de 7 dias, escolhida com dados:** liberava 887 sessões (28%) claramente mortas sem tocar
+em ninguém ativo; 3 dias derrubaria 51% e 1 dia 69% — punindo quem usa o notebook uma vez por
+semana. Como o login do aluno é só o e-mail (sem senha), voltar depois de 7 dias parados custa um
+clique. Janela curta demais também **facilitaria compartilhamento** (5 pessoas em dias alternados
+nunca bateriam no limite).
+
+**Verificado em produção** (contas de teste criadas e apagadas):
+- Cenários com timestamps reais, limite 2: sobrevivem a sessão *antiga porém ativa (2h atrás)* e a
+  do *login novo*; a *morta há 10 dias* e a *abandonada ontem* saem. **A regra antiga preservaria
+  as duas erradas.**
+- O aparelho derrubado **perde o acesso de verdade**: refresh token das duas removidas → HTTP 400;
+  das mantidas → 200.
+- Limite por plano pelo fluxo REAL de login (`member-auth-request`), 7-8 logins cada:
+  monthly 1 · annual 2 · lifetime 2 · plus 4 · **pro 6** — todos exatos.
+  ⚠️ O primeiro teste do Pro deu "2" e era **falso negativo**: o rate limit de login por IP
+  (`member_login`) barrou as chamadas seguintes depois de 35 logins seguidos do mesmo IP. Testar
+  limite de telas exige limpar `rate_limits` entre os lotes.
+- **Limpeza única em produção:** 884 sessões mortas removidas (3.106 → 2.222), contas com sessão
+  1.492, contas ocupando 2+ vagas caiu de **990 → 665**. Só telas mortas — nenhum aluno em uso
+  foi deslogado. O corte de excedentes NÃO foi aplicado em massa de propósito: acontece
+  organicamente no próximo login de cada conta, evitando uma onda de "fui deslogado do nada".
+
+⚠️ `create-trial-access` segue com `_max_sessions: 2` fixo (trial não anuncia telas nos cards);
+o limite continua sendo aplicado **no login**, então rebaixamento de plano só reflete no próximo
+acesso. E o `logout` do app usa o padrão do supabase-js (escopo global, derruba todos os
+aparelhos) — não foi alterado nesta sessão por não fazer parte do pedido, mas é candidato a virar
+escopo local (sair só daquele aparelho) numa próxima.
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management

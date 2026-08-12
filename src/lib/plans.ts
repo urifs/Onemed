@@ -105,8 +105,14 @@ export function canDownloadItem(plan: string | null | undefined, item?: { type?:
   return isLessonVideo(item) ? canDownloadLessonPlan(plan) : canDownloadPlan(plan);
 }
 
-// Vitalício Plus libera 4 telas simultâneas e Pro libera 6, em vez das 2 padrão.
+// Telas simultâneas por plano — os MESMOS números que PLAN_FEATURES promete e
+// que o `member-auth-request` aplica no login. Todo plano precisa constar aqui:
+// o Mensal ficava de fora e caía no padrão 2, contradizendo o próprio card
+// ("1 tela simultânea") e a tela de Detalhes do Plano.
 export const PLAN_DEVICE_LIMITS: Record<string, number> = {
+  monthly: 1,
+  annual: 2,
+  lifetime: 2,
   lifetime_plus: 4,
   lifetime_pro: 6,
 };
