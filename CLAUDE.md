@@ -2887,6 +2887,26 @@ para de funcionar na hora. Trial pela landing continua entrando na hora, sem sen
 > Quem perder a senha depende do suporte liberar em `/admin/membros`. Se o volume incomodar, dá
 > pra ligar a recuperação por e-mail (o Resend já está configurado).
 
+**Mutirão de re-login (a pedido do dono):** todas as sessões foram encerradas de uma vez —
+**2.455 sessões** de 1.639 contas, e os 15.140 refresh tokens caíram junto por cascata. Ninguém
+perdeu acesso: na volta, cada aluno cadastra a senha dele.
+
+⚠️ **Antes de apagar as sessões foi preciso corrigir o `KickedOutModal`**, que dispara em QUALQUER
+desconexão forçada e dizia "sua conta está em outros 2 dispositivos e um novo login derrubou esta
+sessão", com botão de WhatsApp. Milhares de pessoas leriam isso por algo esperado — susto e
+enxurrada de chamados. Até 16/08 o modal explica que o login virou e-mail + senha e leva direto
+pro cadastro; depois volta sozinho ao texto do limite de telas, sem precisar de deploy pra
+desfazer. **Ordem: frontend do aviso primeiro, encerramento depois.**
+
+⚠️ **A desconexão não é instantânea.** O `jwt_exp` do projeto é 3600s: quem estava com uma aba
+aberta continua navegando até o access token vencer (no máximo 1h) e o refresh falhar. Só a
+rotação do segredo do JWT derrubaria na hora, e isso quebraria tudo. Quem já tinha fechado a aba
+cai direto no login.
+
+Conferido depois do encerramento: `auth.sessions` e `auth.refresh_tokens` em zero, refresh token
+antigo respondendo 400, e o fluxo completo do aluno (cadastrar senha → entrar → senha errada
+recusada) passando de ponta a ponta no site em produção.
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
