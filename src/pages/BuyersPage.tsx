@@ -6,7 +6,7 @@ import AdminLayout from '@/components/AdminLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { formatDateTimeSP, todayStartISO, yesterdayStartISO, fetchAllRows, formatBRL } from '@/lib/utils';
+import { formatDateTimeSP, todayStartISO, yesterdayStartISO, dayStartISO, fetchAllRows, formatBRL } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DollarSign, Users, Clock, TrendingUp, Mail, Calendar, Phone, Trash2, UserPlus, Loader2, RefreshCw, CheckCircle, XCircle, X, Download, AlertTriangle } from 'lucide-react';
 import { WhatsAppLink } from '@/components/WhatsAppLink';
@@ -47,12 +47,24 @@ export default function BuyersPage() {
         byPlan[plan] = today.filter(b => b.plan === plan).length;
       }
       const somaAmount = (rows: any[]) => rows.reduce((s: number, b: any) => s + (b.amount || 0), 0);
+      // Um dia específico do passado, sempre em janela FECHADA — [aquele dia
+      // 00h, dia seguinte 00h). Sem o limite de cima, "5 dias atrás" viraria
+      // "dos 5 dias atrás pra cá".
+      const diaFechado = (diasAtras: number) => {
+        const ini = dayStartISO(diasAtras);
+        const fim = dayStartISO(diasAtras - 1);
+        const linhas = all.filter(b => b.created_at >= ini && b.created_at < fim && b.status === 'approved');
+        return { receita: somaAmount(linhas), aprovados: linhas.length };
+      };
       setStats({
         total: today.length,
         approved: today.filter(b => b.status === 'approved').length,
         revenue: somaAmount(today.filter(b => b.status === 'approved')),
         revenueYesterday: somaAmount(yesterday.filter(b => b.status === 'approved')),
         approvedYesterday: yesterday.filter(b => b.status === 'approved').length,
+        anteontem: diaFechado(2),
+        cincoDias: diaFechado(5),
+        umaSemana: diaFechado(7),
         byPlan,
       });
     } catch {
@@ -156,7 +168,25 @@ export default function BuyersPage() {
             { label: 'Receita Ontem', value: stats ? formatBRL(stats.revenueYesterday ?? 0) : '—', icon: DollarSign, color: 'text-accent-info' },
             { label: 'Aprovados Hoje', value: stats?.approved ?? '—', icon: CheckCircle, color: 'text-accent-success' },
             { label: 'Aprovados Ontem', value: stats?.approvedYesterday ?? '—', icon: CheckCircle, color: 'text-accent-info' },
-          ].map((s, i) => (
+            // Dias fechados do passado: o valor é a receita do DIA, e a
+            // contagem de aprovados vai embaixo pra não dobrar o número de
+            // cards da faixa.
+            {
+              label: 'Vendas Anteontem', value: stats ? formatBRL(stats.anteontem?.receita ?? 0) : '—',
+              sub: stats ? `${stats.anteontem?.aprovados ?? 0} aprovados` : undefined,
+              icon: DollarSign, color: 'text-accent-info',
+            },
+            {
+              label: 'Vendas 5 dias atrás', value: stats ? formatBRL(stats.cincoDias?.receita ?? 0) : '—',
+              sub: stats ? `${stats.cincoDias?.aprovados ?? 0} aprovados` : undefined,
+              icon: DollarSign, color: 'text-accent-info',
+            },
+            {
+              label: 'Vendas 1 semana atrás', value: stats ? formatBRL(stats.umaSemana?.receita ?? 0) : '—',
+              sub: stats ? `${stats.umaSemana?.aprovados ?? 0} aprovados` : undefined,
+              icon: DollarSign, color: 'text-accent-info',
+            },
+          ].map((s: any, i) => (
             <Card key={i} className="bg-background-paper border-border">
               <CardContent className="p-5">
                 <div className="flex items-center justify-between mb-3">
@@ -164,6 +194,7 @@ export default function BuyersPage() {
                   <s.icon className={`w-4 h-4 ${s.color}`} />
                 </div>
                 <p className="font-secondary text-2xl font-bold text-foreground">{s.value}</p>
+                {s.sub && <p className="text-xs text-muted-foreground mt-1">{s.sub}</p>}
               </CardContent>
             </Card>
           ))}

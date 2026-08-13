@@ -115,20 +115,33 @@ export function nowSaoPaulo(): Date {
   return new Date(new Date().toLocaleString('en-US', { timeZone: SAO_PAULO_TIMEZONE }));
 }
 
-// Retorna o início do dia atual no horário de São Paulo como string ISO (UTC)
-// Brasil não tem horário de verão desde 2019, então São Paulo é sempre UTC-3
-export function todayStartISO(): string {
+// Início do dia `diasAtras` dias atrás no horário de São Paulo, como ISO (UTC).
+// Brasil não tem horário de verão desde 2019, então São Paulo é sempre UTC-3.
+//
+// Um DIA fechado é a janela [dayStartISO(n), dayStartISO(n - 1)) — o limite
+// superior é sempre a meia-noite seguinte, senão o balanço de um dia passado
+// engoliria tudo que veio depois dele.
+//
+// A subtração de dias é feita em UTC sobre a data-calendário de São Paulo
+// (Date.UTC), não com setDate sobre o instante: setDate usa o calendário LOCAL
+// de quem está rodando, e num fuso com horário de verão isso desloca a
+// meia-noite em uma hora.
+export function dayStartISO(diasAtras = 0): string {
   const spDateStr = new Date().toLocaleDateString('en-CA', { timeZone: SAO_PAULO_TIMEZONE });
-  return new Date(`${spDateStr}T00:00:00-03:00`).toISOString();
+  const [ano, mes, dia] = spDateStr.split('-').map(Number);
+  const alvo = new Date(Date.UTC(ano, mes - 1, dia - diasAtras));
+  return new Date(`${alvo.toISOString().slice(0, 10)}T00:00:00-03:00`).toISOString();
+}
+
+// Início do dia atual no horário de São Paulo, como ISO (UTC).
+export function todayStartISO(): string {
+  return dayStartISO(0);
 }
 
 // Início de ONTEM no horário de São Paulo, como ISO (UTC). Ontem = [ontem 00h,
 // hoje 00h) — usar junto de todayStartISO como limite superior.
 export function yesterdayStartISO(): string {
-  const spDateStr = new Date().toLocaleDateString('en-CA', { timeZone: SAO_PAULO_TIMEZONE });
-  const meiaNoiteHoje = new Date(`${spDateStr}T00:00:00-03:00`);
-  meiaNoiteHoje.setDate(meiaNoiteHoje.getDate() - 1);
-  return meiaNoiteHoje.toISOString();
+  return dayStartISO(1);
 }
 
 // Busca todos os registros de uma tabela contornando o limite de 1000 linhas do Supabase.
