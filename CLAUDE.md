@@ -2809,6 +2809,84 @@ espaço e SEM leitura da biblioteca, o worker vai bater 404 nela e cair na conta
 > limite de armazenamento. Enquanto estiver assim ela segue sujeita a restrição do Google —
 > hoje ela é só reserva, mas convém liberar espaço ou ampliar o plano.
 
+---
+
+### 2026-08-13 (sessão remota) — painel devolvia o admin pro login logo depois da senha certa
+
+**Relato:** "painel admin não loga", com o console cheio de `NetworkError` e status nulo.
+
+**O servidor estava bem** (projeto saudável, preflight 200) e a própria conta do relato tinha
+`last_sign_in_at` gravado dois minutos antes — o login era ACEITO e a resposta se perdia. Mas a
+causa principal era outra e foi REPRODUZIDA no navegador sem provocar falha nenhuma: a trilha do
+login era `/admin/login → /admin → /admin/login`.
+
+Entre o `SIGNED_IN` e a resposta do `has_role` existe uma janela em que `loading` já é false e o
+usuário já está setado, mas `isAdmin` ainda é o false inicial — a consulta do papel roda deferida,
+fora do callback do `onAuthStateChange` (o `await` ali dentro trava o supabase-js, correção de
+07/08). O `ProtectedRoute` decidia nessa janela e lia "ainda não sei" como "não é admin". Quem
+entrava direto numa URL do painel passava, porque aí o papel já tinha chegado — daí o sintoma ser
+"não loga" em vez de "não tenho acesso".
+
+| Onde | Mudança |
+|---|---|
+| `AuthContext` | Novo `checkingRole`, marcado antes de sair do callback e baixado no `finally`; `ProtectedRoute` mostra o spinner enquanto isso |
+| `AuthContext.checkAdmin` | `has_role` tenta 3× e separa "não tem o papel" de "não deu pra perguntar" — antes qualquer tropeço de rede virava "não é admin" em silêncio |
+| `AuthContext.login` | Repete UMA vez só quando a resposta não chega; credencial errada sai do laço na hora (não gasta o rate limit do GoTrue) |
+| `describeAuthError` | Deixou de dizer só "verifique sua conexão" e passou a citar VPN/bloqueador/extensão |
+
+Verificado em produção: login limpo entra e fica; `has_role` caindo 1× e 2×, e token caindo 1×,
+todos entram. **E as duas sondas de segurança:** conta sem papel → barrada; admin com `has_role`
+sempre fora → barrado. A espera não virou porta aberta — quem manda é a resposta do banco, nunca
+a ausência dela.
+
+---
+
+### 2026-08-13 (sessão remota) — login da área de membros vira e-mail + SENHA
+
+**Como era:** só o e-mail. O servidor gerava um magic link e resgatava ele sozinho, devolvendo a
+sessão na hora — ou seja, **quem soubesse o e-mail de um aluno entrava na conta dele**. Comprar e
+receber acesso continuam iguais (só e-mail); a senha é escolhida pelo próprio aluno na primeira
+vez que ele vai entrar.
+
+**Decisão do dono, com o risco posto na mesa:** cadastrar a senha NÃO exige código no e-mail. O
+custo é que quem souber o e-mail de um cliente pode cadastrar a senha antes dele. Duas travas
+seguram isso:
+
+1. **Cadastrar senha é de UMA vez.** Sem isso, qualquer um trocaria a senha de qualquer aluno
+   quando quisesse e o login com senha não valeria nada.
+2. **Quem esqueceu passa pelo suporte:** `/admin/membros` tem a coluna "Senha" e o botão que
+   libera novo cadastro. Ele apaga a marca **e** a senha antiga — só apagar a marca deixaria duas
+   senhas válidas na mesma conta.
+
+| Arquivo | Mudança |
+|---|---|
+| `20260813160000_member_password_login.sql` | Tabela `member_credentials` (marca de quem já cadastrou). RLS: admin/viewer leem; escrita é exclusiva da Edge Function |
+| `member-auth-request` v28 | Ações `status` / `set-password` / `login` / `admin-reset`, todas passando pelo portão de sempre (e-mail válido, rate limit por IP, acesso ativo) e mantendo limite de telas + captura de localização |
+| `MemberLoginPage` | Dois passos: digita o e-mail e o SERVIDOR diz se aquela conta já tem senha — aviso + formulário de cadastro, ou campo de senha |
+| `MembersPage` | Coluna "Senha" e botão de liberar novo cadastro (com confirmação) |
+
+⚠️ **`auth.users.encrypted_password` NÃO serve como sinal de "tem senha".** O GoTrue grava um hash
+bcrypt aleatório em toda conta criada por magic link — as 2.222 contas já tinham o campo
+preenchido. Por isso a marca é uma tabela nossa. A migration já marca quem escolheu uma senha de
+verdade (afiliados com o próprio e-mail e contas do painel), senão essas pessoas trocariam sem
+querer a senha que usam no painel/afiliados — é a MESMA conta do Auth.
+
+**Ordem de deploy, para não existir janela sem login:** a função foi ao ar aceitando ainda o
+pedido antigo (sem `action`), o frontend novo subiu, e só então a ponte foi fechada. Com ela
+fechada não existe mais nenhum caminho de entrada sem senha — sem esse último passo, exigir senha
+na tela não valeria nada: bastava um curl com o e-mail do aluno.
+
+**Verificado em produção** (contas de teste criadas e apagadas): 13 sondas de API — cadastro,
+senha curta recusada, cadastro por cima recusado (409), senha errada recusada, sessão devolvida
+pertencendo à conta certa, e-mail sem acesso → 404, `admin-reset` sem autenticação → 401, pedido
+antigo → 400. Na tela real: conta nova vê o aviso e cadastra, entra direto; volta depois e entra
+com a senha; senha errada não entra. Suporte: não-admin → 401, admin → libera e a senha antiga
+para de funcionar na hora. Trial pela landing continua entrando na hora, sem senha.
+
+> Pendência conhecida, por decisão de produto: **não existe "esqueci minha senha" por e-mail.**
+> Quem perder a senha depende do suporte liberar em `/admin/membros`. Se o volume incomodar, dá
+> pra ligar a recuperação por e-mail (o Resend já está configurado).
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
