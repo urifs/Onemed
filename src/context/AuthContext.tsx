@@ -87,14 +87,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
         // getSession() só lê o que está guardado no navegador — não pergunta
         // nada ao servidor. Com a sessão já encerrada do outro lado, o token
-        // continua "válido" pela assinatura por até 1h, e o app abria normal
-        // enquanto TODA chamada voltava 401 ("Sessão inválida" no player).
-        // getUser() pergunta de verdade; só um 401/403 explícito derruba —
-        // falha de rede não pode deslogar quem está sem sinal.
+        // continua "válido" pela assinatura por até 1h: o app abria normal e
+        // TODA chamada voltava 401 ("Sessão inválida" no player), ou pior —
+        // sem sessão, `my_member_status` respondia como anônimo e um aluno
+        // VITALÍCIO via a tela de "seu teste grátis expirou".
+        //
+        // Decide pelo RESULTADO, não pelo código do erro: numa sessão apagada
+        // o supabase-js limpa o armazenamento por conta própria e o erro nem
+        // sempre traz `status` — checar 401/403 deixava passar exatamente o
+        // caso que precisava pegar. Se o servidor não devolve usuário, não há
+        // sessão. Falha de REDE é o único caso que não derruba: quem está sem
+        // sinal não pode ser deslogado.
         if (session?.user) {
-          const { error: sessaoErr } = await supabase.auth.getUser();
-          const status = (sessaoErr as { status?: number } | null)?.status;
-          if (status === 401 || status === 403) {
+          const { data: quem, error: sessaoErr } = await supabase.auth.getUser();
+          const semRede = /failed to fetch|networkerror|network request failed|aborted|timeout|load failed/i
+            .test(String(sessaoErr?.message || ''));
+          if (!quem?.user && !semRede) {
             await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
             session = null;
           }
