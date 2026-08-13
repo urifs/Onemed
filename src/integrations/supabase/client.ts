@@ -43,9 +43,37 @@ const PAYMENT_TIMEOUT_MS = 45000;
 // proxy, a backgrounded tab resuming mid-request) leaves its promise pending
 // forever — any page awaiting it gets stuck on its loading state until a hard
 // reload. This guarantees every Supabase call either resolves or rejects.
+// ── sessão morta no servidor ────────────────────────────────────────────────
+// O access token vale pela ASSINATURA por até 1h, então quando a sessão deixa
+// de existir do lado do servidor (limite de telas, encerramento em massa,
+// conta apagada) o app continua renderizando como se estivesse tudo bem — e só
+// as chamadas ao servidor voltam 401. Foi o que apareceu pro aluno como
+// "Sessão inválida" dentro do player, sem nenhuma saída na tela.
+//
+// Detectar aqui, no único lugar por onde TODA chamada passa, encerra a sessão
+// local na primeira recusa: o AuthContext assume e leva pro login.
+//
+// Fora da conta: os endpoints de ENTRADA. Ali o 401 significa "senha errada" ou
+// "não autenticado ainda", não sessão morta — derrubar a sessão de quem está
+// logado por causa disso seria um efeito colateral absurdo.
+const ENTRADA_PATH = /\/auth\/v1\/|\/functions\/v1\/(member-auth-request|create-trial-access|affiliate-register|affiliate-coupon)/;
+let encerrandoSessaoMorta = false;
+
+function checarSessaoMorta(url: string, res: Response) {
+  if (res.status !== 401 || ENTRADA_PATH.test(url) || encerrandoSessaoMorta) return;
+  encerrandoSessaoMorta = true;
+  // scope 'local': a sessão já não existe no servidor, pedir pra encerrar lá
+  // só tomaria outro 401. Isso dispara SIGNED_OUT e o AuthContext explica.
+  supabase.auth.signOut({ scope: 'local' })
+    .catch(() => { /* o importante é o estado local ter sido limpo */ })
+    .finally(() => { encerrandoSessaoMorta = false; });
+}
+
 function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-  if (TIMEOUT_EXEMPT.test(url)) return fetch(input, init);
+  if (TIMEOUT_EXEMPT.test(url)) {
+    return fetch(input, init).then(res => { checarSessaoMorta(url, res); return res; });
+  }
 
   const timeoutMs = PAYMENT_PATH.test(url)
     ? PAYMENT_TIMEOUT_MS
@@ -56,7 +84,9 @@ function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}): Pro
     if (init.signal.aborted) controller.abort();
     else init.signal.addEventListener('abort', () => controller.abort(), { once: true });
   }
-  return fetch(input, { ...init, signal: controller.signal }).finally(() => clearTimeout(timeoutId));
+  return fetch(input, { ...init, signal: controller.signal })
+    .finally(() => clearTimeout(timeoutId))
+    .then(res => { checarSessaoMorta(url, res); return res; });
 }
 
 // Some iPads (institutional/MDM-managed ones especially) ship Safari with

@@ -83,7 +83,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     // stuck on the loading spinner forever.
     (async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        let { data: { session } } = await supabase.auth.getSession();
+
+        // getSession() só lê o que está guardado no navegador — não pergunta
+        // nada ao servidor. Com a sessão já encerrada do outro lado, o token
+        // continua "válido" pela assinatura por até 1h, e o app abria normal
+        // enquanto TODA chamada voltava 401 ("Sessão inválida" no player).
+        // getUser() pergunta de verdade; só um 401/403 explícito derruba —
+        // falha de rede não pode deslogar quem está sem sinal.
+        if (session?.user) {
+          const { error: sessaoErr } = await supabase.auth.getUser();
+          const status = (sessaoErr as { status?: number } | null)?.status;
+          if (status === 401 || status === 403) {
+            await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
+            session = null;
+          }
+        }
+
         setSession(session);
         setUser(session?.user ?? null);
         hadSession.current = !!session?.user;
