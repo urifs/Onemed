@@ -379,8 +379,8 @@ export default function MembersPage() {
   // conseguir entrar.
   const liberarSenha = async (email: string) => {
     if (!window.confirm(
-      `Liberar novo cadastro de senha para ${email}?\n\n`
-      + 'A senha atual deixa de funcionar na hora, e no próximo login essa pessoa vai escolher uma nova.',
+      `Resetar a senha de ${email}?\n\n`
+      + 'A senha atual deixa de funcionar na hora. No próximo login, essa pessoa vai cadastrar uma nova senha.',
     )) return;
     setLiberando(email);
     try {
@@ -388,12 +388,12 @@ export default function MembersPage() {
         body: { action: 'admin-reset', email },
       });
       if (error || data?.error) {
-        throw new Error(data?.error || await extractFunctionErrorMessage(error, 'Erro ao liberar a senha'));
+        throw new Error(data?.error || await extractFunctionErrorMessage(error, 'Erro ao resetar a senha'));
       }
-      toast.success('Senha liberada. No próximo login o aluno cadastra uma nova.');
+      toast.success('Senha resetada. No próximo login o aluno cadastra uma nova.');
       fetchData();
     } catch (err: any) {
-      toast.error(err.message || 'Erro ao liberar a senha');
+      toast.error(err.message || 'Erro ao resetar a senha');
     } finally {
       setLiberando(null);
     }
@@ -502,17 +502,25 @@ export default function MembersPage() {
                       </td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">{planLabel(m.plan)}</td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">{formatDateTimeSP(m.grantedAt)}</td>
+                      {/* Status e AÇÃO separados de propósito: com um botão só
+                          escrito "Cadastrada", a coluna parecia um rótulo e
+                          ninguém percebia que clicar ali reseta a senha. */}
                       <td className="px-4 py-3">
                         {m.temSenha ? (
-                          <Button
-                            variant="ghost" size="sm" onClick={() => liberarSenha(m.email)}
-                            disabled={liberando === m.email}
-                            title="Apaga a senha atual para o aluno cadastrar outra no próximo login"
-                            className="text-accent-warning hover:text-accent-warning gap-1.5"
-                          >
-                            <KeyRound className="w-3.5 h-3.5" />
-                            {liberando === m.email ? 'Liberando...' : 'Cadastrada'}
-                          </Button>
+                          <div className="flex items-center gap-2">
+                            <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-success/15 px-2 py-0.5 text-xs text-accent-success">
+                              <CheckCircle2 className="w-3 h-3" /> Cadastrada
+                            </span>
+                            <Button
+                              variant="outline" size="sm" onClick={() => liberarSenha(m.email)}
+                              disabled={liberando === m.email}
+                              title="Apaga a senha atual para o aluno cadastrar outra no próximo login"
+                              className="h-7 gap-1.5 border-border text-accent-warning hover:text-accent-warning hover:bg-accent-warning/10"
+                            >
+                              <KeyRound className="w-3.5 h-3.5" />
+                              {liberando === m.email ? 'Resetando...' : 'Resetar senha'}
+                            </Button>
+                          </div>
                         ) : (
                           <span className="text-muted-foreground text-xs">Não cadastrada</span>
                         )}
