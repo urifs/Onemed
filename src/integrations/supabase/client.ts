@@ -53,14 +53,21 @@ const PAYMENT_TIMEOUT_MS = 45000;
 // Detectar aqui, no único lugar por onde TODA chamada passa, encerra a sessão
 // local na primeira recusa: o AuthContext assume e leva pro login.
 //
-// Fora da conta: os endpoints de ENTRADA. Ali o 401 significa "senha errada" ou
-// "não autenticado ainda", não sessão morta — derrubar a sessão de quem está
-// logado por causa disso seria um efeito colateral absurdo.
-const ENTRADA_PATH = /\/auth\/v1\/|\/functions\/v1\/(member-auth-request|create-trial-access|affiliate-register|affiliate-coupon)/;
+// LISTA DE PERMITIDOS, não "qualquer 401". Estas funções são as que o aluno
+// chama o tempo todo e que só devolvem 401 quando a SESSÃO não vale — é o
+// sinal que interessa.
+//
+// A primeira versão derrubava em qualquer 401 e isso expulsou do painel quem
+// abria o dashboard: `admin-capi-health` exige service role e responde 401
+// para QUALQUER token de usuário, inclusive de admin. Ou seja, 401 também
+// significa "esta chamada não é para você" — nada a ver com sessão morta.
+//
+// `member-auth-request` fica de fora de propósito: lá 401 é senha errada.
+const SESSAO_PATH = /\/functions\/v1\/member-(lesson-token|stream-file|account-info|capture-location)/;
 let encerrandoSessaoMorta = false;
 
 function checarSessaoMorta(url: string, res: Response) {
-  if (res.status !== 401 || ENTRADA_PATH.test(url) || encerrandoSessaoMorta) return;
+  if (res.status !== 401 || !SESSAO_PATH.test(url) || encerrandoSessaoMorta) return;
   encerrandoSessaoMorta = true;
   // scope 'local': a sessão já não existe no servidor, pedir pra encerrar lá
   // só tomaria outro 401. Isso dispara SIGNED_OUT e o AuthContext explica.
