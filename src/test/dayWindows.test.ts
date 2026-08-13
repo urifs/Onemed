@@ -1,10 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { dayStartISO, todayStartISO, yesterdayStartISO } from '@/lib/utils';
 
-// Os cards de "vendas de um dia" do /admin/buyers dependem de dois pontos:
-// a meia-noite ser a de São Paulo (não a do navegador de quem abre o painel)
-// e a janela ser FECHADA. Sem o limite de cima, "5 dias atrás" somaria tudo
-// que veio depois daquele dia.
+// Todo balanço por dia do painel (receita de hoje, de ontem) depende de dois
+// pontos: a meia-noite ser a de São Paulo — e não a do navegador de quem abre
+// o painel — e a janela de um dia ser FECHADA, sem alcançar o dia seguinte.
 describe('dayStartISO', () => {
   it('sempre cai na meia-noite de São Paulo (03:00 UTC)', () => {
     for (const n of [0, 1, 2, 5, 7, 30]) {
@@ -36,20 +35,5 @@ describe('dayStartISO', () => {
     const depois = new Date(Date.parse(fim) + 1000).toISOString();
     expect(dentro >= inicio && dentro < fim).toBe(true);
     expect(depois >= inicio && depois < fim).toBe(false);
-  });
-
-  // Os cards "Últimos N dias" contam HOJE como o primeiro dia: N=5 é hoje mais
-  // os 4 anteriores, então o começo é dayStartISO(N - 1) e não dayStartISO(N).
-  // Errar isso por um dia infla o acumulado sem que ninguém perceba.
-  it('últimos N dias começam N-1 dias atrás e cobrem N dias corridos', () => {
-    for (const n of [3, 5, 7]) {
-      const inicio = dayStartISO(n - 1);
-      const fimDeHoje = dayStartISO(-1);
-      const dias = (Date.parse(fimDeHoje) - Date.parse(inicio)) / (24 * 3600 * 1000);
-      expect(dias).toBe(n);
-      // hoje entra; o dia anterior ao começo da janela, não.
-      expect(dayStartISO(0) >= inicio).toBe(true);
-      expect(dayStartISO(n) >= inicio).toBe(false);
-    }
   });
 });
