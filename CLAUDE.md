@@ -2977,6 +2977,44 @@ não pode ser deslogado).
 próxima navegação vai para `/login` (antes ficava presa em `/membros` mostrando "teste grátis
 expirou" por tempo indeterminado). Fluxo normal de senha conferido junto, intacto.
 
+---
+
+### 2026-08-13 (sessão remota) — pasta "Cursos ATT": 596 aulas novas + 2 cursos criados
+
+**Pedido:** sincronizar a pasta `1fIKgAQ86TM_pXUv6GMN1NDM7MJ3Yp5qA` ("Cursos ATT", da conta de
+ARMAZENAMENTO), onde cada pasta de topo é um curso — somando ao que já existe, sem duplicar, e
+criando o que não existe.
+
+| Pasta no Drive | Destino | Resultado |
+|---|---|---|
+| MEDCELL 2026 | **curso novo** `medcell-2026` | 467 aulas · 59,3 GB · 28 módulos por especialidade |
+| Bancos de Questão AnestReview | **curso novo** `bancos-de-questao-anestreview` | 55 apostilas PDF |
+| MedReview 2026 | `medreview-2026` (já existia) | +64 aulas (9,9 GB) — módulo de nefro/distúrbios |
+| MED Curso 2026 | `medcurso-2026` (já existia) | +10 aulas (13,3 GB) |
+| MED 2026 | `med-2026` (já existia) | nada novo — 61/61 já estavam |
+
+Script novo `scripts/sync-drive-extra.mjs`, **ADITIVO por construção**: lê pela conta de
+armazenamento (`drive-storage-token`) e nunca marca aula como sumida. É o que se quer numa pasta
+que não é a raiz oficial da biblioteca — rodar o `deep-library-sync.mjs` ali marcaria como
+`missing_since` tudo que vive fora dela. `MAPA_CURSOS='<folderId>=<courseId>'` força o destino
+quando o curso na plataforma nasceu de outra pasta (MEDCURSO e MedReview são esse caso).
+
+**Dedupe é por `drive_file_id`, nunca por nome — e isso foi medido.** Dez arquivos "novos" do
+MEDCURSO tinham nome já existente ("Exclusivo para MedMaster- Atualizações de 2026.mp4"); olhando
+os TAMANHOS, existem **8 vídeos diferentes com esse mesmo nome** no Drive (é um bônus por módulo).
+Deduplicar por nome teria descartado aula real.
+
+⚠️ **`recalc_course_totals` só renumera módulos/aulas quando o curso tem pasta em
+`sync_folder_queue`** (`v_folders > 0`). Na primeira execução o script não gravava a fila e os
+dois cursos novos ficaram com TODAS as aulas em `sort_order = 0` — sem ordem nenhuma na tela.
+O script passou a registrar cada pasta varrida como `done`, o que também alimenta a tela de
+conferência da biblioteca. Corrigido e reprocessado: os 5 cursos com `ordens = total de aulas`.
+
+Verificado em produção com conta real (criada e apagada na sessão): **9/9 aulas sorteadas dos 4
+cursos tocam** pelo caminho do aluno (206 com bytes `ftyp`/`%PDF` de verdade) e a página do
+MEDCELL abre com 464 aulas, 301h35min e os módulos na ordem certa. Zero `drive_file_id`
+duplicado em qualquer um dos cursos.
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
