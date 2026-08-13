@@ -2946,6 +2946,37 @@ valer nos dois lugares (é a mesma conta do Auth).
 Verificado depois: três contas reais que tinham senha respondem `hasPassword:false`, e o fluxo
 completo (cadastrar → entrar → senha errada recusada) passa de ponta a ponta em produção.
 
+---
+
+### 2026-08-13 (sessão remota) — "Sessão inválida" no player: sessão morta que o app não percebia
+
+**Relato:** cliente com o player aberto vendo **"Sessão inválida"** e sem saída na tela.
+
+**Causa — o outro lado do encerramento em massa.** O access token vale pela ASSINATURA por até 1h
+(`jwt_exp: 3600`), então quem estava logado quando as sessões foram apagadas ficou num estado
+zumbi: o app abre e renderiza normalmente (o `getSession()` só lê o que está guardado no
+navegador), enquanto TODA chamada ao servidor volta 401. `member-lesson-token` responde
+exatamente "Sessão inválida" quando `auth.getUser(jwt)` é recusado.
+
+Pior que o erro no player: sem sessão válida, `my_member_status` respondia como ANÔNIMO, então
+uma aluna **vitalícia** via a tela de *"seu teste grátis expirou"* com oferta de plano.
+
+| Onde | Mudança |
+|---|---|
+| `integrations/supabase/client.ts` | O fetch do cliente — único ponto por onde toda chamada passa — encerra a sessão local na primeira recusa 401. Endpoints de ENTRADA ficam de fora (ali 401 é senha errada; derrubar quem está logado por isso seria absurdo) |
+| `AuthContext` | Confere a sessão com `getUser()` na abertura, em vez de confiar só no armazenamento local |
+
+🔴 **A primeira versão da checagem não funcionou, e a lição vale:** eu testava
+`error.status === 401 || 403`. Numa sessão APAGADA o supabase-js limpa o armazenamento por conta
+própria e o erro nem sempre traz `status` — a variável local seguia com o usuário antigo, o app
+continuava "logado" e a tela de teste expirado aparecia igual. **Decide pelo RESULTADO:** se o
+servidor não devolve usuário, não há sessão. Falha de REDE é a única exceção (quem está sem sinal
+não pode ser deslogado).
+
+**Reproduzido e verificado em produção** com conta de teste: entra → sessão apagada no servidor →
+próxima navegação vai para `/login` (antes ficava presa em `/membros` mostrando "teste grátis
+expirou" por tempo indeterminado). Fluxo normal de senha conferido junto, intacto.
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
