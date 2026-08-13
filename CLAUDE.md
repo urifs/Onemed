@@ -2926,6 +2926,26 @@ depois do mutirão.
 > Sondado antes de mexer: membros SEM linha em `member_credentials` recebem `hasPassword:false`
 > corretamente (5/5 amostrados). O `status` nunca foi o problema.
 
+**Reset em massa das senhas dos assinantes** (a pedido do dono, que achava ter feito e não tinha —
+a contagem estava SUBINDO: 129 contas com senha e 75 cadastros de aluno nas duas horas
+anteriores). Executado: **118 assinantes** perderam a marca de senha e **79 sessões** foram
+encerradas, então todo mundo cadastra de novo no próximo login.
+
+**Dois grupos ficaram FORA de propósito** — resetá-los trancaria gente sem volta:
+- **2 contas do painel** (admin/visualizador). Não são assinantes, e a senha delas é a do
+  `/admin/login`. Resetar derrubaria o dono do próprio painel.
+- **13 afiliados que NÃO são assinantes.** Sem acesso ativo, eles não conseguem usar o login de
+  membro pra cadastrar outra senha — ficariam sem o painel de afiliados para sempre. Os 41
+  afiliados que TAMBÉM são assinantes entraram no reset normalmente.
+
+⚠️ **O reset apaga só a linha de `member_credentials`, não sorteia senha nova no Auth.** Isso
+basta: o `login` recusa quem não tem linha, então a senha antiga não abre a plataforma. E é menos
+destrutivo — o afiliado continua entrando no painel dele até escolher a senha nova, que aí passa a
+valer nos dois lugares (é a mesma conta do Auth).
+
+Verificado depois: três contas reais que tinham senha respondem `hasPassword:false`, e o fluxo
+completo (cadastrar → entrar → senha errada recusada) passa de ponta a ponta em produção.
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
