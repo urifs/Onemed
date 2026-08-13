@@ -37,4 +37,19 @@ describe('dayStartISO', () => {
     expect(dentro >= inicio && dentro < fim).toBe(true);
     expect(depois >= inicio && depois < fim).toBe(false);
   });
+
+  // Os cards "Últimos N dias" contam HOJE como o primeiro dia: N=5 é hoje mais
+  // os 4 anteriores, então o começo é dayStartISO(N - 1) e não dayStartISO(N).
+  // Errar isso por um dia infla o acumulado sem que ninguém perceba.
+  it('últimos N dias começam N-1 dias atrás e cobrem N dias corridos', () => {
+    for (const n of [5, 7]) {
+      const inicio = dayStartISO(n - 1);
+      const fimDeHoje = dayStartISO(-1);
+      const dias = (Date.parse(fimDeHoje) - Date.parse(inicio)) / (24 * 3600 * 1000);
+      expect(dias).toBe(n);
+      // hoje entra; o dia anterior ao começo da janela, não.
+      expect(dayStartISO(0) >= inicio).toBe(true);
+      expect(dayStartISO(n) >= inicio).toBe(false);
+    }
+  });
 });

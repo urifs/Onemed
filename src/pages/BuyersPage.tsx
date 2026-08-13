@@ -47,13 +47,20 @@ export default function BuyersPage() {
         byPlan[plan] = today.filter(b => b.plan === plan).length;
       }
       const somaAmount = (rows: any[]) => rows.reduce((s: number, b: any) => s + (b.amount || 0), 0);
-      // Um dia específico do passado, sempre em janela FECHADA — [aquele dia
-      // 00h, dia seguinte 00h). Sem o limite de cima, "5 dias atrás" viraria
-      // "dos 5 dias atrás pra cá".
+      // Um dia específico do passado, em janela FECHADA — [aquele dia 00h,
+      // dia seguinte 00h). É o caso de "anteontem", que é UM dia só.
       const diaFechado = (diasAtras: number) => {
         const ini = dayStartISO(diasAtras);
         const fim = dayStartISO(diasAtras - 1);
         const linhas = all.filter(b => b.created_at >= ini && b.created_at < fim && b.status === 'approved');
+        return { receita: somaAmount(linhas), aprovados: linhas.length };
+      };
+      // ACUMULADO dos últimos N dias, contando HOJE como o primeiro: N=5 soma
+      // hoje + os 4 anteriores. O começo é a meia-noite de N-1 dias atrás e
+      // não há limite superior — o dia de hoje entra até agora.
+      const ultimosDias = (n: number) => {
+        const ini = dayStartISO(n - 1);
+        const linhas = all.filter(b => b.created_at >= ini && b.status === 'approved');
         return { receita: somaAmount(linhas), aprovados: linhas.length };
       };
       setStats({
@@ -63,8 +70,8 @@ export default function BuyersPage() {
         revenueYesterday: somaAmount(yesterday.filter(b => b.status === 'approved')),
         approvedYesterday: yesterday.filter(b => b.status === 'approved').length,
         anteontem: diaFechado(2),
-        cincoDias: diaFechado(5),
-        umaSemana: diaFechado(7),
+        cincoDias: ultimosDias(5),
+        umaSemana: ultimosDias(7),
         byPlan,
       });
     } catch {
@@ -168,22 +175,23 @@ export default function BuyersPage() {
             { label: 'Receita Ontem', value: stats ? formatBRL(stats.revenueYesterday ?? 0) : '—', icon: DollarSign, color: 'text-accent-info' },
             { label: 'Aprovados Hoje', value: stats?.approved ?? '—', icon: CheckCircle, color: 'text-accent-success' },
             { label: 'Aprovados Ontem', value: stats?.approvedYesterday ?? '—', icon: CheckCircle, color: 'text-accent-info' },
-            // Dias fechados do passado: o valor é a receita do DIA, e a
-            // contagem de aprovados vai embaixo pra não dobrar o número de
-            // cards da faixa.
+            // Anteontem é UM dia; os outros dois são ACUMULADOS que incluem
+            // hoje. O rótulo diz qual é qual, senão os três parecem a mesma
+            // conta. A contagem de aprovados vai embaixo pra não dobrar o
+            // número de cards da faixa.
             {
               label: 'Vendas Anteontem', value: stats ? formatBRL(stats.anteontem?.receita ?? 0) : '—',
               sub: stats ? `${stats.anteontem?.aprovados ?? 0} aprovados` : undefined,
               icon: DollarSign, color: 'text-accent-info',
             },
             {
-              label: 'Vendas 5 dias atrás', value: stats ? formatBRL(stats.cincoDias?.receita ?? 0) : '—',
-              sub: stats ? `${stats.cincoDias?.aprovados ?? 0} aprovados` : undefined,
+              label: 'Vendas Últimos 5 dias', value: stats ? formatBRL(stats.cincoDias?.receita ?? 0) : '—',
+              sub: stats ? `${stats.cincoDias?.aprovados ?? 0} aprovados · inclui hoje` : undefined,
               icon: DollarSign, color: 'text-accent-info',
             },
             {
-              label: 'Vendas 1 semana atrás', value: stats ? formatBRL(stats.umaSemana?.receita ?? 0) : '—',
-              sub: stats ? `${stats.umaSemana?.aprovados ?? 0} aprovados` : undefined,
+              label: 'Vendas Últimos 7 dias', value: stats ? formatBRL(stats.umaSemana?.receita ?? 0) : '—',
+              sub: stats ? `${stats.umaSemana?.aprovados ?? 0} aprovados · inclui hoje` : undefined,
               icon: DollarSign, color: 'text-accent-info',
             },
           ].map((s: any, i) => (
