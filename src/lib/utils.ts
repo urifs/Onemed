@@ -64,8 +64,16 @@ export function describeAuthError(err: unknown): Error {
   if (/aborted/i.test(message)) {
     return new Error('Conexão lenta ou instável. Tente novamente.');
   }
+  // "Verifique sua conexão" manda a pessoa olhar pro lugar errado quando a
+  // internet está boa: nesta plataforma esse erro quase sempre é VPN,
+  // bloqueador de anúncios ou extensão de privacidade barrando a chamada de
+  // autenticação — o navegador reporta status nulo, como se a rede tivesse
+  // caído. Mesmo texto que a área de membros já usava.
   if (/failed to fetch|networkerror|network request failed/i.test(message)) {
-    return new Error('Não foi possível conectar. Verifique sua conexão e tente novamente.');
+    return new Error(
+      'Não foi possível conectar ao servidor. Verifique sua internet e, se usar VPN, '
+      + 'bloqueador de anúncios ou extensão de privacidade, desative e tente de novo.',
+    );
   }
   return err instanceof Error ? err : new Error(message || 'Erro inesperado. Tente novamente.');
 }

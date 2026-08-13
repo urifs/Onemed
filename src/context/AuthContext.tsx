@@ -35,15 +35,36 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   // admin OU visualizador entram no painel; o papel exato decide o aviso de
   // modo leitura (e o banco decide o que cada um pode escrever).
-  const checkAdmin = async (userId: string): Promise<{ admin: boolean; viewer: boolean }> => {
-    try {
-      const { data: admin } = await supabase.rpc('has_role', { _user_id: userId, _role: 'admin' });
-      if (admin) return { admin: true, viewer: false };
-      const { data: viewer } = await supabase.rpc('has_role', { _user_id: userId, _role: 'viewer' as never });
-      return { admin: !!viewer, viewer: !!viewer };
-    } catch {
-      return { admin: false, viewer: false };
+  // Uma falha de REDE aqui (VPN, bloqueador, extensão de privacidade, oscilação
+  // da operadora) fazia o painel concluir "não é admin" e devolver a pessoa
+  // pro login — sem diferença nenhuma entre "não tem o papel" e "não deu pra
+  // perguntar". Três tentativas antes de desistir: quem tem o papel entra
+  // mesmo com um tropeço de rede no meio, e quem não tem continua fora (a
+  // resposta que vale é a do banco, não a ausência de resposta).
+  const perguntarPapel = async (userId: string, papel: string): Promise<{ respondeu: boolean; tem: boolean }> => {
+    let ultimoErro: unknown = null;
+    for (let tentativa = 0; tentativa < 3; tentativa++) {
+      try {
+        const { data, error } = await supabase.rpc('has_role', { _user_id: userId, _role: papel as never });
+        if (!error) return { respondeu: true, tem: !!data };
+        ultimoErro = error;
+      } catch (err) {
+        ultimoErro = err;
+      }
+      if (tentativa < 2) await new Promise(r => setTimeout(r, 400 * (tentativa + 1)));
     }
+    console.error('has_role não respondeu', ultimoErro);
+    return { respondeu: false, tem: false };
+  };
+
+  const checkAdmin = async (userId: string): Promise<{ admin: boolean; viewer: boolean }> => {
+    const admin = await perguntarPapel(userId, 'admin');
+    if (admin.tem) return { admin: true, viewer: false };
+    // Sem resposta na checagem de admin, a de viewer cairia no mesmo buraco —
+    // não adianta gastar mais três tentativas.
+    if (!admin.respondeu) return { admin: false, viewer: false };
+    const viewer = await perguntarPapel(userId, 'viewer');
+    return { admin: viewer.tem, viewer: viewer.tem };
   };
 
   useEffect(() => {
@@ -124,12 +145,25 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const login = async (email: string, password: string) => {
-    try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) throw error;
-    } catch (err) {
-      throw describeAuthError(err);
+    // Uma segunda tentativa só quando a RESPOSTA não chegou. Já aconteceu de o
+    // login ser aceito no servidor (last_sign_in_at gravado) e a resposta se
+    // perder no caminho — pra quem está na tela, isso é "não loga". Credencial
+    // errada não melhora com insistência, e repetir gastaria o rate limit do
+    // GoTrue à toa, então esse caso sai do laço na hora.
+    let ultimoErro: unknown = null;
+    for (let tentativa = 0; tentativa < 2; tentativa++) {
+      try {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (!error) return;
+        ultimoErro = error;
+      } catch (err) {
+        ultimoErro = err;
+      }
+      const msg = ultimoErro instanceof Error ? ultimoErro.message : String(ultimoErro ?? '');
+      if (!/failed to fetch|networkerror|network request failed|aborted/i.test(msg)) break;
+      if (tentativa === 0) await new Promise(r => setTimeout(r, 800));
     }
+    throw describeAuthError(ultimoErro);
   };
 
   const register = async (email: string, password: string, name: string) => {
