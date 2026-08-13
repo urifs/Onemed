@@ -47,17 +47,11 @@ export default function BuyersPage() {
         byPlan[plan] = today.filter(b => b.plan === plan).length;
       }
       const somaAmount = (rows: any[]) => rows.reduce((s: number, b: any) => s + (b.amount || 0), 0);
-      // Um dia específico do passado, em janela FECHADA — [aquele dia 00h,
-      // dia seguinte 00h). É o caso de "anteontem", que é UM dia só.
-      const diaFechado = (diasAtras: number) => {
-        const ini = dayStartISO(diasAtras);
-        const fim = dayStartISO(diasAtras - 1);
-        const linhas = all.filter(b => b.created_at >= ini && b.created_at < fim && b.status === 'approved');
-        return { receita: somaAmount(linhas), aprovados: linhas.length };
-      };
       // ACUMULADO dos últimos N dias, contando HOJE como o primeiro: N=5 soma
       // hoje + os 4 anteriores. O começo é a meia-noite de N-1 dias atrás e
       // não há limite superior — o dia de hoje entra até agora.
+      //
+      // Os três cards da faixa usam isto: 3 dias é "de anteontem até hoje".
       const ultimosDias = (n: number) => {
         const ini = dayStartISO(n - 1);
         const linhas = all.filter(b => b.created_at >= ini && b.status === 'approved');
@@ -69,7 +63,7 @@ export default function BuyersPage() {
         revenue: somaAmount(today.filter(b => b.status === 'approved')),
         revenueYesterday: somaAmount(yesterday.filter(b => b.status === 'approved')),
         approvedYesterday: yesterday.filter(b => b.status === 'approved').length,
-        anteontem: diaFechado(2),
+        anteontem: ultimosDias(3),
         cincoDias: ultimosDias(5),
         umaSemana: ultimosDias(7),
         byPlan,
@@ -175,13 +169,13 @@ export default function BuyersPage() {
             { label: 'Receita Ontem', value: stats ? formatBRL(stats.revenueYesterday ?? 0) : '—', icon: DollarSign, color: 'text-accent-info' },
             { label: 'Aprovados Hoje', value: stats?.approved ?? '—', icon: CheckCircle, color: 'text-accent-success' },
             { label: 'Aprovados Ontem', value: stats?.approvedYesterday ?? '—', icon: CheckCircle, color: 'text-accent-info' },
-            // Anteontem é UM dia; os outros dois são ACUMULADOS que incluem
-            // hoje. O rótulo diz qual é qual, senão os três parecem a mesma
-            // conta. A contagem de aprovados vai embaixo pra não dobrar o
-            // número de cards da faixa.
+            // Os três são ACUMULADOS que terminam hoje — 3, 5 e 7 dias. A
+            // linha de baixo diz o período coberto, senão "Últimos 3 dias" e
+            // "Últimos 5 dias" parecem a mesma conta. A contagem de aprovados
+            // vai junto pra não dobrar o número de cards da faixa.
             {
-              label: 'Vendas Anteontem', value: stats ? formatBRL(stats.anteontem?.receita ?? 0) : '—',
-              sub: stats ? `${stats.anteontem?.aprovados ?? 0} aprovados` : undefined,
+              label: 'Vendas Últimos 3 dias', value: stats ? formatBRL(stats.anteontem?.receita ?? 0) : '—',
+              sub: stats ? `${stats.anteontem?.aprovados ?? 0} aprovados · de anteontem até hoje` : undefined,
               icon: DollarSign, color: 'text-accent-info',
             },
             {

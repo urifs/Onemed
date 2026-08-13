@@ -42,7 +42,7 @@ describe('dayStartISO', () => {
   // os 4 anteriores, então o começo é dayStartISO(N - 1) e não dayStartISO(N).
   // Errar isso por um dia infla o acumulado sem que ninguém perceba.
   it('últimos N dias começam N-1 dias atrás e cobrem N dias corridos', () => {
-    for (const n of [5, 7]) {
+    for (const n of [3, 5, 7]) {
       const inicio = dayStartISO(n - 1);
       const fimDeHoje = dayStartISO(-1);
       const dias = (Date.parse(fimDeHoje) - Date.parse(inicio)) / (24 * 3600 * 1000);
