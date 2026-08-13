@@ -2907,6 +2907,25 @@ Conferido depois do encerramento: `auth.sessions` e `auth.refresh_tokens` em zer
 antigo respondendo 400, e o fluxo completo do aluno (cadastrar senha → entrar → senha errada
 recusada) passando de ponta a ponta no site em produção.
 
+**Tela de cadastro explícita + "senha incorreta" para quem nunca cadastrou:** dois ajustes logo
+depois do mutirão.
+
+1. O título da tela era fixo ("Área de Membros"), então quem ia CADASTRAR precisava ler o corpo
+   pra entender o que era. Agora o título acompanha a etapa (`Cadastrar senha` / `Bem-vindo de
+   volta`), os campos são **Nova senha** e **Confirmar senha**, a conferência é ao vivo (✓ quando
+   batem, aviso quando não; contador de caracteres que faltam) e o botão diz "Cadastrar senha".
+2. **41 afiliados que também são alunos** caíam no campo "Sua senha" achando que nunca tinham
+   cadastrado nada, digitavam qualquer coisa e liam "senha incorreta". Eles TÊM senha — a do
+   painel de afiliados, na MESMA conta do Auth (o login de afiliado confere de verdade, via
+   password grant). Foi por isso que a migration os marcou: sem a marca, "cadastrar" uma senha na
+   área de membros trocaria a senha que eles usam no painel. **O que faltava era contar isso na
+   tela.** `member_credentials` ganhou `origem` (`membro` | `afiliado` | `painel`, migration
+   `20260813190000`), o `status` devolve junto, e a tela avisa que a senha é a mesma do outro
+   painel — com botão de suporte pra quem não reconhecer.
+
+> Sondado antes de mexer: membros SEM linha em `member_credentials` recebem `hasPassword:false`
+> corretamente (5/5 amostrados). O `status` nunca foi o problema.
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
