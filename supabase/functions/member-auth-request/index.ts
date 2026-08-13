@@ -194,10 +194,20 @@ serve(async (req) => {
     }
 
     const { data: credencial } = await supabase.from('member_credentials')
-      .select('user_id').ilike('email', email).maybeSingle()
+      .select('user_id, origem').ilike('email', email).maybeSingle()
     const temSenha = !!credencial
 
-    if (acao === 'status') return jsonResponse(req, { success: true, hasPassword: temSenha })
+    // A origem viaja junto porque muda o que a tela precisa dizer. Quem é
+    // afiliado ou tem conta no painel JÁ tinha escolhido uma senha — na mesma
+    // conta do Auth — e caía no campo "Sua senha" achando que nunca havia
+    // cadastrado nada. Sem essa dica, a pessoa fica adivinhando.
+    if (acao === 'status') {
+      return jsonResponse(req, {
+        success: true,
+        hasPassword: temSenha,
+        passwordSource: temSenha ? (credencial?.origem || 'membro') : null,
+      })
+    }
 
     // Limite de dispositivos simultâneos por conta (2 no padrão, 4 pra
     // Vitalício Plus, 6 pra Vitalício Pro): mantém só as sessões mais

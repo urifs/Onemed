@@ -9,7 +9,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
-  Stethoscope, Mail, ArrowRight, ArrowLeft, KeyRound, Loader2, ShieldCheck, Lock, Eye, EyeOff,
+  Stethoscope, Mail, ArrowRight, ArrowLeft, KeyRound, Loader2, ShieldCheck, Lock, Eye, EyeOff, AlertCircle,
+  MessageCircle,
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 
@@ -27,6 +28,10 @@ export default function MemberLoginPage() {
   const [senha, setSenha] = useState('');
   const [confirmacao, setConfirmacao] = useState('');
   const [verSenha, setVerSenha] = useState(false);
+  // De onde veio a senha desta conta: 'membro' (cadastrou aqui), 'afiliado' ou
+  // 'painel'. Muda a instrução da tela — quem já tinha senha em outro painel
+  // não sabia que era a MESMA conta e ficava adivinhando.
+  const [origemSenha, setOrigemSenha] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [captchaChecked, setCaptchaChecked] = useState(false);
   const [captchaVerifying, setCaptchaVerifying] = useState(false);
@@ -121,6 +126,7 @@ export default function MemberLoginPage() {
     setLoading(true);
     try {
       const data = await chamar({ action: 'status', email });
+      setOrigemSenha(data?.passwordSource ?? null);
       setEtapa(data?.hasPassword ? 'senha' : 'criar');
       setSenha('');
       setConfirmacao('');
@@ -187,6 +193,7 @@ export default function MemberLoginPage() {
 
   const voltarParaEmail = () => {
     setEtapa('email');
+    setOrigemSenha(null);
     setSenha('');
     setConfirmacao('');
   };
@@ -217,9 +224,20 @@ export default function MemberLoginPage() {
         </Link>
 
         <div className="bg-card rounded-2xl p-8 border border-border">
+          {/* O título acompanha a etapa: com "Área de Membros" fixo, a tela de
+              cadastrar senha não anunciava o que estava acontecendo — a pessoa
+              precisava ler o corpo pra descobrir que era um cadastro. */}
           <div className="text-center mb-8">
-            <h1 className="font-secondary text-2xl font-bold text-foreground mb-2">Área de Membros</h1>
-            <p className="text-muted-foreground text-sm">Acesse seus cursos, aulas e materiais</p>
+            <h1 className="font-secondary text-2xl font-bold text-foreground mb-2">
+              {etapa === 'criar' ? 'Cadastrar senha' : etapa === 'senha' ? 'Bem-vindo de volta' : 'Área de Membros'}
+            </h1>
+            <p className="text-muted-foreground text-sm">
+              {etapa === 'criar'
+                ? 'Você ainda não tem senha. Crie a sua para entrar.'
+                : etapa === 'senha'
+                  ? 'Entre com a senha que você cadastrou'
+                  : 'Acesse seus cursos, aulas e materiais'}
+            </p>
           </div>
 
           {etapa === 'email' && (
@@ -296,7 +314,7 @@ export default function MemberLoginPage() {
               </div>
 
               <div className="space-y-2">
-                <Label className="text-sm font-medium text-foreground">Crie sua senha</Label>
+                <Label className="text-sm font-medium text-foreground">Nova senha</Label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <Input
@@ -310,21 +328,36 @@ export default function MemberLoginPage() {
                   />
                   {botaoOlho}
                 </div>
+                {senha.length > 0 && senha.length < SENHA_MINIMA && (
+                  <p className="text-xs text-accent-warning">
+                    Faltam {SENHA_MINIMA - senha.length} caractere{SENHA_MINIMA - senha.length > 1 ? 's' : ''}
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">
-                <Label className="text-sm font-medium text-foreground">Repita a senha</Label>
+                <Label className="text-sm font-medium text-foreground">Confirmar senha</Label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <Input
                     type={verSenha ? 'text' : 'password'}
                     value={confirmacao}
                     onChange={e => setConfirmacao(e.target.value)}
-                    placeholder="Digite a senha de novo"
+                    placeholder="Digite a mesma senha de novo"
                     autoComplete="new-password"
-                    className="pl-10 h-12 bg-secondary border-border text-foreground placeholder:text-muted-foreground focus:border-primary/50"
+                    className="pl-10 pr-10 h-12 bg-secondary border-border text-foreground placeholder:text-muted-foreground focus:border-primary/50"
                   />
+                  {/* Conferência ao vivo: errar a confirmação e só descobrir
+                      depois de enviar é o tropeço mais comum deste formulário. */}
+                  {confirmacao.length > 0 && (
+                    senha === confirmacao
+                      ? <ShieldCheck className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-accent-success" />
+                      : <AlertCircle className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-accent-warning" />
+                  )}
                 </div>
+                {confirmacao.length > 0 && senha !== confirmacao && (
+                  <p className="text-xs text-accent-warning">As senhas não são iguais</p>
+                )}
               </div>
 
               <Button
@@ -332,7 +365,7 @@ export default function MemberLoginPage() {
                 disabled={loading}
                 className="w-full h-12 bg-primary hover:bg-primary-hover text-primary-foreground font-semibold gap-2"
               >
-                {loading ? girando : <>Cadastrar senha e entrar <ArrowRight className="w-4 h-4" /></>}
+                {loading ? girando : <>Cadastrar senha <ArrowRight className="w-4 h-4" /></>}
               </Button>
 
               <p className="text-center text-xs text-muted-foreground">
@@ -344,6 +377,16 @@ export default function MemberLoginPage() {
 
           {etapa === 'senha' && (
             <form onSubmit={entrarComSenha} className="space-y-5">
+              {(origemSenha === 'afiliado' || origemSenha === 'painel') && (
+                <div className="rounded-lg border border-primary/30 bg-primary/10 px-4 py-3">
+                  <p className="text-sm font-medium text-foreground mb-1">Esta conta já tem senha</p>
+                  <p className="text-xs text-muted-foreground">
+                    {origemSenha === 'afiliado'
+                      ? 'É a mesma senha que você usa no Programa de Afiliados — a conta é a mesma. Não precisa cadastrar outra.'
+                      : 'É a mesma senha que você usa no painel administrativo — a conta é a mesma. Não precisa cadastrar outra.'}
+                  </p>
+                </div>
+              )}
               <div className="space-y-2">
                 <Label className="text-sm font-medium text-foreground">Sua senha</Label>
                 <div className="relative">
@@ -372,6 +415,14 @@ export default function MemberLoginPage() {
               <p className="text-center text-xs text-muted-foreground">
                 Esqueceu a senha? Fale com o suporte pelo WhatsApp para liberar um novo cadastro.
               </p>
+              <a
+                href={`https://wa.me/5563999191551?text=${encodeURIComponent(`Olá! Preciso liberar um novo cadastro de senha na plataforma. Meu email: ${email}`)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full inline-flex items-center justify-center gap-2 h-10 rounded-lg border border-border text-sm text-foreground hover:bg-secondary transition-colors"
+              >
+                <MessageCircle className="w-4 h-4" /> Falar com o suporte
+              </a>
             </form>
           )}
         </div>
