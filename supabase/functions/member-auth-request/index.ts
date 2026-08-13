@@ -1,19 +1,36 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // OneMed · member-auth-request
-// Passwordless login gate for the member platform (/membros).
-//   1. Validate email
-//   2. Rate limit (5 tentativas / 15min por IP)
-//   3. Confirm the email has an active trial/purchase, or belongs to an admin
-//   4. Provision (or reuse) the Supabase Auth user + generate a magic link
-//   5. Redeem that link server-side and hand the session tokens straight back
-//      to the caller — the user only ever types their email, no inbox trip.
+// Porta de entrada da área de membros (/membros). Desde 13/08/2026 o login é
+// E-MAIL + SENHA; antes bastava o e-mail (o servidor gerava um magic link e
+// resgatava ele sozinho, então quem soubesse o e-mail de um aluno entrava na
+// conta dele).
+//
+// Comprar e receber acesso continuam sendo só pelo e-mail: a senha é escolhida
+// pelo próprio aluno na primeira vez que ele for entrar.
+//
+// Ações:
+//   status        { email }                    → { hasPassword }
+//   set-password  { email, password }          → cadastra a senha e já entra
+//   login         { email, password }          → entra
+//   admin-reset   { email }  (JWT de admin)    → libera novo cadastro de senha
+//
+// Todas passam pelo mesmo portão de sempre: e-mail válido, rate limit por IP e
+// acesso ativo (trial/compra/admin). O que muda é só como a sessão é obtida.
 // ─────────────────────────────────────────────────────────────────────────────
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const ALLOWED_ORIGINS = ['https://onemedcursos.com.br', 'http://localhost:5173', 'http://localhost:3000']
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
-// Vitalício Plus libera 4 telas simultâneas e Pro libera 6, em vez das 2 padrão.
+const SENHA_MINIMA = 8
+
+// Ponte de migração: enquanto a versão antiga do site (sem os campos de senha)
+// ainda estiver em cache no navegador de alguém, uma chamada SEM `action`
+// precisa continuar entrando — senão o login some pra quem não recarregou a
+// página. Vira false assim que o frontend novo estiver no ar; com ele em false,
+// não existe mais nenhum caminho de entrada sem senha.
+const PERMITIR_LOGIN_SEM_SENHA = true
+
 // Telas simultâneas por plano — espelha src/lib/plans.ts e o que os cards do
 // checkout prometem. TODO plano precisa estar aqui: quando o mapa só tinha os
 // dois vitalícios superiores, um plano de fora dele simplesmente sumia da
@@ -65,16 +82,20 @@ async function captureMemberLocation(supabase: ReturnType<typeof createClient>, 
   }
 }
 
-async function checkRateLimit(supabase: ReturnType<typeof createClient>, identifier: string) {
-  const maxAttempts = 5
-  const windowMs = 15 * 60 * 1000
+async function checkRateLimit(
+  supabase: ReturnType<typeof createClient>,
+  identifier: string,
+  action = 'member_login',
+  maxAttempts = 5,
+  windowMs = 15 * 60 * 1000,
+) {
   const now = new Date()
   const { data: existing } = await supabase.from('rate_limits')
-    .select('attempts, window_start').eq('identifier', identifier).eq('action', 'member_login').maybeSingle()
+    .select('attempts, window_start').eq('identifier', identifier).eq('action', action).maybeSingle()
 
   if (!existing || (now.getTime() - new Date(existing.window_start).getTime()) > windowMs) {
     await supabase.from('rate_limits').upsert(
-      { identifier, action: 'member_login', attempts: 1, window_start: now.toISOString() },
+      { identifier, action, attempts: 1, window_start: now.toISOString() },
       { onConflict: 'identifier,action' },
     )
     return { allowed: true }
@@ -82,7 +103,7 @@ async function checkRateLimit(supabase: ReturnType<typeof createClient>, identif
   if (existing.attempts >= maxAttempts) {
     return { allowed: false, retryAfterSeconds: Math.ceil((new Date(existing.window_start).getTime() + windowMs - now.getTime()) / 1000) }
   }
-  await supabase.from('rate_limits').update({ attempts: existing.attempts + 1 }).eq('identifier', identifier).eq('action', 'member_login')
+  await supabase.from('rate_limits').update({ attempts: existing.attempts + 1 }).eq('identifier', identifier).eq('action', action)
   return { allowed: true }
 }
 
@@ -92,10 +113,13 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    const anonKey = Deno.env.get('SUPABASE_ANON_KEY') || serviceKey
     const supabase = createClient(supabaseUrl, serviceKey)
 
-    const { email: rawEmail } = await req.json().catch(() => ({}))
-    const email = String(rawEmail || '').trim().toLowerCase()
+    const body = await req.json().catch(() => ({}))
+    const email = String(body?.email || '').trim().toLowerCase()
+    const senha = String(body?.password || '')
+    const acao = String(body?.action || '') || (PERMITIR_LOGIN_SEM_SENHA ? 'legacy' : '')
 
     if (!EMAIL_REGEX.test(email)) return jsonResponse(req, { error: 'Email inválido' }, 400)
 
@@ -106,6 +130,35 @@ serve(async (req) => {
     const ip = req.headers.get('x-real-ip')
       || (req.headers.get('x-forwarded-for') || '').split(',').map(s => s.trim()).filter(Boolean).pop()
       || 'unknown'
+
+    // ── admin-reset: só admin, e não passa pelo portão de aluno ─────────────
+    // Como não existe "esqueci minha senha" por e-mail, é por aqui que o
+    // suporte destrava quem perdeu a senha: apaga a marca e devolve a conta pro
+    // estado "ainda não cadastrou", pra pessoa escolher outra.
+    if (acao === 'admin-reset') {
+      const jwt = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
+      if (!jwt) return jsonResponse(req, { error: 'Não autenticado' }, 401)
+      const { data: quem } = await supabase.auth.getUser(jwt)
+      if (!quem?.user) return jsonResponse(req, { error: 'Sessão inválida' }, 401)
+      const { data: ehAdmin } = await supabase.rpc('has_role', { _user_id: quem.user.id, _role: 'admin' })
+      if (!ehAdmin) return jsonResponse(req, { error: 'Apenas administradores' }, 403)
+
+      const { data: cred } = await supabase.from('member_credentials')
+        .select('user_id').ilike('email', email).maybeSingle()
+      if (!cred) return jsonResponse(req, { error: 'Esta conta ainda não tem senha cadastrada.' }, 404)
+
+      // A senha antiga precisa MORRER junto com a marca: só apagar a linha
+      // deixaria a senha antiga valendo, e o próximo "cadastrar senha" seria
+      // uma segunda senha válida na mesma conta.
+      const aleatoria = crypto.randomUUID() + crypto.randomUUID()
+      const { error: updErr } = await supabase.auth.admin.updateUserById(cred.user_id, { password: aleatoria })
+      if (updErr) {
+        console.error('admin-reset updateUserById', updErr)
+        return jsonResponse(req, { error: 'Não foi possível redefinir a senha agora.' }, 500)
+      }
+      await supabase.from('member_credentials').delete().eq('user_id', cred.user_id)
+      return jsonResponse(req, { success: true })
+    }
 
     // Sem .limit(1).maybeSingle() de propósito: uma conta pode ter mais de
     // uma linha "active" em accesses (ex: grant manual antigo nunca
@@ -121,7 +174,15 @@ serve(async (req) => {
     // platform itself — rate limiting them out of their own site is a
     // self-inflicted lockout, not abuse prevention.
     if (!isAdminEmail) {
-      const rate = await checkRateLimit(supabase, ip)
+      // `status` é consultado a cada e-mail digitado na tela de login, então
+      // gasta um contador próprio e mais folgado — se dividisse o contador do
+      // login, errar a senha 2× já esgotaria a cota de quem está tentando
+      // entrar direito.
+      const rate = acao === 'status'
+        ? await checkRateLimit(supabase, ip, 'member_status', 20)
+        : acao === 'set-password'
+          ? await checkRateLimit(supabase, ip, 'member_set_password', 5, 60 * 60 * 1000)
+          : await checkRateLimit(supabase, ip)
       if (!rate.allowed) {
         return jsonResponse(req, { error: 'Muitas tentativas. Tente novamente em alguns minutos.', retryAfterSeconds: rate.retryAfterSeconds }, 429)
       }
@@ -131,6 +192,135 @@ serve(async (req) => {
       return jsonResponse(req, { error: 'Nenhum acesso ativo encontrado para este email. Faça um trial gratuito ou verifique sua compra.' }, 404)
     }
 
+    const { data: credencial } = await supabase.from('member_credentials')
+      .select('user_id').ilike('email', email).maybeSingle()
+    const temSenha = !!credencial
+
+    if (acao === 'status') return jsonResponse(req, { success: true, hasPassword: temSenha })
+
+    // Limite de dispositivos simultâneos por conta (2 no padrão, 4 pra
+    // Vitalício Plus, 6 pra Vitalício Pro): mantém só as sessões mais
+    // recentes (a que acabou de ser criada entra nessa contagem), o que
+    // derruba o refresh token do dispositivo mais antigo no próximo refresh.
+    const finalizarLogin = async (userId: string) => {
+      // Cada acesso/compra vale o limite do SEU plano — tipo desconhecido
+      // ('paid' do webhook antigo, 'trial') cai no padrão — e a conta usa o
+      // MAIOR entre eles. Linha vencida não entra: um anual expirado (que o
+      // cron ainda não revogou) não pode continuar valendo telas.
+      const agora = Date.now()
+      const valido = (expiresAt: string | null | undefined) =>
+        !expiresAt || new Date(expiresAt).getTime() > agora
+      const limiteDe = (plano: string | null | undefined) =>
+        (plano && PLAN_DEVICE_LIMITS[plano]) || DEFAULT_DEVICE_LIMIT
+      const planLimits = [
+        ...(activeAccesses || []).filter(a => valido(a.expires_at)).map(a => limiteDe(a.access_type)),
+        ...(buyerRows || []).map(b => limiteDe(b.plan)),
+      ]
+      const maxSessions = planLimits.length > 0 ? Math.max(...planLimits) : DEFAULT_DEVICE_LIMIT
+      const { error: limitErr } = await supabase.rpc('enforce_session_limit', { _user_id: userId, _max_sessions: maxSessions })
+      if (limitErr) console.error('enforce_session_limit error', limitErr)
+
+      // Geolocalização não pode ficar no caminho crítico do login — uma
+      // resposta lenta do ipwho.is já deixou o login inteiro estourar o
+      // timeout do fetch no frontend ("Failed to send a request to the
+      // Edge Function"). waitUntil mantém o isolate vivo até terminar, sem
+      // segurar a resposta pro cliente.
+      const locationPromise = captureMemberLocation(supabase, ip, userId, email)
+      // @ts-ignore EdgeRuntime é um global específico do runtime da Supabase
+      if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime.waitUntil) {
+        // @ts-ignore
+        EdgeRuntime.waitUntil(locationPromise)
+      } else {
+        await locationPromise
+      }
+    }
+
+    // Sessão a partir da SENHA. É o mesmo endpoint que o supabase-js usaria no
+    // navegador; feito aqui pra que o portão acima (acesso ativo, rate limit) e
+    // o limite de telas continuem valendo antes de qualquer sessão existir.
+    const entrarComSenha = async () => {
+      const res = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
+        method: 'POST',
+        headers: { apikey: anonKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password: senha }),
+      })
+      const dados = await res.json().catch(() => ({}))
+      if (!res.ok || !dados?.access_token) return null
+      return dados as { access_token: string; refresh_token: string; user?: { id?: string } }
+    }
+
+    // ── cadastrar senha (primeira vez) ──────────────────────────────────────
+    if (acao === 'set-password') {
+      if (senha.length < SENHA_MINIMA) {
+        return jsonResponse(req, { error: `A senha precisa ter pelo menos ${SENHA_MINIMA} caracteres.` }, 400)
+      }
+      // Trava central desta escolha de produto: cadastrar senha é de UMA vez
+      // só. Sem isso, qualquer pessoa que soubesse o e-mail poderia trocar a
+      // senha de um aluno quando quisesse, e o login com senha não valeria
+      // nada. Quem esqueceu passa pelo suporte (admin-reset).
+      if (temSenha) {
+        return jsonResponse(req, {
+          error: 'Esta conta já tem uma senha cadastrada. Use sua senha para entrar ou fale com o suporte.',
+        }, 409)
+      }
+
+      // generateLink PROVISIONA a conta do Auth se ela ainda não existir — é o
+      // caso de quem comprou e nunca entrou. O link em si é descartado: quem
+      // dá a sessão aqui é a senha recém-criada, o que já prova que ela ficou
+      // valendo de verdade.
+      const { data: linkData, error: linkErr } = await supabase.auth.admin.generateLink({ type: 'magiclink', email })
+      const userId = linkData?.user?.id
+      if (linkErr || !userId) {
+        console.error('generateLink (set-password)', linkErr)
+        return jsonResponse(req, { error: 'Não foi possível criar sua senha agora. Tente novamente.' }, 500)
+      }
+
+      const { error: updErr } = await supabase.auth.admin.updateUserById(userId, {
+        password: senha, email_confirm: true,
+      })
+      if (updErr) {
+        console.error('updateUserById (set-password)', updErr)
+        return jsonResponse(req, { error: 'Não foi possível criar sua senha agora. Tente novamente.' }, 500)
+      }
+
+      // A marca é gravada ANTES de devolver a sessão: se a resposta se perder
+      // no caminho, a senha já vale e a pessoa entra por ela — o contrário
+      // (senha valendo sem marca) deixaria a conta aberta pra outra pessoa
+      // "cadastrar" por cima.
+      const { error: credErr } = await supabase.from('member_credentials')
+        .upsert({ user_id: userId, email, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
+      if (credErr) {
+        console.error('member_credentials upsert', credErr)
+        return jsonResponse(req, { error: 'Não foi possível concluir o cadastro da senha. Tente novamente.' }, 500)
+      }
+
+      const sessao = await entrarComSenha()
+      if (!sessao) {
+        // Senha gravada, sessão não veio: a pessoa não fica travada, entra
+        // pela tela de login normalmente com a senha que acabou de escolher.
+        return jsonResponse(req, { success: true, passwordCreated: true }, 200)
+      }
+      await finalizarLogin(userId)
+      return jsonResponse(req, {
+        success: true, passwordCreated: true,
+        access_token: sessao.access_token, refresh_token: sessao.refresh_token,
+      })
+    }
+
+    // ── entrar com senha ────────────────────────────────────────────────────
+    if (acao === 'login') {
+      if (!temSenha) {
+        return jsonResponse(req, { error: 'Esta conta ainda não tem senha. Cadastre a sua para entrar.', needsPassword: true }, 409)
+      }
+      const sessao = await entrarComSenha()
+      if (!sessao?.user?.id) return jsonResponse(req, { error: 'Senha incorreta. Tente novamente.' }, 401)
+      await finalizarLogin(sessao.user.id)
+      return jsonResponse(req, { success: true, access_token: sessao.access_token, refresh_token: sessao.refresh_token })
+    }
+
+    if (acao !== 'legacy') return jsonResponse(req, { error: 'Ação inválida' }, 400)
+
+    // ── login antigo, só com e-mail (ponte de migração) ──────────────────────
     const { data: linkData, error: linkErr } = await supabase.auth.admin.generateLink({
       type: 'magiclink',
       email,
@@ -166,42 +356,7 @@ serve(async (req) => {
       return jsonResponse(req, { error: 'Não foi possível concluir o login. Tente novamente.' }, 500)
     }
 
-    // Limite de dispositivos simultâneos por conta (2 no padrão, 4 pra
-    // Vitalício Plus, 6 pra Vitalício Pro): mantém só as sessões mais
-    // recentes (a que acabou de ser criada entra nessa contagem), o que
-    // derruba o refresh token do dispositivo mais antigo no próximo refresh.
-    if (linkData.user?.id) {
-      // Cada acesso/compra vale o limite do SEU plano — tipo desconhecido
-      // ('paid' do webhook antigo, 'trial') cai no padrão — e a conta usa o
-      // MAIOR entre eles. Linha vencida não entra: um anual expirado (que o
-      // cron ainda não revogou) não pode continuar valendo telas.
-      const agora = Date.now()
-      const valido = (expiresAt: string | null | undefined) =>
-        !expiresAt || new Date(expiresAt).getTime() > agora
-      const limiteDe = (plano: string | null | undefined) =>
-        (plano && PLAN_DEVICE_LIMITS[plano]) || DEFAULT_DEVICE_LIMIT
-      const planLimits = [
-        ...(activeAccesses || []).filter(a => valido(a.expires_at)).map(a => limiteDe(a.access_type)),
-        ...(buyerRows || []).map(b => limiteDe(b.plan)),
-      ]
-      const maxSessions = planLimits.length > 0 ? Math.max(...planLimits) : DEFAULT_DEVICE_LIMIT
-      const { error: limitErr } = await supabase.rpc('enforce_session_limit', { _user_id: linkData.user.id, _max_sessions: maxSessions })
-      if (limitErr) console.error('enforce_session_limit error', limitErr)
-
-      // Geolocalização não pode ficar no caminho crítico do login — uma
-      // resposta lenta do ipwho.is já deixou o login inteiro estourar o
-      // timeout do fetch no frontend ("Failed to send a request to the
-      // Edge Function"). waitUntil mantém o isolate vivo até terminar, sem
-      // segurar a resposta pro cliente.
-      const locationPromise = captureMemberLocation(supabase, ip, linkData.user.id, email)
-      // @ts-ignore EdgeRuntime é um global específico do runtime da Supabase
-      if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime.waitUntil) {
-        // @ts-ignore
-        EdgeRuntime.waitUntil(locationPromise)
-      } else {
-        await locationPromise
-      }
-    }
+    if (linkData.user?.id) await finalizarLogin(linkData.user.id)
 
     return jsonResponse(req, { success: true, access_token, refresh_token })
   } catch (err: any) {

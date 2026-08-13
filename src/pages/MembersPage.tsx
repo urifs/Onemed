@@ -6,13 +6,13 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { formatDateTimeSP, fetchAllRows } from '@/lib/utils';
+import { formatDateTimeSP, fetchAllRows, extractFunctionErrorMessage } from '@/lib/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import {
   UserPlus, Search, XCircle, Loader2, GraduationCap, ExternalLink,
-  Users, BookOpen, FolderOpen, RefreshCw, Upload, CheckCircle2, UserCheck, AlertTriangle,
+  Users, BookOpen, FolderOpen, RefreshCw, Upload, CheckCircle2, UserCheck, AlertTriangle, KeyRound,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -46,6 +46,9 @@ interface MemberRow {
   plan: string;
   grantedAt: string;
   accessId?: string;
+  // Senha da área de membros já cadastrada? Como não existe "esqueci minha
+  // senha" por e-mail, é por aqui que o suporte enxerga e destrava.
+  temSenha?: boolean;
 }
 
 const PLAN_SELECT_ITEMS = (
@@ -313,12 +316,13 @@ export default function MembersPage() {
   const [search, setSearch] = useState('');
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isBulkOpen, setIsBulkOpen] = useState(false);
+  const [liberando, setLiberando] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     setLoadError(false);
     try {
-      const [manualAccesses, buyers, courses] = await Promise.all([
+      const [manualAccesses, buyers, courses, credenciais] = await Promise.all([
         fetchAllRows((f, t) =>
           supabase.from('accesses').select('id, email, access_type, status, granted_at')
             .eq('status', 'active').in('access_type', ['paid', 'lifetime', 'lifetime_plus', 'lifetime_pro', 'annual', 'monthly']).range(f, t)
@@ -327,7 +331,9 @@ export default function MembersPage() {
           supabase.from('buyers').select('email, plan, created_at').eq('access_granted', true).range(f, t)
         ),
         fetchAllRows((f, t) => supabase.from('courses').select('category, active').range(f, t)),
+        fetchAllRows((f, t) => supabase.from('member_credentials').select('email').range(f, t)),
       ]);
+      const comSenha = new Set((credenciais || []).map((c: any) => String(c.email).toLowerCase()));
 
       // Buyers take priority when the same email appears in both lists —
       // a manual grant for someone who later bought is still one member, not two.
@@ -339,7 +345,9 @@ export default function MembersPage() {
         email: b.email, source: 'buyer' as const, plan: b.plan, grantedAt: b.created_at,
       }));
 
-      const all = [...fromBuyers, ...manualOnly].sort((a, b) => (b.grantedAt || '').localeCompare(a.grantedAt || ''));
+      const all = [...fromBuyers, ...manualOnly]
+        .map(m => ({ ...m, temSenha: comSenha.has(m.email.toLowerCase()) }))
+        .sort((a, b) => (b.grantedAt || '').localeCompare(a.grantedAt || ''));
       setMembers(all);
 
       const activeCourses = (courses || []).filter((c: any) => c.active);
@@ -363,6 +371,33 @@ export default function MembersPage() {
     const term = search.toLowerCase();
     return term ? members.filter(m => m.email.toLowerCase().includes(term)) : members;
   }, [members, search]);
+
+  // Sem "esqueci minha senha" por e-mail, é este botão que destrava quem
+  // perdeu a senha: apaga a senha atual e devolve a conta pro estado "ainda
+  // não cadastrou", pra pessoa escolher outra no próximo login. Pede
+  // confirmação porque, enquanto o aluno não cadastrar a nova, ele fica sem
+  // conseguir entrar.
+  const liberarSenha = async (email: string) => {
+    if (!window.confirm(
+      `Liberar novo cadastro de senha para ${email}?\n\n`
+      + 'A senha atual deixa de funcionar na hora, e no próximo login essa pessoa vai escolher uma nova.',
+    )) return;
+    setLiberando(email);
+    try {
+      const { data, error } = await supabase.functions.invoke('member-auth-request', {
+        body: { action: 'admin-reset', email },
+      });
+      if (error || data?.error) {
+        throw new Error(data?.error || await extractFunctionErrorMessage(error, 'Erro ao liberar a senha'));
+      }
+      toast.success('Senha liberada. No próximo login o aluno cadastra uma nova.');
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao liberar a senha');
+    } finally {
+      setLiberando(null);
+    }
+  };
 
   const revokeAccess = async (accessId: string) => {
     try {
@@ -451,7 +486,7 @@ export default function MembersPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-border">
-                    {['Email', 'Origem', 'Plano', 'Concedido em', 'Ação'].map(h => (
+                    {['Email', 'Origem', 'Plano', 'Concedido em', 'Senha', 'Ação'].map(h => (
                       <th key={h} className="text-left px-4 py-3 text-xs font-mono uppercase text-muted-foreground">{h}</th>
                     ))}
                   </tr>
@@ -467,6 +502,21 @@ export default function MembersPage() {
                       </td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">{planLabel(m.plan)}</td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">{formatDateTimeSP(m.grantedAt)}</td>
+                      <td className="px-4 py-3">
+                        {m.temSenha ? (
+                          <Button
+                            variant="ghost" size="sm" onClick={() => liberarSenha(m.email)}
+                            disabled={liberando === m.email}
+                            title="Apaga a senha atual para o aluno cadastrar outra no próximo login"
+                            className="text-accent-warning hover:text-accent-warning gap-1.5"
+                          >
+                            <KeyRound className="w-3.5 h-3.5" />
+                            {liberando === m.email ? 'Liberando...' : 'Cadastrada'}
+                          </Button>
+                        ) : (
+                          <span className="text-muted-foreground text-xs">Não cadastrada</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3">
                         {m.source === 'manual' && m.accessId ? (
                           <Button variant="ghost" size="sm" onClick={() => revokeAccess(m.accessId!)} className="text-red-400 hover:text-red-300 gap-1.5">
