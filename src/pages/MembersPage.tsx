@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useDeferredValue } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import AdminLayout from '@/components/AdminLayout';
@@ -18,6 +18,8 @@ import { Link } from 'react-router-dom';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const BULK_CHUNK_SIZE = 300;
+// Quantas linhas da tabela de membros entram no DOM por vez.
+const LOTE_LINHAS = 100;
 const PLAN_DURATION_DAYS: Record<string, number> = { annual: 365, monthly: 30 };
 function planExpiresAt(plan: string): string | null {
   const days = PLAN_DURATION_DAYS[plan];
@@ -365,12 +367,24 @@ export default function MembersPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  // A busca roda em valor DEFERIDO: com milhares de linhas, filtrar a cada
+  // tecla no mesmo render travava a digitação. O campo responde na hora e a
+  // tabela alcança logo depois.
+  const buscaAdiada = useDeferredValue(search);
+
   // Derivado com useMemo — o useEffect anterior espelhava a lista inteira
   // num segundo estado (memória em dobro + dois renders por tecla digitada).
   const filtered = useMemo(() => {
-    const term = search.toLowerCase();
+    const term = buscaAdiada.toLowerCase();
     return term ? members.filter(m => m.email.toLowerCase().includes(term)) : members;
-  }, [members, search]);
+  }, [members, buscaAdiada]);
+
+  // A tabela renderizava as ~3.700 linhas de uma vez: 40 mil nós no DOM e
+  // ~2.600 botões, com TODA interação da página (abrir o diálogo, digitar,
+  // escolher plano) pagando o custo de reconciliar isso. Renderiza em lotes.
+  const [visiveis, setVisiveis] = useState(LOTE_LINHAS);
+  useEffect(() => { setVisiveis(LOTE_LINHAS); }, [buscaAdiada, members]);
+  const naTela = useMemo(() => filtered.slice(0, visiveis), [filtered, visiveis]);
 
   // Sem "esqueci minha senha" por e-mail, é este botão que destrava quem
   // perdeu a senha: apaga a senha atual e devolve a conta pro estado "ainda
@@ -492,7 +506,7 @@ export default function MembersPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map(m => (
+                  {naTela.map(m => (
                     <tr key={m.email} className="border-b border-border/40 hover:bg-secondary/30 transition-colors">
                       <td className="px-4 py-3 text-sm text-foreground">{m.email}</td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">
@@ -544,6 +558,20 @@ export default function MembersPage() {
                   <p className="text-foreground text-sm font-medium">Não foi possível carregar os membros</p>
                   <Button onClick={fetchData} size="sm" variant="outline" className="border-border text-muted-foreground hover:text-foreground gap-2">
                     <RefreshCw className="w-3.5 h-3.5" /> Tentar novamente
+                  </Button>
+                </div>
+              )}
+              {!loadError && filtered.length > naTela.length && (
+                <div className="flex flex-col items-center gap-2 py-6 border-t border-border/40">
+                  <p className="text-xs text-muted-foreground">
+                    Mostrando {naTela.length} de {filtered.length} membros
+                  </p>
+                  <Button
+                    variant="outline" size="sm"
+                    onClick={() => setVisiveis(v => v + LOTE_LINHAS * 5)}
+                    className="border-border text-foreground"
+                  >
+                    Mostrar mais
                   </Button>
                 </div>
               )}

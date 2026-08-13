@@ -145,8 +145,18 @@ serve(async (req) => {
       if (!ehAdmin) return jsonResponse(req, { error: 'Apenas administradores' }, 403)
 
       const { data: cred } = await supabase.from('member_credentials')
-        .select('user_id').ilike('email', email).maybeSingle()
+        .select('user_id, origem').ilike('email', email).maybeSingle()
       if (!cred) return jsonResponse(req, { error: 'Esta conta ainda não tem senha cadastrada.' }, 404)
+
+      // Conta do PAINEL não pode ser resetada por aqui. A senha dela é a do
+      // /admin/login, e não existe autoatendimento pra recuperar: resetar
+      // tranca a pessoa fora do painel até alguém com acesso ao banco entrar.
+      // Aconteceu de verdade com a conta visualizadora em 13/08.
+      if (cred.origem === 'painel') {
+        return jsonResponse(req, {
+          error: 'Esta é uma conta do painel administrativo. Troque a senha dela em Contas do Painel, não por aqui.',
+        }, 409)
+      }
 
       // A senha antiga precisa MORRER junto com a marca: só apagar a linha
       // deixaria a senha antiga valendo, e o próximo "cadastrar senha" seria
