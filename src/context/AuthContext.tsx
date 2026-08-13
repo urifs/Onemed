@@ -12,6 +12,11 @@ interface AuthContextType {
   // true só para a conta VISUALIZADORA: painel em modo leitura (a escrita é
   // barrada no banco; edição de verdade só na Loja e na Área de Membros).
   isViewer: boolean;
+  // true enquanto o papel do usuário AINDA está sendo consultado. Quem decide
+  // se a rota abre precisa esperar isso: `isAdmin` começa false, e tratar
+  // "ainda não sei" como "não é admin" devolve a pessoa pro login logo depois
+  // de ela acertar a senha.
+  checkingRole: boolean;
   kickedOut: boolean;
   dismissKickedOut: () => void;
   login: (email: string, password: string) => Promise<void>;
@@ -27,6 +32,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isViewer, setIsViewer] = useState(false);
+  const [checkingRole, setCheckingRole] = useState(false);
   const [kickedOut, setKickedOut] = useState(false);
   const initialized = useRef(false);
   const hadSession = useRef(false);
@@ -126,14 +132,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           const uid = session.user.id;
           if (uid !== prevUserId) {
             lastUserId.current = uid;
+            // Marcado ANTES de sair do callback: entre o SIGNED_IN e a resposta
+            // do has_role existe uma janela em que o usuário já está setado e
+            // `isAdmin` ainda é false. Sem esta bandeira, quem protege a rota
+            // lia isso como "não é admin" e mandava de volta pro login — o
+            // login funcionava e a pessoa via a tela de login de novo.
+            setCheckingRole(true);
             setTimeout(() => {
-              checkAdmin(uid).then(p => { setIsAdmin(p.admin); setIsViewer(p.viewer); });
+              checkAdmin(uid)
+                .then(p => { setIsAdmin(p.admin); setIsViewer(p.viewer); })
+                .finally(() => setCheckingRole(false));
             }, 0);
           }
         } else {
           lastUserId.current = null;
           setIsAdmin(false);
           setIsViewer(false);
+          setCheckingRole(false);
         }
       }
     );
@@ -187,7 +202,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const dismissKickedOut = () => setKickedOut(false);
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, isAdmin, isViewer, kickedOut, dismissKickedOut, login, register, logout }}>
+    <AuthContext.Provider value={{ user, session, loading, isAdmin, isViewer, checkingRole, kickedOut, dismissKickedOut, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );

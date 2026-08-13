@@ -138,8 +138,12 @@ const PixelPageViews = () => {
 }
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
-  const { user, loading, isAdmin } = useAuth();
-  if (loading) return (
+  const { user, loading, isAdmin, checkingRole } = useAuth();
+  // `checkingRole` é indispensável logo depois do login: aí `loading` já é
+  // false e o usuário já existe, mas o papel ainda está sendo consultado.
+  // Decidir nessa janela lia "ainda não sei" como "não é admin" e devolvia
+  // a pessoa pro /admin/login um instante depois de ela acertar a senha.
+  if (loading || (user && checkingRole)) return (
     <div className="flex min-h-screen items-center justify-center bg-background">
       <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
     </div>
