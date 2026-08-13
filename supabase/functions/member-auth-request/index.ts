@@ -24,12 +24,13 @@ const ALLOWED_ORIGINS = ['https://onemedcursos.com.br', 'http://localhost:5173',
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
 const SENHA_MINIMA = 8
 
-// Ponte de migração: enquanto a versão antiga do site (sem os campos de senha)
-// ainda estiver em cache no navegador de alguém, uma chamada SEM `action`
-// precisa continuar entrando — senão o login some pra quem não recarregou a
-// página. Vira false assim que o frontend novo estiver no ar; com ele em false,
-// não existe mais nenhum caminho de entrada sem senha.
-const PERMITIR_LOGIN_SEM_SENHA = true
+// Ponte de migração, já FECHADA. Enquanto o site novo subia, uma chamada SEM
+// `action` continuava entrando só com o e-mail, pra ninguém ficar sem login com
+// a versão antiga em cache no navegador. Com isto em false não existe mais
+// nenhum caminho de entrada sem senha — e é isso que dá sentido ao resto: de
+// nada adiantaria exigir senha na tela se a função ainda aceitasse o pedido
+// antigo vindo de um curl.
+const PERMITIR_LOGIN_SEM_SENHA = false
 
 // Telas simultâneas por plano — espelha src/lib/plans.ts e o que os cards do
 // checkout prometem. TODO plano precisa estar aqui: quando o mapa só tinha os
