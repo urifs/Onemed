@@ -363,10 +363,24 @@ export default function MembersPage() {
         email: b.email, source: 'buyer' as const, plan: b.plan, grantedAt: b.created_at,
       }));
 
-      const all = [...fromBuyers, ...manualOnly]
+      const todas = [...fromBuyers, ...manualOnly]
         .map(m => ({ ...m, temSenha: comSenha.has(m.email.toLowerCase()) }))
         .sort((a, b) => (b.grantedAt || '').localeCompare(a.grantedAt || ''));
-      setMembers(all);
+
+      // Um MEMBRO é uma pessoa, não uma linha de compra: renovação e upgrade
+      // deixam várias linhas aprovadas em `buyers` para o mesmo e-mail (618
+      // casos hoje, 3.742 linhas para 3.108 pessoas). Sem juntar, a pessoa
+      // aparecia repetida, o contador do topo inflava e — o pior — a chave do
+      // React na tabela (o e-mail) ficava DUPLICADA: ao filtrar a busca, a
+      // reconciliação errava e sobravam na tela linhas de quem não casava com
+      // o termo. Como a lista já vem da mais recente para a mais antiga, o
+      // primeiro de cada e-mail é o acesso que vale.
+      const porEmail = new Map<string, MemberRow>();
+      for (const m of todas) {
+        const chave = m.email.toLowerCase();
+        if (!porEmail.has(chave)) porEmail.set(chave, m);
+      }
+      setMembers([...porEmail.values()]);
 
       const activeCourses = (courses || []).filter((c: any) => c.active);
       setCourseStats({
@@ -523,7 +537,7 @@ export default function MembersPage() {
                 </thead>
                 <tbody>
                   {naTela.map(m => (
-                    <tr key={m.email} className="border-b border-border/40 hover:bg-secondary/30 transition-colors">
+                    <tr key={m.email.toLowerCase()} className="border-b border-border/40 hover:bg-secondary/30 transition-colors">
                       <td className="px-4 py-3 text-sm text-foreground">{m.email}</td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">
                         {m.source === 'buyer' ? (
