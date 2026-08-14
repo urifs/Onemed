@@ -42,6 +42,42 @@ A plataforma tem uma base de segurança razoável em vários pontos (RLS ligado 
 
 ---
 
+## 1.1. Status da implementação (branch `claude/plataforma-cyberseguranca-completa-5db73m`)
+
+> Correções aplicadas **em código, no branch — ainda não deployadas**. Ver a Seção 6 para a ordem de deploy (há dependências: aplicar as migrations ANTES das Edge Functions).
+
+**✅ Corrigido no branch (Fase 1 + Fase 2):**
+
+| Achado | O que foi feito |
+|---|---|
+| CRIT-2 | DROP da policy pública de INSERT em `accesses`; `is_member()` com expiração de trial (migration `20260814120000`) |
+| ALTO-1 / MÉD-7 | Lockout por conta-alvo no login (inclusive admin); rate-limit atômico |
+| ALTO-4/5, MÉD-5/8 | IA: rate-limit atômico + fail-closed + gate de plano fail-closed + fim do bypass `importStart` |
+| ALTO-6 | `CRON_SECRET` fail-closed nos 2 crons; `test_email` exige admin |
+| ALTO-7, BAIXO-9/13 | IP confiável (anti-XFF) em `create-trial-access`, `affiliate-register`, `member-capture-location` |
+| MÉD-1 | Redação de segredos no `admin-database-backup` (tokens Drive, chave WhatsApp, PIX) |
+| MÉD-2 | Trilha de auditoria append-only + wiring (contas do painel, admin-reset, reconexão Drive) — migration `20260814130000` |
+| MÉD-6 | Rate-limit por IP no `mp-create-payment` |
+| MÉD-10 | Headers de segurança no `vercel.json` |
+| MÉD-11 / BAIXO-1 | Fecha SELECT anônimo de `coupons` (RPC `validate_coupon`); `REVOKE` do `admin_schema_snapshot` |
+| MÉD-13 | Receita/aprovados no `BuyersPage` só com `access_granted=true` |
+| MÉD-4 (parcial) | Senha mínima do painel 6→12; **CAPTCHA** (Turnstile) no login admin e de membro (inerte até provisionar) |
+
+**⏳ Requer sua ação manual (não é código):** rotacionar os 3 tokens (CRIT-1), configurar `CRON_SECRET`/`MP_WEBHOOK_SECRET`, provisionar o Turnstile.
+
+**🔜 Deixado para uma sessão com teste ao vivo / decisão de produto:**
+
+| Achado | Por quê |
+|---|---|
+| ALTO-2 (OTP no set-password) | Muda a UX de onboarding que você desenhou (login sem código) — decisão de produto |
+| ALTO-3 (expirar assinatura vencida) | Risco de cortar cliente pagante — exige revisão dos seus dados de produção |
+| ALTO-8 (range/cache do worker) | Caminho mais crítico (streaming), deploy manual, histórico de apagão — exige teste ao vivo |
+| MÉD-12 (auto-Pro do afiliado) | Política do programa de afiliados — decisão de produto |
+| MÉD-14 (binding da URL de streaming) | Trade-off com o cache do worker — precisa desenhar junto |
+| MFA obrigatório admin | Rollout com risco de lockout — precisa ser feito com cuidado |
+
+---
+
 ## 2. Achados CRÍTICOS
 
 ### 🔴 CRIT-1 — Tokens de produção vivos versionados no git (`CLAUDE.md`)
