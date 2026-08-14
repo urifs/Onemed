@@ -105,8 +105,32 @@ export default function BuyersPage() {
     URL.revokeObjectURL(url);
   };
 
+  // Antes do pagamento, `payment_id` guarda o id da PREFERÊNCIA do Mercado
+  // Pago (tem hífen) — não existe transação ainda. O número que o cliente vê
+  // no comprovante é só o numérico, gravado pelo webhook quando o pagamento
+  // se confirma. Mostrar a preferência como "número da transação" faria o
+  // suporte procurar por um número que o cliente nunca viu.
+  const numeroTransacao = (paymentId: string | null | undefined) => {
+    const v = String(paymentId || '').trim();
+    return /^\d+$/.test(v) ? v : null;
+  };
+
+  const copiarTransacao = (numero: string) => {
+    navigator.clipboard?.writeText(numero)
+      .then(() => toast.success('Número da transação copiado'))
+      .catch(() => toast.error('Não foi possível copiar'));
+  };
+
+  // Buscar pelo NÚMERO DA TRANSAÇÃO é o caminho de suporte mais comum: o
+  // cliente manda o print do comprovante do Mercado Pago e é preciso descobrir
+  // de quem é a compra.
   const filtered = buyers.filter(b =>
-    !search || b.email.toLowerCase().includes(search.toLowerCase()) || (b.name || '').toLowerCase().includes(search.toLowerCase()) || (b.whatsapp || '').includes(search)
+    !search
+    || b.email.toLowerCase().includes(search.toLowerCase())
+    || (b.name || '').toLowerCase().includes(search.toLowerCase())
+    || (b.whatsapp || '').includes(search)
+    || String(b.payment_id || '').includes(search.trim())
+    || String(b.external_reference || '').toLowerCase().includes(search.toLowerCase())
   );
 
   const statusBadge = (status: string) => {
@@ -186,7 +210,7 @@ export default function BuyersPage() {
         </div>
 
         {/* Search */}
-        <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por email ou nome..." className="bg-background-paper border-border text-foreground max-w-md" />
+        <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por email, nome, WhatsApp ou nº da transação..." className="bg-background-paper border-border text-foreground max-w-md" />
 
         {/* Table */}
         <Card className="bg-background-paper border-border">
@@ -208,7 +232,7 @@ export default function BuyersPage() {
               <table className="w-full">
                 <thead className="sticky top-0 z-10">
                   <tr className="border-b border-border">
-                    {['Email', 'WhatsApp', 'Nome', 'Plano', 'Valor', 'Status', 'Data', ''].map(h => (
+                    {['Email', 'WhatsApp', 'Nome', 'Plano', 'Valor', 'Transação', 'Status', 'Data', ''].map(h => (
                       <th key={h} className="text-left px-4 py-3 text-xs font-mono uppercase text-muted-foreground bg-background-paper border-b border-border">{h}</th>
                     ))}
                   </tr>
@@ -225,6 +249,19 @@ export default function BuyersPage() {
                       <td className="px-4 py-3 text-sm text-muted-foreground">{buyer.name || '—'}</td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">{PLAN_LABELS[buyer.plan] || buyer.plan}</td>
                       <td className="px-4 py-3 text-sm text-foreground">{buyer.amount ? formatBRL(buyer.amount) : '—'}</td>
+                      <td className="px-4 py-3">
+                        {numeroTransacao(buyer.payment_id) ? (
+                          <button
+                            onClick={() => copiarTransacao(numeroTransacao(buyer.payment_id)!)}
+                            title="Copiar número da transação"
+                            className="font-mono text-xs text-muted-foreground hover:text-foreground transition-colors"
+                          >
+                            {numeroTransacao(buyer.payment_id)}
+                          </button>
+                        ) : (
+                          <span className="text-muted-foreground text-xs">—</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3">{statusBadge(buyer.status)}</td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">{formatDateTimeSP(buyer.created_at)}</td>
                       <td className="px-4 py-3">
