@@ -62,6 +62,12 @@ A plataforma tem uma base de segurança razoável em vários pontos (RLS ligado 
 | MÉD-11 / BAIXO-1 | Fecha SELECT anônimo de `coupons` (RPC `validate_coupon`); `REVOKE` do `admin_schema_snapshot` |
 | MÉD-13 | Receita/aprovados no `BuyersPage` só com `access_granted=true` |
 | MÉD-4 (parcial) | Senha mínima do painel 6→12; **CAPTCHA** (Turnstile) no login admin e de membro (inerte até provisionar) |
+| MÉD-3 (parcial) | Rate-limit generoso do `status` para e-mail admin (fecha enumeração de contas do painel) |
+| BAIXO-5 | Guard de `Content-Length` nas 3 funções de IA (rejeita corpo gigante antes do parse) |
+| BAIXO-8 | Funções de retenção LGPD (`prune_*`) + eliminação (`erase_member_personal_data`) — migration `20260814140000`, não agendadas |
+| BAIXO-10 | `prune_rate_limits()` (limpeza da tabela de rate-limit) |
+| BAIXO-14 | `whatsapp-webhook` valida `apikey` antes do SELECT de dedup |
+| BAIXO-17 | `member_plan_tier` resolve por `auth.users.email` (fim do spoof de badge de plano) |
 
 **⏳ Requer sua ação manual (não é código):** rotacionar os 3 tokens (CRIT-1), configurar `CRON_SECRET`/`MP_WEBHOOK_SECRET`, provisionar o Turnstile.
 
@@ -75,6 +81,10 @@ A plataforma tem uma base de segurança razoável em vários pontos (RLS ligado 
 | MÉD-12 (auto-Pro do afiliado) | Política do programa de afiliados — decisão de produto |
 | MÉD-14 (binding da URL de streaming) | Trade-off com o cache do worker — precisa desenhar junto |
 | MFA obrigatório admin | Rollout com risco de lockout — precisa ser feito com cuidado |
+| BAIXO-2 (ref do `config.toml`) | Muda o alvo padrão do CLI de deploy — não mexer sem conhecer seu fluxo local |
+| BAIXO-7 (pin de dependências) | 39 Edge Functions; pinar versão exata sem testar cada uma é arriscado |
+| BAIXO-15 (HMAC do `mp-webhook` p/ IPN) | Caminho de pagamento — endurecer pode recusar notificação legítima; principal é configurar `MP_WEBHOOK_SECRET` |
+| BAIXO-16 (cupom `max_uses` atômico) | Incremento acontece na criação da preferência — corrigir de verdade mexe no fluxo de pagamento |
 
 ---
 
