@@ -22,35 +22,16 @@ async function checkRateLimit(
   maxAttempts: number,
   windowMinutes: number
 ): Promise<{ allowed: boolean; retryAfterSeconds?: number }> {
-  const now = new Date()
+  // Atômico via RPC (o antigo SELECT→UPDATE era furável por corrida).
   const windowMs = windowMinutes * 60 * 1000
-
-  const { data: existing } = await supabase
-    .from('rate_limits')
-    .select('attempts, window_start')
-    .eq('identifier', identifier)
-    .eq('action', action)
-    .maybeSingle()
-
-  if (!existing || (now.getTime() - new Date(existing.window_start).getTime()) > windowMs) {
-    await supabase.from('rate_limits').upsert(
-      { identifier, action, attempts: 1, window_start: now.toISOString() },
-      { onConflict: 'identifier,action' }
-    )
-    return { allowed: true }
+  const { data } = await supabase.rpc('rate_limit_hit', {
+    _identifier: identifier, _action: action, _limit: maxAttempts, _window_seconds: windowMinutes * 60,
+  })
+  const row = Array.isArray(data) ? data[0] : data
+  if (row && row.allowed === false) {
+    const ws = new Date(row.window_start).getTime()
+    return { allowed: false, retryAfterSeconds: Math.max(1, Math.ceil((ws + windowMs - Date.now()) / 1000)) }
   }
-
-  if (existing.attempts >= maxAttempts) {
-    const windowExpiry = new Date(new Date(existing.window_start).getTime() + windowMs)
-    const retryAfterSeconds = Math.ceil((windowExpiry.getTime() - now.getTime()) / 1000)
-    return { allowed: false, retryAfterSeconds }
-  }
-
-  await supabase.from('rate_limits')
-    .update({ attempts: existing.attempts + 1 })
-    .eq('identifier', identifier)
-    .eq('action', action)
-
   return { allowed: true }
 }
 
@@ -106,7 +87,27 @@ serve(async (req) => {
     const supabaseAnonKey    = Deno.env.get('SUPABASE_ANON_KEY') || ''
     const webhookUrl = `https://${supabaseProjectRef}.supabase.co/functions/v1/mp-webhook?apikey=${supabaseAnonKey}`
 
-    // ── 2. Rate limiting por email (degradado graciosamente se tabela não existir) ──
+    // ── 2. Rate limiting: por IP E por e-mail ──
+    // O e-mail é controlado pelo atacante (trocar o e-mail a cada request furava
+    // o único limite que existia); o IP não. Fail-open no erro pra não bloquear
+    // compra legítima se a tabela estiver indisponível.
+    const rlClientIp = req.headers.get('x-real-ip')
+      || (req.headers.get('x-forwarded-for') || '').split(',').map(s => s.trim()).filter(Boolean).pop()
+      || 'unknown'
+    try {
+      const rlIp = await checkRateLimit(supabase, rlClientIp, 'create_payment_ip', 30, 60)
+      if (!rlIp.allowed) {
+        return new Response(JSON.stringify({
+          error: 'Muitas tentativas de pagamento deste dispositivo. Tente novamente mais tarde.',
+          retryAfterSeconds: rlIp.retryAfterSeconds,
+        }), {
+          status: 429,
+          headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json', 'Retry-After': String(rlIp.retryAfterSeconds ?? 3600) },
+        })
+      }
+    } catch (ipErr: any) {
+      console.warn('Rate limit por IP falhou (migration pendente?):', ipErr.message)
+    }
     if (email) {
       try {
         const rl = await checkRateLimit(supabase, email.toLowerCase().trim(), 'create_payment', 10, 60)

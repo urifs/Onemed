@@ -33,6 +33,25 @@ const ALLOWED_ORIGINS = ['https://onemedcursos.com.br', 'http://localhost:5173',
 // max_rows mude de novo no futuro sem avisar ninguém.
 const PAGE_SIZE = 1000
 
+// Colunas de SEGREDO/credencial que NÃO podem sair em texto puro no backup
+// (MÉD-1): o arquivo é salvo em notebooks e um vazamento dele concentrava os
+// tokens OAuth do Drive (acesso à biblioteca inteira, sobrevive à troca de
+// senha do admin), a chave da Evolution/WhatsApp e as chaves PIX dos afiliados.
+const REDACT_COLUMNS: Record<string, Set<string>> = {
+  drive_config: new Set(['access_token', 'refresh_token']),
+  drive_storage_accounts: new Set(['access_token', 'refresh_token']),
+  whatsapp_config: new Set(['evolution_api_key']),
+  affiliates: new Set(['pix_key']),
+}
+
+function redactRow(tableName: string, row: Record<string, unknown>): Record<string, unknown> {
+  const cols = REDACT_COLUMNS[tableName]
+  if (!cols || !row || typeof row !== 'object') return row
+  const out: Record<string, unknown> = { ...row }
+  for (const k of cols) if (k in out && out[k] != null) out[k] = '[REDACTED]'
+  return out
+}
+
 function getCorsHeaders(req: Request) {
   const origin = req.headers.get('origin') || ''
   const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0]
@@ -164,7 +183,7 @@ serve(async (req) => {
       lines.push(JSON.stringify({ type: 'error', table: tableName, message: error.message }))
       tableDone = true
     } else {
-      for (const row of data || []) lines.push(JSON.stringify({ type: 'row', table: tableName, data: row }))
+      for (const row of data || []) lines.push(JSON.stringify({ type: 'row', table: tableName, data: redactRow(tableName, row as Record<string, unknown>) }))
       if (needsCount && typeof count === 'number') tableTotal = count
       const newOffset = offset + (data?.length || 0)
       // Sem COUNT confiável (nunca deveria acontecer, mas por segurança):

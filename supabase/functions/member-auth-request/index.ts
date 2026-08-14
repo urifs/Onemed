@@ -188,6 +188,10 @@ serve(async (req) => {
         return jsonResponse(req, { error: 'Não foi possível redefinir a senha agora.' }, 500)
       }
       await supabase.from('member_credentials').delete().eq('user_id', cred.user_id)
+      await supabase.rpc('log_security_event', {
+        _event: 'member_password_reset_by_admin', _actor_user_id: quem.user.id,
+        _actor_email: quem.user.email ?? null, _target: email, _ip: ip, _detail: { origem: cred.origem },
+      }).then(() => {}, () => {})
       return jsonResponse(req, { success: true })
     }
 

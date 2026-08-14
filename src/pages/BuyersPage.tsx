@@ -32,8 +32,12 @@ export default function BuyersPage() {
     setLoading(true);
     setLoadError(false);
     try {
+      // access_granted=true separa venda REAL de linha forjada: a policy pública
+      // de INSERT em buyers força access_granted=FALSE, então um atacante não
+      // consegue poluir receita/contagens com "vendas" approved falsas (MÉD-13).
+      // O webhook do MP e a criação manual de comprador gravam access_granted=true.
       const buyersData = await fetchAllRows((f, t) =>
-        supabase.from('buyers').select('*').eq('status', 'approved').order('created_at', { ascending: false }).range(f, t)
+        supabase.from('buyers').select('*').eq('status', 'approved').eq('access_granted', true).order('created_at', { ascending: false }).range(f, t)
       );
       setBuyers(buyersData);
       const all = buyersData;

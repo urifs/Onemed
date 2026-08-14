@@ -20,7 +20,7 @@ export default function RegisterPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !email || !password) { toast.error('Preencha todos os campos'); return; }
-    if (password.length < 6) { toast.error('A senha deve ter pelo menos 6 caracteres'); return; }
+    if (password.length < 12) { toast.error('A senha deve ter pelo menos 12 caracteres'); return; }
 
     setLoading(true);
     try {

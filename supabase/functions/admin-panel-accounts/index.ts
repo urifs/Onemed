@@ -45,6 +45,16 @@ serve(async (req) => {
     const { data: isAdmin } = await supabase.rpc('has_role', { _user_id: userData.user.id, _role: 'admin' })
     if (!isAdmin) return json({ error: 'Apenas administradores gerenciam contas do painel.' }, 403)
 
+    // Trilha de auditoria (append-only) — best-effort, nunca derruba a ação.
+    const ip = req.headers.get('x-real-ip')
+      || (req.headers.get('x-forwarded-for') || '').split(',').map(s => s.trim()).filter(Boolean).pop()
+      || 'unknown'
+    const audit = (event: string, target: string, detail: Record<string, unknown> = {}) =>
+      supabase.rpc('log_security_event', {
+        _event: event, _actor_user_id: userData.user.id, _actor_email: userData.user.email ?? null,
+        _target: target, _ip: ip, _detail: detail,
+      }).then(() => {}, () => {})
+
     const body = await req.json().catch(() => ({}))
     const action = String(body.action || '')
 
@@ -60,7 +70,7 @@ serve(async (req) => {
       const password = String(body.password || '')
       const role = body.role === 'viewer' ? 'viewer' : 'admin'
       if (!EMAIL_REGEX.test(email)) return json({ error: 'Informe um e-mail válido.' }, 400)
-      if (password.length < 6) return json({ error: 'A senha precisa de pelo menos 6 caracteres.' }, 400)
+      if (password.length < 12) return json({ error: 'A senha precisa de pelo menos 12 caracteres.' }, 400)
 
       // E-mail já existente (ex: assinante) ganha o papel sem criar usuário
       // novo — mas aí a senha NÃO é alterada (senão viraria roubo de conta).
@@ -88,6 +98,7 @@ serve(async (req) => {
           return json({ error: 'Conta criada, mas não foi possível atribuir o papel.' }, 500)
         }
       }
+      await audit('admin_account_create', email, { role, reaproveitado })
       return json({ success: true, userId, reaproveitado })
     }
 
@@ -105,6 +116,7 @@ serve(async (req) => {
       await supabase.from('user_roles').delete().eq('user_id', userId).in('role', ['admin', 'viewer'])
       const { error } = await supabase.from('user_roles').insert({ user_id: userId, role })
       if (error) return json({ error: 'Não foi possível trocar o papel.' }, 500)
+      await audit('admin_account_set_role', userId, { role })
       return json({ success: true })
     }
 
@@ -112,9 +124,10 @@ serve(async (req) => {
       const userId = String(body.userId || '')
       const password = String(body.password || '')
       if (!userId) return json({ error: 'Conta inválida.' }, 400)
-      if (password.length < 6) return json({ error: 'A senha precisa de pelo menos 6 caracteres.' }, 400)
+      if (password.length < 12) return json({ error: 'A senha precisa de pelo menos 12 caracteres.' }, 400)
       const { error } = await supabase.auth.admin.updateUserById(userId, { password })
       if (error) return json({ error: error.message || 'Não foi possível trocar a senha.' }, 500)
+      await audit('admin_account_reset_password', userId, {})
       return json({ success: true })
     }
 
@@ -132,6 +145,7 @@ serve(async (req) => {
       const { error } = await supabase.from('user_roles')
         .delete().eq('user_id', userId).in('role', ['admin', 'viewer'])
       if (error) return json({ error: 'Não foi possível remover o acesso.' }, 500)
+      await audit('admin_account_remove', userId, {})
       return json({ success: true })
     }
 

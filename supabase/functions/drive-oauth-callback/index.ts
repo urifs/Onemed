@@ -94,6 +94,15 @@ serve(async (req) => {
       })
     }
 
+    // Trilha de auditoria: reconectar o Drive troca os tokens que servem a
+    // biblioteca inteira — evento de alto impacto, best-effort.
+    await supabase.rpc('log_security_event', {
+      _event: 'drive_reconnect', _actor_user_id: user.id, _actor_email: user.email ?? null,
+      _target: 'drive_config', _ip: req.headers.get('x-real-ip')
+        || (req.headers.get('x-forwarded-for') || '').split(',').map(s => s.trim()).filter(Boolean).pop() || 'unknown',
+      _detail: { hadRefreshToken: !!tokens.refresh_token, reconnect: !!existing },
+    }).then(() => {}, () => {})
+
     return new Response(JSON.stringify({ success: true }), {
       headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
     })
