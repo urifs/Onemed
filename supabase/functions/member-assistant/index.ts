@@ -162,43 +162,50 @@ serve(async (req) => {
       if (planoAluno === 'monthly') {
         return json(req, { error: 'O Plano Mensal não inclui o assistente de IA. Faça upgrade de plano para liberar.' }, 403)
       }
-    } catch { /* segue liberado no teto de segurança */ }
+    } catch { /* resolvido abaixo: sem plano + não-admin = bloqueado */ }
+
+    // Gate FAIL-CLOSED: conta sem assinatura ativa (ou falha na consulta) só
+    // passa se for admin — antes caía no teto de 100/dia, acima dos planos pagos.
+    if (planoAluno === '') {
+      let ehAdminIa = false
+      try {
+        const { data: adm } = await supabase.rpc('has_role', { _user_id: user.id, _role: 'admin' })
+        ehAdminIa = !!adm
+      } catch { /* na dúvida, bloqueia */ }
+      if (!ehAdminIa) {
+        return json(req, { error: 'Sua conta não tem uma assinatura ativa. Assine um plano para usar o assistente de IA.' }, 403)
+      }
+    }
 
     // ── limite de mensagens/dia: o do plano (5/10/20) ou o teto de 100 ──────
     const LIMITE_IA_POR_PLANO: Record<string, number> = { trial: 5, annual: 5, lifetime: 10, lifetime_plus: 20 }
     const TETO_SEGURANCA = 100
     const LIMITE_DIARIO = LIMITE_IA_POR_PLANO[planoAluno] ?? TETO_SEGURANCA
+    // Rate-limit ATÔMICO via RPC + FAIL-CLOSED (o assistente é pago por chamada).
     try {
-      const now = new Date()
-      const { data: rl } = await supabase.from('rate_limits')
-        .select('attempts, window_start')
-        .eq('identifier', user.id).eq('action', 'assistant').maybeSingle()
-      if (rl && (now.getTime() - new Date(rl.window_start).getTime()) < 24 * 3600 * 1000) {
-        if (rl.attempts >= LIMITE_DIARIO) {
-          // Janela de 24h desde a PRIMEIRA mensagem, não o fim do dia.
-          const faltamMin = Math.max(
-            1,
-            Math.ceil((new Date(rl.window_start).getTime() + 24 * 3600 * 1000 - now.getTime()) / 60000),
-          )
-          const quando = faltamMin >= 60
-            ? `em ${Math.ceil(faltamMin / 60)}h`
-            : `em ${faltamMin} minuto${faltamMin === 1 ? '' : 's'}`
-          const msg = planoAluno === 'trial'
-            ? `Você usou as ${LIMITE_DIARIO} utilizações liberadas no teste grátis. Assine um plano para continuar usando as ferramentas de IA da plataforma.`
-            : LIMITE_DIARIO < TETO_SEGURANCA
-              ? `Você usou as ${LIMITE_DIARIO} mensagens de hoje do seu plano no assistente. O limite renova ${quando}. Planos superiores liberam mais — o Pro é sem limite.`
-              : `Você já enviou ${LIMITE_DIARIO} mensagens ao assistente nas últimas 24 horas, que é o limite diário. Você poderá conversar de novo ${quando}.`
-          return json(req, { error: msg }, 429)
-        }
-        await supabase.from('rate_limits').update({ attempts: rl.attempts + 1 })
-          .eq('identifier', user.id).eq('action', 'assistant')
-      } else {
-        await supabase.from('rate_limits').upsert(
-          { identifier: user.id, action: 'assistant', attempts: 1, window_start: now.toISOString() },
-          { onConflict: 'identifier,action' },
+      const { data: h } = await supabase.rpc('rate_limit_hit', {
+        _identifier: user.id, _action: 'assistant', _limit: LIMITE_DIARIO, _window_seconds: 24 * 3600,
+      })
+      const rl = Array.isArray(h) ? h[0] : h
+      if (rl && rl.allowed === false) {
+        // Janela de 24h desde a PRIMEIRA mensagem, não o fim do dia.
+        const faltamMin = Math.max(
+          1,
+          Math.ceil((new Date(rl.window_start).getTime() + 24 * 3600 * 1000 - Date.now()) / 60000),
         )
+        const quando = faltamMin >= 60
+          ? `em ${Math.ceil(faltamMin / 60)}h`
+          : `em ${faltamMin} minuto${faltamMin === 1 ? '' : 's'}`
+        const msg = planoAluno === 'trial'
+          ? `Você usou as ${LIMITE_DIARIO} utilizações liberadas no teste grátis. Assine um plano para continuar usando as ferramentas de IA da plataforma.`
+          : LIMITE_DIARIO < TETO_SEGURANCA
+            ? `Você usou as ${LIMITE_DIARIO} mensagens de hoje do seu plano no assistente. O limite renova ${quando}. Planos superiores liberam mais — o Pro é sem limite.`
+            : `Você já enviou ${LIMITE_DIARIO} mensagens ao assistente nas últimas 24 horas, que é o limite diário. Você poderá conversar de novo ${quando}.`
+        return json(req, { error: msg }, 429)
       }
-    } catch { /* não derruba o chat */ }
+    } catch {
+      return json(req, { error: 'Serviço de IA temporariamente indisponível. Tente novamente em instantes.' }, 503)
+    }
 
     // ── entrada ────────────────────────────────────────────────────────────
     const { messages, currentLesson, currentPlaylist, includeLessonContent } = await req.json()

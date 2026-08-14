@@ -50,12 +50,10 @@ export function UpgradePlanModal({ open, onOpenChange, currentPlan, userEmail, u
     if (!code) { toast.error('Digite um código de cupom'); return; }
     setCouponLoading(true);
     try {
-      const { data } = await supabase
-        .from('coupons')
-        .select('code, discount_percent, allowed_plans, expires_at, max_uses, times_used')
-        .eq('code', code)
-        .eq('active', true)
-        .maybeSingle();
+      // Validação por CÓDIGO via RPC (ver CheckoutPage): não expõe a lista de
+      // cupons. O servidor reconfere o desconto em mp-create-payment.
+      const { data: rows } = await supabase.rpc('validate_coupon', { _code: code });
+      const data = Array.isArray(rows) ? rows[0] : rows;
       const expirado = data?.expires_at && new Date(data.expires_at) < new Date();
       const esgotado = data?.max_uses !== null && data?.max_uses !== undefined
         && data?.times_used !== null && Number(data?.times_used) >= Number(data?.max_uses);

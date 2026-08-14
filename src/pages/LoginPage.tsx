@@ -7,20 +7,23 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Stethoscope, Mail, Lock, ArrowRight, ArrowLeft } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { TurnstileWidget, TURNSTILE_ENABLED } from '@/components/TurnstileWidget';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState('');
   const { login } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) { toast.error('Preencha todos os campos'); return; }
+    if (TURNSTILE_ENABLED && !captchaToken) { toast.error('Confirme que você não é um robô'); return; }
     setLoading(true);
     try {
-      await login(email, password);
+      await login(email, password, captchaToken || undefined);
       toast.success('Login realizado com sucesso!');
       navigate('/admin');
     } catch (err: any) {
@@ -75,6 +78,8 @@ export default function LoginPage() {
                 />
               </div>
             </div>
+
+            <TurnstileWidget onToken={setCaptchaToken} className="flex justify-center" />
 
             <Button
               type="submit"

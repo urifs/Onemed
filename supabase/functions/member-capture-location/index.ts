@@ -44,7 +44,11 @@ serve(async (req) => {
     const user = userData.user
     const email = (user.email || '').toLowerCase()
 
-    const ip = (req.headers.get('x-forwarded-for') || '').split(',')[0].trim() || req.headers.get('x-real-ip') || ''
+    // x-real-ip PRIMEIRO (não forjável). O XFF esquerdo é controlado pelo
+    // cliente — sem isso, um membro forjava a própria localização no mapa admin.
+    const ip = req.headers.get('x-real-ip')
+      || (req.headers.get('x-forwarded-for') || '').split(',').map(s => s.trim()).filter(Boolean).pop()
+      || ''
     if (!ip) return jsonResponse(req, { skipped: true })
 
     const geoRes = await fetch(`https://ipwho.is/${ip}`, { signal: AbortSignal.timeout(3000) })

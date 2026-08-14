@@ -83,6 +83,9 @@ async function captureMemberLocation(supabase: ReturnType<typeof createClient>, 
   }
 }
 
+// Rate-limit ATÔMICO via RPC (incremento-e-checa em um statement) — o antigo
+// SELECT→compara→UPDATE era furável por corrida. Falha da RPC segue liberado
+// (login não é caminho de custo pago), preservando o comportamento anterior.
 async function checkRateLimit(
   supabase: ReturnType<typeof createClient>,
   identifier: string,
@@ -90,22 +93,38 @@ async function checkRateLimit(
   maxAttempts = 5,
   windowMs = 15 * 60 * 1000,
 ) {
-  const now = new Date()
-  const { data: existing } = await supabase.from('rate_limits')
-    .select('attempts, window_start').eq('identifier', identifier).eq('action', action).maybeSingle()
-
-  if (!existing || (now.getTime() - new Date(existing.window_start).getTime()) > windowMs) {
-    await supabase.from('rate_limits').upsert(
-      { identifier, action, attempts: 1, window_start: now.toISOString() },
-      { onConflict: 'identifier,action' },
-    )
-    return { allowed: true }
+  const { data } = await supabase.rpc('rate_limit_hit', {
+    _identifier: identifier,
+    _action: action,
+    _limit: maxAttempts,
+    _window_seconds: Math.ceil(windowMs / 1000),
+  })
+  const row = Array.isArray(data) ? data[0] : data
+  if (row && row.allowed === false) {
+    const ws = new Date(row.window_start).getTime()
+    return { allowed: false, retryAfterSeconds: Math.max(1, Math.ceil((ws + windowMs - Date.now()) / 1000)) }
   }
-  if (existing.attempts >= maxAttempts) {
-    return { allowed: false, retryAfterSeconds: Math.ceil((new Date(existing.window_start).getTime() + windowMs - now.getTime()) / 1000) }
-  }
-  await supabase.from('rate_limits').update({ attempts: existing.attempts + 1 }).eq('identifier', identifier).eq('action', action)
   return { allowed: true }
+}
+
+// CAPTCHA (Cloudflare Turnstile) — verificação server-side. Inerte enquanto
+// TURNSTILE_SECRET_KEY não estiver configurado (não quebra o login atual);
+// quando o dono provisionar o Turnstile + a env, passa a exigir o token.
+async function verificarCaptcha(token: string, ip: string): Promise<boolean> {
+  const secret = Deno.env.get('TURNSTILE_SECRET_KEY')
+  if (!secret) return true
+  try {
+    const res = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ secret, response: token || '', ...(ip && ip !== 'unknown' ? { remoteip: ip } : {}) }),
+    })
+    const data = await res.json().catch(() => ({}))
+    return !!data?.success
+  } catch (err) {
+    console.error('verificarCaptcha falhou', err)
+    return false
+  }
 }
 
 serve(async (req) => {
@@ -120,6 +139,7 @@ serve(async (req) => {
     const body = await req.json().catch(() => ({}))
     const email = String(body?.email || '').trim().toLowerCase()
     const senha = String(body?.password || '')
+    const captchaToken = String(body?.captchaToken || '')
     const acao = String(body?.action || '') || (PERMITIR_LOGIN_SEM_SENHA ? 'legacy' : '')
 
     if (!EMAIL_REGEX.test(email)) return jsonResponse(req, { error: 'Email inválido' }, 400)
@@ -272,6 +292,9 @@ serve(async (req) => {
 
     // ── cadastrar senha (primeira vez) ──────────────────────────────────────
     if (acao === 'set-password') {
+      if (!(await verificarCaptcha(captchaToken, ip))) {
+        return jsonResponse(req, { error: 'Verificação de segurança falhou. Recarregue a página e tente novamente.' }, 403)
+      }
       if (senha.length < SENHA_MINIMA) {
         return jsonResponse(req, { error: `A senha precisa ter pelo menos ${SENHA_MINIMA} caracteres.` }, 400)
       }
@@ -333,8 +356,30 @@ serve(async (req) => {
       if (!temSenha) {
         return jsonResponse(req, { error: 'Esta conta ainda não tem senha. Cadastre a sua para entrar.', needsPassword: true }, 409)
       }
+      if (!(await verificarCaptcha(captchaToken, ip))) {
+        return jsonResponse(req, { error: 'Verificação de segurança falhou. Recarregue a página e tente novamente.' }, 403)
+      }
+      // Lockout por CONTA-ALVO (vale INCLUSIVE para admin, que é isento do
+      // limite por IP acima): agrega as senhas erradas de TODOS os IPs contra
+      // este e-mail. É o que fecha o brute-force distribuído da conta admin —
+      // um atacante que troca de IP a cada tentativa driblava o limite por IP,
+      // mas não este contador por conta. Sucesso zera o contador, então um
+      // login legítimo nunca trava (só falhas repetidas travam).
+      const LOCK_MAX = 10
+      const LOCK_WINDOW = 20 * 60
+      const { data: fails } = await supabase.rpc('rate_limit_count', {
+        _identifier: email, _action: 'login_fail', _window_seconds: LOCK_WINDOW,
+      })
+      if ((Number(fails) || 0) >= LOCK_MAX) {
+        return jsonResponse(req, { error: 'Muitas tentativas de senha para esta conta. Aguarde cerca de 20 minutos e tente novamente.' }, 429)
+      }
       const sessao = await entrarComSenha()
-      if (!sessao?.user?.id) return jsonResponse(req, { error: 'Senha incorreta. Tente novamente.' }, 401)
+      if (!sessao?.user?.id) {
+        await supabase.rpc('rate_limit_bump', { _identifier: email, _action: 'login_fail', _window_seconds: LOCK_WINDOW })
+          .then(() => {}, () => {})
+        return jsonResponse(req, { error: 'Senha incorreta. Tente novamente.' }, 401)
+      }
+      await supabase.rpc('rate_limit_reset', { _identifier: email, _action: 'login_fail' }).then(() => {}, () => {})
       await finalizarLogin(sessao.user.id)
       return jsonResponse(req, { success: true, access_token: sessao.access_token, refresh_token: sessao.refresh_token })
     }

@@ -211,7 +211,21 @@ serve(async (req) => {
           error: 'O Plano Mensal não inclui as ferramentas de geração por IA. Faça upgrade de plano para liberar.',
         }, 403)
       }
-    } catch { /* segue liberado no teto de segurança */ }
+    } catch { /* resolvido abaixo: sem plano + não-admin = bloqueado */ }
+
+    // Gate FAIL-CLOSED: se o plano não resolveu (conta sem assinatura ativa —
+    // afiliado-só, trial vencido — ou falha na consulta), só passa quem for
+    // admin. Antes, plano vazio caía no teto de 100/dia, ACIMA dos planos pagos.
+    if (planoAtual === '') {
+      let ehAdminIa = false
+      try {
+        const { data: adm } = await supabase.rpc('has_role', { _user_id: user.id, _role: 'admin' })
+        ehAdminIa = !!adm
+      } catch { /* na dúvida, bloqueia */ }
+      if (!ehAdminIa) {
+        return json(req, { error: 'Sua conta não tem uma assinatura ativa. Assine um plano para usar as ferramentas de IA da plataforma.' }, 403)
+      }
+    }
 
     // ── entrada ────────────────────────────────────────────────────────────
     const { lessonIds, archiveFileIds, difficulty, count, extraText, format, uploads, mode, importExisting, importStart } = await req.json()
@@ -240,28 +254,39 @@ serve(async (req) => {
     const LIMITE_IA_POR_PLANO: Record<string, number> = { trial: 5, annual: 5, lifetime: 10, lifetime_plus: 20 }
     const TETO_SEGURANCA = 100
     const LIMITE_DIARIO = LIMITE_IA_POR_PLANO[planoAtual] ?? TETO_SEGURANCA
-    // Continuação de importação paginada não passa pelo contador — a primeira
-    // chamada já cobrou a operação inteira.
-    if (!ehContinuacao) try {
-      const now = new Date()
-      const { data: rl } = await supabase.from('rate_limits')
-        .select('attempts, window_start')
-        .eq('identifier', user.id).eq('action', rlAction).maybeSingle()
-      if (rl && (now.getTime() - new Date(rl.window_start).getTime()) < 24 * 3600 * 1000) {
-        if (rl.attempts >= LIMITE_DIARIO) {
-          // A janela é de 24h a partir da PRIMEIRA geração, não do fim do dia —
-          // dizer só "tente amanhã" mandava o aluno voltar na hora errada.
+    // Rate-limit ATÔMICO via RPC (o antigo SELECT→compara→UPDATE era furável
+    // por corrida — dezenas de requisições concorrentes liam o mesmo attempts
+    // e todas geravam conteúdo pago). FAIL-CLOSED: a IA é paga por chamada,
+    // então se o contador está indisponível é melhor recusar do que arriscar
+    // geração ilimitada sob pressão de banco.
+    try {
+      if (ehContinuacao) {
+        // Continuação de importação paginada: não conta no teto DIÁRIO (a 1ª
+        // chamada já cobrou a operação), MAS tem teto próprio — senão
+        // importStart>1 seria uma geração ilimitada de graça, já que o cliente
+        // decide sozinho enviar importStart:2.
+        const { data: c } = await supabase.rpc('rate_limit_hit', {
+          _identifier: user.id, _action: `${rlAction}_cont`, _limit: 60, _window_seconds: 24 * 3600,
+        })
+        const rc = Array.isArray(c) ? c[0] : c
+        if (rc && rc.allowed === false) {
+          return json(req, { error: 'Limite de continuações de importação atingido nas últimas 24h. Tente novamente mais tarde ou envie o documento em partes.' }, 429)
+        }
+      } else {
+        const { data: h } = await supabase.rpc('rate_limit_hit', {
+          _identifier: user.id, _action: rlAction, _limit: LIMITE_DIARIO, _window_seconds: 24 * 3600,
+        })
+        const rl = Array.isArray(h) ? h[0] : h
+        if (rl && rl.allowed === false) {
+          // A janela é de 24h a partir da PRIMEIRA geração, não do fim do dia.
           const faltamMin = Math.max(
             1,
-            Math.ceil((new Date(rl.window_start).getTime() + 24 * 3600 * 1000 - now.getTime()) / 60000),
+            Math.ceil((new Date(rl.window_start).getTime() + 24 * 3600 * 1000 - Date.now()) / 60000),
           )
           const quando = faltamMin >= 60
             ? `em ${Math.ceil(faltamMin / 60)}h`
             : `em ${faltamMin} minuto${faltamMin === 1 ? '' : 's'}`
           const oQue = modo === 'questions' ? 'bancos de questões' : 'baralhos de flashcards'
-          // Trial → convite pra assinar (é um teto de experimentação, não
-          // renovável). Plano pago com limite baixo → aponta o upgrade. Teto de
-          // segurança (Pro/admin) → mensagem antiga de "limite diário".
           const msg = planoAtual === 'trial'
             ? `Você usou as ${LIMITE_DIARIO} utilizações liberadas no teste grátis. Assine um plano para continuar usando as ferramentas de IA da plataforma.`
             : LIMITE_DIARIO < TETO_SEGURANCA
@@ -269,15 +294,10 @@ serve(async (req) => {
               : `Você já gerou ${LIMITE_DIARIO} ${oQue} nas últimas 24 horas, que é o limite diário. Você poderá gerar de novo ${quando}.`
           return json(req, { error: msg }, 429)
         }
-        await supabase.from('rate_limits').update({ attempts: rl.attempts + 1 })
-          .eq('identifier', user.id).eq('action', rlAction)
-      } else {
-        await supabase.from('rate_limits').upsert(
-          { identifier: user.id, action: rlAction, attempts: 1, window_start: now.toISOString() },
-          { onConflict: 'identifier,action' },
-        )
       }
-    } catch { /* tabela indisponível não pode derrubar a geração */ }
+    } catch {
+      return json(req, { error: 'Serviço de IA temporariamente indisponível. Tente novamente em instantes.' }, 503)
+    }
     // Fontes: aulas da biblioteca E/OU arquivos do Acervo Público — o teto de
     // 8 fontes vale pro conjunto.
     const archIds: string[] = Array.isArray(archiveFileIds) ? archiveFileIds.slice(0, MAX_LESSONS) : []

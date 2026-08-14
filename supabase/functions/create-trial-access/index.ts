@@ -217,8 +217,13 @@ serve(async (req) => {
     const normalizedEmail = String(email).toLowerCase().trim()
 
     // ── Rate limit por IP ──
-    const clientIp = (req.headers.get('x-forwarded-for') || '').split(',')[0].trim()
-      || req.headers.get('x-real-ip') || 'unknown'
+    // x-real-ip PRIMEIRO (setado pela plataforma, não forjável). O XFF esquerdo
+    // é controlado pelo cliente — trocar o XFF a cada request zerava tanto o
+    // rate limit (5/15min) quanto o cap de 2 trials/IP/24h, liberando
+    // email-bombing anônimo com o domínio verificado da OneMed.
+    const clientIp = req.headers.get('x-real-ip')
+      || (req.headers.get('x-forwarded-for') || '').split(',').map(s => s.trim()).filter(Boolean).pop()
+      || 'unknown'
     try {
       const rl = await checkRateLimit(supabase, clientIp)
       if (!rl.allowed) {

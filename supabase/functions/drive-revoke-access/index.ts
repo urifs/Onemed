@@ -146,15 +146,16 @@ serve(async (req) => {
         })
       }
     } else {
+      // Modo cron/lote — FAIL-CLOSED. verify_jwt=false, então o CRON_SECRET é a
+      // única autenticação; sem ele configurado, a revogação em lote fica
+      // FECHADA (antes um POST anônimo com {} disparava a varredura).
       const cronSecret = Deno.env.get('CRON_SECRET')
-      if (cronSecret) {
-        const provided = req.headers.get('x-cron-secret') || ''
-        if (!(await secureCompare(provided, cronSecret))) {
-          console.error('drive-revoke-access: x-cron-secret inválido')
-          return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-            status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
-          })
-        }
+      const provided = req.headers.get('x-cron-secret') || ''
+      if (!cronSecret || !(await secureCompare(provided, cronSecret))) {
+        console.error('drive-revoke-access: CRON_SECRET ausente/não configurado ou x-cron-secret inválido')
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
+        })
       }
     }
 

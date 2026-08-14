@@ -182,16 +182,17 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: getCorsHeaders(req) })
 
   try {
-    // ── Verificação de CRON_SECRET (ativa somente se o secret estiver configurado) ──
+    // ── Verificação de CRON_SECRET — FAIL-CLOSED ──
+    // verify_jwt=false, então esta é a ÚNICA autenticação. Sem CRON_SECRET
+    // configurado, a função fica FECHADA (antes ficava totalmente aberta —
+    // qualquer POST anônimo disparava o blast ou o relay de e-mail da marca).
     const cronSecret = Deno.env.get('CRON_SECRET')
-    if (cronSecret) {
-      const providedSecret = req.headers.get('x-cron-secret') || ''
-      if (providedSecret !== cronSecret) {
-        console.error('send-followup-emails: x-cron-secret inválido ou ausente')
-        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-          status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
-        })
-      }
+    const providedSecret = req.headers.get('x-cron-secret') || ''
+    if (!cronSecret || providedSecret !== cronSecret) {
+      console.error('send-followup-emails: CRON_SECRET ausente/não configurado ou x-cron-secret inválido')
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
+      })
     }
 
     const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')!
@@ -205,6 +206,19 @@ serve(async (req) => {
 
     // Test mode: send all follow-up types directly to a specified email
     if (body.test_email) {
+      // Destinatário ARBITRÁRIO com a marca OneMed: além do CRON_SECRET, exige
+      // um admin logado. O cron nunca usa test_email, então não quebra o
+      // agendamento — só fecha o uso como relay de e-mail se o secret vazar.
+      const jwt = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
+      const { data: quem } = jwt ? await supabase.auth.getUser(jwt) : { data: { user: null } }
+      const { data: ehAdmin } = quem?.user
+        ? await supabase.rpc('has_role', { _user_id: quem.user.id, _role: 'admin' })
+        : { data: false }
+      if (!ehAdmin) {
+        return new Response(JSON.stringify({ error: 'test_email requer um administrador autenticado' }), {
+          status: 403, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
+        })
+      }
       const testEmail = body.test_email
       const configsToTest = body.test_days
         ? FOLLOWUP_CONFIGS.filter(c => c.days === body.test_days)

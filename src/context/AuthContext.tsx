@@ -19,7 +19,7 @@ interface AuthContextType {
   checkingRole: boolean;
   kickedOut: boolean;
   dismissKickedOut: () => void;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, captchaToken?: string) => Promise<void>;
   register: (email: string, password: string, name: string) => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -183,7 +183,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
   }, []);
 
-  const login = async (email: string, password: string) => {
+  const login = async (email: string, password: string, captchaToken?: string) => {
     // Uma segunda tentativa só quando a RESPOSTA não chegou. Já aconteceu de o
     // login ser aceito no servidor (last_sign_in_at gravado) e a resposta se
     // perder no caminho — pra quem está na tela, isso é "não loga". Credencial
@@ -192,7 +192,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     let ultimoErro: unknown = null;
     for (let tentativa = 0; tentativa < 2; tentativa++) {
       try {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+          // CAPTCHA (Turnstile) — só viaja quando o dono ativa o Turnstile no
+          // Supabase Auth. Inerte enquanto não configurado (captchaToken vazio).
+          ...(captchaToken ? { options: { captchaToken } } : {}),
+        });
         if (!error) return;
         ultimoErro = error;
       } catch (err) {

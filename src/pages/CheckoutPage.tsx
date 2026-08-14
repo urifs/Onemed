@@ -205,12 +205,11 @@ export default function CheckoutPage() {
     if (!c) { if (!opts?.silent) toast.error('Digite um código de cupom'); return; }
     setCouponLoading(true);
     try {
-      const { data } = await supabase
-        .from('coupons')
-        .select('*')
-        .eq('code', c.toUpperCase())
-        .eq('active', true)
-        .single();
+      // Validação por CÓDIGO via RPC (não lê a tabela toda): fecha a enumeração
+      // de todos os cupons ativos pela chave pública. O preço final continua
+      // sendo calculado e reconferido no servidor (mp-create-payment).
+      const { data: rows } = await supabase.rpc('validate_coupon', { _code: c.toUpperCase() });
+      const data = Array.isArray(rows) ? rows[0] : rows;
       if (data) {
         setCouponApplied(data);
         setDiscountPercent(data.discount_percent);

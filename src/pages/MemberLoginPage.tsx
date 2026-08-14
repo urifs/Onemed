@@ -13,6 +13,7 @@ import {
   MessageCircle,
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { TurnstileWidget } from '@/components/TurnstileWidget';
 
 const CAPTCHA_DELAY_MS = 3000;
 const SENHA_MINIMA = 8;
@@ -36,6 +37,9 @@ export default function MemberLoginPage() {
   const [captchaChecked, setCaptchaChecked] = useState(false);
   const [captchaVerifying, setCaptchaVerifying] = useState(false);
   const [captchaReady, setCaptchaReady] = useState(false);
+  // Token do CAPTCHA real (Turnstile) — só é exigido pelo servidor quando o
+  // dono provisiona TURNSTILE_SECRET_KEY; até lá viaja vazio e é ignorado.
+  const [turnstileToken, setTurnstileToken] = useState('');
   const captchaTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const campoSenha = useRef<HTMLInputElement | null>(null);
   const { user, loading: authLoading } = useAuth();
@@ -143,7 +147,7 @@ export default function MemberLoginPage() {
     if (senha !== confirmacao) { toast.error('As senhas não são iguais'); return; }
     setLoading(true);
     try {
-      const data = await chamar({ action: 'set-password', email, password: senha });
+      const data = await chamar({ action: 'set-password', email, password: senha, captchaToken: turnstileToken });
       // Senha criada mas sem sessão de volta: não trava ninguém — a pessoa
       // entra pela própria tela de senha com o que acabou de escolher.
       if (!data?.access_token) {
@@ -174,7 +178,7 @@ export default function MemberLoginPage() {
     if (!senha) { toast.error('Digite sua senha'); return; }
     setLoading(true);
     try {
-      const data = await chamar({ action: 'login', email, password: senha });
+      const data = await chamar({ action: 'login', email, password: senha, captchaToken: turnstileToken });
       await entrar(data);
     } catch (err) {
       // O suporte liberou novo cadastro no meio do caminho: leva pra tela de
@@ -360,6 +364,8 @@ export default function MemberLoginPage() {
                 )}
               </div>
 
+              <TurnstileWidget onToken={setTurnstileToken} className="flex justify-center" />
+
               <Button
                 type="submit"
                 disabled={loading}
@@ -403,6 +409,8 @@ export default function MemberLoginPage() {
                   {botaoOlho}
                 </div>
               </div>
+
+              <TurnstileWidget onToken={setTurnstileToken} className="flex justify-center" />
 
               <Button
                 type="submit"

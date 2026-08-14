@@ -145,8 +145,12 @@ serve(async (req) => {
     const action = String(body.action || 'register')
     const cleanEmail = String(body.email || '').toLowerCase().trim()
 
-    const clientIp = (req.headers.get('x-forwarded-for') || '').split(',')[0].trim()
-      || req.headers.get('x-real-ip') || 'unknown'
+    // x-real-ip PRIMEIRO (não forjável). O XFF esquerdo é controlado pelo
+    // cliente — trocá-lo a cada request furava o rate limit por IP (que cunha
+    // cupons de 10% e cria contas Auth confirmadas).
+    const clientIp = req.headers.get('x-real-ip')
+      || (req.headers.get('x-forwarded-for') || '').split(',').map(s => s.trim()).filter(Boolean).pop()
+      || 'unknown'
 
     if (!EMAIL_REGEX.test(cleanEmail)) return json({ error: 'E-mail inválido.' }, 400)
     const password = body.password
