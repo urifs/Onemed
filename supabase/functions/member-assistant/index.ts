@@ -149,6 +149,11 @@ serve(async (req) => {
     const { data: { user }, error: authErr } = await supabase.auth.getUser(jwt)
     if (authErr || !user) return json(req, { error: 'Sessão inválida' }, 401)
 
+    // Guard de tamanho do corpo (o chat manda só texto — 4MB é folga enorme).
+    if (Number(req.headers.get('content-length') || 0) > 4 * 1024 * 1024) {
+      return json(req, { error: 'Requisição muito grande.' }, 413)
+    }
+
     // Limite de IA por plano (decisão do dono, 10/08): Mensal BLOQUEADO;
     // Anual 5/dia; Vitalício 10; Plus 20; Pro/admin sem limite de plano.
     // Resolve o plano ANTES do rate limit (o assistente é uma das ferramentas).

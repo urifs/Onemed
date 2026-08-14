@@ -192,6 +192,13 @@ serve(async (req) => {
     const { data: { user }, error: authErr } = await supabase.auth.getUser(jwt)
     if (authErr || !user) return json(req, { error: 'Sessão inválida' }, 401)
 
+    // Guard de tamanho do corpo (defesa em profundidade): os caps de upload só
+    // valem DEPOIS do req.json(), então um corpo gigante era materializado em
+    // memória antes de ser descartado. 22MB fica acima do teto prático (~16MB).
+    if (Number(req.headers.get('content-length') || 0) > 22 * 1024 * 1024) {
+      return json(req, { error: 'Requisição muito grande. Envie arquivos menores ou o documento em partes.' }, 413)
+    }
+
     // Limite de uso das ferramentas de IA por plano (decisão do dono, 10/08):
     // Mensal BLOQUEADO; Anual 5/dia; Vitalício 10; Plus 20; Pro e admin sem
     // limite de plano — só o teto de segurança contra abuso/script. O

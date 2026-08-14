@@ -57,17 +57,9 @@ serve(async (req) => {
       { auth: { persistSession: false } },
     )
 
-    // Deduplicação por message_id
-    if (messageId) {
-      const { data: dup } = await supabase
-        .from('whatsapp_messages')
-        .select('id')
-        .eq('message_id', messageId)
-        .maybeSingle()
-      if (dup) return new Response('ok', { status: 200 })
-    }
-
-    // Busca configuração
+    // Busca configuração PRIMEIRO — a validação de apikey depende dela, e assim
+    // um flood sem apikey válido custa só 1 SELECT (o de dedup passa a rodar
+    // depois da autenticação, não antes). BAIXO-14.
     const { data: config } = await supabase
       .from('whatsapp_config')
       .select('*')
@@ -83,12 +75,22 @@ serve(async (req) => {
       return new Response('ok', { status: 200 })
     }
 
-    // Valida apikey do webhook contra a config (Evolution API inclui apikey no
-    // body). EXIGE o apikey: antes, omitir o campo pulava a checagem e um
-    // estranho conseguia dirigir a instância pra mandar auto-reply pra números
-    // arbitrários. Ausente = inválido. (200 pra não servir de sonda.)
+    // Valida apikey ANTES de qualquer outro trabalho de banco. EXIGE o apikey:
+    // antes, omitir o campo pulava a checagem e um estranho dirigia a instância
+    // pra mandar auto-reply pra números arbitrários. Ausente = inválido.
+    // (200 pra não servir de sonda.)
     if (body.apikey !== config.evolution_api_key) {
       return new Response('ok', { status: 200 })
+    }
+
+    // Deduplicação por message_id — só depois de a autenticação passar.
+    if (messageId) {
+      const { data: dup } = await supabase
+        .from('whatsapp_messages')
+        .select('id')
+        .eq('message_id', messageId)
+        .maybeSingle()
+      if (dup) return new Response('ok', { status: 200 })
     }
 
     const keyword = (config.trigger_keyword || 'Tenho interesse').toLowerCase().trim()

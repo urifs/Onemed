@@ -221,6 +221,16 @@ serve(async (req) => {
       if (!rate.allowed) {
         return jsonResponse(req, { error: 'Muitas tentativas. Tente novamente em alguns minutos.', retryAfterSeconds: rate.retryAfterSeconds }, 429)
       }
+    } else if (acao === 'status') {
+      // Admin é isento do rate-limit geral (loga o tempo todo durante testes),
+      // MAS o `status` de e-mail admin ganha um teto GENEROSO por IP — senão dá
+      // pra enumerar quais e-mails são do painel sem nenhuma trava (o que
+      // alimenta o brute-force). 60/15min não atrapalha o dono digitando o
+      // próprio e-mail; barra a varredura em massa.
+      const rate = await checkRateLimit(supabase, ip, 'member_status_admin', 60)
+      if (!rate.allowed) {
+        return jsonResponse(req, { error: 'Muitas tentativas. Tente novamente em alguns minutos.', retryAfterSeconds: rate.retryAfterSeconds }, 429)
+      }
     }
 
     if (!activeAccesses?.length && !buyerRows?.length && !isAdminEmail) {
