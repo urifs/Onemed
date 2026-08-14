@@ -3015,6 +3015,69 @@ cursos tocam** pelo caminho do aluno (206 com bytes `ftyp`/`%PDF` de verdade) e 
 MEDCELL abre com 464 aulas, 301h35min e os módulos na ordem certa. Zero `drive_file_id`
 duplicado em qualquer um dos cursos.
 
+---
+
+### 2026-08-14 (sessão remota) — 48 aulas que eram download pela metade (`.crdownload`, `.part`, `.download`, `.temp`)
+
+**Relato:** "arquivos em formato mp4.crdownload não está abrindo, corrija todos".
+
+`.crdownload` é a marca que o Chrome deixa no nome **enquanto o arquivo ainda está
+chegando**. Se ela sobrou, aquele download nunca terminou. A varredura foi além dos 3
+`.crdownload` do relato e pegou todos os marcadores de gerenciador de download — Firefox
+(`.part`), Safari (`.download`), Opera (`.opdownload`), aria2, uTorrent (`.!ut`) e os
+genéricos (`.partial`/`.temp`/`.tmp`): **48 aulas em 9 cursos**.
+
+**A classificação veio de MEDIÇÃO dos bytes, não do nome** — e o nome mente com frequência
+(três arquivos chamados `001 - aula.mp4.part` são MPEG-TS por dentro). O que separa
+aproveitável de morto é o formato:
+
+| formato | corte no fim | por quê |
+|---|---|---|
+| MPEG-TS, MP3 | **toca** | fluxo: não há índice no fim, o player toca até onde o arquivo vai |
+| MP4, PDF, EPUB, ZIP | **não abre** | o índice (`moov`/xref/central directory) vem DEPOIS dos dados — sem a última parte o arquivo inteiro é ilegível, não "curto" |
+
+Prova do MP4 do print: `mdat` declarava **3.360.579.768 bytes** num arquivo de
+**1.979.711.488** — nenhum `moov` no começo nem no fim. Não existe player que abra isso, e
+não há cópia completa em lugar nenhum da biblioteca (procurado por nome na plataforma e na
+pasta do Drive).
+
+**Resultado da varredura:**
+
+| grupo | qtd | destino |
+|---|---|---|
+| `.js.download` (assets de "salvar página como") em `livros-todos-os-5-000` | 25 | removidos — nunca foram material |
+| `.part` de 0 byte (medcel-afya, questões, estrategiamed) | 12 | removidos |
+| `.mp4.temp` do sanarflix, 387 MB só de zeros | 1 | removido — a versão completa (408 MB) **já estava na plataforma** |
+| MP4 truncado sem `moov` (medway 1,89 GB · estrategiamed 59 MB) | 2 | removidos — irrecuperáveis |
+| MPEG-TS (`.ts.part` e `.mp4.part` que é TS por dentro) | 6 | **corrigidos**: `video/mp2t` + `type=video` → tocam via mpegts.js |
+| `.mp3.crdownload` (5m53s, decodifica inteiro) | 2 | **corrigidos**: só o nome |
+
+Os 6 vídeos estavam com `type='other'` e `application/octet-stream`, ou seja, abriam como
+arquivo genérico em vez de vídeo — **era esse o "não abre"** deles. Nenhuma remoção tinha
+progresso de aluno; a única com 4 registros (`001 - aula.mp4`, 126 MB) é uma das corrigidas.
+
+**Correção também na ENTRADA, senão a próxima sincronização traz tudo de volta:**
+`analisarParcial()` em `member-sync-library` (v43 no ar), `scripts/deep-library-sync.mjs` e
+`scripts/sync-drive-extra.mjs` — tira a marca do título (o aluno via "aula.mp4.part" e o
+download saía com um sufixo que o computador dele não sabe abrir), deriva o tipo da extensão
+real por baixo, e **pula** arquivo de 0 byte, asset web e container-com-índice truncado.
+Ressalva de propósito: sufixo sem extensão por baixo ("Neuroanatomia.part") NÃO é tratado como
+marca — ali `.part` é palavra. `src/test/partialDownloads.test.ts` trava a regra com os casos
+reais de produção (125 testes no total).
+
+**Verificado em produção** pelo caminho REAL do aluno (`member-lesson-token` → Worker →
+bytes), com conta de teste criada e apagada na mesma execução: **8/8 corrigidas respondem
+206** — os 2 MP3 com assinatura ID3 (tocam no `<audio>` nativo) e os 6 vídeos com sync byte
+`0x47` em 0 e 188 (MPEG-TS de verdade → mpegts.js). Zero aula com marcador restante.
+
+> Achado colateral, NÃO corrigido (fora do pedido): a plataforma tem **1.977 módulos-folha
+> vazios** de 33.788 (6%) — pastas do Drive que só tinham `.html` ou que estão vazias na
+> origem. O feed já esconde módulo vazio; o `CourseTree` não. Só 1 desses foi criado por esta
+> limpeza (e foi apagado). O resto é anterior e vale uma varredura própria se incomodar.
+
+Mapa completo de restauração (as 48 linhas, com `drive_file_id`, curso, módulo e motivo) em
+**`scripts/downloads-incompletos.json`**.
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management

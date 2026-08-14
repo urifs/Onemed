@@ -38,6 +38,25 @@ const SHORTCUT = 'application/vnd.google-apps.shortcut';
 const EXT_PONTEIRO = /\.gdrive$/i;
 // Stub falso de 55.855 bytes (um SVG com nome de vídeo) já visto no MED 2026.
 const TAMANHO_STUB = 55855;
+// Download que nunca terminou (.crdownload do Chrome, .part do Firefox,
+// .download do Safari, .temp…). Mesma regra da member-sync-library.
+const RE_PARCIAL = /\.(crdownload|crswap|part|partial|filepart|opdownload|aria2|!ut|download|temp|tmp)$/i;
+const EXT_FLUXO = /\.(ts|mp3|mpeg|mpg|mp2|aac|m4a|flac|wav|mkv)$/i;
+const MIME_FLUXO = /^(video\/mp2t|audio\/(mpeg|mp3|aac|flac|wav|x-wav))$/i;
+const EXT_ASSET_WEB = /\.(js|css|json|map|woff2?|ttf|eot|svg|htm|html)$/i;
+
+// Formato de fluxo aguenta corte (toca até onde vai); container com índice no
+// fim (MP4/PDF/EPUB/ZIP) fica ilegível inteiro sem o último pedaço.
+function analisarParcial(nome, mime, size) {
+  const marca = String(nome ?? '').match(RE_PARCIAL);
+  if (!marca) return { pular: false, titulo: nome };
+  const base = String(nome).slice(0, -marca[0].length).replace(/\(\d+\)$/, '');
+  if (!/\.[a-z0-9]{1,5}$/i.test(base)) return { pular: false, titulo: nome };
+  if (Number(size) === 0) return { pular: true, titulo: base };
+  if (EXT_ASSET_WEB.test(base)) return { pular: true, titulo: base };
+  if (!EXT_FLUXO.test(base) && !MIME_FLUXO.test(mime || '')) return { pular: true, titulo: base };
+  return { pular: false, titulo: base };
+}
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -195,12 +214,14 @@ async function varrer(raizId) {
         continue;
       }
       if (EXT_PONTEIRO.test(f.name) || Number(f.size) === TAMANHO_STUB) { ignorados++; continue; }
+      const parcial = analisarParcial(nome, f.mimeType, f.size);
+      if (parcial.pular) { ignorados++; continue; }
       arquivos.push({
-        id: f.id, nome, mimeType: f.mimeType || '',
+        id: f.id, nome: parcial.titulo, mimeType: f.mimeType || '',
         size: f.size ? Number(f.size) : null,
         dur: f.videoMediaMetadata?.durationMillis ? Math.round(Number(f.videoMediaMetadata.durationMillis) / 1000) : null,
         pastaId: atual.id === raizId ? null : atual.id,
-        caminho: atual.caminho ? `${atual.caminho}/${nome}` : nome,
+        caminho: atual.caminho ? `${atual.caminho}/${parcial.titulo}` : parcial.titulo,
       });
     }
   }

@@ -36,6 +36,28 @@ function semEmoji(nome) {
     .trim();
 }
 
+// Mesma regra da member-sync-library para download que ficou pela metade
+// (.crdownload do Chrome, .part do Firefox, .download do Safari, .temp…).
+// Precisa estar nos DOIS caminhos de importação, senão a varredura offline
+// reintroduz o que o edge function deixou de fora.
+const RE_PARCIAL = /\.(crdownload|crswap|part|partial|filepart|opdownload|aria2|!ut|download|temp|tmp)$/i;
+// Formato de fluxo (sem índice no fim) tolera corte; container com índice no
+// fim (MP4/PDF/EPUB/ZIP) fica ilegível inteiro.
+const EXT_FLUXO = /\.(ts|mp3|mpeg|mpg|mp2|aac|m4a|flac|wav|mkv)$/i;
+const MIME_FLUXO = /^(video\/mp2t|audio\/(mpeg|mp3|aac|flac|wav|x-wav))$/i;
+const EXT_ASSET_WEB = /\.(js|css|json|map|woff2?|ttf|eot|svg|htm|html)$/i;
+
+function analisarParcial(nome, mime, size) {
+  const marca = String(nome ?? '').match(RE_PARCIAL);
+  if (!marca) return { pular: false, titulo: nome };
+  const base = String(nome).slice(0, -marca[0].length).replace(/\(\d+\)$/, '');
+  if (!/\.[a-z0-9]{1,5}$/i.test(base)) return { pular: false, titulo: nome };
+  if (Number(size) === 0) return { pular: true, titulo: base };
+  if (EXT_ASSET_WEB.test(base)) return { pular: true, titulo: base };
+  if (!EXT_FLUXO.test(base) && !MIME_FLUXO.test(mime || '')) return { pular: true, titulo: base };
+  return { pular: false, titulo: base };
+}
+
 
 const MODE = (process.argv[2] || 'audit').toLowerCase();
 if (!['audit', 'sync'].includes(MODE)) {
@@ -398,12 +420,14 @@ async function writeCourse(course, folders, files, protectedKeys, courseIndex, u
   for (const f of files) {
     if (f.mimeType === 'text/html') continue; // .html solto do Drive não é aula
     if (/\.gdrive$/i.test(f.name || '')) continue; // ponteiro de 168 bytes, não é mídia
+    const parcial = analisarParcial(f.name || '', f.mimeType, f.size);
+    if (parcial.pular) continue; // download que nunca terminou e não abre
     const base = {
       course_id: courseId,
       module_id: moduleIdByFolder.get(f.parentFolderId) ?? null,
       drive_file_id: f.id,
-      title: f.name,
-      type: lessonType(f.mimeType, f.name),
+      title: parcial.titulo,
+      type: lessonType(f.mimeType, parcial.titulo),
       duration_seconds: f.durationMs ? Math.round(Number(f.durationMs) / 1000) : null,
       size_bytes: f.size ? Number(f.size) : null,
       drive_path: f.parentRelPath || null,
@@ -518,6 +542,9 @@ const missingByCourse = new Map();
 for (const f of readNdjson(path.join(WORK_DIR, 'drive_files.ndjson'))) {
   if (f.mimeType === 'text/html') { skippedHtml++; continue; }
   if (/\.gdrive$/i.test(f.name || '')) { skippedHtml++; continue; } // ponteiro .gdrive, não é mídia
+  // Download incompleto que a importação pula: não pode contar como "faltando
+  // no banco" na conferência, senão o relatório nunca fecharia.
+  if (analisarParcial(f.name || '', f.mimeType, f.size).pular) { skippedHtml++; continue; }
   const key = `${f.rootId}::${f.id}`;
   driveKeys.add(key);
   driveFiles++;

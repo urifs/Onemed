@@ -151,6 +151,49 @@ function lessonType(mimeType: string, name = ''): string {
 // ／ (que substitui a barra proibida em nome de arquivo do Drive) e acentos.
 const RE_EMOJI = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE00}-\u{FE0F}\u{1F3FB}-\u{1F3FF}\u{200B}\u{200D}\u{20E3}]/gu
 
+// ── downloads que nunca terminaram ──────────────────────────────────────────
+// Gerenciador de download deixa um sufixo no nome enquanto o arquivo ainda
+// está chegando: Chrome (.crdownload), Firefox (.part), Safari (.download),
+// Opera (.opdownload), aria2, uTorrent (.!ut) e os genéricos (.partial/.temp).
+// Se o sufixo ficou no nome, aquele download NÃO terminou.
+const RE_PARCIAL = /\.(crdownload|crswap|part|partial|filepart|opdownload|aria2|!ut|download|temp|tmp)$/i
+
+// Formato de FLUXO aguenta corte: o player toca até onde o arquivo vai, porque
+// não existe índice no fim. MPEG-TS e MP3 são assim.
+// Já MP4/PDF/EPUB/ZIP guardam o índice (moov / xref / central directory) DEPOIS
+// dos dados — sem o pedaço final o arquivo inteiro é ilegível, não "curto".
+// Medido na biblioteca: os `.mp3.crdownload` e os `.ts.part` tocam inteiros; os
+// `.mp4.crdownload`/`.mp4.part` estavam sem o átomo `moov` e não abriam em
+// player nenhum.
+const EXT_FLUXO = /\.(ts|mp3|mpeg|mpg|mp2|aac|m4a|flac|wav|mkv)$/i
+const MIME_FLUXO = /^(video\/mp2t|audio\/(mpeg|mp3|aac|flac|wav|x-wav))$/i
+
+// "Salvar página como" do Chrome cria uma pasta de assets (.js.download,
+// .css.download). Nunca é material de estudo.
+const EXT_ASSET_WEB = /\.(js|css|json|map|woff2?|ttf|eot|svg|htm|html)$/i
+
+/**
+ * Decide o que fazer com um arquivo que carrega marca de download incompleto.
+ * Devolve o título já sem a marca quando o arquivo é aproveitável.
+ */
+function analisarParcial(
+  nome: string,
+  mime: string,
+  size: number | null,
+): { pular: boolean; titulo: string } {
+  const marca = nome.match(RE_PARCIAL)
+  if (!marca) return { pular: false, titulo: nome }
+  // `app.js(3).download` — o (n) é o desempate de nome repetido do navegador.
+  const base = nome.slice(0, -marca[0].length).replace(/\(\d+\)$/, '')
+  // Sem extensão por baixo, o sufixo provavelmente faz parte do nome de
+  // verdade ("Neuroanatomia.part"); não é marca de download.
+  if (!/\.[a-z0-9]{1,5}$/i.test(base)) return { pular: false, titulo: nome }
+  if (size === 0) return { pular: true, titulo: base }
+  if (EXT_ASSET_WEB.test(base)) return { pular: true, titulo: base }
+  if (!EXT_FLUXO.test(base) && !MIME_FLUXO.test(mime || '')) return { pular: true, titulo: base }
+  return { pular: false, titulo: base }
+}
+
 function semEmoji(nome: string): string {
   return nome
     .replace(RE_EMOJI, '')
@@ -454,20 +497,28 @@ serve(async (req) => {
             // acessa). Nunca são conteúdo; pula igual ao .html.
             continue
           } else {
-            let type = lessonType(resolved.mimeType, f.name)
+            const tamanho = f.mimeType !== SHORTCUT_MIME && f.size != null ? Number(f.size) : null
+            // Download que ficou pela metade: ou não abre em player nenhum
+            // (MP4 sem o índice do fim, PDF sem xref, arquivo de 0 byte), ou é
+            // asset de página salva. O que sobra é aproveitável e entra com o
+            // nome limpo — senão o aluno via "aula.mp4.part" e o download saía
+            // com um sufixo que o computador dele não sabe abrir.
+            const parcial = analisarParcial(f.name || '', resolved.mimeType, tamanho)
+            if (parcial.pular) continue
+            let type = lessonType(resolved.mimeType, parcial.titulo)
             if (f.videoMediaMetadata) type = 'video'
             lessons.push({
               course_id: row.course_id,
               module_id: row.module_id,
               drive_file_id: resolved.id,
-              title: semEmoji(f.name),
+              title: semEmoji(parcial.titulo),
               type,
               mime_type: resolved.mimeType,
               duration_seconds: f.mimeType !== SHORTCUT_MIME && f.videoMediaMetadata?.durationMillis
                 ? Math.round(Number(f.videoMediaMetadata.durationMillis) / 1000) : null,
               // O tamanho de cada arquivo é gravado justamente para permitir
               // conferir a soma contra o Drive e provar que não faltou nada.
-              size_bytes: f.mimeType !== SHORTCUT_MIME && f.size ? Number(f.size) : null,
+              size_bytes: tamanho,
               drive_path: row.path || null,
               last_seen_at: now,
             })
