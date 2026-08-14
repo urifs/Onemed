@@ -27,6 +27,12 @@ export default function BuyersPage() {
   const [newAmount, setNewAmount] = useState('');
   const [creating, setCreating] = useState(false);
   const [search, setSearch] = useState('');
+  // A lista carrega só os APROVADOS (é dela que sai a receita). Mas o suporte
+  // recebe o comprovante de compras que deram errado também — cancelada,
+  // recusada, estornada —, e era justamente essa que não aparecia em busca
+  // nenhuma. Quando o termo não casa com nenhum aprovado, procura no banco
+  // inteiro e mostra à parte.
+  const [foraDaLista, setForaDaLista] = useState<any[]>([]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -133,11 +139,30 @@ export default function BuyersPage() {
     || String(b.external_reference || '').toLowerCase().includes(search.toLowerCase())
   );
 
+  useEffect(() => {
+    const termo = search.trim();
+    if (!termo || filtered.length > 0) { setForaDaLista([]); return; }
+    const timer = setTimeout(async () => {
+      const { data } = await supabase.from('buyers')
+        .select('*')
+        .or(`payment_id.ilike.%${termo}%,external_reference.ilike.%${termo}%,email.ilike.%${termo}%`)
+        .neq('status', 'approved')
+        .order('created_at', { ascending: false })
+        .limit(20);
+      setForaDaLista(data || []);
+    }, 400);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, filtered.length]);
+
   const statusBadge = (status: string) => {
     const map: Record<string, [string, string]> = {
       approved: ['badge-active', 'Aprovado'],
       pending: ['badge-pending', 'Pendente'],
       cancelled: ['badge-expired', 'Cancelado'],
+      rejected: ['badge-revoked', 'Recusado'],
+      charged_back: ['badge-revoked', 'Estornado'],
+      refunded: ['badge-revoked', 'Reembolsado'],
     };
     const [cls, label] = map[status] || ['badge-revoked', status];
     return <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${cls}`}>{label}</span>;
@@ -282,7 +307,29 @@ export default function BuyersPage() {
                   </Button>
                 </div>
               )}
-              {!loadError && filtered.length === 0 && !loading && (
+              {!loadError && filtered.length === 0 && foraDaLista.length > 0 && (
+                <div className="px-4 py-5 space-y-3">
+                  <p className="text-sm text-foreground">
+                    Nenhum comprador <strong>aprovado</strong> com esse termo. Encontrado em compras não aprovadas:
+                  </p>
+                  {foraDaLista.map(b => (
+                    <div key={b.id} className="rounded-lg border border-border bg-secondary/30 px-4 py-3 text-sm">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <span className="text-foreground font-medium">{b.email}</span>
+                        {statusBadge(b.status)}
+                        <span className="text-muted-foreground">{PLAN_LABELS[b.plan] || b.plan}</span>
+                        <span className="text-foreground">{b.amount ? formatBRL(b.amount) : '—'}</span>
+                        <span className="text-muted-foreground">{formatDateTimeSP(b.created_at)}</span>
+                      </div>
+                      <div className="mt-1 flex flex-wrap gap-x-4 text-xs text-muted-foreground">
+                        <span>Nome: {b.name || '— (não informado nesta compra)'}</span>
+                        {numeroTransacao(b.payment_id) && <span className="font-mono">Transação: {numeroTransacao(b.payment_id)}</span>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {!loadError && filtered.length === 0 && foraDaLista.length === 0 && !loading && (
                 <p className="text-muted-foreground text-center py-12">Nenhum comprador encontrado</p>
               )}
             </div>
