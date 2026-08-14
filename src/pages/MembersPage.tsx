@@ -472,7 +472,7 @@ export default function MembersPage() {
                 <p className="text-sm text-muted-foreground">Membros com acesso</p>
                 <Users className="w-4 h-4 text-primary" />
               </div>
-              <p className="font-secondary text-2xl font-bold text-foreground">{loading ? '—' : members.length}</p>
+              <p className="font-secondary text-2xl font-bold text-foreground">{loading || loadError ? '—' : members.length}</p>
             </CardContent>
           </Card>
           <Card className="bg-background-paper border-border">
@@ -481,7 +481,7 @@ export default function MembersPage() {
                 <p className="text-sm text-muted-foreground">Cursos ativos</p>
                 <BookOpen className="w-4 h-4 text-primary" />
               </div>
-              <p className="font-secondary text-2xl font-bold text-foreground">{loading ? '—' : courseStats?.active ?? 0}</p>
+              <p className="font-secondary text-2xl font-bold text-foreground">{loading || loadError ? '—' : courseStats?.active ?? 0}</p>
             </CardContent>
           </Card>
           <Card className="bg-background-paper border-border">
@@ -490,7 +490,7 @@ export default function MembersPage() {
                 <p className="text-sm text-muted-foreground">Categorias</p>
                 <GraduationCap className="w-4 h-4 text-primary" />
               </div>
-              <p className="font-secondary text-2xl font-bold text-foreground">{loading ? '—' : courseStats?.categories ?? 0}</p>
+              <p className="font-secondary text-2xl font-bold text-foreground">{loading || loadError ? '—' : courseStats?.categories ?? 0}</p>
               <Link to="/admin/drive" className="text-xs text-primary hover:underline inline-flex items-center gap-1 mt-1">
                 <FolderOpen className="w-3 h-3" /> Sincronizar biblioteca
               </Link>
