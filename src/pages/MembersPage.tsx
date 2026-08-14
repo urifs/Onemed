@@ -324,7 +324,7 @@ export default function MembersPage() {
     setLoading(true);
     setLoadError(false);
     try {
-      const [manualAccesses, buyers, courses, credenciais] = await Promise.all([
+      const buscarTudo = () => Promise.all([
         fetchAllRows((f, t) =>
           supabase.from('accesses').select('id, email, access_type, status, granted_at')
             .eq('status', 'active').in('access_type', ['paid', 'lifetime', 'lifetime_plus', 'lifetime_pro', 'annual', 'monthly']).range(f, t)
@@ -335,6 +335,22 @@ export default function MembersPage() {
         fetchAllRows((f, t) => supabase.from('courses').select('category, active').range(f, t)),
         fetchAllRows((f, t) => supabase.from('member_credentials').select('email').range(f, t)),
       ]);
+
+      // Leitura NEGADA pela RLS volta como lista VAZIA com HTTP 200 — não como
+      // erro. Sem esta checagem a tela mostrava "0 membros / 0 cursos" como se
+      // a base estivesse vazia, sem nenhum aviso (visto uma vez com a conta
+      // visualizadora). `courses` é o sentinela honesto: a plataforma tem
+      // centenas de cursos e todo perfil do painel enxerga a tabela, então
+      // zero ali significa consulta não autorizada — sessão ainda não
+      // aplicada, papel não reconhecido —, nunca base vazia.
+      let [manualAccesses, buyers, courses, credenciais] = await buscarTudo();
+      if ((courses || []).length === 0) {
+        await new Promise(r => setTimeout(r, 1200));
+        [manualAccesses, buyers, courses, credenciais] = await buscarTudo();
+        if ((courses || []).length === 0) {
+          throw new Error('A consulta não foi autorizada — sua sessão pode ter expirado.');
+        }
+      }
       const comSenha = new Set((credenciais || []).map((c: any) => String(c.email).toLowerCase()));
 
       // Buyers take priority when the same email appears in both lists —
@@ -357,8 +373,8 @@ export default function MembersPage() {
         active: activeCourses.length,
         categories: new Set(activeCourses.map((c: any) => c.category)).size,
       });
-    } catch {
-      toast.error('Erro ao carregar membros');
+    } catch (err: any) {
+      toast.error(err?.message || 'Erro ao carregar membros');
       setLoadError(true);
     } finally {
       setLoading(false);
