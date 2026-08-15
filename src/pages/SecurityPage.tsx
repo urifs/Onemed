@@ -15,7 +15,10 @@ import {
   ChevronDown, ChevronRight, Users, Radar, Ticket,
 } from 'lucide-react';
 
-const RANGES = [{ label: '6h', h: 6 }, { label: '24h', h: 24 }, { label: '7 dias', h: 168 }];
+const RANGES = [
+  { label: '30 min', h: 0.5 }, { label: '1 h', h: 1 },
+  { label: '6h', h: 6 }, { label: '24h', h: 24 }, { label: '7 dias', h: 168 },
+];
 
 const NIVEL: Record<string, { txt: string; cor: string; bg: string; barra: string; Icon: typeof Shield }> = {
   critico: { txt: 'CRÍTICO', cor: 'text-red-600 dark:text-red-500', bg: 'bg-red-500/10 border-red-500/30', barra: 'bg-red-500', Icon: ShieldAlert },
@@ -82,6 +85,7 @@ export default function SecurityPage() {
   }
 
   const serie = (data?.serie ?? []).map(s => ({ ...s, h: new Date(s.hora).getHours() + 'h' }));
+  const rangeLabel = RANGES.find(r => r.h === hours)?.label ?? `${hours}h`;
 
   return (
     <AdminLayout>
@@ -160,7 +164,7 @@ export default function SecurityPage() {
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
           <Card className="bg-background-paper border-border overflow-hidden lg:col-span-3">
             <CardHeader className="pb-2 border-b border-border"><CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <MapPin className="w-4 h-4 text-primary" /> Mapa de logins · {data?.localizacoes.length ?? 0} pontos
+              <MapPin className="w-4 h-4 text-primary" /> Mapa de logins · {rangeLabel} · {data?.localizacoes.length ?? 0} pontos
             </CardTitle></CardHeader>
             <CardContent className="p-0"><SecurityMap locais={data?.localizacoes ?? []} /></CardContent>
           </Card>

@@ -14,14 +14,17 @@
 -- de ataque e vira alerta ALTO na hora.
 -- ─────────────────────────────────────────────────────────────────────────────
 
-CREATE OR REPLACE FUNCTION public.admin_security_overview(_hours integer DEFAULT 24)
+-- Assinatura mudou de integer → numeric (pra aceitar 0.5h = 30 min no seletor).
+DROP FUNCTION IF EXISTS public.admin_security_overview(integer);
+
+CREATE OR REPLACE FUNCTION public.admin_security_overview(_hours numeric DEFAULT 24)
 RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
 AS $$
 DECLARE
   _res jsonb;
   _dominios_teste text := '(@example\.com|@emalupe\.com|\.invalid|\.test$|@onemed-qa\.local|@test\.)';
-  _win timestamptz := now() - make_interval(hours => _hours);
+  _win timestamptz := now() - (_hours * interval '1 hour');
   _score int := 0;
 BEGIN
   IF NOT has_role(auth.uid(), 'admin'::app_role) THEN
@@ -164,6 +167,7 @@ BEGIN
         FROM member_locations ml
         LEFT JOIN sess s ON s.uid = ml.user_id
         LEFT JOIN ip_contas ic ON ic.ip = ml.ip
+        -- Mapa segue o período selecionado (_win) — 30 min a 7 dias.
         WHERE ml.updated_at > _win AND ml.latitude IS NOT NULL
         ORDER BY ml.updated_at DESC
         LIMIT 400
@@ -270,5 +274,5 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.admin_security_overview(integer) FROM public, anon;
-GRANT EXECUTE ON FUNCTION public.admin_security_overview(integer) TO authenticated;
+REVOKE ALL ON FUNCTION public.admin_security_overview(numeric) FROM public, anon;
+GRANT EXECUTE ON FUNCTION public.admin_security_overview(numeric) TO authenticated;
