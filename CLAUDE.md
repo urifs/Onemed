@@ -3212,6 +3212,39 @@ seção **"Origens dos ataques"** (IPs ofensores, expansível). Nível de ameaç
 sóbria (sem gauge neon), KPIs em cards limpos, série horária em `AreaChart` (recharts). RPC
 `admin_security_overview` ganhou `ataques_por_tipo` e `origens` (do `rate_limits`).
 
+---
+
+### 2026-08-15 (sessão remota) — CORREÇÃO da forense: o "pool AWS" era a borda do Supabase
+
+Ao implementar o bloqueio do "pool de IPs AWS" pedido pelo dono, um echo de debug temporário
+no `member-auth-request` revelou que a atribuição anterior estava ERRADA:
+- `x-real-ip` chega **null** (o Supabase remove).
+- O `x-forwarded-for` traz a **borda AWS do PRÓPRIO Supabase** na ponta direita
+  (ex.: `160.79.106.139, 160.79.106.139, 99.82.165.74` — cliente à esquerda, infra à direita).
+- O código do rate-limit usa `.pop()` (ponta direita) → registra a **infra do Supabase**
+  (`13.248.114.x`, `99.82.16x`, `3.2.51.x`), não o cliente.
+
+Ou seja: as "~39 faixas AWS rotacionadas pelo atacante" eram os **servidores de borda do
+Supabase** (que roda em AWS sa-east-1). O `member_login`/`member_status`/`member_set_password`
+bucketados nesses IPs eram tráfego MISTO (inclusive membros legítimos do mutirão de re-login),
+não uma botnet. **O IP real do cliente é o `cf-connecting-ip`** (Cloudflare na frente do Supabase,
+não forjável).
+
+> 🔴 **Incidente:** o primeiro bloqueio (por `13.248.114.`/`99.82.16`/`3.2.51.`) batia no `ip` do
+> rate-limit = infra do Supabase → **bloqueava TODO login de membro** por ~5 min (v31–v33). Revertido
+> na v34: o bloqueio passou a casar contra `cf-connecting-ip` e mira só o IP REAL do atacante,
+> **179.144.7.50** (Vivo, Campina Grande-PB — confirmado nos logs REST com UA `node`, que injetou os
+> trials/buyers falsos). Verificado que tráfego não-atacante volta a passar (404 normal, não 403).
+
+**Lições:**
+1. Neste projeto, IP do cliente = **`cf-connecting-ip`** (ou XFF **esquerdo**), NUNCA `x-real-ip`
+   (null) nem XFF `.pop()` (infra do Supabase). O rate-limit por IP do `member-auth-request` está
+   efetivamente keyado na infra — **candidato a corrigir** pra `cf-connecting-ip`.
+2. Bloqueio de IP em edge function tem que casar contra o IP REAL, e ser testado provando que
+   tráfego legítimo PASSA — não só que o alvo é barrado.
+3. `179.144.7.50` foi a origem HUMANA real; a última atividade dele foi ~02:39 UTC. A "atividade
+   AWS contínua" depois disso era membro legítimo, não o atacante.
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
