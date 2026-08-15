@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useDeferredValue } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { formatDateTimeSP, todayStartISO, fetchAllRows } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Users, Phone, Mail, Clock, Search, Filter, RefreshCw, MessageCircle, UserCheck, CheckCircle2, XCircle, Send, AlertTriangle } from 'lucide-react';
+import { Users, Clock, Search, Filter, RefreshCw, MessageCircle, UserCheck, Send, AlertTriangle } from 'lucide-react';
 import { WhatsAppLink } from '@/components/WhatsAppLink';
 
 export default function TrialUsersPage() {
@@ -21,32 +21,22 @@ export default function TrialUsersPage() {
   const [syncingManychat, setSyncingManychat] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [waSentPhones, setWaSentPhones] = useState<Set<string>>(new Set());
-  const [waFailedPhones, setWaFailedPhones] = useState<Set<string>>(new Set());
+  // Quantas linhas de fato renderizar. A lista tem milhares de trials e cada
+  // linha monta um menu Radix (WhatsApp) — jogar tudo no DOM de uma vez
+  // engasgava o render e o clique. Renderiza em lotes com "Mostrar mais".
+  const [visiveis, setVisiveis] = useState(100);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     setLoadError(false);
     try {
-      const [trialsData, buyersData, waSends] = await Promise.all([
+      const [trialsData, buyersData] = await Promise.all([
         fetchAllRows((f, t) => supabase.from('accesses').select('*').eq('access_type', 'trial').order('created_at', { ascending: false }).range(f, t)),
         fetchAllRows((f, t) => supabase.from('buyers').select('email').eq('status', 'approved').range(f, t)),
-        fetchAllRows((f, t) => supabase.from('whatsapp_sends').select('phone, status').range(f, t)).catch(() => []),
       ]);
       const buyerEmails = new Set((buyersData || []).map((b: any) => b.email.toLowerCase()));
       const all = (trialsData || []).filter(t => !buyerEmails.has(t.email.toLowerCase()));
       setTrials(all);
-
-      // Montar sets de telefones que receberam/falharam WA
-      const sent = new Set<string>();
-      const failed = new Set<string>();
-      for (const s of (waSends || [])) {
-        const digits = (s.phone || '').replace(/\D/g, '');
-        if (s.status === 'sent') sent.add(digits);
-        else if (s.status === 'failed') failed.add(digits);
-      }
-      setWaSentPhones(sent);
-      setWaFailedPhones(failed);
 
       const todayISO = todayStartISO();
       const today = all.filter(t => t.created_at >= todayISO);
@@ -126,13 +116,22 @@ export default function TrialUsersPage() {
   // segundo estado: dobrava a memória e renderizava duas vezes por tecla).
   // Busca em minúsculas dos dois lados — "Joao@" digitado com maiúscula
   // voltava zero resultados.
+  // Busca deferida: digitar não trava a UI mesmo com milhares de linhas — o
+  // React mantém a lista antiga responsiva enquanto recalcula o filtro.
+  const buscaDeferida = useDeferredValue(search);
   const filtered = useMemo(() => {
     let result = trials;
-    const term = search.toLowerCase();
+    const term = buscaDeferida.toLowerCase();
     if (term) result = result.filter(t => t.email.toLowerCase().includes(term) || (t.whatsapp || '').includes(term));
     if (statusFilter !== 'all') result = result.filter(t => t.status === statusFilter);
     return result;
-  }, [trials, search, statusFilter]);
+  }, [trials, buscaDeferida, statusFilter]);
+
+  // Ao mudar busca/filtro, volta pro 1º lote (senão "Mostrar mais" acumulava
+  // e a lista podia ficar gigante de novo depois de umas buscas).
+  useEffect(() => { setVisiveis(100); }, [buscaDeferida, statusFilter]);
+
+  const visiveisLista = useMemo(() => filtered.slice(0, visiveis), [filtered, visiveis]);
 
   const statusBadge = (status: string) => {
     const map: Record<string, [string, string]> = {
@@ -222,41 +221,19 @@ export default function TrialUsersPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-border">
-                    {['Email', 'WhatsApp', 'WA Enviado', 'Status', 'Data', 'Expiração'].map(h => (
+                    {['Email', 'WhatsApp', 'Status', 'Data', 'Expiração'].map(h => (
                       <th key={h} className="text-left px-4 py-3 text-xs font-mono uppercase text-muted-foreground">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map(trial => (
+                  {visiveisLista.map(trial => (
                     <tr key={trial.id} className="border-b border-border/40 hover:bg-secondary/30 transition-colors">
                       <td className="px-4 py-3 text-sm text-foreground">{trial.email}</td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">
                         {trial.whatsapp ? (
                           <WhatsAppLink phone={trial.whatsapp} showIcon className="text-accent-success" />
                         ) : '—'}
-                      </td>
-                      <td className="px-4 py-3">
-                        {(() => {
-                          if (!trial.whatsapp) return <span className="text-muted-foreground text-xs">—</span>;
-                          const digits = trial.whatsapp.replace(/\D/g, '');
-                          const normalized = digits.startsWith('55') ? digits : '55' + digits;
-                          if (waSentPhones.has(normalized) || waSentPhones.has(digits)) {
-                            return (
-                              <span className="inline-flex items-center gap-1 text-green-400 text-xs font-medium">
-                                <CheckCircle2 className="w-3.5 h-3.5" /> Enviado
-                              </span>
-                            );
-                          }
-                          if (waFailedPhones.has(normalized) || waFailedPhones.has(digits)) {
-                            return (
-                              <span className="inline-flex items-center gap-1 text-red-400 text-xs font-medium">
-                                <XCircle className="w-3.5 h-3.5" /> Falhou
-                              </span>
-                            );
-                          }
-                          return <span className="text-muted-foreground text-xs">Não enviado</span>;
-                        })()}
                       </td>
                       <td className="px-4 py-3">{statusBadge(trial.status)}</td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">{formatDateTimeSP(trial.created_at)}</td>
@@ -278,6 +255,19 @@ export default function TrialUsersPage() {
                 <p className="text-muted-foreground text-center py-12">Nenhum usuário trial encontrado</p>
               )}
             </div>
+            {!loading && filtered.length > 0 && (
+              <div className="flex items-center justify-between gap-3 flex-wrap px-4 py-3 border-t border-border">
+                <span className="text-xs text-muted-foreground">
+                  Mostrando {Math.min(visiveis, filtered.length)} de {filtered.length}
+                </span>
+                {visiveis < filtered.length && (
+                  <Button variant="outline" size="sm" onClick={() => setVisiveis(v => v + 200)}
+                    className="border-border text-muted-foreground hover:text-foreground">
+                    Mostrar mais ({filtered.length - visiveis} restantes)
+                  </Button>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
