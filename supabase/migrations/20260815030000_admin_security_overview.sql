@@ -218,6 +218,42 @@ BEGIN
       FROM user_roles ur JOIN auth.users u ON u.id=ur.user_id
     ), '[]'::jsonb),
 
+    -- ── TIPOS DE ATAQUE (superfície atacada, do rate_limits) ──────────────────
+    'ataques_por_tipo', COALESCE((
+      SELECT jsonb_agg(jsonb_build_object(
+        'acao', action, 'tentativas', total_tent, 'ocorrencias', ocor,
+        'ips', ips, 'ultimo', ultimo) ORDER BY total_tent DESC)
+      FROM (
+        SELECT action,
+          sum(attempts)::int AS total_tent,
+          count(*)::int AS ocor,
+          count(DISTINCT split_part(identifier, ':', 1)) FILTER (WHERE identifier ~ '^\d+\.\d+\.\d+\.\d+') AS ips,
+          max(window_start) AS ultimo
+        FROM rate_limits
+        WHERE window_start > _win
+        GROUP BY action
+      ) t
+    ), '[]'::jsonb),
+
+    -- ── ORIGENS (IPs que bateram em rate-limit) ──────────────────────────────
+    'origens', COALESCE((
+      SELECT jsonb_agg(jsonb_build_object(
+        'ip', ip, 'tentativas', tent, 'acoes', acoes, 'ocorrencias', ocor, 'ultimo', ultimo)
+        ORDER BY tent DESC)
+      FROM (
+        SELECT split_part(identifier, ':', 1) AS ip,
+          sum(attempts)::int AS tent,
+          count(*)::int AS ocor,
+          array_agg(DISTINCT action) AS acoes,
+          max(window_start) AS ultimo
+        FROM rate_limits
+        WHERE window_start > _win AND identifier ~ '^\d+\.\d+\.\d+\.\d+'
+        GROUP BY split_part(identifier, ':', 1)
+        ORDER BY sum(attempts) DESC
+        LIMIT 50
+      ) t
+    ), '[]'::jsonb),
+
     -- ── SÉRIE HORÁRIA (últimas 24h) ───────────────────────────────────────────
     'serie', COALESCE((
       SELECT jsonb_agg(jsonb_build_object(

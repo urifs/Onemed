@@ -32,6 +32,28 @@ export interface SecRate {
 }
 export interface SecRole { email: string; role: string; criado: string; ultimo_login: string | null; }
 export interface SecSeriePonto { hora: string; signups: number; trials: number; buyers: number; }
+export interface SecAtaque { acao: string; tentativas: number; ocorrencias: number; ips: number; ultimo: string; }
+export interface SecOrigem { ip: string; tentativas: number; acoes: string[]; ocorrencias: number; ultimo: string; }
+
+// Mapa de cada ação de rate-limit para um tipo de ataque legível.
+export const ATAQUE_INFO: Record<string, { label: string; categoria: string; descricao: string }> = {
+  member_status: { label: 'Enumeração de contas', categoria: 'Reconhecimento', descricao: 'Sondagem de quais e-mails têm conta e se já cadastraram senha — passo anterior a um ataque de senha.' },
+  member_login: { label: 'Tentativa de login', categoria: 'Autenticação', descricao: 'Tentativas de entrar na área de membros com e-mail e senha.' },
+  member_set_password: { label: 'Definição de senha', categoria: 'Sequestro de conta', descricao: 'Tentativas de cadastrar senha em contas — vetor de tomada de conta durante a janela de re-login.' },
+  create_payment: { label: 'Abuso de pagamento', categoria: 'Financeiro', descricao: 'Geração de cobranças / preferências de pagamento em massa.' },
+  create_trial: { label: 'Criação de trial', categoria: 'Trial', descricao: 'Criação de acessos de teste gratuitos.' },
+  trial_per_ip: { label: 'Flood de trial (mesmo IP)', categoria: 'Trial', descricao: 'Muitos trials disparados do mesmo endereço.' },
+  affiliate_register: { label: 'Cadastro de afiliado', categoria: 'Afiliados', descricao: 'Registro de contas no programa de afiliados (usado para gerar cupons).' },
+  affiliate_login: { label: 'Login de afiliado', categoria: 'Afiliados', descricao: 'Tentativas de login no painel de afiliado.' },
+  flashcards: { label: 'Abuso de IA — flashcards', categoria: 'IA', descricao: 'Geração de flashcards por IA em volume (custo por chamada).' },
+  questions: { label: 'Abuso de IA — questões', categoria: 'IA', descricao: 'Geração de bancos de questões por IA em volume.' },
+  study_plan: { label: 'Abuso de IA — cronograma', categoria: 'IA', descricao: 'Geração de cronogramas por IA em volume.' },
+  assistant: { label: 'Abuso de IA — assistente', categoria: 'IA', descricao: 'Uso intenso do assistente de IA.' },
+};
+
+export function ataqueInfo(acao: string) {
+  return ATAQUE_INFO[acao] ?? { label: acao, categoria: 'Outro', descricao: 'Ação monitorada por rate-limit.' };
+}
 
 export interface SecMetricas {
   trials_1h: number; trials_24h: number;
@@ -56,6 +78,8 @@ export interface SecurityOverview {
   rate_limits: SecRate[];
   papeis: SecRole[];
   serie: SecSeriePonto[];
+  ataques_por_tipo: SecAtaque[];
+  origens: SecOrigem[];
 }
 
 export type NivelAmeaca = 'ok' | 'baixo' | 'medio' | 'alto' | 'critico';
