@@ -27,6 +27,7 @@ import {
   FolderUp,
   UserCog,
   Lock,
+  ShieldAlert,
 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -56,6 +57,7 @@ const navItems = [
   { path: '/admin/database', label: 'Database', icon: Database },
   // Gestão das contas do painel — só admin de verdade vê (o item some pro
   // visualizador; a RPC e a Edge Function também recusam por trás).
+  { path: '/admin/seguranca', label: 'Segurança', icon: ShieldAlert, adminOnly: true },
   { path: '/admin/contas', label: 'Contas do Painel', icon: UserCog, adminOnly: true },
 ];
 

@@ -59,6 +59,7 @@ import FlashcardsAdminPage from "./pages/FlashcardsAdminPage";
 import AcervoAdminPage from "./pages/AcervoAdminPage";
 import AnnouncementsPage from "./pages/AnnouncementsPage";
 import PanelAccountsPage from "./pages/PanelAccountsPage";
+import SecurityPage from "./pages/SecurityPage";
 import DatabasePage from "./pages/DatabasePage";
 import EmailCampaignPage from "./pages/EmailCampaignPage";
 import SMSPage from "./pages/SMSPage";
@@ -248,6 +249,7 @@ const App = () => (
             <Route path="/admin/flashcards" element={<ProtectedRoute><FlashcardsAdminPage /></ProtectedRoute>} />
             <Route path="/admin/acervo" element={<ProtectedRoute><AcervoAdminPage /></ProtectedRoute>} />
             <Route path="/admin/contas" element={<ProtectedRoute><PanelAccountsPage /></ProtectedRoute>} />
+            <Route path="/admin/seguranca" element={<ProtectedRoute><SecurityPage /></ProtectedRoute>} />
             <Route path="/admin/avisos" element={<ProtectedRoute><AnnouncementsPage /></ProtectedRoute>} />
             <Route path="/admin/database" element={<ProtectedRoute><DatabasePage /></ProtectedRoute>} />
             <Route path="/admin/email-campaign" element={<ProtectedRoute><EmailCampaignPage /></ProtectedRoute>} />
