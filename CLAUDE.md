@@ -3245,6 +3245,14 @@ não forjável).
 3. `179.144.7.50` foi a origem HUMANA real; a última atividade dele foi ~02:39 UTC. A "atividade
    AWS contínua" depois disso era membro legítimo, não o atacante.
 
+**Rate-limit corrigido (v35 / create-trial v72):** `member-auth-request` passou a derivar o IP de
+`cf-connecting-ip` (Cloudflare, não forjável) em vez de `x-forwarded-for.pop()` (que pegava a infra
+AWS do Supabase) — agora o rate-limit por IP, a captura de localização e o bloqueio usam o IP REAL do
+cliente. `create-trial-access` também passou a preferir `cf-connecting-ip` (antes usava XFF esquerdo,
+que é forjável). Verificado: nova chamada de `member_status` gravou o IP real do cliente
+(`160.79.106.136`) em `rate_limits`, não mais `99.82.x`. **Regra deste projeto: IP do cliente =
+`cf-connecting-ip`; jamais `x-real-ip` (null) ou XFF `.pop()` (infra).**
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management

@@ -141,27 +141,25 @@ serve(async (req) => {
 
     if (!EMAIL_REGEX.test(email)) return jsonResponse(req, { error: 'Email inválido' }, 400)
 
-    // x-real-ip PRIMEIRO: é setado pela plataforma e não é forjável. O
-    // x-forwarded-for esquerdo é a parte controlada pelo cliente — um
-    // atacante mandando um XFF diferente por requisição zerava o rate limit
-    // por IP (5/15min), liberando enumeração/abuso do login sem trava.
-    const ip = req.headers.get('x-real-ip')
-      || (req.headers.get('x-forwarded-for') || '').split(',').map(s => s.trim()).filter(Boolean).pop()
+    // IP REAL do cliente — usado no rate-limit, na captura de localização e no
+    // bloqueio, TODOS de uma vez.
+    //
+    // Medido neste projeto (15/08): o Supabase REMOVE o x-real-ip (chega null)
+    // e o x-forwarded-for traz a borda AWS do PRÓPRIO Supabase na ponta direita
+    // (ex.: "<cliente>, <cliente>, 99.82.165.74"). Então o `.pop()` do XFF, que
+    // esta função usava, pegava a INFRA do Supabase — e o rate-limit por IP, a
+    // localização e o bloqueio ficavam todos keyados na infra (efetivamente
+    // "global", sem trava real por cliente).
+    //
+    // O cf-connecting-ip é posto pelo Cloudflare (que fica NA FRENTE do
+    // Supabase) e NÃO é forjável pelo cliente — é a fonte correta. Sem cair no
+    // XFF esquerdo (que É forjável) nem no `.pop()` (que é a infra).
+    const ip = req.headers.get('cf-connecting-ip')
+      || req.headers.get('x-real-ip')
       || 'unknown'
 
-    // IP REAL do cliente: neste projeto o Supabase remove o x-real-ip (vem
-    // null) e o x-forwarded-for tem a borda AWS do PRÓPRIO Supabase na ponta
-    // direita — então `.pop()` do XFF pega a infra, não o cliente. O IP real
-    // é o cf-connecting-ip (posto pelo Cloudflare que fica na frente do
-    // Supabase, não forjável), com o XFF esquerdo como reserva.
-    const ipCliente = req.headers.get('cf-connecting-ip')
-      || (req.headers.get('x-forwarded-for') || '').split(',').map(s => s.trim()).filter(Boolean)[0]
-      || ip
-
-    // Bloqueio do atacante — feito pelo IP REAL do cliente (cf-connecting-ip),
-    // nunca pelo `ip` do rate-limit (que aponta pra infra do Supabase e
-    // pegaria todo mundo). Resposta genérica pra não revelar o motivo.
-    if (ipBloqueado(ipCliente)) {
+    // Bloqueio do atacante (IP real do cliente). Resposta genérica.
+    if (ipBloqueado(ip)) {
       return jsonResponse(req, { error: 'Acesso indisponível a partir desta rede.' }, 403)
     }
 

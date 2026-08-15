@@ -217,8 +217,14 @@ serve(async (req) => {
     const normalizedEmail = String(email).toLowerCase().trim()
 
     // ── Rate limit por IP ──
-    const clientIp = (req.headers.get('x-forwarded-for') || '').split(',')[0].trim()
-      || req.headers.get('x-real-ip') || 'unknown'
+    // cf-connecting-ip (Cloudflare, na frente do Supabase) é o IP REAL do
+    // cliente e NÃO é forjável. O XFF esquerdo (usado antes) pega o cliente
+    // certo, mas o cliente pode forjá-lo pra driblar o limite; fica só de
+    // reserva. Nunca usar XFF `.pop()`/x-real-ip aqui: neste projeto apontam
+    // pra borda AWS do próprio Supabase.
+    const clientIp = req.headers.get('cf-connecting-ip')
+      || (req.headers.get('x-forwarded-for') || '').split(',')[0].trim()
+      || 'unknown'
     try {
       const rl = await checkRateLimit(supabase, clientIp)
       if (!rl.allowed) {
