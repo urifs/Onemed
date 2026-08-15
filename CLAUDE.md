@@ -3078,6 +3078,63 @@ bytes), com conta de teste criada e apagada na mesma execução: **8/8 corrigida
 Mapa completo de restauração (as 48 linhas, com `drive_file_id`, curso, módulo e motivo) em
 **`scripts/downloads-incompletos.json`**.
 
+---
+
+### 2026-08-15 (sessão remota) — pentest ao vivo: dois furos de RLS de INSERT público fechados
+
+**Relato:** o dono viu, em tempo real, "compras fake" e trials estranhos aparecendo no
+painel (`PENTEST FAKE SALE`, `Vitalício Pro R$ 0,01`, trials que não expiravam).
+
+**O essencial ficou seguro — nada de acesso pago nem admin.** Confirmado por sondagem:
+- **Nenhuma conta admin/viewer nova** (só `ur1fs@proton.me` admin e `medestudosplusmedicina`
+  viewer, ambas antigas).
+- **Nenhum acesso pago fraudado**: toda "compra fake" ficou `access_granted=false` e ZERO
+  linha `accesses` `lifetime/paid` para e-mail de ataque. O webhook (que só aprova depois de
+  conferir o pagamento no Mercado Pago) e a checagem de tipo do RLS seguraram.
+- **`affiliate_sales = 0`**: nenhuma comissão fake registrada.
+
+**Dois furos REAIS de RLS, os dois em políticas de INSERT `public`** (reproduzidos com a
+`sb_publishable` real + `Prefer: return=minimal` — com `return=representation` o RETURNING
+mascara o resultado com um 42501 de SELECT e engana o teste):
+
+1. **`accesses` "Public can insert trial access"** — só exigia `access_type='trial'` e
+   `status='active'`, SEM limite de `expires_at`. Um POST anônimo com `expires_at=2099` criava
+   um trial que **nunca expira = acesso grátis vitalício ao conteúdo** (o `member-lesson-token`
+   libera trial ativo cujo prazo não passou). Também era a causa do **"os trials não estão
+   expirando"**: o cron marca expirado quando `expires_at <= now()`, e 2099 nunca chega (o cron
+   em si está saudável — `*/5`, ativo, zero trials vencidos-mas-ativos).
+   **Corrigido: política REMOVIDA de vez.** O fluxo real de trial é 100% via
+   `create-trial-access`, que usa `SERVICE_ROLE_KEY` (ignora RLS) e fixa `expires_at` no
+   servidor; nenhum código do navegador insere trial direto. Remover fecha o "free-forever" E o
+   flood de trials curtos que driblava o rate limit da função.
+
+2. **`buyers` "Public can insert buyers"** — só exigia `access_granted=false` e
+   `email_sent=false`, deixando o cliente gravar `status='approved'` e `amount=99999` →
+   **poluía a receita do painel**. O checkout real (CheckoutPage/AccountMenu/UpgradePlanModal)
+   SEMPRE insere `status='pending'`; a aprovação só vem do `mp-webhook`.
+   **Corrigido: CHECK agora exige `status='pending'`** e valor sano (`0..100000`).
+
+Migration `20260815020000_lockdown_public_inserts.sql` (aplicada em produção). Admin/viewer e as
+Edge Functions (service role) têm políticas próprias e não foram afetados.
+
+**Verificado em produção depois da correção:** navegador não cria mais NENHUM acesso (trial
+free-forever, trial curto e lifetime todos 401), buyer `approved`/`99999`/valor gigante todos
+401; e os fluxos legítimos seguem: `create-trial-access` cria trial de 10min (não 2099) e o
+insert de buyer `pending` do checkout responde 201.
+
+> ⚠️ **Só anon direto estava aberto ao ataque — não é que "REST está liberado".** As chaves
+> legadas (`eyJ` anon/service) estão DESABILITADAS neste projeto; o navegador usa
+> `sb_publishable_...`. Sondagem de RLS TEM que usar a publishable com header `apikey` sozinho
+> (sem `Authorization: Bearer`) e `Prefer: return=minimal`, senão o resultado engana.
+
+**Limpeza (transação única, só domínios de teste reservados + prefixo `pentest`):** 40
+`accesses`, 55 `buyers`, 8 `coupons` (`PENTEST*`/`TAKEOVER*`/`TESTEPENTE*`), 2 `affiliates`
+(squatting via alias — comportamento esperado, não compromete conta real), 6 `auth.users` e a
+credencial que o atacante cadastrou em `onemedcursos@gmail.com` (essa conta não tem acesso nem
+papel — logar nela não dá nada; a senha foi removida por precaução). Varredura final: zero
+anomalia (nenhum `approved` sem grant, nenhum trial com prazo > 2h, nenhum acesso pago a
+domínio de teste).
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
