@@ -189,6 +189,7 @@ redeploy das 3 functions e conferir o valor no eszip da função NO AR.
 | `/admin/coupons` | `CouponsPage.tsx` | Protegido | CRUD de cupons |
 | `/admin/drive` | `DriveSettings.tsx` | Protegido | Configurar Google Drive |
 | `/admin/database` | `DatabasePage.tsx` | Protegido | Visualizador do banco |
+| `/admin/seguranca` | `SecurityPage.tsx` | Protegido (admin) | Central de Segurança: radar, mapa, medidores, alertas |
 
 ---
 
@@ -3134,6 +3135,48 @@ credencial que o atacante cadastrou em `onemedcursos@gmail.com` (essa conta não
 papel — logar nela não dá nada; a senha foi removida por precaução). Varredura final: zero
 anomalia (nenhum `approved` sem grant, nenhum trial com prazo > 2h, nenhum acesso pago a
 domínio de teste).
+
+---
+
+### 2026-08-15 (sessão remota) — Central de Segurança no painel admin
+
+Depois do pentest, o dono pediu um painel completo para monitorar qualquer ataque.
+Nova página **`/admin/seguranca`** ("Segurança" no menu, **adminOnly** — visualizador é
+barrado tanto na nav quanto na página e na RPC).
+
+**Backend — uma única RPC** `admin_security_overview(_hours)` (migration
+`20260815030000`, SECURITY DEFINER, gate `has_role('admin')`, EXECUTE só authenticated)
+agrega TODO o sinal num JSONB, pra ser uma ida só ao banco:
+- **medidores**: cadastros 1h/24h, trials 1h/24h, sessões ativas/total, compras
+  pendentes/aprovadas 24h, receita 24h, logins falhos 1h (soma de `rate_limits` de ação
+  de login), credenciais 1h, cupons ativos, afiliados 24h, IPs multi-conta, admins/viewers.
+- **nível de ameaça** (calculado no front, `src/lib/security.ts` — módulo PURO, testável
+  sem o client): alta=25, média=8, baixa=3, saturado em 100; qualquer alerta de
+  ASSINATURA de ataque (domínio de teste / venda fake / trial eterno / novo papel) crava
+  no mínimo 70 (crítico).
+- **alertas priorizados**: e-mail de domínio de teste reservado (assinatura de pentest),
+  compra `approved` sem `access_granted` (venda fake), trial ativo com `expires_at > 2h`,
+  IP com ≥3 contas, pico de cadastros/trials na última hora, `rate_limit` estourado, e
+  **novo papel de painel concedido nas últimas 24h** (vigília de privilégio).
+- **listas**: IPs suspeitos (contas por IP), localizações pro mapa/radar (últimos logins
+  com lat/lng, online, contas no IP), cadastros e compras recentes com flag de suspeita,
+  rate-limits quentes, papéis do painel, e **série horária** (cadastros/trials/compras) das
+  últimas 24h.
+
+**Frontend** (`SecurityPage.tsx` + `hooks/useSecurityOverview.ts` + `components/admin/`):
+medidor de ameaça (gauge SVG), **ThreatRadar** (radar animado ao vivo, cada blip é um login
+posicionado por ângulo estável do e-mail+IP e raio pela recência; vermelho=IP suspeito,
+âmbar=online), **SecurityMap** (Leaflet/CARTO, pontos coloridos por risco), grade de
+medidores, painel de alertas por severidade, série horária em barras, e tabelas de
+IPs/rate-limits/cadastros/compras + contas do painel. **Auto-refresh a cada 20s** (react-query
+`refetchInterval`) com indicador "ao vivo"; seletor 6h/24h/7d.
+
+**Verificação:** RPC testada em produção (retorna dados reais completos), 130 testes verdes
+(5 novos de `computeThreat`), `typecheck:refs` limpo, build ok, e smoke no navegador em
+produção — `/admin/seguranca` sobe sem NENHUM erro de runtime (redireciona pro login por não
+estar autenticado; como a página é import estático, isso já prova que o módulo carrega).
+Não deu pra testar a renderização AUTENTICADA (criar admin de teste foi barrado pelo
+classificador, e não tenho a senha do admin real) — o dono confere abrindo o menu "Segurança".
 
 ## Meta Ads — Contexto Geral
 
