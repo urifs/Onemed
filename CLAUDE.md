@@ -3178,6 +3178,40 @@ estar autenticado; como a página é import estático, isso já prova que o mód
 Não deu pra testar a renderização AUTENTICADA (criar admin de teste foi barrado pelo
 classificador, e não tenho a senha do admin real) — o dono confere abrindo o menu "Segurança".
 
+---
+
+### 2026-08-15 (sessão remota) — análise forense do ataque + Central de Segurança redesenhada
+
+**Forense (relatório entregue ao dono como HTML).** Reconstruído dos logs de Edge/Postgres
+(`analytics/endpoints/logs.all`), da tabela `rate_limits` (não foi deletada — guarda os IPs) e de
+geolocalização por IP:
+- **Origem humana:** `179.144.7.50` — Telefônica/Vivo, Campina Grande-PB. **Ferramenta:** script
+  **Node.js** (`User-Agent: node`, 162 escritas) + `curl/8.21.0`/`8.5.0` (sondagem manual). Não é
+  scanner de prateleira.
+- **Evasão:** pool de **~39 IPs AWS** (`13.248.114.x`, `99.82.163–167.x`, `3.2.51.18` — SP/Frankfurt/
+  Washington) batendo o trio `member_login`/`member_status`/`member_set_password`, cada IP com poucas
+  tentativas pra não estourar o rate-limit por IP (rotação clássica).
+- **Janela vulnerável real: 01:17–01:35 UTC (18 min)** — 33 trials (incl. `expires_at=2099`) + 48
+  buyers falsos criados. Depois do lockdown (~01:58) **100% viraram 401/403**; última tentativa 02:30:40.
+- **Confirmado zero:** acesso pago fraudado, admin novo, comissão de afiliado, dado vazado (SELECT
+  anônimo retorna vazio).
+- ⚠️ **Ao atribuir IP, excluir `160.79.106.128` (Anthropic — é o próprio agente testando/respondendo) e
+  IPs de ISP BR legítimos (Claro `187.21.16.132`).** O `rate_limits` mistura atacante e usuário real; os
+  TOP ofensores por tentativas é que são o atacante.
+- **Lição:** para forense neste projeto, as fontes que sobrevivem à limpeza são `rate_limits` (IPs+ações)
+  e os **logs de analytics** (UA/status/path). `auth.audit_log_entries` está VAZIA (GoTrue não retém).
+  O event_message do `edge_logs` já vem como `MÉTODO | STATUS | URL | UA`; IP real nos headers
+  (`x_real_ip`/`cf_connecting_ip`), acessível via UNNEST de `metadata`.
+
+**Central de Segurança redesenhada** (o dono achou a 1ª versão "amadora, parecendo jogo de criança"):
+radar REMOVIDO; **alertas ao lado do mapa na mesma linha** (grid 3/2), com scroll e cada alerta
+**expansível**; nova seção **"Tipos de ataque detectados"** (cada ação de `rate_limits` vira um tipo
+legível — enumeração de contas, definição de senha/sequestro, abuso de pagamento, flood de trial, abuso
+de IA, afiliados — com categoria/tentativas/IPs/último, expansível pra descrição + IPs de origem); nova
+seção **"Origens dos ataques"** (IPs ofensores, expansível). Nível de ameaça virou faixa horizontal
+sóbria (sem gauge neon), KPIs em cards limpos, série horária em `AreaChart` (recharts). RPC
+`admin_security_overview` ganhou `ataques_por_tipo` e `origens` (do `rate_limits`).
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
