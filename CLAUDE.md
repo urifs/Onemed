@@ -3286,6 +3286,29 @@ o código por força-bruta dos 6 dígitos (1M SHA-256, <1s) simulando o aluno co
 
 > Pendência antiga "não existe esqueci minha senha por e-mail" (documentada em 13/08) — **RESOLVIDA**.
 
+---
+
+### 2026-08-15 (sessão remota) — trial ignora a restrição de curso por plano (vê TODO o acervo)
+
+**Pedido/confirmação do dono:** o gerenciamento de cursos por plano (`/admin/conteudos`,
+`courses.required_plans`) escondia o curso restrito de quem não tem o plano exigido — e isso
+INCLUÍA o trial (`access_type='trial'` nunca está entre os planos pagos). Ou seja, do jeito que
+estava, restringir um curso a "Vitalício Plus pra cima" também sumia o curso pro trial. O dono
+quer o contrário: **trial ativo vê TODOS os cursos** (o teste grátis existe pra mostrar o acervo
+inteiro e atrair a compra).
+
+**Correção (migration `20260815070000_trial_bypass_course_restrictions.sql`):** bypass de trial nos
+DOIS pontos de enforcement — `blocked_course_ids()` (lista/busca/página do curso, via RLS) e
+`can_access_course_email()` (streaming, member-lesson-token/stream-file). "Trial ativo" =
+`accesses` com `access_type='trial'`, `status='active'` e `expires_at` no futuro; trial VENCIDO
+não ganha o bypass.
+
+**Verificado em produção** (curso restrito temporário + e-mails de teste, tudo revertido depois):
+`can_access_course_email` → trial **true**, lifetime_plus **true**, monthly **false**;
+`blocked_course_ids` → trial **0 bloqueados**, monthly **1 bloqueado**. Ou seja, o trial vê tudo e
+a restrição segue valendo normalmente para o pagante sem o plano certo. Correção 100% de banco —
+nenhum deploy de frontend/função necessário.
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
