@@ -18,7 +18,7 @@ import type { Database } from '@/integrations/supabase/types';
 
 type Lesson = Database['public']['Tables']['lessons']['Row'];
 
-const PLAYBACK_RATES = [1, 1.5, 2, 3];
+const PLAYBACK_RATES = [0.5, 0.7, 1, 1.5, 2, 3];
 const PLAYBACK_RATE_STORAGE_KEY = 'onemed_playback_rate';
 
 // Baixar vale para QUALQUER aula ou arquivo, vídeo incluso — só imprimir é
