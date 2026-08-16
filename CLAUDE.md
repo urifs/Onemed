@@ -3253,6 +3253,39 @@ que é forjável). Verificado: nova chamada de `member_status` gravou o IP real 
 (`160.79.106.136`) em `rate_limits`, não mais `99.82.x`. **Regra deste projeto: IP do cliente =
 `cf-connecting-ip`; jamais `x-real-ip` (null) ou XFF `.pop()` (infra).**
 
+---
+
+### 2026-08-15 (sessão remota) — recuperação de senha por código no e-mail (autoatendimento)
+
+**Pedido:** o "esqueci a senha" atual (aluno chama o suporte no WhatsApp, admin libera novo
+cadastro em `/admin/membros`) estava sobrecarregando o suporte. Trocado por fluxo automático.
+
+**Fluxo:** tela de senha → "Esqueci minha senha" → `request-reset` gera código de **6 dígitos**,
+guarda o **SHA-256** (nunca o código em claro), manda por e-mail (Resend, remetente
+`contato@onemedcursos.com.br`, **15 min** de validade) → aluno cola o código → `verify-reset-code`
+confere (**máx. 6 tentativas**, anti-força-bruta) → 2 campos de nova senha → `reset-password` troca
+a senha e **já loga direto**.
+
+| Arquivo | Mudança |
+|---|---|
+| `supabase/migrations/20260815060000_password_reset_codes.sql` | Tabela `password_reset_codes` (PK email, code_hash, expires_at, attempts, used — só service role) + `purge_expired_reset_codes()` |
+| `supabase/functions/member-auth-request/index.ts` (v36) | 3 ações novas: `request-reset` / `verify-reset-code` / `reset-password`; `enviarEmailCodigo` (Resend), `gerarCodigo`, `sha256`, `validarCodigoReset`; rate-limit por IP (`reset_request` 6/h, `reset_verify` 25/h) **E por e-mail** (`reset_email` 5/h — evita bombardear um aluno de códigos) |
+| `src/pages/MemberLoginPage.tsx` | Etapas `codigo` e `nova-senha`; "Esqueci minha senha" substitui o link de WhatsApp do suporte na tela de senha; campo numérico de 6 dígitos + 2 campos de nova senha com conferência ao vivo |
+
+**Diferente do `set-password` (uma vez só):** o reset PODE trocar uma senha existente — o código
+no e-mail é a prova de posse. **Conta do PAINEL fica de fora** (mesma trava do `admin-reset`): a
+senha dela é a do `/admin/login` e o autoatendimento trancaria o painel — redireciona pra Contas
+do Painel (testado: admin e viewer → 409 sem enviar e-mail).
+
+**Verificado em produção** (contas de teste criadas e apagadas): backend — pedir código (Resend
+aceitou), código errado 400 + incrementa tentativas, código certo 200, redefinir loga direto,
+senha nova entra / senha velha 401, código não reusa (409). **Navegador (Playwright), jornada
+completa:** e-mail → "Esqueci minha senha" → digitar código → validar → nova senha → **redirecionado
+logado pra /membros**, 0 erros de runtime. Como o código é guardado só em hash, o teste recuperou
+o código por força-bruta dos 6 dígitos (1M SHA-256, <1s) simulando o aluno copiando do e-mail.
+
+> Pendência antiga "não existe esqueci minha senha por e-mail" (documentada em 13/08) — **RESOLVIDA**.
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
