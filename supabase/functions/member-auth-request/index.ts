@@ -355,7 +355,12 @@ serve(async (req) => {
         ...(activeAccesses || []).filter(a => valido(a.expires_at)).map(a => limiteDe(a.access_type)),
         ...(buyerRows || []).map(b => limiteDe(b.plan)),
       ]
-      const maxSessions = planLimits.length > 0 ? Math.max(...planLimits) : DEFAULT_DEVICE_LIMIT
+      const baseSessions = planLimits.length > 0 ? Math.max(...planLimits) : DEFAULT_DEVICE_LIMIT
+      // Telas EXTRAS compradas (upsell no checkout ou avulso no perfil) somam
+      // ao limite do plano — é o que faz a tela a mais valer de verdade.
+      const { data: addon } = await supabase.from('member_screen_addons')
+        .select('extra_screens').eq('email', email).maybeSingle()
+      const maxSessions = baseSessions + (addon?.extra_screens || 0)
       const { error: limitErr } = await supabase.rpc('enforce_session_limit', { _user_id: userId, _max_sessions: maxSessions })
       if (limitErr) console.error('enforce_session_limit error', limitErr)
 

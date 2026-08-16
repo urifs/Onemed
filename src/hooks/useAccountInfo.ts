@@ -11,6 +11,8 @@ export interface AccountInfo {
   amountPaid: number | null;
   whatsapp: string | null;
   grantedAt: string | null;
+  extraScreens?: number;
+  deviceLimit?: number | null;
 }
 
 /**

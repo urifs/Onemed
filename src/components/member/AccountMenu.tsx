@@ -9,10 +9,11 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { User, LogOut, MessageCircle, RefreshCw, Loader2, Save, Smartphone, Crown, FileText } from 'lucide-react';
+import { User, LogOut, MessageCircle, RefreshCw, Loader2, Save, Smartphone, Crown, FileText, MonitorSmartphone } from 'lucide-react';
 import { useAccountInfo } from '@/hooks/useAccountInfo';
 import { AddToHomeScreenModal } from './AddToHomeScreenModal';
 import { UpgradePlanModal, upgradeTargetsFor } from './UpgradePlanModal';
+import { BuyScreensModal } from './BuyScreensModal';
 import { PlanDetailsModal } from './PlanDetailsModal';
 
 const SUPPORT_PHONE = '5563999191551';
@@ -34,6 +35,7 @@ export function AccountMenu() {
   const [renewing, setRenewing] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const [screensOpen, setScreensOpen] = useState(false);
   const [planDetailsOpen, setPlanDetailsOpen] = useState(false);
 
   useEffect(() => {
@@ -223,6 +225,17 @@ export function AccountMenu() {
                 </Button>
               )}
 
+              {!info?.isAdmin && !isTrial && info?.plan && (
+                <Button
+                  onClick={() => { setOpen(false); setScreensOpen(true); }}
+                  size="sm"
+                  variant="outline"
+                  className="w-full mt-2 border-border text-foreground hover:bg-secondary gap-1.5"
+                >
+                  <MonitorSmartphone className="w-3.5 h-3.5" /> Comprar Telas Simultâneas
+                </Button>
+              )}
+
               {!info?.isAdmin && !info?.isLifetime && !isTrial && (
                 <Button
                   onClick={handleRenew}
@@ -270,6 +283,15 @@ export function AccountMenu() {
         amountPaid={info.amountPaid ?? 0}
         userEmail={info.email}
         userName={name}
+      />
+    )}
+    {info?.plan && (
+      <BuyScreensModal
+        open={screensOpen}
+        onOpenChange={setScreensOpen}
+        userEmail={info.email}
+        userName={name}
+        currentLimit={info.deviceLimit ?? null}
       />
     )}
     {info?.plan && (

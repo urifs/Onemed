@@ -658,6 +658,28 @@ serve(async (req) => {
         return new Response('ok', { headers: getCorsHeaders(req) })
       }
 
+      // Telas simultâneas extras compradas nesta transação (upsell no checkout
+      // OU compra avulsa no perfil). A flag atômica acima garante que este
+      // bloco roda UMA vez por venda, então o add_screen_addon (que ACUMULA)
+      // não corre risco de dobrar.
+      const telasExtras = Number(buyer.extra_screens || 0)
+
+      // Compra AVULSA de telas: não concede plano nenhum, só soma as telas.
+      if (buyer.plan === 'screens') {
+        if (telasExtras > 0) {
+          const { error: scrErr } = await supabase.rpc('add_screen_addon', { _email: buyer.email, _n: telasExtras })
+          if (scrErr) {
+            // Falhou: libera a flag e força o retry do MP (o add_screen_addon é
+            // atômico, então re-rodar aplica exatamente uma vez).
+            console.error('add_screen_addon (avulso):', scrErr.message)
+            await supabase.from('buyers').update({ access_granted: false }).eq('id', buyer.id)
+            return new Response('retry', { status: 500, headers: getCorsHeaders(req) })
+          }
+          console.log('Telas extras (avulso) aplicadas:', buyer.email, '+', telasExtras)
+        }
+        return new Response('ok', { headers: getCorsHeaders(req) })
+      }
+
       // Annual/monthly plans expire out; lifetime (e as camadas Plus/Pro)
       // nunca expira. Isso também alimenta o "Renovar Assinatura" do painel
       // da conta — sem expiry, uma compra anual parecia idêntica a vitalícia.
@@ -717,6 +739,19 @@ serve(async (req) => {
         }
         console.log('Access granted for:', buyer.email)
         if (BACKUP_FOLDER_PLANS.has(accessType)) await shareBackupFolder(supabase, buyer.email)
+      }
+
+      // Telas extras compradas JUNTO do plano (upsell do checkout). Aplicadas
+      // DEPOIS do grant e como último passo crítico: se falhar, libera a flag e
+      // força o retry (nada depois disto reseta a flag, então não dobra).
+      if (telasExtras > 0) {
+        const { error: scrErr } = await supabase.rpc('add_screen_addon', { _email: buyer.email, _n: telasExtras })
+        if (scrErr) {
+          console.error('add_screen_addon (upsell):', scrErr.message)
+          await supabase.from('buyers').update({ access_granted: false }).eq('id', buyer.id)
+          return new Response('retry', { status: 500, headers: getCorsHeaders(req) })
+        }
+        console.log('Telas extras (upsell) aplicadas:', buyer.email, '+', telasExtras)
       }
 
       // Send Meta CAPI Purchase event (server-side — independente de cookies do browser)

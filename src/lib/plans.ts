@@ -117,3 +117,8 @@ export const PLAN_DEVICE_LIMITS: Record<string, number> = {
   lifetime_pro: 6,
 };
 export const DEFAULT_DEVICE_LIMIT = 2;
+
+// Telas simultâneas EXTRAS: compráveis de 1 a 10, no checkout (upsell) ou
+// avulsas no perfil. Preço por tela — espelha mp-create-payment (quem cobra).
+export const EXTRA_SCREEN_PRICE = 117.98;
+export const MAX_EXTRA_SCREENS = 10;
