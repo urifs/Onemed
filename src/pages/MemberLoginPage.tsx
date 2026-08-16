@@ -10,23 +10,25 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Stethoscope, Mail, ArrowRight, ArrowLeft, KeyRound, Loader2, ShieldCheck, Lock, Eye, EyeOff, AlertCircle,
-  MessageCircle,
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 
 const CAPTCHA_DELAY_MS = 3000;
 const SENHA_MINIMA = 8;
 
-// A tela tem três momentos: identificar o e-mail, e então CADASTRAR a senha
-// (primeira vez) ou DIGITAR a senha (já cadastrada). Quem é que decide qual dos
-// dois é o servidor — o cliente nunca adivinha a partir do e-mail.
-type Etapa = 'email' | 'criar' | 'senha';
+// Momentos da tela: identificar o e-mail, e então CADASTRAR a senha (primeira
+// vez) ou DIGITAR a senha (já cadastrada). Quem decide qual dos dois é o
+// servidor — o cliente nunca adivinha a partir do e-mail.
+// Recuperação de senha (autoatendimento): 'codigo' (digitar o código do e-mail)
+// → 'nova-senha' (cadastrar a nova senha).
+type Etapa = 'email' | 'criar' | 'senha' | 'codigo' | 'nova-senha';
 
 export default function MemberLoginPage() {
   const [etapa, setEtapa] = useState<Etapa>('email');
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [confirmacao, setConfirmacao] = useState('');
+  const [codigo, setCodigo] = useState('');
   const [verSenha, setVerSenha] = useState(false);
   // De onde veio a senha desta conta: 'membro' (cadastrou aqui), 'afiliado' ou
   // 'painel'. Muda a instrução da tela — quem já tinha senha em outro painel
@@ -191,11 +193,76 @@ export default function MemberLoginPage() {
     setLoading(false);
   };
 
+  // ── recuperação de senha (autoatendimento) ──────────────────────────────
+  // Da tela de senha: pede o código, que vai pro e-mail, e avança pra digitar.
+  const pedirCodigo = async () => {
+    if (!email) { toast.error('Informe seu email'); return; }
+    setLoading(true);
+    try {
+      await chamar({ action: 'request-reset', email });
+      toast.success('Código enviado! Confira seu e-mail (e o spam).');
+      setCodigo('');
+      setSenha('');
+      setConfirmacao('');
+      setEtapa('codigo');
+    } catch (err) {
+      avisarErro(err, 'Não foi possível enviar o código');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const validarCodigo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cod = codigo.trim();
+    if (!/^\d{6}$/.test(cod)) { toast.error('Digite o código de 6 dígitos'); return; }
+    setLoading(true);
+    try {
+      await chamar({ action: 'verify-reset-code', email, code: cod });
+      setSenha('');
+      setConfirmacao('');
+      setEtapa('nova-senha');
+    } catch (err) {
+      avisarErro(err, 'Código inválido');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const redefinirSenha = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (senha.length < SENHA_MINIMA) { toast.error(`A senha precisa ter pelo menos ${SENHA_MINIMA} caracteres`); return; }
+    if (senha !== confirmacao) { toast.error('As senhas não são iguais'); return; }
+    setLoading(true);
+    try {
+      const data = await chamar({ action: 'reset-password', email, code: codigo.trim(), password: senha });
+      if (!data?.access_token) {
+        toast.success('Senha redefinida! Agora entre com ela.');
+        setEtapa('senha');
+        setSenha('');
+        setConfirmacao('');
+        setCodigo('');
+        setLoading(false);
+        return;
+      }
+      toast.success('Senha redefinida!');
+      await entrar(data);
+    } catch (err) {
+      // Código expirou/queimou entre a validação e o envio: volta pra digitar.
+      if (/expirou|já foi usado|novo código|Nenhum código/i.test(String((err as Error)?.message || ''))) {
+        setEtapa('codigo');
+      }
+      avisarErro(err, 'Não foi possível redefinir a senha');
+      setLoading(false);
+    }
+  };
+
   const voltarParaEmail = () => {
     setEtapa('email');
     setOrigemSenha(null);
     setSenha('');
     setConfirmacao('');
+    setCodigo('');
   };
 
   const botaoOlho = (
@@ -229,14 +296,22 @@ export default function MemberLoginPage() {
               precisava ler o corpo pra descobrir que era um cadastro. */}
           <div className="text-center mb-8">
             <h1 className="font-secondary text-2xl font-bold text-foreground mb-2">
-              {etapa === 'criar' ? 'Cadastrar senha' : etapa === 'senha' ? 'Bem-vindo de volta' : 'Área de Membros'}
+              {etapa === 'criar' ? 'Cadastrar senha'
+                : etapa === 'senha' ? 'Bem-vindo de volta'
+                : etapa === 'codigo' ? 'Recuperar senha'
+                : etapa === 'nova-senha' ? 'Nova senha'
+                : 'Área de Membros'}
             </h1>
             <p className="text-muted-foreground text-sm">
               {etapa === 'criar'
                 ? 'Você ainda não tem senha. Crie a sua para entrar.'
                 : etapa === 'senha'
                   ? 'Entre com a senha que você cadastrou'
-                  : 'Acesse seus cursos, aulas e materiais'}
+                  : etapa === 'codigo'
+                    ? 'Digite o código que enviamos para o seu e-mail'
+                    : etapa === 'nova-senha'
+                      ? 'Escolha uma nova senha para a sua conta'
+                      : 'Acesse seus cursos, aulas e materiais'}
             </p>
           </div>
 
@@ -412,17 +487,123 @@ export default function MemberLoginPage() {
                 {loading ? girando : <>Entrar <ArrowRight className="w-4 h-4" /></>}
               </Button>
 
-              <p className="text-center text-xs text-muted-foreground">
-                Esqueceu a senha? Fale com o suporte pelo WhatsApp para liberar um novo cadastro.
-              </p>
-              <a
-                href={`https://wa.me/5563999191551?text=${encodeURIComponent(`Olá! Preciso liberar um novo cadastro de senha na plataforma. Meu email: ${email}`)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full inline-flex items-center justify-center gap-2 h-10 rounded-lg border border-border text-sm text-foreground hover:bg-secondary transition-colors"
+              <button
+                type="button"
+                onClick={pedirCodigo}
+                disabled={loading}
+                className="w-full text-center text-sm text-primary hover:underline disabled:opacity-60"
               >
-                <MessageCircle className="w-4 h-4" /> Falar com o suporte
-              </a>
+                Esqueci minha senha
+              </button>
+            </form>
+          )}
+
+          {etapa === 'codigo' && (
+            <form onSubmit={validarCodigo} className="space-y-5">
+              <div className="rounded-lg border border-primary/30 bg-primary/10 px-4 py-3">
+                <p className="text-sm font-medium text-foreground mb-1">Enviamos um código para o seu e-mail</p>
+                <p className="text-xs text-muted-foreground">
+                  Copie o código de 6 dígitos que chegou em <span className="text-foreground">{email}</span> e cole
+                  abaixo. Ele vale por 15 minutos. Não esqueça de olhar o spam.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-foreground">Código de verificação</Label>
+                <div className="relative">
+                  <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    ref={campoSenha}
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    value={codigo}
+                    onChange={e => setCodigo(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="000000"
+                    className="pl-10 h-12 bg-secondary border-border text-foreground text-center text-lg tracking-[0.5em] placeholder:tracking-normal placeholder:text-muted-foreground focus:border-primary/50"
+                  />
+                </div>
+              </div>
+
+              <Button
+                type="submit"
+                disabled={loading || codigo.length !== 6}
+                className="w-full h-12 bg-primary hover:bg-primary-hover text-primary-foreground font-semibold gap-2"
+              >
+                {loading ? girando : <>Validar código <ArrowRight className="w-4 h-4" /></>}
+              </Button>
+
+              <button
+                type="button"
+                onClick={pedirCodigo}
+                disabled={loading}
+                className="w-full text-center text-xs text-muted-foreground hover:text-foreground disabled:opacity-60"
+              >
+                Não recebeu? Reenviar código
+              </button>
+            </form>
+          )}
+
+          {etapa === 'nova-senha' && (
+            <form onSubmit={redefinirSenha} className="space-y-5">
+              <div className="rounded-lg border border-accent-success/30 bg-accent-success/10 px-4 py-3">
+                <p className="text-sm font-medium text-foreground flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-accent-success" /> Código confirmado
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">Agora é só escolher a sua nova senha.</p>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-foreground">Nova senha</Label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    type={verSenha ? 'text' : 'password'}
+                    value={senha}
+                    onChange={e => setSenha(e.target.value)}
+                    placeholder={`Mínimo de ${SENHA_MINIMA} caracteres`}
+                    autoComplete="new-password"
+                    className="pl-10 pr-10 h-12 bg-secondary border-border text-foreground placeholder:text-muted-foreground focus:border-primary/50"
+                  />
+                  {botaoOlho}
+                </div>
+                {senha.length > 0 && senha.length < SENHA_MINIMA && (
+                  <p className="text-xs text-accent-warning">
+                    Faltam {SENHA_MINIMA - senha.length} caractere{SENHA_MINIMA - senha.length > 1 ? 's' : ''}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-foreground">Confirmar nova senha</Label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    type={verSenha ? 'text' : 'password'}
+                    value={confirmacao}
+                    onChange={e => setConfirmacao(e.target.value)}
+                    placeholder="Digite a mesma senha de novo"
+                    autoComplete="new-password"
+                    className="pl-10 pr-10 h-12 bg-secondary border-border text-foreground placeholder:text-muted-foreground focus:border-primary/50"
+                  />
+                  {confirmacao.length > 0 && (
+                    senha === confirmacao
+                      ? <ShieldCheck className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-accent-success" />
+                      : <AlertCircle className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-accent-warning" />
+                  )}
+                </div>
+                {confirmacao.length > 0 && senha !== confirmacao && (
+                  <p className="text-xs text-accent-warning">As senhas não são iguais</p>
+                )}
+              </div>
+
+              <Button
+                type="submit"
+                disabled={loading}
+                className="w-full h-12 bg-primary hover:bg-primary-hover text-primary-foreground font-semibold gap-2"
+              >
+                {loading ? girando : <>Redefinir senha <ArrowRight className="w-4 h-4" /></>}
+              </Button>
             </form>
           )}
         </div>

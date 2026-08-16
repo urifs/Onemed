@@ -9,13 +9,22 @@
 // pelo próprio aluno na primeira vez que ele for entrar.
 //
 // Ações:
-//   status        { email }                    → { hasPassword }
-//   set-password  { email, password }          → cadastra a senha e já entra
-//   login         { email, password }          → entra
-//   admin-reset   { email }  (JWT de admin)    → libera novo cadastro de senha
+//   status             { email }                     → { hasPassword }
+//   set-password       { email, password }           → cadastra a senha e já entra
+//   login              { email, password }           → entra
+//   admin-reset        { email }  (JWT de admin)     → libera novo cadastro de senha
+//   request-reset      { email }                     → gera código e manda por e-mail
+//   verify-reset-code  { email, code }               → confere o código (sem consumir)
+//   reset-password     { email, code, password }     → troca a senha e já entra
 //
 // Todas passam pelo mesmo portão de sempre: e-mail válido, rate limit por IP e
 // acesso ativo (trial/compra/admin). O que muda é só como a sessão é obtida.
+//
+// Recuperação de senha (request-reset → verify-reset-code → reset-password) é o
+// AUTOATENDIMENTO que substitui o suporte manual: código de 6 dígitos no e-mail
+// (Resend), 15 min de validade, hash guardado (nunca o código em claro),
+// máx. 6 tentativas de digitação. Diferente do set-password (uma vez só), o
+// reset PODE trocar uma senha existente — o código no e-mail é a prova de posse.
 // ─────────────────────────────────────────────────────────────────────────────
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -59,6 +68,57 @@ const PLAN_DEVICE_LIMITS: Record<string, number> = {
 }
 const DEFAULT_DEVICE_LIMIT = 2
 
+const SITE_NAME = 'OneMed'
+const FROM_EMAIL = 'contato@onemedcursos.com.br'
+const RESET_CODE_TTL_MIN = 15      // validade do código
+const RESET_MAX_ATTEMPTS = 6       // tentativas de digitar o código antes de invalidar
+
+// SHA-256 hex — guardamos o hash do código, nunca o código em claro.
+async function sha256(texto: string): Promise<string> {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(texto))
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+// 6 dígitos, com zero à esquerda. Aleatório de fonte criptográfica.
+function gerarCodigo(): string {
+  return String(crypto.getRandomValues(new Uint32Array(1))[0] % 1_000_000).padStart(6, '0')
+}
+
+// E-mail do código via Resend (mesmo remetente verificado das outras funções).
+async function enviarEmailCodigo(email: string, codigo: string): Promise<boolean> {
+  const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
+  if (!RESEND_API_KEY) { console.error('RESEND_API_KEY ausente'); return false }
+  const html = `
+  <div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;color:#1a1a1a">
+    <h1 style="font-size:20px;margin:0 0 8px">Recuperação de senha</h1>
+    <p style="color:#555;font-size:14px;margin:0 0 24px">Use o código abaixo para cadastrar uma nova senha na sua conta OneMed.</p>
+    <div style="background:#f4f4f5;border:1px solid #e4e4e7;border-radius:12px;padding:20px;text-align:center;margin:0 0 24px">
+      <div style="font-size:34px;font-weight:700;letter-spacing:10px;color:#111">${codigo}</div>
+    </div>
+    <p style="color:#555;font-size:13px;margin:0 0 6px">O código vale por <strong>${RESET_CODE_TTL_MIN} minutos</strong>. Digite-o na tela de recuperação de senha da plataforma.</p>
+    <p style="color:#999;font-size:12px;margin:16px 0 0">Se você não pediu isso, ignore este e-mail — sua senha continua a mesma.</p>
+    <hr style="border:none;border-top:1px solid #eee;margin:24px 0">
+    <p style="color:#bbb;font-size:11px;margin:0">OneMed · onemedcursos.com.br</p>
+  </div>`
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${RESEND_API_KEY}` },
+      body: JSON.stringify({
+        from: `${SITE_NAME} <${FROM_EMAIL}>`,
+        to: [email],
+        subject: `Seu código de recuperação: ${codigo}`,
+        html,
+      }),
+    })
+    if (!res.ok) { console.error('Resend erro', await res.text().catch(() => '')); return false }
+    return true
+  } catch (err) {
+    console.error('enviarEmailCodigo', err)
+    return false
+  }
+}
+
 function getCorsHeaders(req: Request) {
   const origin = req.headers.get('origin') || ''
   const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0]
@@ -98,6 +158,29 @@ async function captureMemberLocation(supabase: ReturnType<typeof createClient>, 
   } catch (err) {
     console.warn('captureMemberLocation falhou', err)
   }
+}
+
+// Confere o código de recuperação SEM consumi-lo. Incrementa `attempts` a cada
+// código errado (trava força-bruta dos 6 dígitos). Usado por verify-reset-code
+// (só valida) e por reset-password (valida antes de trocar a senha).
+async function validarCodigoReset(
+  supabase: ReturnType<typeof createClient>,
+  email: string,
+  codigo: string,
+): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
+  if (!/^\d{6}$/.test(codigo)) return { ok: false, error: 'Código inválido.', status: 400 }
+  const { data: rec } = await supabase.from('password_reset_codes')
+    .select('code_hash, expires_at, attempts, used').eq('email', email).maybeSingle()
+  if (!rec) return { ok: false, error: 'Nenhum código pendente para este e-mail. Peça um novo.', status: 400 }
+  if (rec.used) return { ok: false, error: 'Este código já foi usado. Peça um novo.', status: 400 }
+  if (new Date(rec.expires_at as string).getTime() < Date.now()) return { ok: false, error: 'O código expirou. Peça um novo.', status: 400 }
+  if ((rec.attempts as number) >= RESET_MAX_ATTEMPTS) return { ok: false, error: 'Muitas tentativas. Peça um novo código.', status: 429 }
+  const hash = await sha256(codigo)
+  if (hash !== rec.code_hash) {
+    await supabase.from('password_reset_codes').update({ attempts: (rec.attempts as number) + 1 }).eq('email', email)
+    return { ok: false, error: 'Código incorreto. Confira e tente de novo.', status: 400 }
+  }
+  return { ok: true }
 }
 
 async function checkRateLimit(
@@ -224,7 +307,11 @@ serve(async (req) => {
         ? await checkRateLimit(supabase, ip, 'member_status', 20)
         : acao === 'set-password'
           ? await checkRateLimit(supabase, ip, 'member_set_password', 5, 60 * 60 * 1000)
-          : await checkRateLimit(supabase, ip)
+          : acao === 'request-reset'
+            ? await checkRateLimit(supabase, ip, 'reset_request', 6, 60 * 60 * 1000)
+            : (acao === 'verify-reset-code' || acao === 'reset-password')
+              ? await checkRateLimit(supabase, ip, 'reset_verify', 25, 60 * 60 * 1000)
+              : await checkRateLimit(supabase, ip)
       if (!rate.allowed) {
         return jsonResponse(req, { error: 'Muitas tentativas. Tente novamente em alguns minutos.', retryAfterSeconds: rate.retryAfterSeconds }, 429)
       }
@@ -299,6 +386,88 @@ serve(async (req) => {
       const dados = await res.json().catch(() => ({}))
       if (!res.ok || !dados?.access_token) return null
       return dados as { access_token: string; refresh_token: string; user?: { id?: string } }
+    }
+
+    // ── recuperação de senha: pedir código ──────────────────────────────────
+    if (acao === 'request-reset') {
+      // Conta do PAINEL não entra no autoatendimento (mesma trava do
+      // admin-reset): a senha dela é a do /admin/login e trocar por aqui
+      // trancaria o painel.
+      if (credencial?.origem === 'painel') {
+        return jsonResponse(req, { error: 'Esta é uma conta do painel administrativo. Redefina a senha em Contas do Painel.' }, 409)
+      }
+      // Trava POR E-MAIL além da por IP: sem ela, alguém poderia bombardear a
+      // caixa de entrada de um aluno com códigos.
+      const porEmail = await checkRateLimit(supabase, `reset:${email}`, 'reset_email', 5, 60 * 60 * 1000)
+      if (!porEmail.allowed) {
+        return jsonResponse(req, { error: 'Você já pediu vários códigos. Aguarde alguns minutos e tente novamente.' }, 429)
+      }
+      const codigo = gerarCodigo()
+      const codeHash = await sha256(codigo)
+      const expiresAt = new Date(Date.now() + RESET_CODE_TTL_MIN * 60 * 1000).toISOString()
+      const { error: upErr } = await supabase.from('password_reset_codes').upsert({
+        email, code_hash: codeHash, expires_at: expiresAt, attempts: 0, used: false, created_at: new Date().toISOString(),
+      }, { onConflict: 'email' })
+      if (upErr) {
+        console.error('password_reset_codes upsert', upErr)
+        return jsonResponse(req, { error: 'Não foi possível gerar o código agora. Tente novamente.' }, 500)
+      }
+      const enviado = await enviarEmailCodigo(email, codigo)
+      if (!enviado) return jsonResponse(req, { error: 'Não foi possível enviar o e-mail agora. Tente novamente em instantes.' }, 502)
+      // limpeza dos códigos vencidos, sem segurar a resposta
+      supabase.rpc('purge_expired_reset_codes').then(() => {}, () => {})
+      return jsonResponse(req, { success: true, ttlMinutes: RESET_CODE_TTL_MIN })
+    }
+
+    // ── recuperação de senha: conferir o código (sem consumir) ───────────────
+    if (acao === 'verify-reset-code') {
+      const codigo = String(body?.code || '').trim()
+      const check = await validarCodigoReset(supabase, email, codigo)
+      if (!check.ok) return jsonResponse(req, { error: check.error }, check.status)
+      return jsonResponse(req, { success: true, valid: true })
+    }
+
+    // ── recuperação de senha: trocar a senha (com código válido) ─────────────
+    if (acao === 'reset-password') {
+      const codigo = String(body?.code || '').trim()
+      if (senha.length < SENHA_MINIMA) {
+        return jsonResponse(req, { error: `A senha precisa ter pelo menos ${SENHA_MINIMA} caracteres.` }, 400)
+      }
+      if (credencial?.origem === 'painel') {
+        return jsonResponse(req, { error: 'Esta é uma conta do painel administrativo. Redefina a senha em Contas do Painel.' }, 409)
+      }
+      const check = await validarCodigoReset(supabase, email, codigo)
+      if (!check.ok) return jsonResponse(req, { error: check.error }, check.status)
+
+      // Pega/provisiona o userId (generateLink cria a conta do Auth se ainda
+      // não existir — caso raro de quem comprou e nunca entrou).
+      const { data: linkData, error: linkErr } = await supabase.auth.admin.generateLink({ type: 'magiclink', email })
+      const userId = linkData?.user?.id
+      if (linkErr || !userId) {
+        console.error('generateLink (reset-password)', linkErr)
+        return jsonResponse(req, { error: 'Não foi possível redefinir a senha agora. Tente novamente.' }, 500)
+      }
+      const { error: updErr } = await supabase.auth.admin.updateUserById(userId, { password: senha, email_confirm: true })
+      if (updErr) {
+        console.error('updateUserById (reset-password)', updErr)
+        return jsonResponse(req, { error: 'Não foi possível redefinir a senha agora. Tente novamente.' }, 500)
+      }
+      // Mantém/garante a marca (origem preservada — afiliado segue afiliado).
+      await supabase.from('member_credentials').upsert(
+        { user_id: userId, email, origem: credencial?.origem || 'membro', updated_at: new Date().toISOString() },
+        { onConflict: 'user_id' },
+      )
+      // Queima o código: não pode ser reusado.
+      await supabase.from('password_reset_codes').update({ used: true }).eq('email', email)
+
+      // Já entra com a senha nova (mesmo redeem do login normal).
+      const sessao = await entrarComSenha()
+      if (!sessao) return jsonResponse(req, { success: true, passwordReset: true })
+      await finalizarLogin(userId)
+      return jsonResponse(req, {
+        success: true, passwordReset: true,
+        access_token: sessao.access_token, refresh_token: sessao.refresh_token,
+      })
     }
 
     // ── cadastrar senha (primeira vez) ──────────────────────────────────────
