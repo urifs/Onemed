@@ -3309,6 +3309,23 @@ não ganha o bypass.
 a restrição segue valendo normalmente para o pagante sem o plano certo. Correção 100% de banco —
 nenhum deploy de frontend/função necessário.
 
+---
+
+### 2026-08-15 (sessão remota) — curso "AnestReview 2026" importado + modo `--curso-unico`
+
+Pasta `1wbF49GyPqP5hnnvrTGzeoZx82vfzKCV-` (conta de ARMAZENAMENTO ufgravity) — o link É o curso,
+com 4 subpastas de módulo. O `sync-drive-extra.mjs` tratava cada subpasta de topo como um curso,
+então ganhou o flag **`--curso-unico`**: a pasta passada vira o único curso (subpastas = módulos).
+
+Importado: **AnestReview 2026** (`anestreview-2026`, categoria "Especialidades" pra bater com o
+`anestesiologia-anestreview` existente), **33 aulas em vídeo, 4 módulos, 2,51 GB**, ativo. Ordem
+dos módulos correta (1-Ética, 2-Org SBA, 3-Risco, 4-Pré-Anestésico). Todos os vídeos **H.264**
+(conferido pelo box do moov na cauda — sem o problema HEVC do sanarflix-extensivo-r1). Streaming
+verificado pelo caminho do aluno (member-lesson-token → Worker → 206) — a conta de armazenamento
+serve direto, sem precisar compartilhar. Conta de teste criada e apagada.
+
+Uso: `node scripts/sync-drive-extra.mjs <folderId> --curso-unico --aplicar`.
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management

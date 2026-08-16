@@ -22,7 +22,10 @@ import process from 'node:process';
 
 const ROOT = process.argv[2];
 const APLICAR = process.argv.includes('--aplicar');
-if (!ROOT) { console.error('uso: node scripts/sync-drive-extra.mjs <folderId> [--aplicar]'); process.exit(1); }
+// --curso-unico: a pasta passada É o curso (suas subpastas são módulos), em vez
+// de cada subpasta de topo virar um curso. Use quando o link é o curso em si.
+const CURSO_UNICO = process.argv.includes('--curso-unico');
+if (!ROOT) { console.error('uso: node scripts/sync-drive-extra.mjs <folderId> [--aplicar] [--curso-unico]'); process.exit(1); }
 
 const REF = process.env.SUPABASE_PROJECT_REF || 'jrrybiohwqabsdurqudc';
 const MGMT_TOKEN = process.env.SUPABASE_MGMT_TOKEN;
@@ -230,15 +233,24 @@ async function varrer(raizId) {
 
 // ─── principal ───────────────────────────────────────────────────────────────
 const topo = [];
-{
+if (CURSO_UNICO) {
+  // A pasta passada é o próprio curso. Busca o nome dela e trata como o único
+  // "curso de topo".
+  const t = await getToken();
+  const meta = await fetch(`https://www.googleapis.com/drive/v3/files/${ROOT}?fields=id,name&supportsAllDrives=true`,
+    { headers: { Authorization: `Bearer ${t}` } }).then(r => r.json());
+  if (!meta?.id) { console.error('não achei a pasta do curso'); process.exit(1); }
+  topo.push({ id: meta.id, name: meta.name, mimeType: FOLDER });
+  console.log(`Curso único: "${meta.name}"\n`);
+} else {
   let pt;
   do {
     const p = await driveList(ROOT, pt);
     topo.push(...(p.files || []).map(resolverAtalho).filter(f => f && f.mimeType === FOLDER));
     pt = p.nextPageToken;
   } while (pt);
+  console.log(`Pasta raiz: ${topo.length} curso(s)\n`);
 }
-console.log(`Pasta raiz: ${topo.length} curso(s)\n`);
 
 const cursosDb = await sql(`select id, title, slug, drive_folder_id from courses;`);
 const porPasta = new Map(cursosDb.filter(c => c.drive_folder_id).map(c => [c.drive_folder_id, c]));
