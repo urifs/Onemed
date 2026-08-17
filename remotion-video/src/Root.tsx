@@ -105,6 +105,11 @@ import { C93_Caderno, C93_DURATION } from './creatives/C93_Caderno';
 import { C94_Conversa, C94_DURATION } from './creatives/C94_Conversa';
 import { C95_Gabarito, C95_DURATION } from './creatives/C95_Gabarito';
 import { C96_Neon, C96_DURATION } from './creatives/C96_Neon';
+import { MD01_Monitor, MD01_DURATION } from './creatives/MD01_Monitor';
+import { MD02_Prontuario, MD02_DURATION } from './creatives/MD02_Prontuario';
+import { MD03_Negatoscopio, MD03_DURATION } from './creatives/MD03_Negatoscopio';
+import { MD04_Rodada, MD04_DURATION } from './creatives/MD04_Rodada';
+import { MD05_Relogio, MD05_DURATION } from './creatives/MD05_Relogio';
 import { C73_Quiz, C73_DURATION, C74_Quiz, C74_DURATION, C75_Quiz, C75_DURATION, C76_Quiz, C76_DURATION, C77_Quiz, C77_DURATION, C78_Quiz, C78_DURATION, C79_Quiz, C79_DURATION, C80_Quiz, C80_DURATION, C81_Quiz, C81_DURATION, C82_Quiz, C82_DURATION } from './creatives/QuizComps';
 import { AD01, AD02, AD03, AD04, AD05, AD06, AD07, AD08, AD09, AD10 } from './creatives/AdImages';
 import { POSTS, makePostComp } from './creatives/PostImages';
@@ -229,6 +234,11 @@ const CREATIVES: Array<[string, React.FC, number]> = [
   ['C94-Conversa', C94_Conversa, C94_DURATION],
   ['C95-Gabarito', C95_Gabarito, C95_DURATION],
   ['C96-Neon', C96_Neon, C96_DURATION],
+  ['MD01-Monitor', MD01_Monitor, MD01_DURATION],
+  ['MD02-Prontuario', MD02_Prontuario, MD02_DURATION],
+  ['MD03-Negatoscopio', MD03_Negatoscopio, MD03_DURATION],
+  ['MD04-Rodada', MD04_Rodada, MD04_DURATION],
+  ['MD05-Relogio', MD05_Relogio, MD05_DURATION],
 ];
 
 export const RemotionRoot: React.FC = () => {
