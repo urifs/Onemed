@@ -544,7 +544,15 @@ serve(async (req) => {
       return jsonResponse(req, { success: true, access_token: sessao.access_token, refresh_token: sessao.refresh_token })
     }
 
-    if (acao !== 'legacy') return jsonResponse(req, { error: 'Ação inválida' }, 400)
+    // Pedido sem `action` reconhecida = frontend de ANTES da migração para
+    // senha (13/08) — aba aberta há semanas ou bundle velho em cache. O
+    // frontend antigo exibe a mensagem do servidor, então em vez do críptico
+    // "Ação inválida" a resposta orienta a pessoa a sair dessa versão.
+    if (acao !== 'legacy') {
+      return jsonResponse(req, {
+        error: 'Sua página está desatualizada. Feche esta aba e abra o site de novo (ou recarregue com Ctrl+F5 no computador) — o login agora usa e-mail e senha.',
+      }, 400)
+    }
 
     // ── login antigo, só com e-mail (ponte de migração) ──────────────────────
     const { data: linkData, error: linkErr } = await supabase.auth.admin.generateLink({
