@@ -300,6 +300,16 @@ const MF07: React.FC = () => (
         ))}
       </div>
     </div>
+    <div style={{
+      position: 'absolute', left: 0, right: 0, bottom: 300, display: 'flex', justifyContent: 'center',
+    }}>
+      <div style={{
+        background: M_BLUE, color: WHITE, fontFamily: HEAD, fontWeight: 900, fontSize: 46,
+        borderRadius: 999, padding: '24px 52px', boxShadow: '0 24px 70px rgba(21,96,232,0.5)',
+      }}>
+        de que lado você estuda?
+      </div>
+    </div>
     <Assina />
   </AbsoluteFill>
 );
@@ -345,7 +355,7 @@ const MF09: React.FC = () => (
       backgroundSize: '52px 52px',
     }} />
     <div style={{ position: 'absolute', left: 80, top: 240 }}>
-      <div style={{ fontFamily: HEAD, fontWeight: 900, fontSize: 220, color: WHITE, letterSpacing: -6, lineHeight: 0.95 }}>
+      <div style={{ fontFamily: HEAD, fontWeight: 900, fontSize: 158, color: WHITE, letterSpacing: -4, lineHeight: 0.95 }}>
         segundos.
       </div>
       <div style={{ fontFamily: HEAD, fontWeight: 600, fontSize: 46, color: 'rgba(255,255,255,0.85)', marginTop: 50, lineHeight: 1.45, maxWidth: 860 }}>
