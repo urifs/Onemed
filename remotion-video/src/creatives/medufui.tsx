@@ -275,3 +275,103 @@ export const FERRAMENTAS = [
   'Informação Medicamentosa', 'Análise de Prontuário', 'Consulta por Voz',
   'Chat Médico IA', 'Estruturação de Anamnese',
 ];
+
+/* notebook renderizando a UI recriada (tela 1512×850 escalada) */
+export const LaptopShell: React.FC<{ width: number; children: React.ReactNode; style?: React.CSSProperties }> =
+  ({ width, children, style }) => {
+    const bezel = width * 0.018;
+    const screenW = width - bezel * 2;
+    const screenH = screenW * (850 / 1512);
+    const deckH = width * 0.034;
+    const scale = screenW / 1512;
+    return (
+      <div style={{ position: 'relative', width, ...style }}>
+        <div style={{
+          position: 'relative', width, height: screenH + bezel * 2,
+          background: 'linear-gradient(160deg,#2c2e33,#101114)',
+          borderRadius: width * 0.022,
+          boxShadow: '0 46px 100px -30px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.06)',
+        }}>
+          <div style={{
+            position: 'absolute', left: bezel, top: bezel, width: screenW, height: screenH,
+            borderRadius: width * 0.012, overflow: 'hidden', background: M_BG,
+          }}>
+            <div style={{ width: 1512, height: 850, transform: `scale(${scale})`, transformOrigin: 'top left', position: 'relative' }}>
+              {children}
+            </div>
+            <div style={{
+              position: 'absolute', inset: 0, pointerEvents: 'none',
+              background: 'linear-gradient(115deg, rgba(255,255,255,0.07) 0%, transparent 30%)',
+            }} />
+          </div>
+          <div style={{
+            position: 'absolute', top: bezel * 0.32, left: '50%', transform: 'translateX(-50%)',
+            width: 6, height: 6, borderRadius: 3, background: '#0a0a0a',
+          }} />
+        </div>
+        <div style={{
+          width: width * 1.12, height: deckH, marginLeft: -width * 0.06,
+          background: 'linear-gradient(180deg,#3a3d43,#17191d)',
+          borderRadius: `0 0 ${width * 0.035}px ${width * 0.035}px`,
+          boxShadow: '0 30px 60px -20px rgba(0,0,0,0.5)',
+        }} />
+      </div>
+    );
+  };
+
+/* barra superior do app em paisagem (dentro do notebook) */
+export const TelaApp: React.FC<{ ferramenta: string; extra?: React.ReactNode; children: React.ReactNode }> =
+  ({ ferramenta, extra, children }) => (
+    <div style={{ position: 'absolute', inset: 0, background: M_BG }}>
+      <div style={{
+        position: 'absolute', top: 0, left: 0, right: 0, height: 96, background: WHITE,
+        borderBottom: '1.5px solid rgba(14,27,51,0.08)', display: 'flex', alignItems: 'center',
+        padding: '0 40px', gap: 18,
+      }}>
+        <MChip size={54} />
+        <span style={{ fontFamily: HEAD, fontWeight: 900, fontSize: 34, color: M_NAVY }}>
+          MEDUF <span style={{ color: M_BLUE }}>AI</span>
+        </span>
+        <span style={{
+          fontFamily: HEAD, fontWeight: 700, fontSize: 25, color: M_BLUE,
+          background: AZUL_SOFT, borderRadius: 999, padding: '10px 24px', marginLeft: 20,
+        }}>{ferramenta}</span>
+        {extra && <div style={{ marginLeft: 'auto' }}>{extra}</div>}
+      </div>
+      <div style={{ position: 'absolute', top: 96, left: 0, right: 0, bottom: 0, padding: '34px 40px' }}>
+        {children}
+      </div>
+    </div>
+  );
+
+/* cursor com cliques (path: [tempo, x, y]) */
+export const Cursor: React.FC<{ t: number; path: Array<[number, number, number]>; clicks?: number[] }> =
+  ({ t, path, clicks = [] }) => {
+    if (t < path[0][0]) return null;
+    let x = path[path.length - 1][1], y = path[path.length - 1][2];
+    for (let i = 0; i < path.length - 1; i++) {
+      const [t0, x0, y0] = path[i], [t1, x1, y1] = path[i + 1];
+      if (t <= t1) {
+        const p = outB(win(t, t0, t1));
+        x = x0 + (x1 - x0) * p; y = y0 + (y1 - y0) * p;
+        break;
+      }
+    }
+    const clique = clicks.find(c => t >= c && t < c + 0.45);
+    const pr = clique !== undefined ? win(t, clique, clique + 0.45) : 0;
+    return (
+      <div style={{ position: 'absolute', left: x, top: y, zIndex: 40, pointerEvents: 'none' }}>
+        {clique !== undefined && (
+          <div style={{
+            position: 'absolute', left: -6, top: -6, width: 52, height: 52, borderRadius: 26,
+            border: '3px solid rgba(21,96,232,0.7)', transform: `scale(${0.3 + pr * 1.2})`,
+            opacity: 1 - pr,
+          }} />
+        )}
+        <svg width={38} height={44} viewBox="0 0 24 28">
+          <path d="M3,2 L3,22 L8.5,17.5 L12,26 L15.5,24.5 L12,16 L19,15.5 Z"
+            fill="#0e1b33" stroke="#ffffff" strokeWidth={1.6} />
+        </svg>
+      </div>
+    );
+  };
