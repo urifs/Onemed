@@ -95,6 +95,11 @@ import { C83_Matriculas, C83_DURATION } from './creatives/C83_Matriculas';
 import { C84_Digita, C84_DURATION } from './creatives/C84_Digita';
 import { C85_Revista, C85_DURATION } from './creatives/C85_Revista';
 import { C86_Manifesto, C86_DURATION } from './creatives/C86_Manifesto';
+import { C87_Sete, C87_DURATION } from './creatives/C87_Sete';
+import { C88_Erra, C88_DURATION } from './creatives/C88_Erra';
+import { C89_Maquina, C89_DURATION } from './creatives/C89_Maquina';
+import { C90_Extensivo, C90_DURATION } from './creatives/C90_Extensivo';
+import { C91_Porta, C91_DURATION } from './creatives/C91_Porta';
 import { C73_Quiz, C73_DURATION, C74_Quiz, C74_DURATION, C75_Quiz, C75_DURATION, C76_Quiz, C76_DURATION, C77_Quiz, C77_DURATION, C78_Quiz, C78_DURATION, C79_Quiz, C79_DURATION, C80_Quiz, C80_DURATION, C81_Quiz, C81_DURATION, C82_Quiz, C82_DURATION } from './creatives/QuizComps';
 import { AD01, AD02, AD03, AD04, AD05, AD06, AD07, AD08, AD09, AD10 } from './creatives/AdImages';
 import { POSTS, makePostComp } from './creatives/PostImages';
@@ -209,6 +214,11 @@ const CREATIVES: Array<[string, React.FC, number]> = [
   ['C84-Digita', C84_Digita, C84_DURATION],
   ['C85-Revista', C85_Revista, C85_DURATION],
   ['C86-Manifesto', C86_Manifesto, C86_DURATION],
+  ['C87-Sete', C87_Sete, C87_DURATION],
+  ['C88-Erra', C88_Erra, C88_DURATION],
+  ['C89-Maquina', C89_Maquina, C89_DURATION],
+  ['C90-Extensivo', C90_Extensivo, C90_DURATION],
+  ['C91-Porta', C91_Porta, C91_DURATION],
 ];
 
 export const RemotionRoot: React.FC = () => {
