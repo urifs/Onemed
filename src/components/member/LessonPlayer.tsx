@@ -108,6 +108,11 @@ export function LessonPlayer({
   const [nextIn, setNextIn] = useState<number | null>(null);
   const nextTimer = useRef<number | null>(null);
 
+  // Renovação da URL assinada (validade de 2h): quantas vezes já foi feita
+  // nesta aula e de que ponto retomar o vídeo depois de trocar o src.
+  const urlRenovacoes = useRef(0);
+  const resumeAt = useRef(0);
+
   // Timers de retry de mídia/imagem pendentes — cancelados na troca de aula
   // e no unmount, senão continuam disparando contra a aula errada (ou contra
   // um componente já desmontado).
@@ -127,6 +132,8 @@ export function LessonPlayer({
     setUsarEmbed(false);
     setForceTs(false);
     setImgRetryCount(0);
+    urlRenovacoes.current = 0;
+    resumeAt.current = 0;
     clearRetryTimers();
     getUrl(lesson.id)
       .then(url => { if (alive) setSrc(url); })
@@ -159,7 +166,7 @@ export function LessonPlayer({
    * passa mesmo com a cota estourada e daria um falso "está tudo bem". A
    * leitura para no primeiro pedaço do corpo, então quase nada é baixado.
    */
-  const sondarFalha = async (url: string): Promise<{ quotaMsg: string | null; ehTs: boolean; embedOk: boolean }> => {
+  const sondarFalha = async (url: string): Promise<{ quotaMsg: string | null; ehTs: boolean; embedOk: boolean; expirado: boolean }> => {
     const ctrl = new AbortController();
     try {
       const res = await fetch(url, { headers: { Range: 'bytes=0-' }, signal: ctrl.signal });
@@ -173,17 +180,24 @@ export function LessonPlayer({
           quotaMsg: (await res.text()).slice(0, 300),
           ehTs: false,
           embedOk: res.headers.get('x-embed-ok') !== '0',
+          expirado: false,
         };
       }
-      if (!res.ok || !res.body) return { quotaMsg: null, ehTs: false, embedOk: true };
+      // 401/403 do worker = a ASSINATURA da URL não vale mais ("Link
+      // expirado", 2h de validade) — recarregar a mesma URL nunca resolve;
+      // o caminho certo é pedir uma assinatura nova.
+      if (res.status === 401 || res.status === 403) {
+        return { quotaMsg: null, ehTs: false, embedOk: true, expirado: true };
+      }
+      if (!res.ok || !res.body) return { quotaMsg: null, ehTs: false, embedOk: true, expirado: false };
       const { value } = await res.body.getReader().read();
       // Pacote TS: 0x47 no byte 0 e de novo 188 bytes depois (tamanho fixo do
       // pacote). Checar os dois evita confundir com um arquivo qualquer que
       // por acaso comece com 0x47.
       const ehTs = !!value && value.length >= 189 && value[0] === 0x47 && value[188] === 0x47;
-      return { quotaMsg: null, ehTs, embedOk: true };
+      return { quotaMsg: null, ehTs, embedOk: true, expirado: false };
     } catch {
-      return { quotaMsg: null, ehTs: false, embedOk: true }; // rede caiu no meio: falha comum, tenta de novo
+      return { quotaMsg: null, ehTs: false, embedOk: true, expirado: false }; // rede caiu no meio: falha comum, tenta de novo
     } finally {
       ctrl.abort();
     }
@@ -197,7 +211,7 @@ export function LessonPlayer({
     // Sonda só no primeiro erro: se for a propagação de permissão do Drive
     // (o caso comum), a resposta não é 429 nem TS e as tentativas seguem.
     if (src && mediaRetries.current === 0) {
-      void sondarFalha(src).then(({ quotaMsg, ehTs, embedOk }) => {
+      void sondarFalha(src).then(({ quotaMsg, ehTs, embedOk, expirado }) => {
         if (quotaMsg) {
           quotaBlocked.current = true;
           // Só há para onde cair se o arquivo ainda estiver no Drive de
@@ -207,6 +221,22 @@ export function LessonPlayer({
           // mensagem honesta de limite é a resposta certa.
           if (embedOk && lesson.drive_file_id && !lesson.storage_path) setUsarEmbed(true);
           else setError(quotaMsg);
+          return;
+        }
+        // URL assinada vencida (2h de validade): aula deixada aberta/pausada
+        // volta com 403 do worker, e os retries com a MESMA URL morriam na
+        // mensagem genérica. Renova a assinatura e retoma do ponto em que o
+        // aluno estava. Teto de 2 renovações por aula: se a URL NOVA também
+        // vem 403, o problema não é validade — aí a mensagem genérica é
+        // honesta.
+        if (expirado && urlRenovacoes.current < 2) {
+          urlRenovacoes.current += 1;
+          resumeAt.current = videoRef.current?.currentTime || 0;
+          clearRetryTimers();
+          mediaRetries.current = 0;
+          getUrl(lesson.id)
+            .then(u => setSrc(u))
+            .catch(() => setError('Não foi possível carregar este arquivo. Tente novamente em instantes.'));
           return;
         }
         if (ehTs && !isTsVideo) {
@@ -291,6 +321,12 @@ export function LessonPlayer({
   }, [src, useMpegts]);
 
   const handleImageError = () => {
+    // Imagem sofre do mesmo 403 de link vencido que o vídeo (mesma URL
+    // assinada de 2h) — na primeira falha, renova a assinatura uma vez.
+    if (imgRetryCount === 0 && urlRenovacoes.current < 1) {
+      urlRenovacoes.current += 1;
+      getUrl(lesson.id).then(u => setSrc(u)).catch(() => { /* retries normais seguem */ });
+    }
     if (imgRetryCount >= RETRY_DELAYS_MS.length) {
       setError('Não foi possível carregar este arquivo. Tente novamente em instantes.');
       return;
@@ -308,6 +344,21 @@ export function LessonPlayer({
     v.addEventListener('loadedmetadata', onLoaded, { once: true });
     return () => v.removeEventListener('loadedmetadata', onLoaded);
   }, [src, lesson.type, initialWatchedSeconds]);
+
+  // Depois de renovar a URL assinada (403 de link vencido), volta pro ponto
+  // exato em que o aluno estava — sem isso a aula reiniciaria do zero.
+  // Declarado DEPOIS do seek de initialWatchedSeconds de propósito: os dois
+  // ouvem o mesmo loadedmetadata e o registrado por último escreve por último.
+  useEffect(() => {
+    if (!src || resumeAt.current <= 0) return;
+    const v = videoRef.current;
+    if (!v) return;
+    const alvo = resumeAt.current;
+    resumeAt.current = 0;
+    const onLoaded = () => { v.currentTime = alvo; };
+    v.addEventListener('loadedmetadata', onLoaded, { once: true });
+    return () => v.removeEventListener('loadedmetadata', onLoaded);
+  }, [src]);
 
   // Cada troca de aula recarrega o elemento <video>/<audio> com um src novo,
   // o que reseta playbackRate pra 1 em alguns navegadores — reaplica a

@@ -65,6 +65,10 @@ const PLAN_PRICES: Record<string, number> = {
 
 const UPSELL_PRICE  = 94.00  // Atualizações Semanais + Lançamentos Instantâneos
 const UPSELL2_PRICE = 39.80  // Proteção Proxy + Backups Instantâneos
+// Cada tela simultânea EXTRA. Comprável de 1 a 10, no checkout (upsell) ou
+// avulsa no perfil (plan === 'screens'). Espelha src/lib/plans.ts.
+const EXTRA_SCREEN_PRICE = 117.98
+const MAX_EXTRA_SCREENS = 10
 
 const PLAN_LABELS: Record<string, string> = {
   monthly:       'OneMed Mensal - 30 Dias de Acesso',
@@ -88,11 +92,21 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: getCorsHeaders(req) })
 
   try {
-    const { plan, email, name, whatsapp, externalReference, couponCode, upsell, upsell2, isUpgrade } = await req.json()
+    const { plan, email, name, whatsapp, externalReference, couponCode, upsell, upsell2, isUpgrade, extraScreens: extraScreensRaw } = await req.json()
+
+    // Telas extras: 0..10, inteiro. Vale como upsell (junto de um plano) ou como
+    // compra avulsa (plan === 'screens', sem plano nenhum).
+    const extraScreens = Math.max(0, Math.min(MAX_EXTRA_SCREENS, parseInt(String(extraScreensRaw ?? 0), 10) || 0))
+    const ehTelasAvulso = plan === 'screens'
 
     // ── 1. Validar plano contra allowlist ─────────────────────────────────────
-    if (!PLAN_PRICES[plan]) {
+    if (!ehTelasAvulso && !PLAN_PRICES[plan]) {
       return new Response(JSON.stringify({ error: 'Plano inválido' }), {
+        status: 400, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
+      })
+    }
+    if (ehTelasAvulso && extraScreens < 1) {
+      return new Response(JSON.stringify({ error: 'Selecione de 1 a 10 telas extras.' }), {
         status: 400, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
       })
     }
@@ -129,8 +143,25 @@ serve(async (req) => {
       }
     }
 
+    // Compra AVULSA de telas (do perfil): exige sessão do próprio dono, igual
+    // ao upgrade — ninguém compra tela pra conta de outra pessoa.
+    if (ehTelasAvulso) {
+      const jwt = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '')
+      if (!jwt) {
+        return new Response(JSON.stringify({ error: 'Faça login para comprar telas extras' }), {
+          status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
+        })
+      }
+      const { data: { user: callerUser }, error: authErr } = await supabase.auth.getUser(jwt)
+      if (authErr || !callerUser || (callerUser.email || '').toLowerCase() !== String(email).toLowerCase().trim()) {
+        return new Response(JSON.stringify({ error: 'Sessão inválida para este email' }), {
+          status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
+        })
+      }
+    }
+
     // ── 3. Calcular preço base server-side ────────────────────────────────────
-    let basePrice = PLAN_PRICES[plan]
+    let basePrice = ehTelasAvulso ? 0 : PLAN_PRICES[plan]
     let discountPercent = 0
     let appliedCoupon: string | null = null
     // Código (não id) do cupom aplicado — gravado em buyers.coupon_code para o
@@ -199,7 +230,8 @@ serve(async (req) => {
     }
 
     // ── 4. Validar cupom no banco (nunca confiar no desconto do cliente) ──────
-    if (couponCode) {
+    // Compra avulsa de telas não aceita cupom.
+    if (couponCode && !ehTelasAvulso) {
       const { data: coupon } = await supabase
         .from('coupons')
         .select('*')
@@ -246,8 +278,10 @@ serve(async (req) => {
       : basePrice
 
     let totalAmount = discountedPrice
-    if (upsell)  totalAmount += UPSELL_PRICE
-    if (upsell2) totalAmount += UPSELL2_PRICE
+    if (upsell && !ehTelasAvulso)  totalAmount += UPSELL_PRICE
+    if (upsell2 && !ehTelasAvulso) totalAmount += UPSELL2_PRICE
+    // Telas extras: soma sempre (upsell do checkout OU compra avulsa).
+    totalAmount += extraScreens * EXTRA_SCREEN_PRICE
 
     // Arredondar para 2 casas decimais
     totalAmount = Math.round(totalAmount * 100) / 100
@@ -259,8 +293,12 @@ serve(async (req) => {
       items: [
         {
           id: plan,
-          title: (isUpgrade ? 'Upgrade - ' : '') + (PLAN_LABELS[plan] || 'OneMed - Acesso Completo'),
-          description: isUpgrade ? 'Upgrade de plano na plataforma OneMed' : 'Acesso completo a plataforma OneMed',
+          title: ehTelasAvulso
+            ? `OneMed - ${extraScreens} tela(s) simultânea(s) extra(s)`
+            : (isUpgrade ? 'Upgrade - ' : '') + (PLAN_LABELS[plan] || 'OneMed - Acesso Completo'),
+          description: ehTelasAvulso
+            ? 'Telas simultâneas adicionais na plataforma OneMed'
+            : isUpgrade ? 'Upgrade de plano na plataforma OneMed' : 'Acesso completo a plataforma OneMed',
           category_id: 'learningtools',
           quantity: 1,
           currency_id: 'BRL',
@@ -323,6 +361,10 @@ serve(async (req) => {
       // Valor do PLANO após desconto, SEM os upsells: é a base da comissão de
       // afiliado (decisão do dono — comissão não incide sobre complementos).
       plan_amount: Math.round(discountedPrice * 100) / 100,
+      // Telas extras compradas nesta transação — o webhook aplica na aprovação.
+      // Server-side de propósito (validado 0..10), sobrescrevendo o que o
+      // navegador inseriu, pela mesma razão de segurança do `plan`.
+      extra_screens: extraScreens,
       client_ip: clientIp,
       client_user_agent: clientUserAgent,
       coupon_code: appliedCouponCode,

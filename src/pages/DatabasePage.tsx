@@ -74,6 +74,10 @@ export default function DatabasePage() {
     setBackupProgress(null);
     try {
       const chunks: string[] = [];
+      // Tabela que falha no servidor vira uma linha {"type":"error"} no
+      // arquivo e o backup segue — sem contar essas linhas aqui, o toast
+      // final diria "completo" com tabela faltando dentro.
+      const tabelasComErro: string[] = [];
       let cursor: BackupCursor | null = null;
       let done = false;
       let attempt = 0;
@@ -98,7 +102,12 @@ export default function DatabasePage() {
             throw new Error(text || `Erro ${res.status}`);
           }
           const json = await res.json();
-          for (const line of json.lines as string[]) chunks.push(line + '\n');
+          for (const line of json.lines as string[]) {
+            chunks.push(line + '\n');
+            if (line.startsWith('{"type":"error"')) {
+              try { tabelasComErro.push(JSON.parse(line).table || '?'); } catch { tabelasComErro.push('?'); }
+            }
+          }
           cursor = json.cursor;
           done = json.done;
           attempt = 0;
@@ -133,8 +142,10 @@ export default function DatabasePage() {
       a.click();
       URL.revokeObjectURL(url);
 
-      if (complete) {
-        toast.success('Backup baixado com sucesso — todas as tabelas exportadas.');
+      if (tabelasComErro.length > 0) {
+        toast.warning(`Backup baixado, mas ${tabelasComErro.length} tabela(s) falharam no meio e ficaram INCOMPLETAS no arquivo: ${[...new Set(tabelasComErro)].join(', ')}. Gere o backup de novo.`, { duration: 15000 });
+      } else if (complete) {
+        toast.success('Backup baixado com sucesso — todas as tabelas exportadas, incluindo as contas (auth.users).');
       } else {
         toast.warning('Backup baixado, mas o marcador de conclusão não veio como esperado. Confira o arquivo antes de confiar nele.', { duration: 10000 });
       }

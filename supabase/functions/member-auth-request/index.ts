@@ -355,7 +355,12 @@ serve(async (req) => {
         ...(activeAccesses || []).filter(a => valido(a.expires_at)).map(a => limiteDe(a.access_type)),
         ...(buyerRows || []).map(b => limiteDe(b.plan)),
       ]
-      const maxSessions = planLimits.length > 0 ? Math.max(...planLimits) : DEFAULT_DEVICE_LIMIT
+      const baseSessions = planLimits.length > 0 ? Math.max(...planLimits) : DEFAULT_DEVICE_LIMIT
+      // Telas EXTRAS compradas (upsell no checkout ou avulso no perfil) somam
+      // ao limite do plano — é o que faz a tela a mais valer de verdade.
+      const { data: addon } = await supabase.from('member_screen_addons')
+        .select('extra_screens').eq('email', email).maybeSingle()
+      const maxSessions = baseSessions + (addon?.extra_screens || 0)
       const { error: limitErr } = await supabase.rpc('enforce_session_limit', { _user_id: userId, _max_sessions: maxSessions })
       if (limitErr) console.error('enforce_session_limit error', limitErr)
 
@@ -539,7 +544,15 @@ serve(async (req) => {
       return jsonResponse(req, { success: true, access_token: sessao.access_token, refresh_token: sessao.refresh_token })
     }
 
-    if (acao !== 'legacy') return jsonResponse(req, { error: 'Ação inválida' }, 400)
+    // Pedido sem `action` reconhecida = frontend de ANTES da migração para
+    // senha (13/08) — aba aberta há semanas ou bundle velho em cache. O
+    // frontend antigo exibe a mensagem do servidor, então em vez do críptico
+    // "Ação inválida" a resposta orienta a pessoa a sair dessa versão.
+    if (acao !== 'legacy') {
+      return jsonResponse(req, {
+        error: 'Sua página está desatualizada. Feche esta aba e abra o site de novo (ou recarregue com Ctrl+F5 no computador) — o login agora usa e-mail e senha.',
+      }, 400)
+    }
 
     // ── login antigo, só com e-mail (ponte de migração) ──────────────────────
     const { data: linkData, error: linkErr } = await supabase.auth.admin.generateLink({

@@ -20,6 +20,12 @@ const PLAN_PRICES: Record<string, number> = {
   lifetime_pro: 1497.00,
 }
 
+// Telas simultâneas por plano — espelha src/lib/plans.ts e member-auth-request.
+const PLAN_DEVICE_LIMITS: Record<string, number> = {
+  monthly: 1, annual: 2, lifetime: 2, lifetime_plus: 4, lifetime_pro: 6,
+}
+const DEFAULT_DEVICE_LIMIT = 2
+
 function getCorsHeaders(req: Request) {
   const origin = req.headers.get('origin') || ''
   const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0]
@@ -50,13 +56,14 @@ serve(async (req) => {
     const user = userData.user
     const email = (user.email || '').toLowerCase()
 
-    const [{ data: isAdmin }, { data: buyer }, { data: accessRows }] = await Promise.all([
+    const [{ data: isAdmin }, { data: buyer }, { data: accessRows }, { data: screenAddon }] = await Promise.all([
       supabase.rpc('has_role', { _user_id: user.id, _role: 'admin' }),
       supabase.from('buyers').select('plan, amount, whatsapp, created_at')
         .eq('email', email).eq('access_granted', true)
         .order('created_at', { ascending: false }).limit(1).maybeSingle(),
       supabase.from('accesses').select('access_type, whatsapp, expires_at, granted_at')
         .eq('email', email).eq('status', 'active'),
+      supabase.from('member_screen_addons').select('extra_screens').eq('email', email).maybeSingle(),
     ])
 
     const nonTrialRows = (accessRows || []).filter(a => a.access_type !== 'trial')
@@ -110,7 +117,12 @@ serve(async (req) => {
 
     const whatsapp = buyer?.whatsapp || nonTrialRows.find(a => a.whatsapp)?.whatsapp || null
 
-    return jsonResponse(req, { email, plan, isLifetime, isAdmin: !!isAdmin, expiresAt, amountPaid, whatsapp, grantedAt })
+    // Telas simultâneas: limite do plano + extras compradas. Admin = ilimitado.
+    const extraScreens = Number(screenAddon?.extra_screens || 0)
+    const baseScreens = isAdmin ? Infinity : (plan && PLAN_DEVICE_LIMITS[plan] != null ? PLAN_DEVICE_LIMITS[plan] : DEFAULT_DEVICE_LIMIT)
+    const deviceLimit = isAdmin ? null : baseScreens + extraScreens
+
+    return jsonResponse(req, { email, plan, isLifetime, isAdmin: !!isAdmin, expiresAt, amountPaid, whatsapp, grantedAt, extraScreens, deviceLimit })
   } catch (err: any) {
     console.error(err)
     return jsonResponse(req, { error: err.message }, 500)

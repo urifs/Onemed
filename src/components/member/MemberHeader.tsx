@@ -50,12 +50,17 @@ export function MemberHeader() {
     <>
       <MemberPWAHead />
       <header className="sticky top-0 z-40 backdrop-blur-xl bg-background/75 border-b border-border">
-        <div className="shell-wide flex items-center gap-3 md:gap-5 px-4 md:px-8 py-3.5">
-          <Link to="/membros" className="flex items-center gap-3 shrink-0">
-            <div className="w-9 h-9 bg-primary/15 rounded-lg flex items-center justify-center">
+        {/* Em tela estreita (ou com a fonte do celular ampliada), a soma
+            logo + texto + 5 ícones passa da largura e o flex CORTA o último
+            item — o ícone de usuário, que é justamente a saída da conta.
+            Regra: os ícones são shrink-0 (nunca somem); quem cede é o texto
+            "OneMed" (trunca via min-w-0 e some abaixo de 360px) e os gaps. */}
+        <div className="shell-wide flex items-center gap-1.5 sm:gap-3 md:gap-5 px-3 sm:px-4 md:px-8 py-3.5">
+          <Link to="/membros" className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <div className="w-9 h-9 shrink-0 bg-primary/15 rounded-lg flex items-center justify-center">
               <Stethoscope className="w-5 h-5 text-primary" />
             </div>
-            <span className="font-secondary font-bold text-lg text-foreground">OneMed</span>
+            <span className="hidden min-[360px]:inline truncate font-secondary font-bold text-lg text-foreground">OneMed</span>
           </Link>
 
           <nav className="hidden md:flex items-center gap-1 ml-1">

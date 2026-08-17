@@ -28,6 +28,7 @@ import {
   Calendar,
   HardDrive,
   Crown,
+  MonitorSmartphone,
 } from 'lucide-react';
 import { formatWhatsApp, extractFunctionErrorMessage } from '@/lib/utils';
 import { getAffiliateRef } from '@/lib/affiliateRef';
@@ -73,6 +74,8 @@ const COUNTRIES = [
 // preço de upsell exige alterar os DOIS e redeployar a function.
 const UPSELL_PRICE = 94.00;   // Atualizações Semanais + Lançamentos Instantâneos
 const UPSELL2_PRICE = 39.80;  // Proteção Proxy + Backups Instantâneos
+const EXTRA_SCREEN_PRICE = 117.98;  // cada tela simultânea extra (1 a 10)
+const MAX_EXTRA_SCREENS = 10;
 
 const PLANS: Record<string, {
   name: string; originalPrice?: number; price: number; period: string;
@@ -166,6 +169,8 @@ export default function CheckoutPage() {
   // Upsell
   const [upsellSelected, setUpsellSelected] = useState(false);
   const [upsell2Selected, setUpsell2Selected] = useState(false);
+  // Telas simultâneas extras (0 a 10), a R$ 117,98 cada.
+  const [extraScreens, setExtraScreens] = useState(0);
 
   // Customer data
   const [customerName, setCustomerName] = useState('');
@@ -267,7 +272,8 @@ export default function CheckoutPage() {
     let total = getDiscountedPrice(PLANS[selectedPlan].price);
     if (upsellSelected) total += UPSELL_PRICE;
     if (upsell2Selected) total += UPSELL2_PRICE;
-    return total;
+    total += extraScreens * EXTRA_SCREEN_PRICE;
+    return Math.round(total * 100) / 100;
   };
 
 
@@ -326,6 +332,7 @@ export default function CheckoutPage() {
         external_reference: ref,
         upsell_purchased: upsellSelected,
         upsell2_purchased: upsell2Selected,
+        extra_screens: extraScreens,
         fbp: getCookie('_fbp'),
         fbc: getCookie('_fbc'),
         fbclid,
@@ -346,6 +353,7 @@ export default function CheckoutPage() {
           couponCode: couponApplied?.code || null,
           upsell: upsellSelected,
           upsell2: upsell2Selected,
+          extraScreens,
           origin: window.location.origin,
         },
       });
@@ -591,12 +599,51 @@ export default function CheckoutPage() {
         </div>
       </div>
 
+      {/* Telas simultâneas extras */}
+      <div className={`p-6 rounded-2xl border-2 transition-all ${extraScreens > 0 ? 'bg-primary/10 border-primary' : 'bg-secondary/30 border-border'}`}>
+        <div className="flex items-start gap-4">
+          <MonitorSmartphone className="w-6 h-6 text-primary flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <h3 className="text-lg font-bold text-foreground">Deseja adicionar mais telas simultâneas?</h3>
+            <p className="text-muted-foreground text-sm mt-1">
+              Assista em mais dispositivos ao mesmo tempo. Cada tela extra por{' '}
+              <span className="text-foreground font-semibold">R$ {EXTRA_SCREEN_PRICE.toFixed(2).replace('.', ',')}</span>.
+            </p>
+            <div className="flex items-center gap-3 mt-4">
+              <button
+                type="button"
+                onClick={() => setExtraScreens(n => Math.max(0, n - 1))}
+                disabled={extraScreens <= 0}
+                className="w-10 h-10 rounded-lg border border-border text-foreground text-xl font-bold flex items-center justify-center disabled:opacity-40 hover:bg-secondary"
+                aria-label="Menos uma tela"
+              >−</button>
+              <div className="min-w-[3rem] text-center">
+                <span className="text-2xl font-bold text-foreground tabular-nums">{extraScreens}</span>
+                <span className="block text-[11px] text-muted-foreground">tela(s)</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setExtraScreens(n => Math.min(MAX_EXTRA_SCREENS, n + 1))}
+                disabled={extraScreens >= MAX_EXTRA_SCREENS}
+                className="w-10 h-10 rounded-lg border border-border text-foreground text-xl font-bold flex items-center justify-center disabled:opacity-40 hover:bg-secondary"
+                aria-label="Mais uma tela"
+              >+</button>
+              {extraScreens > 0 && (
+                <span className="ml-auto text-lg font-bold text-primary">
+                  + R$ {(extraScreens * EXTRA_SCREEN_PRICE).toFixed(2).replace('.', ',')}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div className="flex gap-3">
         <Button variant="outline" onClick={() => setStep(3)} className="flex-1 h-12 border-border text-muted-foreground hover:text-foreground">
           Não, obrigado
         </Button>
         <Button onClick={() => setStep(3)} className="flex-1 h-12 bg-primary hover:bg-primary-hover text-primary-foreground font-semibold">
-          {upsellSelected || upsell2Selected ? 'Adicionar ao pedido' : 'Continuar'} <ArrowRight className="w-4 h-4 ml-2" />
+          {upsellSelected || upsell2Selected || extraScreens > 0 ? 'Adicionar ao pedido' : 'Continuar'} <ArrowRight className="w-4 h-4 ml-2" />
         </Button>
       </div>
     </div>
@@ -622,6 +669,7 @@ export default function CheckoutPage() {
             <p className="text-foreground font-semibold">{PLANS[selectedPlan].name}</p>
             {upsellSelected && <p className="text-accent-success text-sm">+ Atualizações Semanais</p>}
             {upsell2Selected && <p className="text-accent-info text-sm">+ Proteção Proxy</p>}
+            {extraScreens > 0 && <p className="text-primary text-sm">+ {extraScreens} tela(s) simultânea(s) extra(s)</p>}
           </div>
           <p className="text-accent-success font-bold text-lg">R$ {getTotalPrice().toFixed(2)}</p>
         </div>
