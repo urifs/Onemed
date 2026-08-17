@@ -63,7 +63,7 @@ const BEATS: Beat[] = [
   )},
   { at: DELAY + 14.68, bg: RED, render: t => (
     <div style={Center}>
-      <Slam t={t} at={DELAY + 14.69} size={158} color={OFF} rot={-2}>O ano inteiro.</Slam>
+      <Slam t={t} at={DELAY + 14.69} size={126} color={OFF} rot={-2}>O ano inteiro.</Slam>
       <Slam t={t} at={DELAY + 15.69} size={220} color={BLK} rot={-2} style={{ marginTop: 16 }}>Coberto.</Slam>
     </div>
   )},
