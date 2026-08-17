@@ -17,7 +17,7 @@ export const C89_DURATION = Math.round((DELAY + T.duration + 2.8) * FPS);
 const BEATS: Beat[] = [
   { at: 0, bg: OFF, render: t => (
     <div style={Center}>
-      <Slam t={t} at={DELAY + 0.1} size={210} color={BLK} rot={-2}>Você cansa.</Slam>
+      <Slam t={t} at={DELAY + 0.1} size={148} color={BLK} rot={-2}>Você cansa.</Slam>
     </div>
   )},
   { at: DELAY + 1.75, bg: BLK, render: t => (
@@ -36,7 +36,7 @@ const BEATS: Beat[] = [
   )},
   { at: DELAY + 6.17, bg: OFF, render: t => (
     <div style={Center}>
-      <Slam t={t} at={DELAY + 6.18} size={162} color={BLK} rot={2}>Flashcards.</Slam>
+      <Slam t={t} at={DELAY + 6.18} size={128} color={BLK} rot={2}>Flashcards.</Slam>
       <div style={{ marginTop: 34 }}>
         <Band t={t} at={DELAY + 7.69} bg={RED} fg={OFF} size={56} rot={2}>do teu próprio material</Band>
       </div>
@@ -44,7 +44,7 @@ const BEATS: Beat[] = [
   )},
   { at: DELAY + 8.95, bg: BLK, render: t => (
     <div style={Center}>
-      <Slam t={t} at={DELAY + 8.96} size={150} color={OFF} rot={-2}>Cronograma.</Slam>
+      <Slam t={t} at={DELAY + 8.96} size={130} color={OFF} rot={-2}>Cronograma.</Slam>
       <div style={{ marginTop: 32 }}>
         <Band t={t} at={DELAY + 10.41} bg={RED} fg={OFF} size={62} rot={-2}>com mapa mental</Band>
       </div>
@@ -55,7 +55,7 @@ const BEATS: Beat[] = [
   )},
   { at: DELAY + 14.21, bg: RED, render: t => (
     <div style={Center}>
-      <Slam t={t} at={DELAY + 14.22} size={140} color={OFF}>Um assistente</Slam>
+      <Slam t={t} at={DELAY + 14.22} size={120} color={OFF}>Um assistente</Slam>
       <div style={{ marginTop: 32 }}>
         <Band t={t} at={DELAY + 15.83} bg={BLK} fg={OFF} size={62} rot={-2}>que lê a tela contigo</Band>
       </div>
@@ -74,7 +74,7 @@ const BEATS: Beat[] = [
   )},
   { at: DELAY + 24.46, bg: BLK, render: t => (
     <div style={{ ...Center, alignItems: 'flex-start', paddingLeft: 70, gap: 16 }}>
-      <Slam t={t} at={DELAY + 24.47} size={128} color={OFF}>Estudar pesado.</Slam>
+      <Slam t={t} at={DELAY + 24.47} size={106} color={OFF}>Estudar pesado.</Slam>
       <Slam t={t} at={DELAY + 26.27} size={110} color={RED} style={{ whiteSpace: 'normal', maxWidth: 940 }}>
         Sem carregar o peso.
       </Slam>

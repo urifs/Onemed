@@ -50,7 +50,7 @@ const BEATS: Beat[] = [
     <div style={Center}><Slam t={t} at={DELAY + 7.72} size={fit(9)} color={BLK} rot={2}>Sanarflix</Slam></div>
   )},
   { at: DELAY + 8.86, bg: BLK, render: t => (
-    <div style={Center}><Slam t={t} at={DELAY + 8.87} size={276} color={OFF}>Todos.</Slam></div>
+    <div style={Center}><Slam t={t} at={DELAY + 8.87} size={250} color={OFF}>Todos.</Slam></div>
   )},
   { at: DELAY + 9.58, bg: OFF, render: t => (
     <div style={{ ...Center, gap: 2 }}>
@@ -65,7 +65,7 @@ const BEATS: Beat[] = [
   )},
   { at: DELAY + 10.71, bg: RED, render: t => (
     <div style={Center}>
-      <Slam t={t} at={DELAY + 10.72} size={330} color={OFF}>14 mil</Slam>
+      <Slam t={t} at={DELAY + 10.72} size={285} color={OFF}>14 mil</Slam>
       <div style={{ marginTop: 34 }}>
         <Band t={t} at={DELAY + 11.41} bg={BLK} fg={OFF} size={58} rot={-2}>aulas num curso só</Band>
       </div>
@@ -73,7 +73,7 @@ const BEATS: Beat[] = [
   )},
   { at: DELAY + 12.8, bg: BLK, render: t => (
     <div style={Center}>
-      <Slam t={t} at={DELAY + 12.81} size={330} color={OFF}>31 mil</Slam>
+      <Slam t={t} at={DELAY + 12.81} size={285} color={OFF}>31 mil</Slam>
       <div style={{ marginTop: 34 }}>
         <Band t={t} at={DELAY + 13.37} bg={RED} fg={OFF} size={58} rot={2}>questões comentadas</Band>
       </div>
@@ -124,7 +124,7 @@ const BEATS: Beat[] = [
   )},
   { at: DELAY + 23.9, bg: RED, render: t => (
     <div style={Center}>
-      <Slam t={t} at={DELAY + 23.91} size={162} color={OFF} rot={2}>Flashcards.</Slam>
+      <Slam t={t} at={DELAY + 23.91} size={128} color={OFF} rot={2}>Flashcards.</Slam>
       <div style={{ marginTop: 34 }}>
         <Band t={t} at={DELAY + 24.78} bg={BLK} fg={OFF} size={62} rot={2}>do teu material</Band>
       </div>
@@ -132,7 +132,7 @@ const BEATS: Beat[] = [
   )},
   { at: DELAY + 25.92, bg: BLK, render: t => (
     <div style={Center}>
-      <Slam t={t} at={DELAY + 25.93} size={132} color={OFF}>Um assistente</Slam>
+      <Slam t={t} at={DELAY + 25.93} size={120} color={OFF}>Um assistente</Slam>
       <div style={{ marginTop: 34 }}>
         <Band t={t} at={DELAY + 26.97} bg={RED} fg={OFF} size={74} rot={-2}>que lê a tela</Band>
       </div>
@@ -140,7 +140,7 @@ const BEATS: Beat[] = [
   )},
   { at: DELAY + 28.01, bg: OFF, render: t => (
     <div style={Center}>
-      <Slam t={t} at={DELAY + 28.02} size={300} color={BLK}>10 mil</Slam>
+      <Slam t={t} at={DELAY + 28.02} size={280} color={BLK}>10 mil</Slam>
       <div style={{ marginTop: 30 }}>
         <Band t={t} at={DELAY + 28.44} bg={BLK} fg={OFF} size={56} rot={-2}>médicos já entenderam</Band>
       </div>

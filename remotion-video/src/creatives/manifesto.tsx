@@ -22,7 +22,7 @@ export const win = (t: number, a: number, b: number) => clamp01((t - a) / (b - a
 export const outExpo = (p: number) => (p >= 1 ? 1 : 1 - Math.pow(2, -10 * p));
 
 /* tamanho que enche a laje: sangra de propósito nas palavras longas */
-export const fit = (chars: number, max = 330, avail = 1170) => Math.min(max, avail / (0.58 * chars));
+export const fit = (chars: number, max = 330, avail = 820) => Math.min(max, avail / (0.58 * chars));
 
 /* palavra-marretada: aparece dura, assenta de 1.26x pra 1 em ~5 frames */
 export const Slam: React.FC<{
@@ -35,7 +35,7 @@ export const Slam: React.FC<{
     <div style={{
       fontFamily: BRUT, fontWeight: 900, textTransform: 'uppercase',
       fontSize: size, color, lineHeight: 0.92, letterSpacing: '-0.02em',
-      transform: `scale(${1.26 - 0.26 * p}) rotate(${rot * (0.6 + 0.4 * p)}deg)`,
+      transform: `scale(${1.08 - 0.08 * p}) rotate(${rot * (0.6 + 0.4 * p)}deg)`,
       whiteSpace: 'nowrap',
       ...style,
     }}>
@@ -147,7 +147,7 @@ export const ManifestoVideo: React.FC<{
   let idx = 0;
   for (let i = 0; i < beats.length; i++) if (t >= beats[i].at) idx = i;
   const beat = beats[idx];
-  const settle = 1.02 - 0.02 * outExpo(win(t, beat.at, beat.at + 0.2));
+  const settle = 1.01 - 0.01 * outExpo(win(t, beat.at, beat.at + 0.2));
 
   return (
     <AbsoluteFill style={{ background: beat.bg }}>

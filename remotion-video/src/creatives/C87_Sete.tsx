@@ -69,7 +69,7 @@ const BEATS: Beat[] = [
   )},
   { at: DELAY + 15.34, bg: BLK, render: t => (
     <div style={Center}>
-      <Slam t={t} at={DELAY + 15.35} size={430} color={OFF}>+530</Slam>
+      <Slam t={t} at={DELAY + 15.35} size={390} color={OFF}>+530</Slam>
       <div style={{ marginTop: 30 }}>
         <Band t={t} at={DELAY + 16.71} bg={RED} fg={OFF} size={80} rot={-2}>cursos</Band>
       </div>
@@ -95,12 +95,12 @@ const BEATS: Beat[] = [
       <Slam t={t} at={DELAY + 24.62} size={104} color={OFF} style={{ whiteSpace: 'normal', maxWidth: 940 }}>
         Você não administra mais cadastros.
       </Slam>
-      <Slam t={t} at={DELAY + 27.35} size={170} color={RED}>Você estuda.</Slam>
+      <Slam t={t} at={DELAY + 27.35} size={132} color={RED}>Você estuda.</Slam>
     </div>
   )},
   { at: DELAY + 28.98, bg: RED, render: t => (
     <div style={Center}>
-      <Slam t={t} at={DELAY + 28.99} size={218} color={OFF} rot={-2}>Simples</Slam>
+      <Slam t={t} at={DELAY + 28.99} size={200} color={OFF} rot={-2}>Simples</Slam>
       <Slam t={t} at={DELAY + 29.43} size={230} color={BLK} rot={-2}>assim.</Slam>
     </div>
   )},

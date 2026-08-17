@@ -21,7 +21,7 @@ const BEATS: Beat[] = [
   { at: DELAY + 0.67, bg: BLK, render: t => (
     <div style={Center}>
       <Slam t={t} at={DELAY + 0.68} size={230} color={OFF} rot={2}>Erra</Slam>
-      <Slam t={t} at={DELAY + 0.85} size={168} color={RED} rot={2} style={{ marginTop: 14 }}>aqui dentro.</Slam>
+      <Slam t={t} at={DELAY + 0.85} size={138} color={RED} rot={2} style={{ marginTop: 14 }}>aqui dentro.</Slam>
     </div>
   )},
   { at: DELAY + 1.72, bg: OFF, render: t => (
@@ -34,7 +34,7 @@ const BEATS: Beat[] = [
   )},
   { at: DELAY + 4.03, bg: BLK, render: t => (
     <div style={Center}>
-      <Slam t={t} at={DELAY + 4.04} size={330} color={OFF}>31 mil</Slam>
+      <Slam t={t} at={DELAY + 4.04} size={285} color={OFF}>31 mil</Slam>
       <div style={{ marginTop: 30 }}>
         <Band t={t} at={DELAY + 4.6} bg={RED} fg={OFF} size={58} rot={-2}>questões comentadas</Band>
       </div>
@@ -45,7 +45,7 @@ const BEATS: Beat[] = [
   )},
   { at: DELAY + 6.8, bg: RED, render: t => (
     <div style={Center}>
-      <Slam t={t} at={DELAY + 6.81} size={290} color={OFF}>+56 mil</Slam>
+      <Slam t={t} at={DELAY + 6.81} size={225} color={OFF}>+56 mil</Slam>
       <div style={{ marginTop: 30 }}>
         <Band t={t} at={DELAY + 8.11} bg={BLK} fg={OFF} size={68} rot={2}>no banco MED</Band>
       </div>
@@ -70,7 +70,7 @@ const BEATS: Beat[] = [
     </div>
   )},
   { at: DELAY + 13.39, bg: RED, render: t => (
-    <div style={Center}><Slam t={t} at={DELAY + 13.4} size={280} color={OFF} rot={-2}>Treina.</Slam></div>
+    <div style={Center}><Slam t={t} at={DELAY + 13.4} size={225} color={OFF} rot={-2}>Treina.</Slam></div>
   )},
   { at: DELAY + 14.7, bg: OFF, render: t => (
     <StampFinal t={t} at={DELAY + 15.08} extraAt={DELAY + 15.9}

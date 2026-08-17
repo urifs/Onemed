@@ -17,7 +17,7 @@ export const C90_DURATION = Math.round((DELAY + T.duration + 2.8) * FPS);
 const BEATS: Beat[] = [
   { at: 0, bg: BLK, render: t => (
     <div style={Center}>
-      <Slam t={t} at={DELAY + 0.1} size={172} color={OFF} rot={-2}>Extensivo.</Slam>
+      <Slam t={t} at={DELAY + 0.1} size={150} color={OFF} rot={-2}>Extensivo.</Slam>
     </div>
   )},
   { at: DELAY + 1.04, bg: RED, render: t => (
@@ -55,7 +55,7 @@ const BEATS: Beat[] = [
   )},
   { at: DELAY + 11.6, bg: BLK, render: t => (
     <div style={Center}>
-      <Slam t={t} at={DELAY + 11.61} size={290} color={OFF}>+65 mil</Slam>
+      <Slam t={t} at={DELAY + 11.61} size={225} color={OFF}>+65 mil</Slam>
       <div style={{ marginTop: 30 }}>
         <Band t={t} at={DELAY + 12.98} bg={RED} fg={OFF} size={56} rot={-2}>aulas só de extensivos</Band>
       </div>
@@ -63,8 +63,8 @@ const BEATS: Beat[] = [
   )},
   { at: DELAY + 14.68, bg: RED, render: t => (
     <div style={Center}>
-      <Slam t={t} at={DELAY + 14.69} size={126} color={OFF} rot={-2}>O ano inteiro.</Slam>
-      <Slam t={t} at={DELAY + 15.69} size={220} color={BLK} rot={-2} style={{ marginTop: 16 }}>Coberto.</Slam>
+      <Slam t={t} at={DELAY + 14.69} size={112} color={OFF} rot={-2}>O ano inteiro.</Slam>
+      <Slam t={t} at={DELAY + 15.69} size={185} color={BLK} rot={-2} style={{ marginTop: 16 }}>Coberto.</Slam>
     </div>
   )},
   { at: DELAY + 16.55, bg: BLK, render: t => (
