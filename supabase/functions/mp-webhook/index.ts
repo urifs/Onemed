@@ -664,22 +664,38 @@ serve(async (req) => {
     // comprou o Vitalício não pode perder o Vitalício.
     if (['refunded', 'charged_back'].includes(status) && buyer.access_granted && buyer.email) {
       const emailComprador = String(buyer.email).toLowerCase()
+
+      // ⚠️ `eq`, NUNCA `ilike`: no LIKE o `_` é curinga de um caractere, então
+      // um estorno de `ana_paula@gmail.com` casaria com `anaXpaula@gmail.com`
+      // e revogaria o acesso de OUTRA pessoa. Os e-mails são gravados em
+      // minúsculas nos dois lados, então a comparação exata basta.
       const { data: outrasCompras } = await supabase.from('buyers')
-        .select('id')
-        .ilike('email', emailComprador)
+        .select('id, plan')
+        .eq('email', emailComprador)
         .eq('status', 'approved')
         .eq('access_granted', true)
         .neq('id', buyer.id)
-        .limit(1)
 
-      if (outrasCompras && outrasCompras.length > 0) {
+      // Compra de TELAS EXTRAS não sustenta acesso nenhum — ela só soma telas
+      // a um plano que já existe. Contá-la como "outra compra" faria um
+      // reembolso do plano deixar a pessoa com acesso completo de graça.
+      const sustentaAcesso = (outrasCompras || []).some(c => c.plan !== 'screens')
+
+      // Revoga só o acesso do TIPO que esta compra concedeu. Não há marcador
+      // de "concedido à mão" em `accesses`, então este é o critério que
+      // protege a cortesia: quem tem um vitalício dado pelo dono e reembolsa
+      // um Mensal (access_type 'paid') mantém o vitalício, porque os tipos não
+      // batem. É deliberadamente conservador — na dúvida, não tira acesso.
+      const tipoDestaCompra = PLAN_ACCESS_TYPE[buyer.plan] || 'paid'
+
+      if (sustentaAcesso) {
         console.warn('Estorno sem revogar: outra compra aprovada sustenta o acesso de', emailComprador)
       } else {
         const { error: revokeErr } = await supabase.from('accesses')
           .update({ status: 'revoked' })
-          .ilike('email', emailComprador)
+          .eq('email', emailComprador)
           .eq('status', 'active')
-          .neq('access_type', 'trial')
+          .eq('access_type', tipoDestaCompra)
         if (revokeErr) console.error('Erro ao revogar acesso após estorno:', revokeErr.message)
         else console.log('Acesso revogado após', status, 'para', emailComprador)
         await supabase.from('buyers').update({ access_granted: false }).eq('id', buyer.id)

@@ -57,8 +57,15 @@ export async function startFileDownload(url: string): Promise<void> {
   try {
     const res = await fetch(url, { headers: { Range: 'bytes=0-0' } });
     if (!res.ok && res.status !== 206) {
-      recusa = (await res.text().catch(() => '')).slice(0, 300)
-        || `O servidor recusou o download (erro ${res.status}). Tente novamente em instantes.`;
+      // O corpo só vira mensagem se for texto NOSSO (o worker responde em
+      // português). JSON do Storage ("InvalidJWT") ou HTML de um intermediário
+      // seriam erro cru em inglês na cara do aluno — o mesmo que o resto da
+      // plataforma deixou de fazer.
+      const corpo = (await res.text().catch(() => '')).trim().slice(0, 300);
+      const ehMensagemNossa = corpo && !/^[[{<]/.test(corpo) && /[áâãéêíóôõúç]/i.test(corpo);
+      recusa = ehMensagemNossa
+        ? corpo
+        : `Não foi possível baixar este arquivo agora (erro ${res.status}). Tente novamente em instantes.`;
     }
   } catch { /* falha de rede/CORS na sonda: o iframe ainda pode conseguir */ }
   if (recusa) throw new Error(recusa);

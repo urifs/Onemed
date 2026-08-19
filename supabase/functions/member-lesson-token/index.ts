@@ -89,7 +89,7 @@ serve(async (req) => {
     if (!lesson.drive_file_id && !lesson.storage_path) return jsonResponse(req, { error: 'Arquivo não configurado' }, 404)
 
     const email = (user.email || '').toLowerCase()
-    const [{ data: activeAccesses }, { data: buyer }, { data: isAdmin }] = await Promise.all([
+    const [{ data: activeAccesses }, { data: compras }, { data: isAdmin }] = await Promise.all([
       // expires_at é indispensável: entre o trial expirar e o cron de revogação
       // (a cada 5min) virar o status, um trial vencido ainda conseguia emitir
       // token de 2h e continuar assistindo. status='active' sozinho não basta.
@@ -100,11 +100,13 @@ serve(async (req) => {
         .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`),
       // `plan` vem junto porque a linha de `accesses` de compradores antigos
       // guarda access_type='paid', que não diz qual plano a pessoa comprou.
-      supabase.from('buyers').select('id, plan').eq('email', email).eq('access_granted', true)
-        .order('created_at', { ascending: false }).limit(1).maybeSingle(),
+      // TODAS as compras, não só a última: quem comprou telas extras depois do
+      // plano tem `plan='screens'` como compra mais recente, e ela mascararia
+      // o vitalício que este lookup existe para recuperar.
+      supabase.from('buyers').select('plan').eq('email', email).eq('access_granted', true),
       supabase.rpc('has_role', { _user_id: user.id, _role: 'admin' }),
     ])
-    if (!activeAccesses?.length && !buyer && !isAdmin) {
+    if (!activeAccesses?.length && !compras?.length && !isAdmin) {
       // "Sem acesso ativo" não diz à pessoa o que fazer e chega ao suporte como
       // "não consigo assistir". Só no caminho de falha (custo zero no fluxo
       // normal) olhamos se existe uma linha VENCIDA: aí o caso é renovação, e
@@ -153,7 +155,7 @@ serve(async (req) => {
     // tendo pago por ele.
     const plano = [
       ...(activeAccesses || []).map(a => String(a.access_type || '')),
-      String(buyer?.plan || ''),
+      ...(compras || []).map(c => String(c.plan || '')),
     ]
       .filter(Boolean)
       .sort((a, b) => (TIER_RANK[b] || 0) - (TIER_RANK[a] || 0))[0] || ''

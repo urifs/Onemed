@@ -3456,7 +3456,7 @@ erros do `tsc` completo seguem em 143 (baseline 144 — nenhum novo).
   1 dos 5 do dia. Agora devolve a vaga antes do 422.
 - **Campanha de e-mail que morria no meio de um lote ficava presa em `running` para sempre** (o
   seletor só procurava `scheduled`): metade da lista recebia, a outra não, sem aviso. Migration
-  `20260819120000` (coluna `updated_at` + trigger) permite recuperar depois de 10 min, com claim
+  `20260819130000` (coluna `updated_at` + trigger) permite recuperar depois de 10 min, com claim
   otimista pelo próprio `updated_at` para o lote não sair duas vezes.
 - **Erro do Mercado Pago chegava CRU ao comprador** na hora de pagar (`MP Error 400: {...}`).
 - **Comprador do Mensal ganhava 2 telas** em vez da 1 prometida: a linha genérica `paid` de
@@ -3466,7 +3466,7 @@ erros do `tsc` completo seguem em 143 (baseline 144 — nenhum novo).
 
 ⏳ **O que exige deploy depois do merge:**
 1. **Frontend** — sobe sozinho com o push na `main` (Vercel).
-2. **Migration** `20260819120000_email_campaign_stuck_recovery.sql` — aplicar ANTES de redeployar o
+2. **Migration** `20260819130000_email_campaign_stuck_recovery.sql` — aplicar ANTES de redeployar o
    `run-email-campaign` (a função passa a ler e escrever `updated_at`).
 3. **Edge Functions alteradas, redeploy multipart obrigatório:** `mp-webhook`, `mp-create-payment`,
    `member-lesson-token`, `member-auth-request`, `member-assistant`, `member-capture-location`,

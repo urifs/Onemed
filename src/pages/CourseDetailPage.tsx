@@ -418,6 +418,11 @@ export default function CourseDetailPage() {
     if (!user || !course) return;
     const anterior = progressMap[lesson.id];
     const watched = completed ? (anterior?.watched_seconds ?? lesson.duration_seconds ?? 0) : 0;
+    // Descarta o progresso pendente desta aula: como a conclusão por
+    // reprodução é "grudenta" (handleProgress mantém o que já estava
+    // concluído), um pendente antigo com completed:true ressuscitaria o check
+    // no próximo tick — e o aluno não conseguiria desmarcar de jeito nenhum.
+    delete pendingProgress.current[lesson.id];
     setProgressMap(prev => ({
       ...prev,
       [lesson.id]: {

@@ -78,8 +78,12 @@ export function describeAuthError(err: unknown): Error {
   // O GoTrue responde em inglês ("Invalid login credentials"). Numa plataforma
   // inteiramente em português isso é erro cru na cara do usuário — e alguns
   // dos textos são ambíguos até para quem lê inglês.
-  const traduzido = TEXTOS_DE_AUTH.find(([re]) => re.test(message))?.[1];
-  if (traduzido) return new Error(traduzido);
+  for (const [re, texto] of TEXTOS_DE_AUTH) {
+    const m = message.match(re);
+    // $1 leva o número que o próprio GoTrue informou: o mínimo do /admin/register
+    // é 6 e o da área de membros é 8 — cravar "8" contradizia a tela.
+    if (m) return new Error(texto.replace('$1', m[1] ?? ''));
+  }
   return err instanceof Error ? err : new Error(message || 'Erro inesperado. Tente novamente.');
 }
 
@@ -87,7 +91,7 @@ const TEXTOS_DE_AUTH: [RegExp, string][] = [
   [/invalid login credentials/i, 'E-mail ou senha incorretos.'],
   [/email not confirmed/i, 'Este e-mail ainda não foi confirmado. Verifique sua caixa de entrada.'],
   [/user already registered|already been registered/i, 'Já existe uma conta com este e-mail.'],
-  [/password should be at least (\d+)/i, 'A senha é curta demais. Use pelo menos 8 caracteres.'],
+  [/password should be at least (\d+)/i, 'A senha é curta demais. Use pelo menos $1 caracteres.'],
   [/for security purposes|only request this after|rate limit|too many requests/i,
     'Muitas tentativas seguidas. Aguarde alguns instantes e tente de novo.'],
   [/invalid email|unable to validate email/i, 'E-mail inválido. Confira o endereço digitado.'],

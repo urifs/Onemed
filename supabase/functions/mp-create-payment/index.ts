@@ -434,12 +434,12 @@ serve(async (req) => {
 
   } catch (err: any) {
     console.error('Unexpected error:', err?.message || err)
-    // As validações deste arquivo lançam mensagens em português, pensadas para
-    // o comprador — essas passam. Qualquer outra é técnica (stack do Deno,
-    // erro do Postgrest) e não pode ir para a tela de pagamento.
-    const paraOCliente = err?.paraOCliente || /[áéíóúâêôãõç]/i.test(String(err?.message || ''))
+    // Só passa para a tela o que foi marcado explicitamente como mensagem ao
+    // comprador. Uma heurística de "tem acento, então é português" deixaria
+    // vazar qualquer erro do Postgres/Deno que por acaso interpolasse um
+    // e-mail ou um nome de constraint acentuado.
     return new Response(JSON.stringify({
-      error: paraOCliente
+      error: err?.paraOCliente
         ? err.message
         : 'Não foi possível iniciar o pagamento agora. Tente novamente em instantes.',
     }), {

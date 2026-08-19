@@ -371,6 +371,29 @@ serve(async (req) => {
       // não baixava nada. Acervo é material entre assinantes, sem trava de
       // plano — quem pode ABRIR o arquivo pode baixá-lo.
       const querBaixar = body.intent === 'download'
+
+      // O `file_token` sempre exigiu só um JWT válido — o que bastava enquanto
+      // ele devolvia apenas link de LEITURA. Baixar é outra coisa: sem esta
+      // checagem, trial, afiliado-só e acesso vencido salvariam em disco todo
+      // material do acervo, furando a regra de download da plataforma.
+      // (A RLS/`assert_archive_access` não vale aqui: esta função roda com
+      // service role, então `auth.uid()` não é o do aluno.)
+      if (querBaixar) {
+        const emailAluno = String(user.email || '').toLowerCase()
+        const [{ data: acessos }, { data: compra }, { data: ehAdmin }] = await Promise.all([
+          supabase.from('accesses').select('access_type, expires_at')
+            .ilike('email', emailAluno).eq('status', 'active'),
+          supabase.from('buyers').select('id')
+            .ilike('email', emailAluno).eq('access_granted', true).limit(1).maybeSingle(),
+          supabase.rpc('has_role', { _user_id: user.id, _role: 'admin' }),
+        ])
+        const noPrazo = (a: { expires_at?: string | null }) =>
+          !a.expires_at || new Date(a.expires_at).getTime() > Date.now()
+        const assinante = (acessos || []).some(a => a.access_type !== 'trial' && noPrazo(a)) || !!compra
+        if (!ehAdmin && !assinante) {
+          return json({ error: 'O download de materiais do acervo é exclusivo de quem tem plano ativo.' }, 403)
+        }
+      }
       const sig = await hmacHex(streamSecret, `${f.drive_file_id}.${expiresAt}.${mimeType}${querBaixar ? '.dl' : ''}`)
       const url = `${streamBaseUrl}/?id=${encodeURIComponent(f.drive_file_id)}&exp=${expiresAt}&sig=${sig}&mime=${encodeURIComponent(mimeType)}`
         + (querBaixar ? '&dlok=1' : '')
