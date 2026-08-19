@@ -170,3 +170,83 @@ export const FundoReal: React.FC<{ children: React.ReactNode }> = ({ children })
     {children}
   </AbsoluteFill>
 );
+
+/* ============ V2: câmera deslizante + transição wipe ============ */
+
+/* take em janela cheia com CÂMERA ANIMADA: kf = [t, zoom, focoX, focoY] */
+export const TakePan: React.FC<{
+  nome: string; t: number; from?: number; fromEnd?: number;
+  kf: Array<[number, number, number, number]>; h?: number; radius?: number; mobile?: boolean;
+}> = ({ nome, t, from, fromEnd, kf, h = 1320, radius = 30, mobile }) => {
+  const w = 1080;
+  let zoom = kf[kf.length - 1][1], fx = kf[kf.length - 1][2], fy = kf[kf.length - 1][3];
+  if (t <= kf[0][0]) { zoom = kf[0][1]; fx = kf[0][2]; fy = kf[0][3]; }
+  else {
+    for (let i = 0; i < kf.length - 1; i++) {
+      const [t0, z0, x0, y0] = kf[i], [t1, z1, x1, y1] = kf[i + 1];
+      if (t <= t1) {
+        const p = win(t, t0, t1); const e = p * p * (3 - 2 * p);
+        zoom = z0 + (z1 - z0) * e; fx = x0 + (x1 - x0) * e; fy = y0 + (y1 - y0) * e;
+        break;
+      }
+    }
+  }
+  /* desktop 1512×850; mobile: região útil 430×932 num canvas 860×1864 */
+  const baseW = mobile ? 430 : 1512, baseH = mobile ? 932 : 850;
+  const escala = mobile ? 2 : 1; /* mobile: vídeo 2× para recortar o quadrante útil */
+  const vidW = baseW * zoom, vidH = baseH * zoom;
+  const left = w / 2 - fx * zoom;
+  const topv = h / 2 - fy * zoom;
+  return (
+    <div style={{
+      width: w, height: h, overflow: 'hidden', position: 'relative', borderRadius: radius,
+      background: '#fff', boxShadow: '0 34px 90px rgba(14,27,51,0.30)',
+    }}>
+      <OffthreadVideo
+        src={staticFile(`takes/${nome}.webm`)} muted
+        startFrom={takeFrom(nome, { from, fromEnd })}
+        style={{
+          position: 'absolute',
+          width: vidW * escala, height: (mobile ? 1864 / 860 : baseH / baseW) * vidW * escala,
+          left: Math.min(0, Math.max(w - vidW, left)),
+          top: Math.min(0, Math.max(h - vidH, topv)),
+        }}
+      />
+    </div>
+  );
+};
+
+/* wipe diagonal azul: cobre (at→at+0.35) e revela (at+0.35→at+0.7) */
+export const Wipe: React.FC<{ t: number; at: number }> = ({ t, at }) => {
+  if (t < at || t > at + 0.72) return null;
+  const p1 = outB(win(t, at, at + 0.36));
+  const p2 = t < at + 0.36 ? 0 : outB(win(t, at + 0.36, at + 0.72));
+  const x = p2 > 0 ? 130 * p2 : 130 * (p1 - 1) + 130;
+  return (
+    <div style={{
+      position: 'absolute', top: -200, bottom: -200, left: `${x - 145}%`, width: '160%',
+      background: `linear-gradient(105deg, ${M_BLUE}, #0a3d99 60%)`,
+      transform: 'skewX(-10deg)', zIndex: 40,
+      boxShadow: '0 0 120px rgba(21,96,232,0.5)',
+    }} />
+  );
+};
+
+/* chip de benefício (substitui os rótulos antigos) */
+export const Beneficio: React.FC<{ t: number; at: number; ate?: number; children: React.ReactNode; bottom?: number }> =
+  ({ t, at, ate = 9999, children, bottom = 96 }) => {
+    if (t < at || t > ate) return null;
+    const p = outB(win(t, at, at + 0.4));
+    return (
+      <div style={{
+        position: 'absolute', left: 0, right: 0, bottom, display: 'flex', justifyContent: 'center',
+        opacity: p, transform: `translateY(${(1 - p) * 18}px)`, zIndex: 25,
+      }}>
+        <div style={{
+          background: 'rgba(14,27,51,0.92)', color: WHITE, fontFamily: HEAD, fontWeight: 800,
+          fontSize: 33, borderRadius: 999, padding: '17px 36px',
+          boxShadow: '0 18px 50px rgba(14,27,51,0.4)', maxWidth: 960, textAlign: 'center',
+        }}>{children}</div>
+      </div>
+    );
+  };
