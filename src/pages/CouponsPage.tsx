@@ -77,11 +77,15 @@ export default function CouponsPage() {
         max_uses: form.max_uses ? parseInt(form.max_uses) : null,
         allowed_plans: form.allowed_plans,
       };
+      // O supabase-js resolve a promise mesmo em falha (RLS/rede) — sem checar
+      // `error`, a tela dizia "Cupom criado!" com nada salvo no banco.
       if (editing) {
-        await supabase.from('coupons').update(payload).eq('id', editing.id);
+        const { error } = await supabase.from('coupons').update(payload).eq('id', editing.id);
+        if (error) throw error;
         toast.success('Cupom atualizado!');
       } else {
-        await supabase.from('coupons').insert(payload);
+        const { error } = await supabase.from('coupons').insert(payload);
+        if (error) throw error;
         toast.success('Cupom criado!');
       }
       setShowModal(false);

@@ -15,8 +15,20 @@ import { UserPlus, Search, Trash2, RefreshCw, XCircle, FolderOpen, Loader2, Aler
 
 // Acesso permanente não tem data de fim. Esta tela trabalha com duração em
 // minutos (herança do fluxo de trial), então precisa saber quais tipos ficam
-// de fora dessa conta.
-const VITALICIOS = new Set(['lifetime', 'lifetime_plus', 'lifetime_pro']);
+// de fora dessa conta. 'paid' (compra confirmada pelo webhook) também é
+// permanente.
+const SEM_VENCIMENTO = new Set(['lifetime', 'lifetime_plus', 'lifetime_pro', 'paid']);
+const ANO_MS = 365 * 24 * 60 * 60 * 1000;
+
+// Vencimento por tipo: só o trial usa o campo de minutos; anual vence em 12
+// meses; pago/vitalício não vence. Antes, a duração em minutos era aplicada a
+// QUALQUER tipo — um acesso "anual" criado aqui expirava em minutos.
+function vencimentoPorTipo(tipo: string, minutos: number): string | null {
+  if (SEM_VENCIMENTO.has(tipo)) return null;
+  if (tipo === 'annual') return new Date(Date.now() + ANO_MS).toISOString();
+  const mins = Number.isFinite(minutos) && minutos > 0 ? minutos : 30;
+  return new Date(Date.now() + mins * 60 * 1000).toISOString();
+}
 import { WhatsAppLink } from '@/components/WhatsAppLink';
 
 export default function AccessManagement() {
@@ -84,16 +96,13 @@ export default function AccessManagement() {
     if (!newEmail) { toast.error('Informe um email'); return; }
     setAdding(true);
     try {
-      // Vitalício NÃO tem vencimento. Esta tela nasceu no fluxo de trial (por
-      // isso a duração em minutos), mas o seletor de tipo passou a incluir os
-      // vitalícios — e a duração era aplicada a eles do mesmo jeito. Foi assim
-      // que um cliente ficou com um "vitalício" que expirou 3 horas depois de
-      // concedido: ele conseguia entrar (o login só olha status='active') e
-      // levava "Sem acesso ativo" em toda aula (o player também olha o
-      // vencimento).
-      const ehVitalicio = VITALICIOS.has(newType);
-      const durationMs = parseInt(newDuration) * 60 * 1000;
-      const expiresAt = ehVitalicio ? null : new Date(Date.now() + durationMs).toISOString();
+      // Esta tela nasceu no fluxo de trial (por isso a duração em minutos),
+      // mas o seletor de tipo passou a incluir anual/pago/vitalício — e a
+      // duração era aplicada a todos do mesmo jeito. Foi assim que um cliente
+      // ficou com um "vitalício" que expirou 3 horas depois de concedido.
+      // Agora o vencimento sai do tipo: trial = minutos, anual = 12 meses,
+      // pago/vitalício = nunca.
+      const expiresAt = vencimentoPorTipo(newType, parseInt(newDuration));
       const { data: access, error } = await supabase.from('accesses').insert({
         email: newEmail.toLowerCase(),
         whatsapp: newWhatsapp || null,
@@ -178,14 +187,17 @@ export default function AccessManagement() {
     }
   };
 
-  // Renova por +30 min. Se a permissão do Drive foi removida, compartilha novamente.
-  // Em acesso vitalício, "renovar" apenas reativa: pôr vencimento num vitalício
-  // é o que transformava o acesso permanente num acesso de 30 minutos.
+  // Renova conforme o tipo: trial ganha +30 min, anual +12 meses; em acesso
+  // pago/vitalício, "renovar" apenas reativa (pôr vencimento num vitalício é o
+  // que transformava o acesso permanente num acesso de 30 minutos). Se a
+  // permissão do Drive foi removida, compartilha novamente.
   const renewAccess = async (access: any) => {
     try {
-      const expiresAt = VITALICIOS.has(access.access_type)
+      const expiresAt = SEM_VENCIMENTO.has(access.access_type)
         ? null
-        : new Date(Date.now() + 30 * 60 * 1000).toISOString();
+        : access.access_type === 'annual'
+          ? new Date(Date.now() + ANO_MS).toISOString()
+          : new Date(Date.now() + 30 * 60 * 1000).toISOString();
       const { error } = await supabase
         .from('accesses')
         .update({ status: 'active', expires_at: expiresAt })
@@ -256,10 +268,14 @@ export default function AccessManagement() {
                   <Label className="text-foreground">WhatsApp (opcional)</Label>
                   <Input value={newWhatsapp} onChange={e => setNewWhatsapp(e.target.value)} placeholder="+55 11 99999-9999" className="bg-secondary border-border text-foreground" />
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-foreground">Duração (minutos)</Label>
-                  <Input type="number" value={newDuration} onChange={e => setNewDuration(e.target.value)} className="bg-secondary border-border text-foreground" />
-                </div>
+                {/* O campo de minutos só vale pro trial — nos demais tipos o
+                    vencimento é definido pelo tipo, então o campo some. */}
+                {newType === 'trial' && (
+                  <div className="space-y-2">
+                    <Label className="text-foreground">Duração (minutos)</Label>
+                    <Input type="number" value={newDuration} onChange={e => setNewDuration(e.target.value)} className="bg-secondary border-border text-foreground" />
+                  </div>
+                )}
                 <div className="space-y-2">
                   <Label className="text-foreground">Tipo</Label>
                   <Select value={newType} onValueChange={setNewType}>
@@ -271,6 +287,12 @@ export default function AccessManagement() {
                       <SelectItem value="paid">Pago</SelectItem>
                     </SelectContent>
                   </Select>
+                  {newType === 'annual' && (
+                    <p className="text-xs text-muted-foreground">Vence automaticamente em 12 meses.</p>
+                  )}
+                  {SEM_VENCIMENTO.has(newType) && (
+                    <p className="text-xs text-muted-foreground">Sem vencimento — acesso permanente.</p>
+                  )}
                 </div>
                 <Button onClick={addAccess} disabled={adding} className="w-full bg-primary hover:bg-primary-hover text-primary-foreground gap-2">
                   {adding ? <Loader2 className="w-4 h-4 animate-spin" /> : null}

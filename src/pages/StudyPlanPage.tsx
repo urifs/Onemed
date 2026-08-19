@@ -7,6 +7,7 @@ import {
   Flag, Lightbulb, Clock, BookOpen, RefreshCw, PencilLine, Dumbbell, Coffee, ListChecks,
 } from 'lucide-react';
 import { useMemberStatus } from '@/hooks/useMemberStatus';
+import { extractFunctionErrorMessage } from '@/lib/utils';
 import { MindMap, type MindNode } from '@/components/member/MindMap';
 import { SaveToPlaylistButton } from '@/components/member/SaveToPlaylistButton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -204,7 +205,11 @@ function CreateDialog({ isMonthly, onClose, onCreated }: {
           focus: focus.trim() || undefined,
         },
       });
-      if (error || data?.error) throw new Error(data?.error || error?.message);
+      // O motivo real de um 403/429 (plano sem acesso, limite diário) vem no
+      // corpo da resposta — error.message cru é só a frase genérica em inglês.
+      if (error || data?.error) {
+        throw new Error(data?.error || await extractFunctionErrorMessage(error, 'Não foi possível gerar o cronograma.'));
+      }
       toast.success('Cronograma criado!');
       onCreated(data.plan as StudyPlan);
     } catch (err: any) {

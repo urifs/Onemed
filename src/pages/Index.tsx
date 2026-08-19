@@ -106,6 +106,10 @@ export default function Index() {
       const msg = err.message || '';
       if (msg.includes('já utilizou') || msg.includes('já possui acesso')) {
         toast.error(msg, { duration: 6000 });
+      } else if (/Failed to send a request|Failed to fetch|NetworkError|Load failed/i.test(msg)) {
+        // Erro de rede do navegador vaza em inglês — troca por uma orientação
+        // de verdade (mesma mensagem da tela de login).
+        toast.error('Não foi possível conectar ao servidor. Verifique sua internet, desative VPN ou bloqueador de anúncios e tente de novo.');
       } else {
         toast.error(msg || 'Erro ao solicitar acesso. Tente novamente.');
       }

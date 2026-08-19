@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ListPlus, Check, Plus, Loader2, ListVideo } from 'lucide-react';
 import { toast } from 'sonner';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -27,6 +27,9 @@ export function SaveToPlaylistButton({
   const [busy, setBusy] = useState<string | null>(null);
   const [novo, setNovo] = useState('');
   const [criando, setCriando] = useState(false);
+  // Playlist já criada numa tentativa em que só o save do item falhou — o
+  // retry reaproveita o id em vez de criar uma playlist duplicada.
+  const criada = useRef<{ nome: string; id: string } | null>(null);
 
   // Ao abrir, descobre em quais playlists o item já está.
   useEffect(() => {
@@ -64,8 +67,20 @@ export function SaveToPlaylistButton({
     if (!nome || criando) return;
     setCriando(true);
     try {
-      const id = await createPlaylist(nome);
-      await addToPlaylist(id, itemType, itemId);
+      let id = criada.current?.nome === nome ? criada.current.id : null;
+      if (!id) {
+        id = await createPlaylist(nome);
+        criada.current = { nome, id };
+        invalidate();
+      }
+      try {
+        await addToPlaylist(id, itemType, itemId);
+      } catch {
+        // A criação passou; o campo mantém o nome pro retry só refazer o add.
+        toast.error(`A playlist "${nome}" foi criada, mas o item não foi salvo nela. Tente de novo.`);
+        return;
+      }
+      criada.current = null;
       setContidas(prev => new Set(prev).add(id));
       setNovo('');
       invalidate();

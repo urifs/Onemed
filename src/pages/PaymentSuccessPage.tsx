@@ -91,8 +91,12 @@ export default function PaymentSuccessPage() {
                 <LogIn className="w-5 h-5 text-primary" />
                 Como acessar
               </h3>
+              {/* O login é e-mail + senha desde 13/08 — a primeira entrada
+                  cadastra a senha na hora, sem código nem espera. */}
               <p className="text-muted-foreground text-sm mb-2">
-                É só fazer login com o e-mail que você usou na compra — sem senha, você recebe um link de acesso por e-mail.
+                Entre com o e-mail que você usou na compra. No primeiro acesso,
+                você cadastra a sua senha na própria tela de login — leva menos
+                de um minuto.
               </p>
               {email && (
                 <p className="text-sm flex items-center gap-2 mt-3 text-foreground">

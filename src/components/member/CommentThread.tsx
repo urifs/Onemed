@@ -171,6 +171,7 @@ export function CommentThread({ rootId, replyCount }: { rootId: string; replyCou
   const [open, setOpen] = useState(false);
   const [replies, setReplies] = useState<ReplyNode[] | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [replyBody, setReplyBody] = useState('');
   const [rootReplyBody, setRootReplyBody] = useState('');
@@ -181,13 +182,17 @@ export function CommentThread({ rootId, replyCount }: { rootId: string; replyCou
 
   const loadReplies = async () => {
     setLoading(true);
+    setLoadError(false);
     try {
       const { data, error } = await supabase.rpc('community_replies', { _parent_id: rootId });
       if (error) throw error;
       setReplies((data || []) as ReplyNode[]);
     } catch (err) {
       console.error('Failed to load replies', err);
-      setReplies([]);
+      // replies fica null: reabrir o thread tenta de novo, e o render mostra
+      // o erro em vez de um thread vazio que engana.
+      setReplies(null);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -269,6 +274,16 @@ export function CommentThread({ rootId, replyCount }: { rootId: string; replyCou
           {loading ? (
             <div className="flex justify-center py-4">
               <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : loadError ? (
+            <div className="py-3 text-center">
+              <p className="text-xs text-muted-foreground">Não foi possível carregar as respostas.</p>
+              <button
+                onClick={loadReplies}
+                className="mt-2 text-xs font-medium text-primary hover:underline"
+              >
+                Tentar de novo
+              </button>
             </div>
           ) : (
             <>

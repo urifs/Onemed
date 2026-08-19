@@ -107,6 +107,11 @@ export default function SMSPage() {
   const [previewing, setPreviewing] = useState(false);
   const [previewCount, setPreviewCount] = useState<number | null>(null);
 
+  // Confirmação do disparo em massa: conta a audiência real antes de criar o job.
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmCount, setConfirmCount] = useState<number | null>(null);
+  const [countError, setCountError] = useState(false);
+
   const channelRef = useRef<RealtimeChannel | null>(null);
   const sendsIdsRef = useRef<Set<string>>(new Set());
 
@@ -215,6 +220,13 @@ export default function SMSPage() {
     return `${y}-${m}-${da}`;
   }
 
+  function montarPayloadLista(): Record<string, unknown> {
+    const payload: Record<string, unknown> = { mode: 'list', audience };
+    if (audience === 'custom') payload.custom_numbers = customNumbers.split('\n').map(s => s.trim()).filter(Boolean);
+    if (audience === 'trial_expired_custom_dates') payload.expired_dates = selectedDates.map(toLocalYMD);
+    return payload;
+  }
+
   async function handlePreview() {
     if (audience === 'trial_expired_custom_dates' && selectedDates.length === 0) {
       toast.error('Selecione ao menos um dia no calendário'); return;
@@ -222,10 +234,7 @@ export default function SMSPage() {
     setPreviewing(true);
     setPreviewCount(null);
     try {
-      const payload: Record<string, unknown> = { mode: 'list', audience };
-      if (audience === 'custom') payload.custom_numbers = customNumbers.split('\n').map(s => s.trim()).filter(Boolean);
-      if (audience === 'trial_expired_custom_dates') payload.expired_dates = selectedDates.map(toLocalYMD);
-      const data = await callFn('send-sms', payload);
+      const data = await callFn('send-sms', montarPayloadLista());
       const count = (data?.recipients ?? []).length;
       setPreviewCount(count);
       toast.success(`${count} destinatário${count !== 1 ? 's' : ''} encontrado${count !== 1 ? 's' : ''}`);
@@ -236,13 +245,28 @@ export default function SMSPage() {
     }
   }
 
-  async function handleStartJob() {
+  // O botão "Disparar SMS" abre esta confirmação em vez de criar o job direto:
+  // disparo em massa é cobrado por mensagem e não tem volta, então a audiência
+  // é contada de verdade e mostrada antes.
+  async function handleAskConfirm() {
     if (!message.trim()) { toast.error('Digite a mensagem antes de enviar'); return; }
     if (audience === 'custom' && !customNumbers.trim()) { toast.error('Adicione pelo menos um número'); return; }
     if (audience === 'trial_expired_custom_dates' && selectedDates.length === 0) {
       toast.error('Selecione ao menos um dia no calendário'); return;
     }
+    setConfirmOpen(true);
+    setConfirmCount(null);
+    setCountError(false);
+    try {
+      const data = await callFn('send-sms', montarPayloadLista());
+      setConfirmCount(Array.isArray(data?.recipients) ? data.recipients.length : 0);
+    } catch {
+      setCountError(true);
+    }
+  }
 
+  async function handleStartJob() {
+    setConfirmOpen(false);
     setCreating(true);
     setSends([]);
     try {
@@ -309,8 +333,14 @@ export default function SMSPage() {
     if (activeJob && (activeJob.status === 'scheduled' || activeJob.status === 'running')) {
       await callFn('send-sms', { mode: 'cancel-job', job_id: activeJob.id }).catch(() => {});
     }
-    await supabase.from('sms_sends').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-    await supabase.from('sms_jobs').delete().in('status', ['completed', 'cancelled', 'failed']);
+    // Os DELETEs podem falhar em silêncio (RLS/rede) — sem checar `error`, a
+    // tela dizia "histórico limpo" com os registros ainda no banco.
+    const { error: sendsErr } = await supabase.from('sms_sends').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    const { error: jobsErr } = await supabase.from('sms_jobs').delete().in('status', ['completed', 'cancelled', 'failed']);
+    if (sendsErr || jobsErr) {
+      toast.error('Erro ao limpar histórico: ' + ((sendsErr || jobsErr)?.message || 'falha desconhecida'));
+      return;
+    }
     if (channelRef.current) { supabase.removeChannel(channelRef.current); channelRef.current = null; }
     setActiveJob(null);
     setSends([]);
@@ -702,13 +732,40 @@ export default function SMSPage() {
                 </p>
               </div>
             ) : (
-              <Button onClick={handleStartJob} disabled={creating || !message.trim()}
+              <Button onClick={handleAskConfirm} disabled={creating || !message.trim()}
                 className="bg-blue-600 hover:bg-blue-700 text-white" size="lg">
                 {creating
                   ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Criando disparo...</>
                   : <><Send className="w-4 h-4 mr-2" />Disparar SMS</>}
               </Button>
             )}
+
+            <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+              <AlertDialogContent className="bg-background-paper border-border">
+                <AlertDialogHeader>
+                  <AlertDialogTitle className="text-foreground">Confirmar disparo em massa?</AlertDialogTitle>
+                  <AlertDialogDescription className="text-muted-foreground">
+                    {countError
+                      ? 'Não foi possível contar os destinatários. Feche e tente novamente antes de disparar.'
+                      : confirmCount === null
+                        ? 'Contando destinatários...'
+                        : confirmCount === 0
+                          ? 'Nenhum destinatário encontrado para esta audiência.'
+                          : `O SMS será enviado para ${confirmCount} destinatário${confirmCount !== 1 ? 's' : ''}. O envio começa imediatamente e é cobrado por mensagem.`}
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel className="bg-secondary border-border text-foreground">Cancelar</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={handleStartJob}
+                    disabled={countError || confirmCount === null || confirmCount === 0}
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                  >
+                    Disparar agora
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </CardContent>
         </Card>
 

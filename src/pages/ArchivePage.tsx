@@ -193,12 +193,14 @@ export default function ArchivePage() {
     if (!user?.id) return;
     const fav = favIds.has(itemId);
     setFavIds(prev => { const n = new Set(prev); if (fav) n.delete(itemId); else n.add(itemId); return n; });
-    if (fav) {
-      await supabase.from('user_archive_favorites' as never).delete().match({ user_id: user.id, item_id: itemId } as never);
-    } else {
-      const { error } = await supabase.from('user_archive_favorites' as never)
-        .insert({ user_id: user.id, item_id: itemId } as never);
-      if (error) setFavIds(prev => { const n = new Set(prev); n.delete(itemId); return n; });
+    const { error } = fav
+      ? await supabase.from('user_archive_favorites' as never).delete().match({ user_id: user.id, item_id: itemId } as never)
+      : await supabase.from('user_archive_favorites' as never).insert({ user_id: user.id, item_id: itemId } as never);
+    if (error) {
+      // Desfaz o toggle otimista nos DOIS sentidos — a estrela não pode ficar
+      // mentindo quando a gravação falhou.
+      setFavIds(prev => { const n = new Set(prev); if (fav) n.add(itemId); else n.delete(itemId); return n; });
+      toast.error('Não foi possível atualizar os favoritos. Tente novamente.');
     }
   };
 
@@ -622,7 +624,11 @@ function UploadDialog({ onClose, onDone, ensureName }: {
           {sending && (
             <div className="rounded-xl border border-border bg-secondary/50 px-4 py-3">
               <p className="text-xs text-muted-foreground mb-2 truncate">
-                Enviando {progress.done + 1}/{progress.total}: {progress.current}
+                {progress.done >= progress.total
+                  // Todos os arquivos já subiram — está no finalize; "Enviando
+                  // 6/5" era o índice passando do total nessa fase.
+                  ? 'Publicando…'
+                  : `Enviando ${progress.done + 1}/${progress.total}: ${progress.current}`}
               </p>
               <div className="h-2 rounded-full bg-border overflow-hidden">
                 <div className="h-full bg-primary transition-all" style={{ width: `${progress.pct}%` }} />
@@ -653,6 +659,7 @@ function DetailDialog({ itemId, initialFileId, currentUserId, onClose, onChanged
   const [files, setFiles] = useState<ArchiveFile[]>([]);
   const [comments, setComments] = useState<ArchiveComment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [sendingComment, setSendingComment] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -743,12 +750,16 @@ function DetailDialog({ itemId, initialFileId, currentUserId, onClose, onChanged
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(false);
     try {
       const [feedRes, filesRes, commentsRes] = await Promise.all([
         supabase.rpc('archive_feed' as never, { _item_id: itemId, _limit: 1 } as never),
         supabase.from('archive_files' as never).select('*').eq('item_id', itemId).eq('status', 'ready').order('path').order('name'),
         supabase.rpc('archive_comments_feed' as never, { _item_id: itemId } as never),
       ]);
+      // Erro na consulta (rede/timeout) NÃO é "material não encontrado" — o
+      // diálogo fica aberto com retry em vez de fechar com um erro que engana.
+      if (feedRes.error) { setLoadError(true); return; }
       const row = ((feedRes.data || []) as FeedItem[])[0];
       if (!row) { toast.error('Material não encontrado.'); onClose(); return; }
       setItem(row);
@@ -791,6 +802,9 @@ function DetailDialog({ itemId, initialFileId, currentUserId, onClose, onChanged
   const sendComment = () => {
     const body = commentText.trim();
     if (!body || !item) return;
+    if (sendingComment) return; // o Enter no textarea não passa pelo disabled
+                                // do botão — sem esta trava, Enter duplo
+                                // inseria o comentário duas vezes
     ensureName(() => { void reallySendComment(body); });
   };
 
@@ -895,7 +909,21 @@ function DetailDialog({ itemId, initialFileId, currentUserId, onClose, onChanged
         onInteractOutside={e => { if (sobreposto) e.preventDefault(); }}
         onEscapeKeyDown={e => { if (sobreposto) e.preventDefault(); }}
       >
-        {loading || !item ? (
+        {loading ? (
+          <div className="py-16 flex justify-center"><Loader2 className="w-6 h-6 text-primary animate-spin" /></div>
+        ) : loadError ? (
+          <div className="py-14 text-center">
+            <p className="text-sm text-muted-foreground">Não foi possível carregar o material. Verifique sua conexão.</p>
+            <button
+              onClick={load}
+              className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-border bg-secondary hover:bg-secondary/70 text-foreground text-sm font-medium px-4 py-2 transition-colors"
+            >
+              Tentar novamente
+            </button>
+          </div>
+        ) : !item ? (
+          // "Não encontrado" já disparou toast + onClose — só o render de
+          // transição enquanto o diálogo desmonta.
           <div className="py-16 flex justify-center"><Loader2 className="w-6 h-6 text-primary animate-spin" /></div>
         ) : (
           <div className="space-y-5">

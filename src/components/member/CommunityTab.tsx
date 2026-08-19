@@ -34,6 +34,7 @@ export function CommunityTab({ courseId }: { courseId: string }) {
   const [comments, setComments] = useState<Comment[]>([]);
   const [body, setBody] = useState('');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [posting, setPosting] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editBody, setEditBody] = useState('');
@@ -47,8 +48,12 @@ export function CommunityTab({ courseId }: { courseId: string }) {
       const { data, error } = await supabase.rpc('course_comments_feed', { _course_id: courseId });
       if (error) throw error;
       setComments(((data as any) || []) as Comment[]);
+      setLoadError(false);
     } catch (err) {
       console.error('Failed to load comments', err);
+      // Falha de carga ≠ curso sem comentários — sem isto a tela mostrava
+      // "Seja o primeiro a comentar" por cima de um erro de rede.
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -126,6 +131,17 @@ export function CommunityTab({ courseId }: { courseId: string }) {
       {loading ? (
         <div className="flex justify-center py-10">
           <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : loadError ? (
+        <div className="text-center py-14 text-muted-foreground">
+          <MessageCircle className="w-8 h-8 mx-auto mb-3 opacity-40" />
+          <p className="text-sm">Não foi possível carregar os comentários.</p>
+          <button
+            onClick={() => { setLoading(true); load(); }}
+            className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-border bg-secondary hover:bg-secondary/70 text-foreground text-sm font-medium px-4 py-2 transition-colors"
+          >
+            Tentar novamente
+          </button>
         </div>
       ) : comments.length === 0 ? (
         <div className="text-center py-14 text-muted-foreground">

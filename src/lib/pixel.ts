@@ -78,7 +78,7 @@ export const trackLead = (email: string, extra?: PixelUserData) => {
 
   setPixelUserData({ email, ...extra });
   window.fbq!('track', 'Lead', {
-    content_name: 'Teste Gratuito 30min',
+    content_name: 'Teste Gratuito 10min',
     content_category: 'Trial',
     value: 0,
     currency: 'BRL',

@@ -37,11 +37,15 @@ export default function MemberPlaylistsPage() {
   const [selectedId, setSelectedId] = useState<string | null>(searchParams.get('id'));
   const [items, setItems] = useState<ResolvedItem[]>([]);
   const [itemsLoading, setItemsLoading] = useState(false);
+  const [itemsError, setItemsError] = useState(false);
   const [novoNome, setNovoNome] = useState('');
   const [criando, setCriando] = useState(false);
 
-  // Anotações da playlist — autosave com debounce.
+  // Anotações da playlist — autosave com debounce. O texto atual vive também
+  // num ref: o flush no unmount/troca de playlist lê dele, sem depender do
+  // estado (efeito que depende do texto roda o cleanup a cada tecla).
   const [notes, setNotes] = useState('');
+  const notesRef = useRef('');
   const notesTimer = useRef<number | null>(null);
   const notesDirty = useRef(false);
 
@@ -64,7 +68,10 @@ export default function MemberPlaylistsPage() {
 
   const carregarItens = useCallback(async (pid: string) => {
     setItemsLoading(true);
+    setItemsError(false);
     const { data, error } = await supabase.rpc('playlist_items_resolved' as never, { _playlist_id: pid } as never);
+    // Falha na consulta não pode virar "Playlist vazia." — mostra erro + retry.
+    setItemsError(!!error);
     setItems(error ? [] : ((data as unknown as ResolvedItem[]) || []));
     setItemsLoading(false);
   }, []);
@@ -76,23 +83,35 @@ export default function MemberPlaylistsPage() {
   }, [selectedId, carregarItens, setSearchParams]);
 
   // Ao trocar de playlist, carrega as anotações dela.
-  useEffect(() => { setNotes(selected?.notes || ''); notesDirty.current = false; }, [selected?.id]);
+  useEffect(() => {
+    setNotes(selected?.notes || '');
+    notesRef.current = selected?.notes || '';
+    notesDirty.current = false;
+  }, [selected?.id]);
 
   const salvarNotes = useCallback(async (pid: string, texto: string) => {
-    await supabase.rpc('playlist_set_notes' as never, { _playlist_id: pid, _notes: texto } as never);
-    notesDirty.current = false;
+    const { error } = await supabase.rpc('playlist_set_notes' as never, { _playlist_id: pid, _notes: texto } as never);
+    // Só limpa a pendência quando gravou de verdade — assim o flush ao sair
+    // ainda tenta de novo o que uma gravação anterior perdeu.
+    if (!error) notesDirty.current = false;
   }, []);
 
   const onNotesChange = (v: string) => {
     setNotes(v);
+    notesRef.current = v;
     notesDirty.current = true;
     if (notesTimer.current) window.clearTimeout(notesTimer.current);
     if (selectedId) notesTimer.current = window.setTimeout(() => salvarNotes(selectedId, v), 1200);
   };
-  // Salva o que faltou ao sair.
-  useEffect(() => () => {
-    if (notesDirty.current && selectedId) salvarNotes(selectedId, notes);
-  }, [selectedId, notes, salvarNotes]);
+  // Flush no unmount/troca de playlist, SÓ se houver pendência. Depende apenas
+  // do id (nunca do texto): cleanup por tecla dispararia RPC com texto velho.
+  useEffect(() => {
+    const pid = selectedId;
+    return () => {
+      if (notesTimer.current) { window.clearTimeout(notesTimer.current); notesTimer.current = null; }
+      if (notesDirty.current && pid) salvarNotes(pid, notesRef.current);
+    };
+  }, [selectedId, salvarNotes]);
 
   const criar = async () => {
     const nome = novoNome.trim();
@@ -113,7 +132,8 @@ export default function MemberPlaylistsPage() {
     if (!selected) return;
     const nome = window.prompt('Novo nome da playlist:', selected.name)?.trim();
     if (!nome || nome === selected.name) return;
-    await supabase.rpc('playlist_rename' as never, { _playlist_id: selected.id, _name: nome } as never);
+    const { error } = await supabase.rpc('playlist_rename' as never, { _playlist_id: selected.id, _name: nome } as never);
+    if (error) { toast.error('Não foi possível renomear a playlist. Tente novamente.'); return; }
     invalidate();
     toast.success('Playlist renomeada');
   };
@@ -121,7 +141,8 @@ export default function MemberPlaylistsPage() {
   const excluir = async () => {
     if (!selected || selected.is_default) return;
     if (!window.confirm(`Excluir a playlist "${selected.name}"? Os itens salvos nela serão removidos da playlist (o conteúdo em si continua na plataforma).`)) return;
-    await supabase.rpc('playlist_delete' as never, { _playlist_id: selected.id } as never);
+    const { error } = await supabase.rpc('playlist_delete' as never, { _playlist_id: selected.id } as never);
+    if (error) { toast.error('Não foi possível excluir a playlist. Tente novamente.'); return; }
     setSelectedId(null);
     invalidate();
     toast.success('Playlist excluída');
@@ -129,8 +150,14 @@ export default function MemberPlaylistsPage() {
 
   const removerItem = async (it: ResolvedItem) => {
     if (!selectedId) return;
+    const anteriores = items;
     setItems(prev => prev.filter(x => x.id !== it.id));
-    await supabase.rpc('playlist_remove' as never, { _playlist_id: selectedId, _item_type: it.item_type, _item_id: it.item_id } as never);
+    const { error } = await supabase.rpc('playlist_remove' as never, { _playlist_id: selectedId, _item_type: it.item_type, _item_id: it.item_id } as never);
+    if (error) {
+      setItems(anteriores);
+      toast.error('Não foi possível remover o item. Tente novamente.');
+      return;
+    }
     invalidate();
   };
 
@@ -138,6 +165,8 @@ export default function MemberPlaylistsPage() {
     switch (it.item_type) {
       case 'course':
         if (it.course_slug) navigate(`/membros/curso/${it.course_slug}`);
+        // Sem slug o curso saiu da plataforma — clique mudo parecia bug.
+        else toast.error('Este item não está mais disponível na plataforma. Você pode removê-lo da playlist.');
         return;
       case 'lesson':
         // Aula E arquivo abrem na página do curso; a lista de reprodução da
@@ -145,6 +174,8 @@ export default function MemberPlaylistsPage() {
         if (it.course_slug) {
           const fila = items.filter(x => x.item_type === 'lesson').map(x => x.item_id);
           navigate(`/membros/curso/${it.course_slug}?lesson=${it.item_id}&playlist=${selectedId}&fila=${encodeURIComponent(fila.join(','))}`);
+        } else {
+          toast.error('Este item não está mais disponível na plataforma. Você pode removê-lo da playlist.');
         }
         return;
       case 'archive_item':
@@ -249,6 +280,16 @@ export default function MemberPlaylistsPage() {
                 {/* Itens */}
                 {itemsLoading ? (
                   <div className="flex justify-center py-10"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
+                ) : itemsError ? (
+                  <div className="text-center py-14 text-muted-foreground rounded-xl border border-dashed border-border">
+                    <p className="text-sm">Não foi possível carregar os itens da playlist.</p>
+                    <button
+                      onClick={() => selectedId && carregarItens(selectedId)}
+                      className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-border bg-secondary hover:bg-secondary/70 text-foreground text-sm font-medium px-4 py-2 transition-colors"
+                    >
+                      Tentar novamente
+                    </button>
+                  </div>
                 ) : items.length === 0 ? (
                   <div className="text-center py-14 text-muted-foreground rounded-xl border border-dashed border-border">
                     <p className="text-sm">Playlist vazia.</p>

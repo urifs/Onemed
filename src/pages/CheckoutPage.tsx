@@ -30,7 +30,7 @@ import {
   Crown,
   MonitorSmartphone,
 } from 'lucide-react';
-import { formatWhatsApp, extractFunctionErrorMessage } from '@/lib/utils';
+import { formatWhatsApp, extractFunctionErrorMessage, formatBRL } from '@/lib/utils';
 import { getAffiliateRef } from '@/lib/affiliateRef';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { PlanComparisonTable } from '@/components/PlanComparisonTable';
@@ -156,7 +156,10 @@ const PLANS: Record<string, {
 
 export default function CheckoutPage() {
   const [searchParams] = useSearchParams();
-  const initialPlan = searchParams.get('plan') || 'lifetime';
+  // Um ?plan= que não existe (link velho, typo) não pode virar seleção: tudo
+  // que lê PLANS[selectedPlan] estourava e o botão "Continuar" morria mudo.
+  const planParam = searchParams.get('plan');
+  const initialPlan = planParam && PLANS[planParam] ? planParam : 'lifetime';
   // Cupom explícito na URL vence; sem ele, o cupom do afiliado que indicou
   // (guardado por 30 dias desde o clique no link ?ref=) é aplicado sozinho —
   // é o que garante o desconto do indicado mesmo comprando dias depois.
@@ -216,7 +219,14 @@ export default function CheckoutPage() {
         .eq('code', c.toUpperCase())
         .eq('active', true)
         .single();
-      if (data) {
+      // Vencimento e limite de usos conferidos AQUI, não só no servidor: sem
+      // isso um cupom vencido passava como "Cupom aplicado!", o comprador via
+      // o preço com desconto nas 4 etapas e só descobria a recusa no clique
+      // final de pagar. (Mesma checagem do UpgradePlanModal.)
+      const expirado = data?.expires_at && new Date(data.expires_at) < new Date();
+      const esgotado = data?.max_uses !== null && data?.max_uses !== undefined
+        && data?.times_used !== null && Number(data?.times_used) >= Number(data?.max_uses);
+      if (data && !expirado && !esgotado) {
         setCouponApplied(data);
         setDiscountPercent(data.discount_percent);
         const allowedPlans = data.allowed_plans || 'all';
@@ -227,8 +237,9 @@ export default function CheckoutPage() {
       } else {
         setCouponApplied(null);
         setDiscountPercent(0);
-        if (!opts?.silent) toast.error('Cupom inválido ou expirado');
-        else setCouponCode('');
+        if (!opts?.silent) {
+          toast.error(!data ? 'Cupom inválido ou expirado' : expirado ? 'Este cupom já venceu' : 'Este cupom atingiu o limite de usos');
+        } else setCouponCode('');
       }
     } catch {
       if (!opts?.silent) toast.error('Erro ao validar cupom');
@@ -283,7 +294,7 @@ export default function CheckoutPage() {
       return false;
     }
     if (!customerEmail.toLowerCase().endsWith('@gmail.com')) {
-      toast.error('Use um e-mail Gmail (@gmail.com). O acesso ao Drive funciona melhor com Gmail.', { duration: 6000 });
+      toast.error('Use um e-mail Gmail (@gmail.com) — é nele que o seu acesso é liberado e que os benefícios do plano funcionam.', { duration: 6000 });
       return false;
     }
     if (!customerWhatsapp.trim() || customerWhatsapp.replace(/\D/g, '').length < 10) {
@@ -432,7 +443,7 @@ export default function CheckoutPage() {
                 {plan.originalPrice && (
                   <span className="text-lg text-muted-foreground line-through">R${plan.originalPrice.toLocaleString('pt-BR')}</span>
                 )}
-                <span className="text-4xl font-bold text-foreground">R${plan.price.toFixed(2).replace('.', ',')}</span>
+                <span className="text-4xl font-bold text-foreground">{formatBRL(plan.price)}</span>
               </div>
               <span className="text-muted-foreground text-sm">{plan.period}</span>
             </div>
@@ -494,15 +505,15 @@ export default function CheckoutPage() {
           <div className="mt-4 pt-4 border-t border-border text-sm space-y-1">
             <div className="flex justify-between text-muted-foreground">
               <span>Preço original:</span>
-              <span className="line-through">R$ {PLANS[selectedPlan].price.toFixed(2)}</span>
+              <span className="line-through">{formatBRL(PLANS[selectedPlan].price)}</span>
             </div>
             <div className="flex justify-between text-accent-success">
               <span>Desconto ({discountPercent}%):</span>
-              <span>- R$ {(PLANS[selectedPlan].price * discountPercent / 100).toFixed(2)}</span>
+              <span>- {formatBRL(PLANS[selectedPlan].price * discountPercent / 100)}</span>
             </div>
             <div className="flex justify-between pt-2 border-t border-border">
               <span className="text-foreground font-semibold">Total:</span>
-              <span className="text-accent-success font-bold text-lg">R$ {getDiscountedPrice(PLANS[selectedPlan].price).toFixed(2)}</span>
+              <span className="text-accent-success font-bold text-lg">{formatBRL(getDiscountedPrice(PLANS[selectedPlan].price))}</span>
             </div>
           </div>
         )}
@@ -542,7 +553,7 @@ export default function CheckoutPage() {
           </div>
           <div className="flex-1">
             <h3 className="font-secondary text-xl font-bold text-foreground mb-2">Atualizações Semanais + Lançamentos Instantâneos</h3>
-            <p className="text-muted-foreground mb-4">Receba toda semana novos conteúdos no seu Drive e tenha acesso imediato a todos os lançamentos assim que disponibilizados, antes de qualquer pessoa!</p>
+            <p className="text-muted-foreground mb-4">Receba novos conteúdos toda semana na plataforma e tenha acesso imediato aos lançamentos assim que forem disponibilizados.</p>
             <ul className="space-y-2 mb-4">
               {[
                 'Novos cursos e materiais toda semana',
@@ -558,7 +569,7 @@ export default function CheckoutPage() {
               ))}
             </ul>
             <div className="flex items-center justify-between">
-              <span className="text-2xl font-bold text-accent-success">+ R$ {UPSELL_PRICE.toFixed(2).replace('.', ',')}</span>
+              <span className="text-2xl font-bold text-accent-success">+ {formatBRL(UPSELL_PRICE)}</span>
               <span className="text-muted-foreground text-sm">pagamento único</span>
             </div>
           </div>
@@ -578,7 +589,7 @@ export default function CheckoutPage() {
           </div>
           <div className="flex-1">
             <h3 className="font-secondary text-xl font-bold text-foreground mb-2">Proteção Proxy + Backups Instantâneos</h3>
-            <p className="text-muted-foreground mb-4">Nunca fique sem acesso! Proteção contra quedas do Drive com acesso a backups em tempo real.</p>
+            <p className="text-muted-foreground mb-4">Nunca fique sem acesso: proteção contra instabilidades, com backups em tempo real do acervo.</p>
             <ul className="space-y-2 mb-4">
               {[
                 'Acesso via proxy em caso de queda',
@@ -592,7 +603,7 @@ export default function CheckoutPage() {
               ))}
             </ul>
             <div className="flex items-center justify-between">
-              <span className="text-2xl font-bold text-accent-info">+ R$ {UPSELL2_PRICE.toFixed(2).replace('.', ',')}</span>
+              <span className="text-2xl font-bold text-accent-info">+ {formatBRL(UPSELL2_PRICE)}</span>
               <span className="text-muted-foreground text-sm">pagamento único</span>
             </div>
           </div>
@@ -607,7 +618,7 @@ export default function CheckoutPage() {
             <h3 className="text-lg font-bold text-foreground">Deseja adicionar mais telas simultâneas?</h3>
             <p className="text-muted-foreground text-sm mt-1">
               Assista em mais dispositivos ao mesmo tempo. Cada tela extra por{' '}
-              <span className="text-foreground font-semibold">R$ {EXTRA_SCREEN_PRICE.toFixed(2).replace('.', ',')}</span>.
+              <span className="text-foreground font-semibold">{formatBRL(EXTRA_SCREEN_PRICE)}</span>.
             </p>
             <div className="flex items-center gap-3 mt-4">
               <button
@@ -630,7 +641,7 @@ export default function CheckoutPage() {
               >+</button>
               {extraScreens > 0 && (
                 <span className="ml-auto text-lg font-bold text-primary">
-                  + R$ {(extraScreens * EXTRA_SCREEN_PRICE).toFixed(2).replace('.', ',')}
+                  + {formatBRL(extraScreens * EXTRA_SCREEN_PRICE)}
                 </span>
               )}
             </div>
@@ -671,7 +682,7 @@ export default function CheckoutPage() {
             {upsell2Selected && <p className="text-accent-info text-sm">+ Proteção Proxy</p>}
             {extraScreens > 0 && <p className="text-primary text-sm">+ {extraScreens} tela(s) simultânea(s) extra(s)</p>}
           </div>
-          <p className="text-accent-success font-bold text-lg">R$ {getTotalPrice().toFixed(2)}</p>
+          <p className="text-accent-success font-bold text-lg">{formatBRL(getTotalPrice())}</p>
         </div>
       </div>
 
@@ -683,7 +694,7 @@ export default function CheckoutPage() {
         <div>
           <label className="block text-sm text-muted-foreground mb-2"><Mail className="w-4 h-4 inline mr-2" />Email *</label>
           <Input type="email" placeholder="seu@email.com" value={customerEmail} onChange={e => setCustomerEmail(e.target.value)} className="bg-secondary border-border text-foreground placeholder:text-muted-foreground h-12" required />
-          <p className="text-muted-foreground text-xs mt-1">Use o mesmo email da sua conta Google/Drive</p>
+          <p className="text-muted-foreground text-xs mt-1">Use um Gmail que você acessa com frequência — o acesso é liberado nele</p>
         </div>
         <div>
           <label className="block text-sm text-muted-foreground mb-2"><Phone className="w-4 h-4 inline mr-2" />WhatsApp *</label>
@@ -750,7 +761,7 @@ export default function CheckoutPage() {
         <h1 className="font-secondary text-3xl font-bold text-foreground mb-2">Como deseja pagar?</h1>
         <p className="text-muted-foreground">
           {PLANS[selectedPlan].name}{upsellSelected && ' + Atualizações'}{upsell2Selected && ' + Proteção'}{' '}—{' '}
-          <span className="text-accent-success font-semibold">R$ {getTotalPrice().toFixed(2)}</span>
+          <span className="text-accent-success font-semibold">{formatBRL(getTotalPrice())}</span>
         </p>
         {couponApplied && (
           <p className="text-accent-success text-sm mt-1">
@@ -772,29 +783,37 @@ export default function CheckoutPage() {
         <div className="space-y-2 text-sm">
           <div className="flex justify-between">
             <span className="text-muted-foreground">{PLANS[selectedPlan].name}</span>
-            <span className="text-foreground">R$ {getDiscountedPrice(PLANS[selectedPlan].price).toFixed(2)}</span>
+            <span className="text-foreground">{formatBRL(getDiscountedPrice(PLANS[selectedPlan].price))}</span>
           </div>
           {upsellSelected && (
             <div className="flex justify-between">
               <span className="text-muted-foreground">Atualizações Semanais + Lançamentos</span>
-              <span className="text-accent-success">+ R$ {UPSELL_PRICE.toFixed(2)}</span>
+              <span className="text-accent-success">+ {formatBRL(UPSELL_PRICE)}</span>
             </div>
           )}
           {upsell2Selected && (
             <div className="flex justify-between">
               <span className="text-muted-foreground">Proteção Proxy + Backups</span>
-              <span className="text-accent-info">+ R$ {UPSELL2_PRICE.toFixed(2)}</span>
+              <span className="text-accent-info">+ {formatBRL(UPSELL2_PRICE)}</span>
+            </div>
+          )}
+          {extraScreens > 0 && (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">
+                {extraScreens === 1 ? '1 tela simultânea extra' : `${extraScreens} telas simultâneas extras`}
+              </span>
+              <span className="text-foreground">+ {formatBRL(extraScreens * EXTRA_SCREEN_PRICE)}</span>
             </div>
           )}
           {discountPercent > 0 && (
             <div className="flex justify-between text-accent-success">
               <span>Desconto ({discountPercent}%)</span>
-              <span>- R$ {(PLANS[selectedPlan].price * discountPercent / 100).toFixed(2)}</span>
+              <span>- {formatBRL(PLANS[selectedPlan].price * discountPercent / 100)}</span>
             </div>
           )}
           <div className="flex justify-between pt-2 mt-2 border-t border-border">
             <span className="text-foreground font-semibold">Total</span>
-            <span className="text-accent-success font-bold text-lg">R$ {getTotalPrice().toFixed(2)}</span>
+            <span className="text-accent-success font-bold text-lg">{formatBRL(getTotalPrice())}</span>
           </div>
         </div>
       </div>
