@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, lazy, Suspense, type ComponentType } from "react";
 import { ThemeProvider } from "next-themes";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Route, Routes, Navigate, useLocation } from "react-router-dom";
@@ -9,13 +9,10 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { trackPageView } from "@/lib/pixel";
 
-// NOTA (2026-08-07): o code-splitting por rota (React.lazy) foi REVERTIDO em
-// emergência — a fronteira de chunk expunha uma dependência circular no
-// bundle ("can't access lexical declaration 'H' before initialization"), um
-// erro de TDZ entre o chunk lazy e o chunk principal que derrubava a
-// plataforma inteira em produção. Com tudo num bundle só, o bundler ordena
-// os módulos e o ciclo não dispara (é como a plataforma rodou por meses).
-// Reintroduzir splitting exige antes quebrar o ciclo de imports na fonte.
+// Páginas públicas prerenderizadas ficam ESTÁTICAS de propósito: o HTML delas
+// já chega pronto do prerender, e um chunk lazy faria a página piscar para o
+// spinner no primeiro paint. Logins também: são porta de entrada, pequenos, e
+// não valem uma ida extra à rede no caminho crítico.
 import Index from "./pages/Index";
 import TermsPage from "./pages/TermsPage";
 import PrivacyPage from "./pages/PrivacyPage";
@@ -28,42 +25,82 @@ import { captureAffiliateRefFromUrl } from "./lib/affiliateRef";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import MemberLoginPage from "./pages/MemberLoginPage";
-import MemberDashboardPage from "./pages/MemberDashboardPage";
-import CourseDetailPage from "./pages/CourseDetailPage";
-import CommunityPage from "./pages/CommunityPage";
-import Dashboard from "./pages/Dashboard";
-import AccessManagement from "./pages/AccessManagement";
-import ContentAccessPage from "./pages/ContentAccessPage";
-import MembersPage from "./pages/MembersPage";
-import DriveSettings from "./pages/DriveSettings";
-import CheckoutPage from "./pages/CheckoutPage";
-import PaymentSuccessPage from "./pages/PaymentSuccessPage";
-import PaymentErrorPage from "./pages/PaymentErrorPage";
-import PaymentPendingPage from "./pages/PaymentPendingPage";
-import ClaimAccessPage from "./pages/ClaimAccessPage";
-import BuyersPage from "./pages/BuyersPage";
-import TrialUsersPage from "./pages/TrialUsersPage";
-import CouponsPage from "./pages/CouponsPage";
-import AdminCommunityPage from "./pages/AdminCommunityPage";
-import StorePage from "./pages/StorePage";
-import ArchivePage from "./pages/ArchivePage";
-import StudyPlanPage from "./pages/StudyPlanPage";
-import MemberPlaylistsPage from "./pages/MemberPlaylistsPage";
-import StudyPlansAdminPage from "./pages/StudyPlansAdminPage";
-import AffiliateRegisterPage from "./pages/affiliate/AffiliateRegisterPage";
-import AffiliateLoginPage from "./pages/affiliate/AffiliateLoginPage";
-import AffiliatePanelPage from "./pages/affiliate/AffiliatePanelPage";
-import AffiliatesAdminPage from "./pages/AffiliatesAdminPage";
-import StoreAdminPage from "./pages/StoreAdminPage";
-import FlashcardsAdminPage from "./pages/FlashcardsAdminPage";
-import AcervoAdminPage from "./pages/AcervoAdminPage";
-import AnnouncementsPage from "./pages/AnnouncementsPage";
-import PanelAccountsPage from "./pages/PanelAccountsPage";
-import SecurityPage from "./pages/SecurityPage";
-import DatabasePage from "./pages/DatabasePage";
-import EmailCampaignPage from "./pages/EmailCampaignPage";
-import SMSPage from "./pages/SMSPage";
-import WhatsAppPage from "./pages/WhatsAppPage";
+
+// Code-splitting por rota, reintroduzido em 2026-08-19. O incidente de
+// 2026-08-07 ("can't access lexical declaration before initialization") NÃO
+// era causado pelo splitting: a forense achou um TDZ real no
+// CourseDetailPage (useMemo lendo const declarada abaixo, corrigido em
+// 04a183e) que quebrava com OU sem chunks — o madge confirma zero ciclo de
+// import. Guardas de regressão: `npm run typecheck:refs` +
+// src/test/lessonPlayerRender.test.tsx + build completo antes de todo deploy.
+//
+// Se um deploy trocar os hashes com um aluno navegando, o chunk antigo dá
+// 404: aqui a página recarrega UMA vez sozinha (pega o index novo) em vez de
+// morrer no error boundary com tela preta.
+const RECARREGA_CHUNK = "om_chunk_reload";
+const paginaLazy = (importar: () => Promise<{ default: ComponentType }>) =>
+  lazy(() =>
+    importar().then(
+      (m) => {
+        try { sessionStorage.removeItem(RECARREGA_CHUNK); } catch { /* sem storage, sem flag */ }
+        return m;
+      },
+      (err) => {
+        let jaRecarregou = true;
+        try {
+          jaRecarregou = sessionStorage.getItem(RECARREGA_CHUNK) === "1";
+          if (!jaRecarregou) sessionStorage.setItem(RECARREGA_CHUNK, "1");
+        } catch { /* sem storage não dá pra travar o loop — não recarrega */ }
+        if (!jaRecarregou) {
+          window.location.reload();
+          // Segura o Suspense no spinner até o reload assumir.
+          return new Promise<{ default: ComponentType }>(() => {});
+        }
+        throw err;
+      },
+    ),
+  );
+
+// Área do aluno
+const MemberDashboardPage = paginaLazy(() => import("./pages/MemberDashboardPage"));
+const CourseDetailPage = paginaLazy(() => import("./pages/CourseDetailPage"));
+const CommunityPage = paginaLazy(() => import("./pages/CommunityPage"));
+const StorePage = paginaLazy(() => import("./pages/StorePage"));
+const ArchivePage = paginaLazy(() => import("./pages/ArchivePage"));
+const StudyPlanPage = paginaLazy(() => import("./pages/StudyPlanPage"));
+const MemberPlaylistsPage = paginaLazy(() => import("./pages/MemberPlaylistsPage"));
+// Checkout e pós-pagamento
+const CheckoutPage = paginaLazy(() => import("./pages/CheckoutPage"));
+const PaymentSuccessPage = paginaLazy(() => import("./pages/PaymentSuccessPage"));
+const PaymentErrorPage = paginaLazy(() => import("./pages/PaymentErrorPage"));
+const PaymentPendingPage = paginaLazy(() => import("./pages/PaymentPendingPage"));
+const ClaimAccessPage = paginaLazy(() => import("./pages/ClaimAccessPage"));
+// Afiliados
+const AffiliateRegisterPage = paginaLazy(() => import("./pages/affiliate/AffiliateRegisterPage"));
+const AffiliateLoginPage = paginaLazy(() => import("./pages/affiliate/AffiliateLoginPage"));
+const AffiliatePanelPage = paginaLazy(() => import("./pages/affiliate/AffiliatePanelPage"));
+// Painel admin
+const Dashboard = paginaLazy(() => import("./pages/Dashboard"));
+const AccessManagement = paginaLazy(() => import("./pages/AccessManagement"));
+const ContentAccessPage = paginaLazy(() => import("./pages/ContentAccessPage"));
+const MembersPage = paginaLazy(() => import("./pages/MembersPage"));
+const DriveSettings = paginaLazy(() => import("./pages/DriveSettings"));
+const BuyersPage = paginaLazy(() => import("./pages/BuyersPage"));
+const TrialUsersPage = paginaLazy(() => import("./pages/TrialUsersPage"));
+const CouponsPage = paginaLazy(() => import("./pages/CouponsPage"));
+const AdminCommunityPage = paginaLazy(() => import("./pages/AdminCommunityPage"));
+const StudyPlansAdminPage = paginaLazy(() => import("./pages/StudyPlansAdminPage"));
+const AffiliatesAdminPage = paginaLazy(() => import("./pages/AffiliatesAdminPage"));
+const StoreAdminPage = paginaLazy(() => import("./pages/StoreAdminPage"));
+const FlashcardsAdminPage = paginaLazy(() => import("./pages/FlashcardsAdminPage"));
+const AcervoAdminPage = paginaLazy(() => import("./pages/AcervoAdminPage"));
+const AnnouncementsPage = paginaLazy(() => import("./pages/AnnouncementsPage"));
+const PanelAccountsPage = paginaLazy(() => import("./pages/PanelAccountsPage"));
+const SecurityPage = paginaLazy(() => import("./pages/SecurityPage"));
+const DatabasePage = paginaLazy(() => import("./pages/DatabasePage"));
+const EmailCampaignPage = paginaLazy(() => import("./pages/EmailCampaignPage"));
+const SMSPage = paginaLazy(() => import("./pages/SMSPage"));
+const WhatsAppPage = paginaLazy(() => import("./pages/WhatsAppPage"));
 import { PILLAR_HUBS, isNoIndexPath } from "@/seo/siteConfig";
 import { Seo } from "@/seo/Seo";
 import WhatsAppButton from "./components/WhatsAppButton";
@@ -200,6 +237,15 @@ const App = () => (
             <PixelPageViews />
             <SpeedInsightsRotas />
             <PrivateRouteSeo />
+            {/* Fallback do carregamento de chunk lazy: mesmo spinner das rotas
+                protegidas, pra troca de rota não piscar layout diferente. */}
+            <Suspense
+              fallback={
+                <div className="flex min-h-screen items-center justify-center bg-background">
+                  <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                </div>
+              }
+            >
             <Routes>
             {/* Public routes */}
             <Route path="/" element={<Index />} />
@@ -269,6 +315,7 @@ const App = () => (
 
             <Route path="*" element={<NotFound />} />
           </Routes>
+          </Suspense>
           <WhatsAppButton />
           <KickedOutModal />
         </BrowserRouter>

@@ -1,10 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, lazy, Suspense } from 'react';
 import type Mpegts from 'mpegts.js';
 import { X, ChevronLeft, ChevronRight, Loader2, ExternalLink, Download, Printer, Gauge, Check, SquareStack, ClipboardList, RotateCcw, RotateCw, Minimize2, Maximize2, PictureInPicture2, SkipForward, GripHorizontal } from 'lucide-react';
 import { useLessonStreamUrl } from '@/hooks/useLessonStream';
-// PdfViewer importado estaticamente: o lazy foi revertido junto com o
-// code-splitting de rotas (2026-08-07) que expunha a dependência circular.
-import { PdfViewer } from './PdfViewer';
+// pdfjs (~380 kB + worker de 1,4 MB) só baixa quando uma aula em PDF abre de
+// fato — a maioria das sessões é só vídeo. O Suspense fica logo abaixo, no
+// ponto de uso (src/test/lessonPlayerRender.test.tsx cobre a montagem por
+// tipo de aula e reprova ReferenceError como o do incidente de 07/08).
+const PdfViewer = lazy(() =>
+  import('./PdfViewer').then(m => ({ default: m.PdfViewer })),
+);
 import { OfficeViewer } from './OfficeViewer';
 import { TxtViewer } from './TxtViewer';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -836,7 +840,15 @@ export function LessonPlayer({
             </button>
           </div>
         ) : lesson.type === 'pdf' ? (
-          <PdfViewer url={src} title={lesson.title} lessonId={lesson.id} />
+          <Suspense
+            fallback={
+              <div className="flex items-center justify-center w-full h-full">
+                <Loader2 className="w-8 h-8 text-white/70 animate-spin" />
+              </div>
+            }
+          >
+            <PdfViewer url={src} title={lesson.title} lessonId={lesson.id} />
+          </Suspense>
         ) : lesson.type === 'doc' || lesson.type === 'sheet' ? (
           <OfficeViewer url={src} title={lesson.title} />
         ) : lesson.type === 'txt' ? (
