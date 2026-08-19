@@ -402,3 +402,23 @@ export function formatLastSeen(iso: string): string {
   const days = Math.floor(hours / 24);
   return `há ${days} dia${days !== 1 ? 's' : ''}`;
 }
+
+// Ano do curso a partir do TÍTULO ("MEDCURSO 2026" → 2026). É de onde o ano
+// vem em toda a biblioteca: as pastas de origem no Drive trazem a turma no
+// nome, e não existe coluna de ano em `courses`. Com mais de um ano no título
+// (raro, mas acontece em "Extensivo 2025/2026"), vale o MAIOR — é a turma mais
+// nova que o material representa.
+export function courseYear(title: string | null | undefined): number | null {
+  const anos = String(title || '').match(/\b(?:19|20)\d{2}\b/g);
+  if (!anos) return null;
+  return Math.max(...anos.map(Number));
+}
+
+// Ano da turma que a vitrine da área de membros anuncia. Cursos de anos
+// anteriores continuam no acervo e na busca — só não entram no banner
+// rotativo, que é a vitrine da plataforma.
+export const ANO_DA_VITRINE = 2026;
+
+export function isCourseDoAnoDaVitrine(title: string | null | undefined): boolean {
+  return courseYear(title) === ANO_DA_VITRINE;
+}

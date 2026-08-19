@@ -23,7 +23,7 @@ import { AiUpsellModal } from '@/components/member/AiUpsellModal';
 import { TrialWelcomeModal } from '@/components/member/TrialWelcomeModal';
 import { CATEGORY_ORDER } from '@/lib/courseCategories';
 import { lessonTypeFromMime } from './ArchivePage';
-import { formatDateTimeSP, formatDuration, matchesSearch, stripYearFromTitle, withTimeout, withRetry, describeLoadError } from '@/lib/utils';
+import { formatDateTimeSP, formatDuration, matchesSearch, stripYearFromTitle, withTimeout, withRetry, describeLoadError, isCourseDoAnoDaVitrine } from '@/lib/utils';
 import type { Database } from '@/integrations/supabase/types';
 
 interface AnnotatedLesson {
@@ -655,19 +655,37 @@ export default function MemberDashboardPage() {
   };
 
   const featuredPool = useMemo(() => {
-    const pinned = courses.filter(c => c.is_featured);
-    const flagship = courses
+    // A VITRINE anuncia só a turma do ano (ANO_DA_VITRINE): um banner girando
+    // com "Extensivo 2024" passa a impressão de acervo parado, mesmo com o
+    // material novo logo abaixo. Os cursos de outros anos continuam no acervo,
+    // na busca e nas prateleiras — só não entram no banner.
+    const daVitrine = courses.filter(c => isCourseDoAnoDaVitrine(c.title));
+    const pinned = daVitrine.filter(c => c.is_featured);
+    const flagship = daVitrine
       .filter(c => c.category === 'Extensivo & Intensivo · Residência')
       .slice()
       .sort((a, b) => b.lesson_count - a.lesson_count)
       .slice(0, 8);
     const pool: Course[] = [];
     const seen = new Set<string>();
+    // "Continue de onde parou" é o progresso do próprio aluno, não vitrine —
+    // some do banner junto com a faixa de recentes, e não pelo ano do curso.
     const continuing = recentCourses[0]?.course;
     if (continuing) { pool.push(continuing); seen.add(continuing.id); }
     for (const c of pinned) { if (!seen.has(c.id)) { pool.push(c); seen.add(c.id); } }
     for (const c of flagship) { if (!seen.has(c.id)) { pool.push(c); seen.add(c.id); } }
-    if (pool.length === 0 && courses[0]) pool.push(courses[0]);
+    // Rede de segurança: se nenhum curso do ano estiver disponível (biblioteca
+    // ainda sincronizando, ou virada de ano antes de importar a turma nova), o
+    // banner volta a mostrar os maiores em vez de sumir da tela.
+    if (pool.length === 0) {
+      const reserva = courses
+        .filter(c => c.category === 'Extensivo & Intensivo · Residência')
+        .slice()
+        .sort((a, b) => b.lesson_count - a.lesson_count)
+        .slice(0, 8);
+      for (const c of reserva) { if (!seen.has(c.id)) { pool.push(c); seen.add(c.id); } }
+      if (pool.length === 0 && courses[0]) pool.push(courses[0]);
+    }
     return pool;
   }, [courses, recentCourses]);
 

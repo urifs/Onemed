@@ -12,11 +12,15 @@ interface NotificationItem {
 
 const DEFAULT_HEADING = 'Cursos em processo de atualização:';
 
-// A lista e o título vêm do banco (notification_items +
-// announcement_settings.notifications_heading) e são editados no painel admin
-// em /admin/announcements — nada de hardcode: mudar notificação não pode
-// exigir deploy. Em cache por 5 min: o sino mora no header e era refeito em
-// TODA navegação, pagando 2 consultas por página pra reler a mesma lista.
+// A lista e o título vêm do banco (notification_items + a RPC
+// notifications_heading) e são editados no painel admin em /admin/announcements
+// — nada de hardcode: mudar notificação não pode exigir deploy. Em cache por
+// 5 min: o sino mora no header e era refeito em TODA navegação, pagando 2
+// consultas por página pra reler a mesma lista.
+//
+// Vale para o teste grátis também (19/08): mostrar o que está sendo atualizado
+// é argumento de compra justamente para quem ainda está decidindo. O AVISO do
+// painel continua sendo só para assinante.
 export function NotificationsBell() {
   const { whatsappGroupUrl } = useCommunitySettings();
 
@@ -28,10 +32,12 @@ export function NotificationsBell() {
           .select('id, label, done')
           .order('sort_order')
           .then(res => (res.data || []) as unknown as NotificationItem[]),
-        supabase.from('announcement_settings')
-          .select('notifications_heading')
-          .maybeSingle()
-          .then(res => (res.data as { notifications_heading?: string | null } | null)?.notifications_heading || null),
+        // RPC em vez de ler announcement_settings direto: a tabela guarda
+        // também a MENSAGEM do aviso, que segue fora do teste grátis. A função
+        // devolve só o título do sino, para quem está no trial recebê-lo sem
+        // abrir o resto da tabela.
+        supabase.rpc('notifications_heading' as never)
+          .then(res => (res.data as unknown as string | null) || null),
       ]);
       return { items: rows, heading: head?.trim() || DEFAULT_HEADING };
     },
