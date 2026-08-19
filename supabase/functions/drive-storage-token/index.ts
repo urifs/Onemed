@@ -77,7 +77,10 @@ serve(async (req) => {
     const GOOGLE_CLIENT_SECRET = Deno.env.get(CLIENT_SECRET_ENV)!
     const supabase = createClient(Deno.env.get('SUPABASE_URL')!, serviceKey)
 
-    const { email } = await req.json().catch(() => ({}))
+    // `force`: ver o comentário em drive-access-token. Token dentro do prazo
+    // pode já ter sido invalidado pelo Google (autorização revogada); quem
+    // toma 401 pede a renovação em vez de a plataforma ficar fora do ar.
+    const { email, force } = await req.json().catch(() => ({}))
 
     // Sem e-mail, usa a conta conectada com MAIS espaço livre — é o que um
     // script de migração quer por padrão.
@@ -102,7 +105,8 @@ serve(async (req) => {
     const account = [...rows].sort((a, b) => livre(b) - livre(a))[0]
 
     let accessToken = account.access_token as string | null
-    const expirado = !account.token_expiry
+    const expirado = !!force
+      || !account.token_expiry
       || new Date(account.token_expiry).getTime() < Date.now() + 60_000
 
     if (expirado) {

@@ -247,20 +247,36 @@ export default {
     }
 
     const tokens = new Map();
-    const pegarToken = async (conta) => {
-      if (tokens.has(conta.nome)) return tokens.get(conta.nome);
-      let t = null;
+    const buscarToken = async (conta, force) => {
       try {
         const tokenRes = await fetch(`${env.SUPABASE_URL}/functions/v1/${conta.fn}`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json' },
-          body: '{}',
+          body: force ? '{"force":true}' : '{}',
         });
         // Sem esta checagem, um corpo 200 malformado dava accessToken=undefined
         // e o worker mandava "Bearer undefined" pro Drive → 401 → aluno via erro
         // genérico depois de uma ida à toa ao Google.
-        if (tokenRes.ok) t = (await tokenRes.json()).accessToken || null;
+        if (tokenRes.ok) return (await tokenRes.json()).accessToken || null;
       } catch { /* conta indisponível: a próxima da lista assume */ }
+      return null;
+    };
+    const pegarToken = async (conta) => {
+      if (tokens.has(conta.nome)) return tokens.get(conta.nome);
+      const t = await buscarToken(conta, false);
+      tokens.set(conta.nome, t);
+      return t;
+    };
+    // Um access_token pode estar DENTRO do prazo e mesmo assim ser recusado: é
+    // o que o Google faz quando a autorização da conta é revogada. Em 19/08 isso
+    // deixou a plataforma inteira sem vídeo enquanto a função de token seguia
+    // devolvendo 200 com o token morto. Agora o 401 dispara uma renovação
+    // forçada e uma segunda tentativa — uma vez por conta, por requisição.
+    const renovados = new Set();
+    const renovarToken = async (conta) => {
+      if (renovados.has(conta.nome)) return null;
+      renovados.add(conta.nome);
+      const t = await buscarToken(conta, true);
       tokens.set(conta.nome, t);
       return t;
     };
@@ -300,8 +316,30 @@ export default {
             },
           });
 
-        if (res.ok || res.status === 206) {
-          driveRes = res;
+        let resposta = res;
+
+        // 401 = o Google recusou ESTE token (revogado, ou trocado por outra
+        // reconexão). Renova à força e tenta uma vez; se ainda falhar, segue
+        // para a próxima conta.
+        if (resposta.status === 401) {
+          const novo = await renovarToken(conta);
+          if (novo) {
+            resposta = ehExport
+              ? await fetch(
+                `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=${encodeURIComponent(exportMime)}`,
+                { headers: { Authorization: `Bearer ${novo}` } },
+              )
+              : await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+                headers: {
+                  Authorization: `Bearer ${novo}`,
+                  ...(tentativa.faixa ? { Range: tentativa.faixa } : {}),
+                },
+              });
+          }
+        }
+
+        if (resposta.ok || resposta.status === 206) {
+          driveRes = resposta;
           faixaServida = tentativa.faixa;
           janelaServida = tentativa.janela;
           contaServida = conta.nome;
@@ -311,19 +349,19 @@ export default {
         // 404 = esta conta não enxerga o arquivo (pasta ainda não
         // compartilhada com ela). Não é problema do arquivo: a próxima conta
         // da lista tenta.
-        if (res.status === 404) { semAcesso = true; continue; }
+        if (resposta.status === 404) { semAcesso = true; continue; }
 
         // 403 `downloadQuotaExceeded`: o Google recusa um pedido MAIOR do que
         // o que resta para esta conta. Pedir menos ainda pode passar — é o que
         // a escada tenta depois de esgotar as contas.
-        const body = await res.text().catch(() => '');
-        if (res.status === 403 && body.includes('downloadQuotaExceeded')) { semSaldo = true; continue; }
+        const body = await resposta.text().catch(() => '');
+        if (resposta.status === 403 && body.includes('downloadQuotaExceeded')) { semSaldo = true; continue; }
 
         // Qualquer outro erro (403 de permissão, 5xx do Google, token
         // recusado) é DESTA conta — abortar aqui deixava a aula fora do ar
         // mesmo com a outra conta conseguindo servi-la. Segue para a próxima
         // tentativa; se nenhuma servir, o tratamento abaixo responde.
-        console.log('Falha ao ler pela conta', conta.nome, '-', res.status, body.slice(0, 120));
+        console.log('Falha ao ler pela conta', conta.nome, '-', resposta.status, body.slice(0, 120));
         continue;
       }
     }

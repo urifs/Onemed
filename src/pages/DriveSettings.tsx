@@ -216,6 +216,7 @@ export default function DriveSettings() {
         {/* Course Library Sync */}
         {driveStatus?.connected && <SyncCoursesCard />}
 
+        {driveStatus?.connected && <DriveHealthCard />}
         {driveStatus?.connected && <AutoSyncCard />}
         {driveStatus?.connected && <LibraryAuditCard />}
 
@@ -318,6 +319,102 @@ function formatTB(bytes: number | null | undefined): string {
  * é como se sabe que ele está cuidando. Sem ele, uma sincronização que parasse
  * de funcionar só apareceria quando um aluno reclamasse de um curso faltando.
  */
+/**
+ * Saúde da credencial do Google.
+ *
+ * Em 19/08/2026 a autorização das duas contas foi revogada e a plataforma
+ * ficou sem NENHUM vídeo — ninguém soube até um cliente reclamar. A sonda
+ * horária que alimenta este card testa o token CONTRA O GOOGLE (renovando à
+ * força), que é a única forma de saber que ele presta: um token revogado
+ * continua "dentro do prazo" no relógio.
+ */
+function DriveHealthCard() {
+  const [contas, setContas] = useState<any[] | null>(null);
+  const [estado, setEstado] = useState<'carregando' | 'pronto' | 'erro'>('carregando');
+
+  const load = async () => {
+    setEstado('carregando');
+    const { data, error } = await supabase.rpc('drive_health_status' as never);
+    if (error) {
+      console.error('Saúde do Drive indisponível', error);
+      setEstado('erro');
+      return;
+    }
+    setContas((data as unknown as any[]) || []);
+    setEstado('pronto');
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const algumRuim = (contas || []).some(c => !c.healthy);
+  const semSonda = estado === 'pronto' && (contas || []).length === 0;
+
+  return (
+    <Card className="bg-background-paper border-border">
+      <CardHeader>
+        <CardTitle className="text-base font-medium text-foreground flex items-center justify-between gap-2">
+          <span className="flex items-center gap-2">
+            {algumRuim
+              ? <XCircle className="w-5 h-5 text-red-500" />
+              : <CheckCircle className={`w-5 h-5 ${semSonda ? 'text-yellow-500' : 'text-green-500'}`} />}
+            Conexão com o Google
+          </span>
+          <Button onClick={load} size="sm" variant="ghost" className="text-muted-foreground hover:text-foreground h-8">
+            Atualizar
+          </Button>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-sm text-muted-foreground">
+          Conferido de hora em hora, pedindo algo ao Google de verdade. Se uma conta cair, o
+          aviso aparece aqui — antes de o aluno descobrir que a aula não abre.
+        </p>
+
+        {estado === 'carregando' && <p className="text-sm text-muted-foreground">Carregando…</p>}
+
+        {estado === 'erro' && (
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-secondary/40 px-4 py-3">
+            <p className="text-sm text-foreground">Não foi possível ler o estado da conexão.</p>
+            <Button onClick={load} size="sm" variant="outline" className="border-border text-muted-foreground hover:text-foreground">
+              Tentar novamente
+            </Button>
+          </div>
+        )}
+
+        {semSonda && (
+          <p className="text-sm text-muted-foreground">
+            A primeira conferência ainda não rodou. Ela acontece no minuto 7 de cada hora.
+          </p>
+        )}
+
+        {estado === 'pronto' && (contas || []).map(c => (
+          <div
+            key={c.account}
+            className={`rounded-lg border px-4 py-3 ${c.healthy ? 'border-border bg-secondary/40' : 'border-red-500/40 bg-red-500/10'}`}
+          >
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <span className="text-sm font-medium text-foreground">
+                {c.label || c.account}
+                {c.email && <span className="text-muted-foreground font-normal"> · {c.email}</span>}
+              </span>
+              <span className={`text-xs font-medium ${c.healthy ? 'text-green-500' : 'text-red-500'}`}>
+                {c.healthy ? 'Conectada' : 'FORA DO AR'}
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Conferido em {c.checked_at ? formatDateTimeSP(c.checked_at) : '—'}
+              {!c.healthy && c.last_ok_at && ` · última vez no ar: ${formatDateTimeSP(c.last_ok_at)}`}
+            </p>
+            {!c.healthy && c.error && (
+              <p className="text-sm text-red-400 mt-2">{c.error}</p>
+            )}
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
 function AutoSyncCard() {
   const [dados, setDados] = useState<any>(null);
   const [estado, setEstado] = useState<'carregando' | 'pronto' | 'erro'>('carregando');

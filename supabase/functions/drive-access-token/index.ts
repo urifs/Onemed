@@ -64,9 +64,18 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Drive não conectado' }), { status: 502 })
     }
 
+    // `force` existe porque um access_token pode estar dentro do prazo no
+    // RELÓGIO e mesmo assim ser recusado pelo Google — é o que acontece quando
+    // a autorização da conta é revogada: o Google invalida na hora os tokens
+    // já emitidos. Em 19/08 isso derrubou o streaming inteiro e esta função
+    // seguiu respondendo 200 com um token morto, porque só olhava a validade.
+    // Agora quem toma 401 do Google (o worker) pede a renovação e tenta de novo.
+    const body = await req.json().catch(() => ({}))
+    const force: boolean = !!body?.force
+
     let accessToken = config.access_token
     const expiry = config.token_expiry ? new Date(config.token_expiry) : null
-    if (!expiry || expiry.getTime() < Date.now() + 60_000) {
+    if (force || !expiry || expiry.getTime() < Date.now() + 60_000) {
       if (!config.refresh_token) {
         return new Response(JSON.stringify({ error: 'Token do Drive expirado' }), { status: 502 })
       }

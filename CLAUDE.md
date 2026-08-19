@@ -3660,6 +3660,32 @@ deixa a outra conta caindo a cada 7 dias:
 Publicar em: `https://console.cloud.google.com/auth/audience?project=<projeto>` →
 **PUBLICAR APLICATIVO**. Enquanto o status for "Testing", o Google expira os refresh
 tokens em 7 dias — foi exatamente o que derrubou todos os vídeos em 19/08.
+**Os dois foram publicados em 19/08 pelo dono.**
+
+⚠️ **Publicar não conserta um refresh token que já existe.** O prazo de 7 dias fica
+colado no token no momento em que ele é EMITIDO. As contas foram reconectadas às
+~18h20 (app ainda em "Testing") e publicadas depois — então esses refresh tokens ainda
+podem carregar o relógio antigo. Por isso o dono foi orientado a reconectar as duas
+contas MAIS UMA VEZ depois de publicar. Se elas caírem por volta de **26/08**, é isso:
+basta reconectar de novo, já sob o app publicado, e não volta a acontecer.
+
+### Vigília da credencial (para o apagão nunca mais ser silencioso)
+
+| peça | o que faz |
+|---|---|
+| `drive-health-check` (function nova) + cron `drive-health-check` (`7 * * * *`) | De hora em hora renova o token À FORÇA e faz `about?fields=user` no Google. Grava em `drive_health` |
+| `drive_health` + RPC `drive_health_status()` | Estado por conta, com `last_ok_at` — responde "desde quando está fora?" |
+| Card "Conexão com o Google" em `/admin/drive` | Mostra conectada/FORA DO AR por conta, com o motivo |
+| `force: true` em `drive-access-token` / `drive-storage-token` | Renova mesmo com o token dentro do prazo. **Era o buraco:** as funções só comparavam `token_expiry` com o relógio e devolviam 200 com um token que o Google já tinha invalidado |
+| Worker: retry no 401 | Toma 401 do Google → pede renovação forçada → tenta de novo, uma vez por conta. Access token invalidado deixa de ser apagão e vira soluço |
+
+⚠️ A sonda usa `about?fields=user`: é a chamada mais barata da API e **não consome
+franquia de download** de arquivo nenhum.
+
+> Detalhe que já confundiu um diagnóstico: pedir uma faixa ALÉM do fim do arquivo faz o
+> Google responder 416, e o worker traduz isso em 502. Nenhum navegador pede isso (o
+> range vem do Content-Length), mas um teste manual com `Range: bytes=1500000-` num PDF
+> de 300 KB dá "502" e parece incidente. Confira o tamanho antes de concluir.
 
 ## Meta Ads — Contexto Geral
 
