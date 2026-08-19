@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
+import { lembrarLimiteDeTelas } from '@/lib/deviceLimit';
 
 export interface AccountInfo {
   email: string;
@@ -35,7 +36,11 @@ export function useAccountInfo(enabled = true) {
     queryFn: async (): Promise<AccountInfo> => {
       const { data, error } = await supabase.functions.invoke('member-account-info');
       if (error || data?.error) throw new Error(data?.error || error?.message);
-      return data as AccountInfo;
+      const info = data as AccountInfo;
+      // Guardado enquanto há sessão porque o aviso de sessão encerrada precisa
+      // do número DEPOIS que ela morre — e aí não dá mais pra perguntar.
+      lembrarLimiteDeTelas(info.deviceLimit);
+      return info;
     },
   });
 
