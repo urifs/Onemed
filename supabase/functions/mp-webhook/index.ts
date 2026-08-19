@@ -1,5 +1,8 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+// Contas que mexem em dinheiro real, isoladas num módulo puro e coberto por
+// teste (src/test/billingRules.test.ts).
+import { baseDaComissao, novoVencimento } from '../_shared/billing-rules.ts'
 
 // ─── PLANOS ───────────────────────────────────────────────────────────────────
 // Cada plano define o access_type gravado em `accesses` e por quantos dias
@@ -334,14 +337,11 @@ async function processAffiliateSale(
     // plano — nunca o total da transação, que inclui upsells.
     const precoDeTabela = AFFILIATE_PLAN_PRICES[buyer.plan]
       ?? (buyer.plan_amount != null ? Number(buyer.plan_amount) : amount)
-    // Num UPGRADE o comprador paga só a DIFERENÇA entre os planos, mas o preço
-    // de tabela é o do plano novo inteiro: a comissão saía sobre um valor que
-    // ninguém pagou (30% de R$1.497 numa venda de R$699 de diferença = 64% do
-    // que entrou). A base nunca pode passar do que foi cobrado pelo plano.
-    const cobradoPeloPlano = buyer.plan_amount != null ? Number(buyer.plan_amount) : null
-    const commissionBase = buyer.purchase_kind === 'upgrade' && cobradoPeloPlano != null
-      ? Math.min(precoDeTabela, cobradoPeloPlano)
-      : precoDeTabela
+    const commissionBase = baseDaComissao({
+      precoDeTabela,
+      cobradoPeloPlano: buyer.plan_amount != null ? Number(buyer.plan_amount) : null,
+      tipoDeCompra: buyer.purchase_kind,
+    })
     const commission = Math.round(commissionBase * percent) / 100
 
     const { data: inserted, error: insErr } = await supabase.from('affiliate_sales')
@@ -754,18 +754,13 @@ serve(async (req) => {
         .limit(1)
         .maybeSingle()
 
-      // Renovação ANTECIPADA soma ao que ainda resta, em vez de reiniciar a
-      // contagem de hoje: quem renovava o Anual faltando 40 dias perdia esses
-      // 40 dias — pagava por 12 meses e recebia 12 meses menos o que já tinha.
-      // Só conta prazo futuro (acesso vencido reinicia do zero, como antes).
-      const restanteMs = (() => {
-        const venc = existingAccess?.expires_at ? new Date(existingAccess.expires_at).getTime() : 0
-        const resta = venc - Date.now()
-        return resta > 0 ? resta : 0
-      })()
-      const expiresAt = durationDays
-        ? new Date(Date.now() + restanteMs + durationDays * 24 * 60 * 60 * 1000).toISOString()
-        : null
+      // Renovação ANTECIPADA soma ao que ainda resta em vez de reiniciar a
+      // contagem de hoje (ver billing-rules.ts).
+      const expiresAt = novoVencimento({
+        duracaoEmDias: durationDays,
+        vencimentoAtual: existingAccess?.expires_at,
+        agoraMs: Date.now(),
+      })
 
       // Nunca rebaixa quem já tem um nível vitalício igual ou superior — mas
       // permite upgrade (ex: já tinha lifetime, comprou lifetime_plus).
