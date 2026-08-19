@@ -14,10 +14,10 @@ const featured = [
 ];
 
 const supporting = [
-  { icon: Lock, text: 'Acesso individual e seguro por e-mail' },
+  { icon: Lock, text: 'Acesso individual e seguro, com e-mail e senha' },
   { icon: Globe, text: 'Estude de qualquer lugar, 24 horas por dia' },
-  { icon: Smartphone, text: 'Whitebook e WeMeds inclusos no plano vitalício' },
-  { icon: RefreshCw, text: 'Conteúdo revisado e atualizado mensalmente' },
+  { icon: Smartphone, text: 'Progresso salvo: continue de onde parou em qualquer aparelho' },
+  { icon: RefreshCw, text: 'Acervo em expansão — nível de atualização conforme o plano' },
   { icon: MessageCircle, text: 'Suporte por WhatsApp, todos os dias' },
   { icon: GraduationCap, text: 'Trilha própria para provas de residência' },
 ];
