@@ -7,7 +7,7 @@ import AdminLayout from '@/components/AdminLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { FolderOpen, CheckCircle, AlertCircle, RefreshCw, Folder, Loader2, GraduationCap, Mail, Copy, Download, Search, XCircle, Play } from 'lucide-react';
-import { extractFunctionErrorMessage, withTimeout } from '@/lib/utils';
+import { extractFunctionErrorMessage, withTimeout, formatDateTimeSP } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Progress } from '@/components/ui/progress';
@@ -216,6 +216,7 @@ export default function DriveSettings() {
         {/* Course Library Sync */}
         {driveStatus?.connected && <SyncCoursesCard />}
 
+        {driveStatus?.connected && <AutoSyncCard />}
         {driveStatus?.connected && <LibraryAuditCard />}
 
         {/* Backfill missing lesson durations */}
@@ -307,6 +308,111 @@ function formatTB(bytes: number | null | undefined): string {
   if (b >= 1e12) return `${(b / 1e12).toFixed(2)} TB`;
   if (b >= 1e9) return `${(b / 1e9).toFixed(1)} GB`;
   return `${(b / 1e6).toFixed(0)} MB`;
+}
+
+/**
+ * Sincronização automática — o que o cron fez, e quando.
+ *
+ * Antes de existir, a biblioteca só era varrida quando alguém abria esta
+ * página e clicava no botão. Agora o cron cuida disso de madrugada; este card
+ * é como se sabe que ele está cuidando. Sem ele, uma sincronização que parasse
+ * de funcionar só apareceria quando um aluno reclamasse de um curso faltando.
+ */
+function AutoSyncCard() {
+  const [dados, setDados] = useState<any>(null);
+  const [estado, setEstado] = useState<'carregando' | 'pronto' | 'erro'>('carregando');
+
+  const load = async () => {
+    setEstado('carregando');
+    const { data, error } = await supabase.rpc('library_sync_status' as never);
+    if (error || !data) {
+      console.error('Estado da sincronização automática indisponível', error);
+      setEstado('erro');
+      return;
+    }
+    setDados(data);
+    setEstado('pronto');
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const st = dados?.state;
+  const rodando = st?.status === 'running';
+  const ultima = st?.finished_at ? new Date(st.finished_at) : null;
+  const resultado = st?.last_result;
+  // Uma rodada por dia: passou de 36h sem fechar, alguma coisa não está indo.
+  const atrasada = !rodando && (!ultima || Date.now() - ultima.getTime() > 36 * 60 * 60 * 1000);
+
+  return (
+    <Card className="bg-background-paper border-border">
+      <CardHeader>
+        <CardTitle className="text-base font-medium text-foreground flex items-center justify-between gap-2">
+          <span className="flex items-center gap-2">
+            <RefreshCw className={`w-5 h-5 ${rodando ? 'animate-spin text-primary' : atrasada ? 'text-yellow-500' : 'text-green-500'}`} />
+            Sincronização automática
+          </span>
+          <Button onClick={load} size="sm" variant="ghost" className="text-muted-foreground hover:text-foreground h-8">
+            Atualizar
+          </Button>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-sm text-muted-foreground">
+          Roda sozinha todo dia de madrugada e importa os cursos novos. O botão
+          &quot;Sincronizar biblioteca&quot; acima continua valendo para quando você não quiser esperar.
+        </p>
+
+        {estado === 'carregando' && <p className="text-sm text-muted-foreground">Carregando…</p>}
+
+        {estado === 'erro' && (
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-secondary/40 px-4 py-3">
+            <p className="text-sm text-foreground">Não foi possível ler o estado da sincronização.</p>
+            <Button onClick={load} size="sm" variant="outline" className="border-border text-muted-foreground hover:text-foreground">
+              Tentar novamente
+            </Button>
+          </div>
+        )}
+
+        {estado === 'pronto' && (
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[
+                {
+                  label: 'Estado',
+                  value: rodando ? 'Varrendo agora' : atrasada ? 'Atrasada' : 'Em dia',
+                  sub: rodando ? `${st?.slices || 0} etapas nesta rodada` : ultima ? formatDateTimeSP(st.finished_at) : 'nunca rodou',
+                },
+                { label: 'Cursos ativos', value: String(dados.courses_active ?? '—'), sub: `${dados.courses_total ?? '—'} no total` },
+                {
+                  label: 'Última rodada',
+                  value: resultado ? `+${resultado.courses_created || 0}` : '—',
+                  sub: resultado ? `${(resultado.lessons_imported || 0).toLocaleString('pt-BR')} arquivos novos` : 'sem rodada concluída',
+                },
+                {
+                  label: 'Fila',
+                  value: String(dados.queue_pending ?? 0),
+                  sub: (dados.queue_error ?? 0) > 0 ? `${dados.queue_error} pasta(s) com erro` : 'nenhuma pasta com erro',
+                },
+              ].map(m => (
+                <div key={m.label} className="rounded-lg bg-secondary/50 border border-border px-3 py-2">
+                  <p className="text-xs text-muted-foreground truncate">{m.label}</p>
+                  <p className="font-secondary text-lg font-bold text-foreground">{m.value}</p>
+                  <p className="text-xs text-muted-foreground truncate">{m.sub}</p>
+                </div>
+              ))}
+            </div>
+
+            {st?.last_error && (
+              <p className="text-sm text-yellow-500 flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                <span>Última falha: {st.last_error}</span>
+              </p>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 function LibraryAuditCard() {
