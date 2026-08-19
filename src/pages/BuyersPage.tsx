@@ -213,7 +213,7 @@ export default function BuyersPage() {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 3xl:max-w-[1400px]">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 3xl:max-w-[1400px]">
           <Card className="bg-background-paper border-border lg:col-span-1">
             <CardContent className="p-5">
               <div className="flex items-center justify-between mb-3">
@@ -225,12 +225,26 @@ export default function BuyersPage() {
               </p>
             </CardContent>
           </Card>
+          {/* Hoje e ontem no MESMO cartão. Como dois cartões lado a lado, o
+              par competia pela leitura e ocupava o dobro do espaço para dizer
+              a mesma coisa — o número de hoje é o que importa, e ontem existe
+              para dar a referência de comparação logo abaixo dele. */}
           {[
-            { label: 'Compradores', value: loading ? '—' : buyers.length, icon: Users, color: 'text-primary' },
-            { label: 'Receita Hoje', value: stats ? formatBRL(stats.revenue) : '—', icon: DollarSign, color: 'text-accent-warning' },
-            { label: 'Receita Ontem', value: stats ? formatBRL(stats.revenueYesterday ?? 0) : '—', icon: DollarSign, color: 'text-accent-info' },
-            { label: 'Aprovados Hoje', value: stats?.approved ?? '—', icon: CheckCircle, color: 'text-accent-success' },
-            { label: 'Aprovados Ontem', value: stats?.approvedYesterday ?? '—', icon: CheckCircle, color: 'text-accent-info' },
+            { label: 'Compradores', value: loading ? '—' : buyers.length, ontem: null, icon: Users, color: 'text-primary' },
+            {
+              label: 'Receita',
+              value: stats ? formatBRL(stats.revenue) : '—',
+              ontem: stats ? formatBRL(stats.revenueYesterday ?? 0) : '—',
+              icon: DollarSign,
+              color: 'text-accent-warning',
+            },
+            {
+              label: 'Aprovados',
+              value: stats?.approved ?? '—',
+              ontem: stats?.approvedYesterday ?? '—',
+              icon: CheckCircle,
+              color: 'text-accent-success',
+            },
           ].map((s, i) => (
             <Card key={i} className="bg-background-paper border-border">
               <CardContent className="p-5">
@@ -239,10 +253,19 @@ export default function BuyersPage() {
                   <s.icon className={`w-4 h-4 ${s.color}`} />
                 </div>
                 <p className="font-secondary text-2xl font-bold text-foreground">{s.value}</p>
+                {s.ontem !== null && (
+                  <>
+                    <p className="text-xs text-muted-foreground mt-0.5">hoje</p>
+                    <div className="mt-3 pt-3 border-t border-border/60 flex items-baseline justify-between gap-2">
+                      <span className="text-xs text-muted-foreground">Ontem</span>
+                      <span className="text-sm font-semibold text-foreground tabular-nums">{s.ontem}</span>
+                    </div>
+                  </>
+                )}
               </CardContent>
             </Card>
           ))}
-          <Card className="bg-background-paper border-border col-span-2 lg:col-span-3">
+          <Card className="bg-background-paper border-border col-span-2 lg:col-span-4">
             <CardContent className="p-5">
               <div className="flex items-center justify-between mb-3">
                 <p className="text-sm text-muted-foreground">Vendas Hoje por Plano</p>
