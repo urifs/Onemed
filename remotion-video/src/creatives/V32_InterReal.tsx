@@ -32,21 +32,27 @@ export const V32_InterReal: React.FC = () => {
       <SeloReal />
 
       {t >= segMeds && t < segNote && (
-        <div style={{ position: 'absolute', left: 0, top: 380 }}>
-          <TakeZoom nome="d_inter" from={4.0 + (t - segMeds)} zoom={1.8} foco={[440, 380]} h={1100} />
-        </div>
+        <Sequence from={Math.round(segMeds * FPS)} layout="none">
+          <div style={{ position: 'absolute', left: 0, top: 320 }}>
+            <TakeZoom nome="d_inter" from={4.0} zoom={1.8} foco={[440, 380]} h={1300} />
+          </div>
+        </Sequence>
       )}
 
       {t >= segNote && t < segResp && (
-        <div style={{ position: 'absolute', left: 40, right: 40, top: 360, display: 'flex', justifyContent: 'center' }}>
-          <TakeNotebook nome="d_inter" from={13.5 + (t - segNote)} width={1000} />
-        </div>
+        <Sequence from={Math.round(segNote * FPS)} layout="none">
+          <div style={{ position: 'absolute', left: 40, right: 40, top: 470, display: 'flex', justifyContent: 'center' }}>
+            <TakeNotebook nome="d_inter" from={14.5} width={1000} />
+          </div>
+        </Sequence>
       )}
 
       {t >= segResp && (
-        <div style={{ position: 'absolute', left: 0, top: 380 }}>
-          <TakeZoom nome="d_inter" fromEnd={12.0 - (t - segResp)} zoom={1.7} foco={[1065, 420]} h={1100} />
-        </div>
+        <Sequence from={Math.round(segResp * FPS)} layout="none">
+          <div style={{ position: 'absolute', left: 0, top: 320 }}>
+            <TakeZoom nome="d_inter" fromEnd={12.0} zoom={1.7} foco={[1065, 420]} h={1300} />
+          </div>
+        </Sequence>
       )}
 
       <div style={{
@@ -59,6 +65,11 @@ export const V32_InterReal: React.FC = () => {
           : <>a prescrição sai <span style={{ color: M_BLUE }}>conferida.</span></>}
       </div>
 
+      {t >= segNote && t < segResp && (
+        <Rotulo t={t} at={segNote + 0.4} bottom={150}>
+          Analisar — direto na plataforma
+        </Rotulo>
+      )}
       <Rotulo t={t} at={DELAY + 12.6} bottom={110}>
         severidade · impacto renal e cardiovascular · o que monitorar
       </Rotulo>

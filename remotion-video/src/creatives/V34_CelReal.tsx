@@ -38,9 +38,21 @@ export const V34_CelReal: React.FC = () => {
         display: 'flex', justifyContent: 'center',
         transform: `scale(${escala})`,
       }}>
-        {t < segCaso && <TakeCelular nome="m_home" from={3.0 + (t - segHome)} width={760} />}
-        {t >= segCaso && t < segResp && <TakeCelular nome="m_simple" from={3.2 + (t - segCaso)} width={760} />}
-        {t >= segResp && <TakeCelular nome="m_simple" fromEnd={13.0 - (t - segResp)} width={760} />}
+        {t < segCaso && (
+          <Sequence from={Math.round(segHome * FPS)} layout="none">
+            <TakeCelular nome="m_home" from={3.0} width={780} />
+          </Sequence>
+        )}
+        {t >= segCaso && t < segResp && (
+          <Sequence from={Math.round(segCaso * FPS)} layout="none">
+            <TakeCelular nome="m_simple" from={3.2} width={780} />
+          </Sequence>
+        )}
+        {t >= segResp && (
+          <Sequence from={Math.round(segResp * FPS)} layout="none">
+            <TakeCelular nome="m_simple" fromEnd={13.0} width={780} />
+          </Sequence>
+        )}
       </div>
 
       <div style={{

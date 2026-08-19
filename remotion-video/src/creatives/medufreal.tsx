@@ -62,7 +62,7 @@ export const TakeNotebook: React.FC<{
         }} />
       </div>
       <div style={{
-        width: width * 1.12, height: width * 0.03, marginLeft: -width * 0.06,
+        width: width * 1.05, height: width * 0.03, marginLeft: -width * 0.025,
         background: 'linear-gradient(180deg,#3a3d43,#17191d)',
         borderRadius: `0 0 ${width * 0.032}px ${width * 0.032}px`,
         boxShadow: '0 26px 50px -18px rgba(0,0,0,0.55)',

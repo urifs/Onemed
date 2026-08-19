@@ -32,21 +32,27 @@ export const V35_TourReal: React.FC = () => {
       <SeloReal />
 
       {t >= segPainel && t < segClose && (
-        <div style={{ position: 'absolute', left: 40, right: 40, top: 360, display: 'flex', justifyContent: 'center' }}>
-          <TakeNotebook nome="d_home" from={2.0 + (t - segPainel)} width={1000} />
-        </div>
+        <Sequence from={Math.round(segPainel * FPS)} layout="none">
+          <div style={{ position: 'absolute', left: 40, right: 40, top: 470, display: 'flex', justifyContent: 'center' }}>
+            <TakeNotebook nome="d_home" from={2.0} width={1000} />
+          </div>
+        </Sequence>
       )}
 
       {t >= segClose && t < segAssist && (
-        <div style={{ position: 'absolute', left: 0, top: 380 }}>
-          <TakeZoom nome="d_home" from={8.5 + (t - segClose)} zoom={1.55} foco={[756, 560]} h={1100} />
-        </div>
+        <Sequence from={Math.round(segClose * FPS)} layout="none">
+          <div style={{ position: 'absolute', left: 0, top: 320 }}>
+            <TakeZoom nome="d_home" from={8.5} zoom={1.55} foco={[756, 560]} h={1300} />
+          </div>
+        </Sequence>
       )}
 
       {t >= segAssist && (
-        <div style={{ position: 'absolute', left: 0, right: 0, top: 300, display: 'flex', justifyContent: 'center' }}>
-          <TakeCelular nome="m_assist" fromEnd={14.5 - (t - segAssist)} width={740} />
-        </div>
+        <Sequence from={Math.round(segAssist * FPS)} layout="none">
+          <div style={{ position: 'absolute', left: 0, right: 0, top: 290, display: 'flex', justifyContent: 'center' }}>
+            <TakeCelular nome="m_assist" fromEnd={14.5} width={760} />
+          </div>
+        </Sequence>
       )}
 
       <div style={{
@@ -59,6 +65,11 @@ export const V35_TourReal: React.FC = () => {
           : <>pergunta real, <span style={{ color: M_BLUE }}>resposta real.</span></>}
       </div>
 
+      {t < segClose && (
+        <Rotulo t={t} at={segPainel + 1.6} bottom={150}>
+          o painel real, logado agora
+        </Rotulo>
+      )}
       <Rotulo t={t} at={DELAY + 6.0} bottom={110}>
         clínica · medicamentos · exames · imagem
       </Rotulo>

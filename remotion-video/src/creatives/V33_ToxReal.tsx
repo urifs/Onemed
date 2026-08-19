@@ -38,21 +38,27 @@ export const V33_ToxReal: React.FC = () => {
       }} />
 
       {t >= segForm && t < segClose && (
-        <div style={{ position: 'absolute', left: 40, right: 40, top: 360, display: 'flex', justifyContent: 'center' }}>
-          <TakeNotebook nome="d_tox" from={2.6 + (t - segForm)} width={1000} />
-        </div>
+        <Sequence from={Math.round(segForm * FPS)} layout="none">
+          <div style={{ position: 'absolute', left: 40, right: 40, top: 470, display: 'flex', justifyContent: 'center' }}>
+            <TakeNotebook nome="d_tox" from={2.6} width={1000} />
+          </div>
+        </Sequence>
       )}
 
       {t >= segClose && t < segResp && (
-        <div style={{ position: 'absolute', left: 0, top: 380 }}>
-          <TakeZoom nome="d_tox" from={7.5 + (t - segClose)} zoom={1.8} foco={[440, 400]} h={1100} />
-        </div>
+        <Sequence from={Math.round(segClose * FPS)} layout="none">
+          <div style={{ position: 'absolute', left: 0, top: 320 }}>
+            <TakeZoom nome="d_tox" from={7.5} zoom={1.8} foco={[440, 400]} h={1300} />
+          </div>
+        </Sequence>
       )}
 
       {t >= segResp && (
-        <div style={{ position: 'absolute', left: 0, top: 380 }}>
-          <TakeZoom nome="d_tox" fromEnd={15.5 - (t - segResp)} zoom={1.7} foco={[1065, 420]} h={1100} />
-        </div>
+        <Sequence from={Math.round(segResp * FPS)} layout="none">
+          <div style={{ position: 'absolute', left: 0, top: 320 }}>
+            <TakeZoom nome="d_tox" fromEnd={16.5} zoom={1.7} foco={[1065, 420]} h={1300} />
+          </div>
+        </Sequence>
       )}
 
       <div style={{
@@ -64,6 +70,11 @@ export const V33_ToxReal: React.FC = () => {
           : <>o manejo vem <span style={{ color: M_BLUE }}>completo.</span></>}
       </div>
 
+      {t < segClose && (
+        <Rotulo t={t} at={segForm + 1.4} bottom={150}>
+          agente · via · quadro — preenchidos ao vivo
+        </Rotulo>
+      )}
       <Rotulo t={t} at={DELAY + 10.9} bottom={110}>
         identificação · descontaminação · monitorização · quando escalar
       </Rotulo>

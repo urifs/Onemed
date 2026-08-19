@@ -36,30 +36,38 @@ export const V31_DiagReal: React.FC = () => {
 
       {/* fase 1: o notebook INTEIRO no quadro, take rodando */}
       {t >= segForm && t < segClose && (
-        <div style={{ position: 'absolute', left: 40, right: 40, top: 330, display: 'flex', justifyContent: 'center' }}>
-          <TakeNotebook nome="d_diag" from={3.0 + (t - segForm)} width={1000} />
-        </div>
+        <Sequence from={Math.round(segForm * FPS)} layout="none">
+          <div style={{ position: 'absolute', left: 40, right: 40, top: 460, display: 'flex', justifyContent: 'center' }}>
+            <TakeNotebook nome="d_diag" from={3.0} width={1000} />
+          </div>
+        </Sequence>
       )}
 
       {/* fase 2: close no formulário (metade esquerda) */}
       {t >= segClose && t < segResp && (
-        <div style={{ position: 'absolute', left: 0, top: 400 }}>
-          <TakeZoom nome="d_diag" from={11.2 + (t - segClose)} zoom={1.75} foco={[450, 430]} h={1080} />
-        </div>
+        <Sequence from={Math.round(segClose * FPS)} layout="none">
+          <div style={{ position: 'absolute', left: 0, top: 330 }}>
+            <TakeZoom nome="d_diag" from={11.2} zoom={1.75} foco={[450, 430]} h={1280} />
+          </div>
+        </Sequence>
       )}
 
       {/* fase 3: close na resposta chegando (painel direito) */}
       {t >= segResp && t < segScroll && (
-        <div style={{ position: 'absolute', left: 0, top: 400 }}>
-          <TakeZoom nome="d_diag" from={26.0 + (t - segResp)} zoom={1.75} foco={[1065, 420]} h={1080} />
-        </div>
+        <Sequence from={Math.round(segResp * FPS)} layout="none">
+          <div style={{ position: 'absolute', left: 0, top: 330 }}>
+            <TakeZoom nome="d_diag" from={26.0} zoom={1.75} foco={[1065, 420]} h={1280} />
+          </div>
+        </Sequence>
       )}
 
       {/* fase 4: rolando o plano completo */}
       {t >= segScroll && (
-        <div style={{ position: 'absolute', left: 0, top: 400 }}>
-          <TakeZoom nome="d_diag" fromEnd={11.5 - (t - segScroll)} zoom={1.6} foco={[1065, 425]} h={1080} />
-        </div>
+        <Sequence from={Math.round(segScroll * FPS)} layout="none">
+          <div style={{ position: 'absolute', left: 0, top: 330 }}>
+            <TakeZoom nome="d_diag" fromEnd={11.5} zoom={1.6} foco={[1065, 425]} h={1280} />
+          </div>
+        </Sequence>
       )}
 
       {/* título da fase, sem cobrir o app */}
@@ -81,6 +89,11 @@ export const V31_DiagReal: React.FC = () => {
         </div>
       )}
 
+      {t < segClose && (
+        <Rotulo t={t} at={DELAY + 2.2} bottom={150}>
+          o caso entra digitado, ao vivo — sem maquete
+        </Rotulo>
+      )}
       <Rotulo t={t} at={DELAY + 13.2} bottom={110}>
         hipóteses · condutas · doses · mecanismos
       </Rotulo>
