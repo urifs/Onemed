@@ -43,6 +43,7 @@ export default function StoreAdminPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({ ...VAZIO });
@@ -50,7 +51,9 @@ export default function StoreAdminPage() {
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const load = async () => {
-    const [{ data: prods }, { data: ords }] = await Promise.all([
+    setLoading(true);
+    setLoadError(false);
+    const [prodsRes, ordsRes] = await Promise.all([
       supabase.from('store_products' as never).select('*').order('sort_order').order('created_at'),
       // RPC (admin-only) em vez de select direto: nome, WhatsApp e plano do
       // comprador vivem em profiles/accesses/buyers, que a RLS não abre pro
@@ -58,8 +61,16 @@ export default function StoreAdminPage() {
       // comprou cada recurso.
       supabase.rpc('get_store_orders' as never),
     ]);
-    setProducts(((prods || []) as unknown as Product[]));
-    setOrders(((ords || []) as unknown as Order[]));
+    // Erro resolve a promise com data null: sem checar, uma falha de rede
+    // virava "Nenhum produto cadastrado" e receita R$ 0,00 — indistinguível
+    // de uma loja realmente vazia.
+    if (prodsRes.error || ordsRes.error) {
+      setLoadError(true);
+      setLoading(false);
+      return;
+    }
+    setProducts(((prodsRes.data || []) as unknown as Product[]));
+    setOrders(((ordsRes.data || []) as unknown as Order[]));
     setLoading(false);
   };
 
@@ -139,6 +150,16 @@ export default function StoreAdminPage() {
               Recursos adicionais à venda na área de membros, pelo checkout do Mercado Pago.
             </p>
           </div>
+          {loadError && (
+            <div className="flex w-full items-center gap-3 rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3">
+              <p className="text-sm text-foreground flex-1">
+                Não foi possível carregar produtos e vendas — os números abaixo não refletem a loja.
+              </p>
+              <Button onClick={load} size="sm" variant="outline" className="border-border text-foreground">
+                Tentar novamente
+              </Button>
+            </div>
+          )}
           <div className="flex items-center gap-2">
             <a
               href="/membros/loja"

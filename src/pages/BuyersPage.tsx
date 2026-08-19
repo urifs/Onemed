@@ -143,12 +143,23 @@ export default function BuyersPage() {
     const termo = search.trim();
     if (!termo || filtered.length > 0) { setForaDaLista([]); return; }
     const timer = setTimeout(async () => {
-      const { data } = await supabase.from('buyers')
+      // Dentro do .or(), a vírgula separa CONDIÇÕES e os parênteses agrupam —
+      // um termo que os contenha quebra a sintaxe e a busca inteira falha.
+      // As aspas duplas são o escape do PostgREST para o valor; por isso elas
+      // próprias saem do termo antes.
+      const seguro = termo.replace(/["\\]/g, '');
+      const { data, error } = await supabase.from('buyers')
         .select('*')
-        .or(`payment_id.ilike.%${termo}%,external_reference.ilike.%${termo}%,email.ilike.%${termo}%`)
+        .or(`payment_id.ilike."%${seguro}%",external_reference.ilike."%${seguro}%",email.ilike."%${seguro}%"`)
         .neq('status', 'approved')
         .order('created_at', { ascending: false })
         .limit(20);
+      if (error) {
+        console.error('Busca de compras não aprovadas falhou', error);
+        toast.error('Não foi possível buscar compras fora da lista. Tente novamente.');
+        setForaDaLista([]);
+        return;
+      }
       setForaDaLista(data || []);
     }, 400);
     return () => clearTimeout(timer);

@@ -78,6 +78,12 @@ function GrantAccessDialog({ open, onOpenChange, onGranted }: {
 
   const grantAccess = async () => {
     if (!newEmail) { toast.error('Informe um email'); return; }
+    // Um e-mail com typo cria um acesso órfão que ninguém consegue usar — e
+    // só aparece quando o aluno reclama que "comprou e não entra".
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail.trim())) {
+      toast.error('E-mail inválido. Confira o endereço digitado.');
+      return;
+    }
     setAdding(true);
     try {
       const email = newEmail.toLowerCase();
@@ -443,7 +449,10 @@ export default function MembersPage() {
     }
   };
 
-  const revokeAccess = async (accessId: string) => {
+  // Revogar tira o acesso do aluno na hora (e derruba as sessões no próximo
+  // gate) — um clique sem volta ao lado de "Renovar" na mesma linha da tabela.
+  const revokeAccess = async (accessId: string, email?: string) => {
+    if (!window.confirm(`Revogar o acesso de ${email || 'este membro'}? A pessoa perde o acesso à plataforma imediatamente.`)) return;
     try {
       const { error } = await supabase.from('accesses').update({ status: 'revoked' }).eq('id', accessId);
       if (error) throw error;
@@ -571,7 +580,7 @@ export default function MembersPage() {
                       </td>
                       <td className="px-4 py-3">
                         {m.source === 'manual' && m.accessId ? (
-                          <Button variant="ghost" size="sm" onClick={() => revokeAccess(m.accessId!)} className="text-red-400 hover:text-red-300 gap-1.5">
+                          <Button variant="ghost" size="sm" onClick={() => revokeAccess(m.accessId!, m.email)} className="text-red-400 hover:text-red-300 gap-1.5">
                             <XCircle className="w-3.5 h-3.5" /> Revogar
                           </Button>
                         ) : (
