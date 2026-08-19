@@ -405,7 +405,10 @@ export default function CheckoutPage() {
         <p className="text-muted-foreground">Acesso ilimitado a todo o conteúdo médico</p>
       </div>
 
-      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+      {/* Flex em vez de grid: são 5 planos e um grid de 3 colunas deixava a
+          última linha com dois cards encostados à esquerda e um vão à direita.
+          Com wrap + justify-center, a linha incompleta fica centralizada. */}
+      <div className="flex flex-wrap justify-center gap-6">
         {Object.entries(PLANS).map(([key, plan]) => {
           const lockedByCoupon = Boolean(
             couponApplied?.allowed_plans && couponApplied.allowed_plans !== 'all' && couponApplied.allowed_plans !== key
@@ -414,7 +417,7 @@ export default function CheckoutPage() {
           <div
             key={key}
             onClick={() => !lockedByCoupon && setSelectedPlan(key)}
-            className={`relative p-6 rounded-2xl border-2 transition-all duration-300 ${
+            className={`relative w-full sm:w-[calc(50%-0.75rem)] lg:w-[calc(33.333%-1rem)] p-6 rounded-2xl border-2 transition-all duration-300 ${
               lockedByCoupon ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'
             } ${
               selectedPlan === key ? 'bg-primary/10 border-primary' : 'bg-secondary/30 border-border hover:border-border'
@@ -450,7 +453,10 @@ export default function CheckoutPage() {
             <ul className="space-y-2">
               {plan.features.map((feature, i) => (
                 <li key={i} className="flex items-start gap-2 text-sm">
-                  <Check className={`w-4 h-4 flex-shrink-0 mt-0.5 ${selectedPlan === key ? 'text-primary' : 'text-accent-success'}`} />
+                  {/* Verde SEMPRE: o card selecionado pintava os checks de
+                      vermelho (cor primária da marca), e vermelho ao lado de
+                      um benefício lê como recusa, não como incluído. */}
+                  <Check className="w-4 h-4 flex-shrink-0 mt-0.5 text-accent-success" />
                   <span className="text-muted-foreground">{renderFeatureText(feature)}</span>
                 </li>
               ))}

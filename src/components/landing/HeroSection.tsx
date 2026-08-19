@@ -63,10 +63,12 @@ export const HeroSection = ({
             Teste grátis de 10 minutos, sem cartão
           </div>
 
-          <h1 className="font-secondary text-[2.75rem] leading-[1.05] sm:text-6xl xl:text-[5rem] font-bold tracking-tight text-foreground mb-6">
-            O maior acervo de
-            <br />
-            cursos médicos <span className="text-primary">do Brasil</span>
+          {/* Sem <br /> fixo: a quebra manual deixava a palavra "de" sozinha
+              numa linha inteira no celular ("O maior acervo" / "de" /
+              "cursos médicos"). `text-balance` distribui as linhas sozinho, em
+              qualquer largura. */}
+          <h1 className="font-secondary text-[2.75rem] leading-[1.05] sm:text-6xl xl:text-[5rem] font-bold tracking-tight text-foreground mb-6 text-balance">
+            O maior acervo de cursos médicos <span className="text-primary">do Brasil</span>
           </h1>
 
           <p className="text-lg text-muted-foreground leading-relaxed mb-8 max-w-lg">

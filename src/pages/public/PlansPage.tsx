@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Check } from 'lucide-react';
+import { formatBRL } from '@/lib/utils';
 import { Seo } from '@/seo/Seo';
 import { BOOK_COUNT, COURSE_COUNT } from '@/seo/siteConfig';
 import { breadcrumb, faqPage, planProduct } from '@/seo/structuredData';
@@ -83,13 +84,16 @@ export default function PlansPage() {
             Compare os planos disponíveis
           </h2>
 
-          <ul className="grid gap-5 md:grid-cols-2 lg:grid-cols-3 list-none p-0">
+          {/* Flex centralizado em vez de grid: são 5 planos, e num grid de 3
+              colunas a última linha ficava com dois cards à esquerda e um vão
+              vazio à direita. */}
+          <ul className="flex flex-wrap justify-center gap-5 list-none p-0">
             {PLAN_ORDER.map(key => (
-              <li key={key} className="rounded-xl border border-border bg-card p-6 flex flex-col">
+              <li key={key} className="w-full md:w-[calc(50%-0.625rem)] lg:w-[calc(33.333%-0.834rem)] rounded-xl border border-border bg-card p-6 flex flex-col">
                 <h3 className="font-secondary text-xl font-bold text-foreground">{PLAN_LABELS[key]}</h3>
                 <p className="mt-2 mb-1">
                   <strong className="text-3xl font-bold text-foreground">
-                    R$ {PLAN_PRICES[key].toFixed(2).replace('.', ',')}
+                    {formatBRL(PLAN_PRICES[key])}
                   </strong>
                   <span className="text-sm text-muted-foreground ml-2">{PLAN_PERIOD[key]}</span>
                 </p>
