@@ -95,11 +95,20 @@ export function FlashcardViewer({ deck, deckId, onClose, onSave, saved, saving }
     recorded.current = false;
   };
 
+  // Fechar um baralho/banco RECÉM-GERADO que ainda não foi salvo joga fora
+  // minutos de geração e uma vaga do limite diário de IA — e o Esc é fácil de
+  // apertar sem querer. Só pergunta quando há mesmo o que perder (onSave
+  // existe e ainda não salvou).
+  const fechar = () => {
+    if (onSave && !saved && !window.confirm('Fechar sem salvar? Este material foi gerado agora e será perdido.')) return;
+    onClose();
+  };
+
   // Atalhos: espaço/Enter revela; no avulso 1 Errei / 2 Acertei; na múltipla
   // escolha 1-4 marcam a alternativa e Enter continua; Esc fecha.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { onClose(); return; }
+      if (e.key === 'Escape') { fechar(); return; }
       if (!current) return;
       if (isMcq) {
         if (picked === null && /^[1-4]$/.test(e.key)) {
@@ -176,7 +185,7 @@ export function FlashcardViewer({ deck, deckId, onClose, onSave, saved, saving }
         </div>
 
         <button
-          onClick={onClose}
+          onClick={fechar}
           title="Fechar"
           aria-label="Fechar flashcards"
           className="w-9 h-9 rounded-full bg-secondary border border-border flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
@@ -352,7 +361,7 @@ export function FlashcardViewer({ deck, deckId, onClose, onSave, saved, saving }
               <RotateCcw className="w-4 h-4" /> Estudar de novo
             </button>
             <button
-              onClick={onClose}
+              onClick={fechar}
               className="bg-primary hover:bg-primary-hover text-primary-foreground font-semibold px-5 py-2.5 rounded-xl text-sm transition-colors"
             >
               Fechar

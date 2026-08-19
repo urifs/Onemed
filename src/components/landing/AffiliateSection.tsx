@@ -5,9 +5,10 @@ import { Handshake, Percent, Crown, LineChart, Megaphone, LogIn } from 'lucide-r
 // do rodapé: quem chega até aqui já conheceu o produto; revender é o próximo
 // passo natural pra quem não vai comprar pra si.
 const beneficios = [
-  { icon: Percent, text: '15% de comissão nas assinaturas do plano Mensal' },
-  { icon: Percent, text: '20% nas do Anual e do Vitalício' },
-  { icon: Percent, text: '25% nas do Vitalício Plus e 30% nas do Vitalício Pro' },
+  // Espelha AFFILIATE_COMMISSION_PERCENT do mp-webhook, que é quem paga.
+  { icon: Percent, text: '20% de comissão nas assinaturas do plano Mensal' },
+  { icon: Percent, text: '25% nas do Anual e do Vitalício' },
+  { icon: Percent, text: '30% nas do Vitalício Plus e do Vitalício Pro' },
   { icon: Crown, text: 'Conta Vitalício Pro grátis a partir de 5 vendas' },
   { icon: Megaphone, text: 'Cupom exclusivo de 10% + material de divulgação pronto' },
   { icon: LineChart, text: 'Painel com cada venda sua e a comissão em tempo real' },

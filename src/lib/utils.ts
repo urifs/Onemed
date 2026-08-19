@@ -75,8 +75,25 @@ export function describeAuthError(err: unknown): Error {
       + 'bloqueador de anúncios ou extensão de privacidade, desative e tente de novo.',
     );
   }
+  // O GoTrue responde em inglês ("Invalid login credentials"). Numa plataforma
+  // inteiramente em português isso é erro cru na cara do usuário — e alguns
+  // dos textos são ambíguos até para quem lê inglês.
+  const traduzido = TEXTOS_DE_AUTH.find(([re]) => re.test(message))?.[1];
+  if (traduzido) return new Error(traduzido);
   return err instanceof Error ? err : new Error(message || 'Erro inesperado. Tente novamente.');
 }
+
+const TEXTOS_DE_AUTH: [RegExp, string][] = [
+  [/invalid login credentials/i, 'E-mail ou senha incorretos.'],
+  [/email not confirmed/i, 'Este e-mail ainda não foi confirmado. Verifique sua caixa de entrada.'],
+  [/user already registered|already been registered/i, 'Já existe uma conta com este e-mail.'],
+  [/password should be at least (\d+)/i, 'A senha é curta demais. Use pelo menos 8 caracteres.'],
+  [/for security purposes|only request this after|rate limit|too many requests/i,
+    'Muitas tentativas seguidas. Aguarde alguns instantes e tente de novo.'],
+  [/invalid email|unable to validate email/i, 'E-mail inválido. Confira o endereço digitado.'],
+  [/user not found/i, 'Não encontramos uma conta com este e-mail.'],
+  [/token has expired|invalid.*token/i, 'Este link expirou. Peça um novo e tente de novo.'],
+];
 
 const SAO_PAULO_TIMEZONE = 'America/Sao_Paulo';
 
