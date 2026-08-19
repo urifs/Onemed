@@ -3441,14 +3441,45 @@ por navegação) e o filtro Vídeos/Arquivos da busca deixou de refazer a RPC in
 **Validação:** 151 testes (10 novos), `typecheck:refs` limpo, build com prerender 27/27, e os
 erros do `tsc` completo seguem em 143 (baseline 144 — nenhum novo).
 
+**Segundo lote (mesma sessão) — login, IA e campanhas:**
+- **Falha do serviço de autenticação virava "Senha incorreta"** — o aluno redefinia uma senha que
+  estava certa. Só 400/401 do GoTrue é senha errada; o resto vira 503 com mensagem própria.
+- **O failsafe de 5s do `AuthContext` expulsava sessão válida em rede lenta**: marcava
+  `loading=false` antes da verificação terminar e, com `user` ainda null, a rota protegida mandava
+  pro `/login` quem estava logado. A sessão local passou a valer na hora, com a conferência no
+  servidor em segundo plano.
+- **Link de aula agora volta pra aula depois do login** (`?destino=`, só caminho interno — URL
+  absoluta seria redirecionador aberto); antes caía sempre no `/membros` raiz.
+- **O manual do `member-assistant` mentia para os alunos**: "trial de 30 minutos" (são 10) e "15
+  gerações/dia" (o limite é por plano).
+- **Geração de IA recusada por conteúdo ilegível consumia uma vaga do limite diário** — no Anual,
+  1 dos 5 do dia. Agora devolve a vaga antes do 422.
+- **Campanha de e-mail que morria no meio de um lote ficava presa em `running` para sempre** (o
+  seletor só procurava `scheduled`): metade da lista recebia, a outra não, sem aviso. Migration
+  `20260819120000` (coluna `updated_at` + trigger) permite recuperar depois de 10 min, com claim
+  otimista pelo próprio `updated_at` para o lote não sair duas vezes.
+- **Erro do Mercado Pago chegava CRU ao comprador** na hora de pagar (`MP Error 400: {...}`).
+- **Comprador do Mensal ganhava 2 telas** em vez da 1 prometida: a linha genérica `paid` de
+  `accesses` caía no padrão 2 e vencia o `monthly` de `buyers` no `Math.max`.
+- `member-capture-location` usava o XFF esquerdo (forjável) — agora `cf-connecting-ip`, a regra
+  deste projeto desde a forense de 15/08.
+
 ⏳ **O que exige deploy depois do merge:**
 1. **Frontend** — sobe sozinho com o push na `main` (Vercel).
-2. **Edge Functions alteradas, redeploy multipart obrigatório:** `mp-webhook`, `mp-create-payment`,
-   `member-lesson-token`, `archive-manage`, `send-access-email`, `affiliate-register`.
+2. **Migration** `20260819120000_email_campaign_stuck_recovery.sql` — aplicar ANTES de redeployar o
+   `run-email-campaign` (a função passa a ler e escrever `updated_at`).
+3. **Edge Functions alteradas, redeploy multipart obrigatório:** `mp-webhook`, `mp-create-payment`,
+   `member-lesson-token`, `member-auth-request`, `member-assistant`, `member-capture-location`,
+   `generate-flashcards`, `archive-manage`, `run-email-campaign`, `send-access-email`,
+   `affiliate-register`.
    ⚠️ `mp-webhook` e `mp-create-payment` mudaram JUNTOS na regra do cupom (a contagem saiu de um e
    entrou no outro): subir só um deles deixa o cupom sem contagem nenhuma ou com contagem dobrada.
-3. **Worker Cloudflare** (`cloudflare/stream-lesson/worker.js`) — deploy manual separado, com
+4. **Worker Cloudflare** (`cloudflare/stream-lesson/worker.js`) — deploy manual separado, com
    `keep_bindings` (ver o topo deste arquivo).
+
+> **Não mexido de propósito:** o worker responder ao pedido SEM `Range` buscando o arquivo inteiro.
+> É intencional (download e primeira carga de PDF precisam do arquivo todo) e alterar isso sem
+> conseguir medir em produção traz mais risco que benefício.
 
 ## Meta Ads — Contexto Geral
 
