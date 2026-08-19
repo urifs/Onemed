@@ -3464,18 +3464,49 @@ erros do `tsc` completo seguem em 143 (baseline 144 — nenhum novo).
 - `member-capture-location` usava o XFF esquerdo (forjável) — agora `cf-connecting-ip`, a regra
   deste projeto desde a forense de 15/08.
 
-⏳ **O que exige deploy depois do merge:**
-1. **Frontend** — sobe sozinho com o push na `main` (Vercel).
-2. **Migration** `20260819130000_email_campaign_stuck_recovery.sql` — aplicar ANTES de redeployar o
-   `run-email-campaign` (a função passa a ler e escrever `updated_at`).
-3. **Edge Functions alteradas, redeploy multipart obrigatório:** `mp-webhook`, `mp-create-payment`,
-   `member-lesson-token`, `member-auth-request`, `member-assistant`, `member-capture-location`,
-   `generate-flashcards`, `archive-manage`, `run-email-campaign`, `send-access-email`,
-   `affiliate-register`.
-   ⚠️ `mp-webhook` e `mp-create-payment` mudaram JUNTOS na regra do cupom (a contagem saiu de um e
-   entrou no outro): subir só um deles deixa o cupom sem contagem nenhuma ou com contagem dobrada.
-4. **Worker Cloudflare** (`cloudflare/stream-lesson/worker.js`) — deploy manual separado, com
-   `keep_bindings` (ver o topo deste arquivo).
+✅ **Deploy completo em produção (fim desta sessão).** Ordem executada: migrations →
+Edge Functions → Worker, para nunca existir função lendo coluna que ainda não existe.
+
+1. **Migrations aplicadas:** `20260819130000_email_campaign_stuck_recovery.sql` (coluna
+   `updated_at` + trigger + 11 min de folga nas campanhas já presas) e
+   `20260819140000_notifications_para_trial.sql`. A segunda ganhou uma linha a mais depois de
+   conferida em produção: **`REVOKE EXECUTE ... FROM anon`** — o `ALTER DEFAULT PRIVILEGES` do
+   projeto concede EXECUTE a `anon` no instante em que a função nasce, e o `REVOKE ... FROM
+   PUBLIC` não alcança isso. O corpo já devolvia NULL para deslogado (sem vazamento), mas a
+   porta não precisa existir. **Regra: função nova SECURITY DEFINER exige revogar de `anon`
+   explicitamente; revogar de PUBLIC não basta neste projeto.**
+2. **11 Edge Functions redeployadas via multipart**, todas com `verify_jwt=false` preservado e
+   **OPTIONS 200** (11/11, sem BOOT_ERROR): mp-webhook v76 · mp-create-payment v71 ·
+   member-lesson-token v29 · member-auth-request v39 · member-assistant v12 ·
+   member-capture-location v5 · generate-flashcards v33 · archive-manage v4 ·
+   run-email-campaign v52 · send-access-email v63 · affiliate-register v6.
+   ⚠️ **Função que importa de `_shared/` precisa de outro formato de multipart:** o entrypoint
+   vai como `<slug>/index.ts` e o compartilhado como `_shared/<arquivo>.ts`, com
+   `entrypoint_path` apontando para o primeiro — assim o `../_shared/...` do código continua
+   resolvendo. Com o formato simples (`index.ts` na raiz) a função sobe e quebra no boot. Foi o
+   caso de `mp-webhook` (billing-rules) e `run-email-campaign` (plan-table).
+3. **Worker Cloudflare deployado** com `keep_bindings` — os 3 secrets conferidos ANTES e DEPOIS
+   (`LESSON_STREAM_SECRET`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_URL`), OPTIONS 200, e o
+   conteúdo no ar conferido **byte a byte** contra o repo.
+4. **Frontend** na `main` (Vercel `e8a641e` READY).
+
+**Verificação em produção pelo caminho REAL do aluno** (conta de teste criada pelo próprio
+`create-trial-access` e apagada na mesma execução — `accesses`, `buyers`, `auth.users` zerados):
+
+| o que | resultado |
+|---|---|
+| Sino no trial | 4 itens lidos ✓ · título via RPC nova ✓ (sondado com valor temporário e restaurado) |
+| Aviso do painel no trial | continua **vazio** ✓ (a RPC entrega só o título) |
+| `notifications_heading` anônimo | **401** ✓ |
+| Streaming de aula | `member-lesson-token` → Worker → **206** com `ftypisom` (MP4 real) |
+| Download de aula em vídeo (trial) | **403** ✓ |
+| **Vitalício LEGADO** (`accesses`='paid' + `buyers.plan`='lifetime') | download de ARQUIVO **200** ✓ — era exatamente o bug corrigido; vídeo segue **403** ✓ |
+| URL de download assinada + `&dl=` | `Content-Disposition: attachment` ✓ |
+| URL de streaming + `&dl=` forjado | 206 **inline**, sem attachment ✓ |
+| URL de streaming + `&dlok=1` forjado | **403** assinatura inválida ✓ |
+| Preços no eszip NO AR | 99 / 299 / 499 / 798 / 1497 + upsells 94 / 39,80 — batem com o repo ✓ |
+| Contagem de cupom | `increment_coupon_use` **ausente** no mp-create-payment e **presente** no mp-webhook ✓ (a regra mudou de lado sem ficar duplicada nem órfã) |
+| Reversão de estorno | `charged_back` + `status:'reversed'` + revogação por `access_type` no ar ✓ |
 
 > **Não mexido de propósito:** o worker responder ao pedido SEM `Range` buscando o arquivo inteiro.
 > É intencional (download e primeira carga de PDF precisam do arquivo todo) e alterar isso sem
@@ -3517,9 +3548,9 @@ abaixo. Agora só entram cursos do ano (`ANO_DA_VITRINE` em `src/lib/utils.ts`).
 > **Virada de ano:** trocar a vitrine para 2027 é editar `ANO_DA_VITRINE` — um lugar só. Enquanto
 > a turma nova não existir, a rede de segurança segura o banner.
 
-⏳ **Deploy:** o frontend sobe com o merge; a migration `20260819140000` precisa ser aplicada
-(sem ela o trial vê o sino vazio — a RLS antiga ainda recusa os itens, e a RPC do título não
-existe).
+✅ **Deploy feito** no fim desta sessão (ver o bloco anterior): migration `20260819140000`
+aplicada e conferida em produção com conta de trial real — o sino lista os itens, o aviso do
+painel continua fora do trial, e a RPC do título recusa anônimo.
 
 ## Meta Ads — Contexto Geral
 

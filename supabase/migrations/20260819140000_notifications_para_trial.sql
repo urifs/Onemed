@@ -36,3 +36,9 @@ $$;
 
 REVOKE ALL ON FUNCTION public.notifications_heading() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.notifications_heading() TO authenticated;
+
+-- O GRANT padrão do projeto (ALTER DEFAULT PRIVILEGES) dá EXECUTE a `anon`
+-- assim que a função nasce, e o REVOKE de PUBLIC acima não o alcança. Sem
+-- isso, um visitante deslogado consegue CHAMAR a função — o corpo devolve
+-- NULL para ele, então não havia vazamento, mas a porta não precisa existir.
+REVOKE EXECUTE ON FUNCTION public.notifications_heading() FROM anon;
