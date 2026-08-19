@@ -216,9 +216,13 @@ export default function EmailCampaignPage() {
       // EXCLUÍDOS (mandar "sentimos sua falta, use este cupom" para quem já
       // comprou é constrangedor e queima desconto à toa) e no público
       // "buyers" eles são o alvo. Mesmo critério do /admin/trials.
-      const compradores = await fetchAllPages(() =>
-        supabase.from('buyers').select('email').eq('status', 'approved')
-      );
+      // Só busca quando a audiência realmente usa a lista: em 'custom' ela não
+      // entra em nada, e baixar milhares de e-mails a cada troca de período
+      // era varredura de tabela inteira à toa.
+      const precisaDeCompradores = type === 'trials' || type === 'buyers' || type === 'both';
+      const compradores = precisaDeCompradores
+        ? await fetchAllPages(() => supabase.from('buyers').select('email').eq('status', 'approved'))
+        : [];
       const jaComprou = new Set(compradores.map(e => e.toLowerCase()));
 
       if (type === 'trials' || type === 'both') {

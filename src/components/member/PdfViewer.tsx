@@ -275,7 +275,11 @@ export function PdfViewer({ url, lessonId }: { url: string; title?: string; less
     // são repintadas na volta — nada se perde ao liberar a página.
     type PageState = {
       pageNum: number;
-      page: any;
+      // Resolvido SOB DEMANDA: manter um proxy de página do pdf.js para cada
+      // página (com a lista de operadores que ele guarda dentro) mantinha o
+      // teto de memória proporcional ao total de páginas — exatamente o que
+      // esta virtualização existe para evitar numa apostila de centenas.
+      page: any | null;
       viewport: any;
       canvas: HTMLCanvasElement;
       overlay: HTMLCanvasElement | null;
@@ -285,6 +289,11 @@ export function PdfViewer({ url, lessonId }: { url: string; title?: string; less
     const pageStates = new Map<number, PageState>();
 
     const outputScale = Math.min(Math.max(window.devicePixelRatio || 1, 1.5), 3);
+    // Largura de referência do visualizador. Declarada aqui, ACIMA de
+    // renderPage, porque a função a usa para recalcular o viewport da página
+    // que está materializando (regra do projeto: nada de referência a algo
+    // declarado abaixo).
+    const larguraBase = container.clientWidth || 800;
 
     async function renderPage(st: PageState) {
       if (st.rendered || st.rendering || cancelled) return;
@@ -292,6 +301,11 @@ export function PdfViewer({ url, lessonId }: { url: string; title?: string; less
       try {
         const ctx = st.canvas.getContext('2d');
         if (!ctx) return;
+        if (!st.page) st.page = await pdfDoc.getPage(st.pageNum);
+        if (cancelled) return;
+        // Viewport da página REAL (o do setup é o da primeira, usado só para
+        // reservar espaço): páginas em paisagem renderizam na proporção certa.
+        st.viewport = st.page.getViewport({ scale: larguraBase / st.page.getViewport({ scale: 1 }).width });
         st.canvas.width = Math.floor(st.viewport.width * outputScale);
         st.canvas.height = Math.floor(st.viewport.height * outputScale);
         await st.page.render({
@@ -327,6 +341,10 @@ export function PdfViewer({ url, lessonId }: { url: string; title?: string; less
       st.canvas.width = 0;
       st.canvas.height = 0;
       if (st.overlay) { st.overlay.width = 0; st.overlay.height = 0; }
+      // cleanup() libera a lista de operadores que o pdf.js guarda na página;
+      // sem soltar o proxy, o canvas voltava mas a página seguia ocupando.
+      try { st.page?.cleanup?.(); } catch { /* já liberada */ }
+      st.page = null;
       st.rendered = false;
     }
 
@@ -351,8 +369,6 @@ export function PdfViewer({ url, lessonId }: { url: string; title?: string; less
       }
 
       try {
-        const containerWidth = container.clientWidth || 800;
-
         // Renderiza quando a página entra na janela de ~2 telas; libera ao
         // sair dela. root = o elemento que de fato rola (o pai overflow-auto).
         observer = new IntersectionObserver(entries => {
@@ -364,12 +380,18 @@ export function PdfViewer({ url, lessonId }: { url: string; title?: string; less
           }
         }, { root: container.parentElement, rootMargin: '1800px 0px' });
 
+        // A PRIMEIRA página dá a proporção usada para reservar o espaço de
+        // todas: buscar as N páginas aqui só para medir era justamente o que
+        // segurava um proxy do pdf.js por página na memória. Páginas de tamanho
+        // diferente (raro em apostila) se ajustam ao renderizar de verdade.
+        const primeira = await pdf.getPage(1);
+        const escalaPadrao = larguraBase / primeira.getViewport({ scale: 1 }).width;
+        const viewportPadrao = primeira.getViewport({ scale: escalaPadrao });
+
         for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
           if (cancelled) return;
-          const page = await pdf.getPage(pageNum);
-          const unscaledViewport = page.getViewport({ scale: 1 });
-          const scale = containerWidth / unscaledViewport.width;
-          const viewport = page.getViewport({ scale });
+          const page = pageNum === 1 ? primeira : null;
+          const viewport = viewportPadrao;
 
           // Wrapper posicionado: o canvas do PDF embaixo e o de anotação em
           // cima, exatamente do mesmo tamanho.

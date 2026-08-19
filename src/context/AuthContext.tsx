@@ -116,13 +116,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           setIsAdmin(papel.admin);
           setIsViewer(papel.viewer);
 
+          const sessaoConferida = session.user.id;
           void supabase.auth.getUser().then(async ({ data: quem, error: sessaoErr }) => {
             const semRede = /failed to fetch|networkerror|network request failed|aborted|timeout|load failed/i
               .test(String(sessaoErr?.message || ''));
             if (quem?.user || semRede) return;
+            // ⚠️ A conferência é lenta e o aluno pode ter ENTRADO nesse meio
+            // tempo (login numa aba, sessão nova). Derrubar aqui sem checar de
+            // quem era a sessão conferida expulsava justamente quem acabou de
+            // acertar a senha — e ainda abria o modal de "sessão encerrada"
+            // por cima. Só encerra se a sessão em vigor ainda é a mesma.
+            if (lastUserId.current !== sessaoConferida) return;
             // O servidor não reconhece esta sessão: encerra localmente. O
             // fetch do cliente (client.ts) faz o mesmo no primeiro 401, então
             // isto é a rede de segurança de quem abre o app e não navega.
+            manualSignOut.current = true;
             await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
             setSession(null);
             setUser(null);
