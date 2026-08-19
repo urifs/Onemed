@@ -444,8 +444,8 @@ export default function MemberLoginPage() {
               </Button>
 
               <p className="text-center text-xs text-muted-foreground">
-                Guarde bem sua senha: ela é cadastrada uma única vez. Se esquecer,
-                fale com o suporte para liberar um novo cadastro.
+                Se um dia esquecer a senha, dá para redefinir sozinho com um
+                código enviado ao seu e-mail.
               </p>
             </form>
           )}
