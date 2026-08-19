@@ -120,6 +120,11 @@ import { MDN17_Consultorio, MDN17_DURATION } from './creatives/MDN17_Consultorio
 import { MDN18_ChatVoz, MDN18_DURATION } from './creatives/MDN18_ChatVoz';
 import { MDN19_Tox, MDN19_DURATION } from './creatives/MDN19_Tox';
 import { MDN20_Passagem, MDN20_DURATION } from './creatives/MDN20_Passagem';
+import { MDX21_Sessao, MDX21_DURATION } from './creatives/MDX21_Sessao';
+import { MDX22_Handoff, MDX22_DURATION } from './creatives/MDX22_Handoff';
+import { MDX23_Prescricao, MDX23_DURATION } from './creatives/MDX23_Prescricao';
+import { MDX24_Imagem, MDX24_DURATION } from './creatives/MDX24_Imagem';
+import { MDX25_Turno, MDX25_DURATION } from './creatives/MDX25_Turno';
 import { C73_Quiz, C73_DURATION, C74_Quiz, C74_DURATION, C75_Quiz, C75_DURATION, C76_Quiz, C76_DURATION, C77_Quiz, C77_DURATION, C78_Quiz, C78_DURATION, C79_Quiz, C79_DURATION, C80_Quiz, C80_DURATION, C81_Quiz, C81_DURATION, C82_Quiz, C82_DURATION } from './creatives/QuizComps';
 import { AD01, AD02, AD03, AD04, AD05, AD06, AD07, AD08, AD09, AD10 } from './creatives/AdImages';
 import { POSTS, makePostComp } from './creatives/PostImages';
@@ -261,6 +266,11 @@ const CREATIVES: Array<[string, React.FC, number]> = [
   ['MDN18-ChatVoz', MDN18_ChatVoz, MDN18_DURATION],
   ['MDN19-Tox', MDN19_Tox, MDN19_DURATION],
   ['MDN20-Passagem', MDN20_Passagem, MDN20_DURATION],
+  ['MDX21-Sessao', MDX21_Sessao, MDX21_DURATION],
+  ['MDX22-Handoff', MDX22_Handoff, MDX22_DURATION],
+  ['MDX23-Prescricao', MDX23_Prescricao, MDX23_DURATION],
+  ['MDX24-Imagem', MDX24_Imagem, MDX24_DURATION],
+  ['MDX25-Turno', MDX25_Turno, MDX25_DURATION],
 ];
 
 export const RemotionRoot: React.FC = () => {

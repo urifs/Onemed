@@ -375,3 +375,234 @@ export const Cursor: React.FC<{ t: number; path: Array<[number, number, number]>
       </div>
     );
   };
+
+/* ============ V2: dentro do app — celular, navegação e câmera ============ */
+
+/* câmera: keyframes [tempo, escala, x, y] com interpolação suave */
+export const CameraRig: React.FC<{
+  t: number; kf: Array<[number, number, number, number]>; children: React.ReactNode;
+}> = ({ t, kf, children }) => {
+  let s = kf[kf.length - 1][1], x = kf[kf.length - 1][2], y = kf[kf.length - 1][3];
+  if (t <= kf[0][0]) { s = kf[0][1]; x = kf[0][2]; y = kf[0][3]; }
+  else {
+    for (let i = 0; i < kf.length - 1; i++) {
+      const [t0, s0, x0, y0] = kf[i], [t1, s1, x1, y1] = kf[i + 1];
+      if (t <= t1) {
+        const p = win(t, t0, t1); const e = p * p * (3 - 2 * p);
+        s = s0 + (s1 - s0) * e; x = x0 + (x1 - x0) * e; y = y0 + (y1 - y0) * e;
+        break;
+      }
+    }
+  }
+  return (
+    <AbsoluteFill style={{ transform: `scale(${s}) translate(${x}px, ${y}px)` }}>
+      {children}
+    </AbsoluteFill>
+  );
+};
+
+/* app mobile em TELA CHEIA (nós somos a tela) */
+export const MobileShell: React.FC<{
+  ferramenta?: string; voltar?: boolean; children: React.ReactNode; hora?: string;
+}> = ({ ferramenta, voltar, children, hora = '21:08' }) => (
+  <AbsoluteFill style={{ background: M_BG }}>
+    {/* status bar */}
+    <div style={{
+      position: 'absolute', top: 0, left: 0, right: 0, height: 70, display: 'flex',
+      alignItems: 'center', justifyContent: 'space-between', padding: '0 44px', zIndex: 6,
+    }}>
+      <span style={{ fontFamily: HEAD, fontWeight: 700, fontSize: 30, color: M_NAVY }}>{hora}</span>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+        {[14, 18, 22].map(h => (
+          <div key={h} style={{ width: 7, height: h, borderRadius: 3, background: M_NAVY, opacity: 0.85 }} />
+        ))}
+        <div style={{
+          width: 52, height: 26, borderRadius: 8, border: `3px solid ${M_NAVY}`, marginLeft: 6,
+          padding: 3, opacity: 0.85,
+        }}>
+          <div style={{ width: '72%', height: '100%', borderRadius: 3, background: M_NAVY }} />
+        </div>
+      </div>
+    </div>
+    {/* header do app */}
+    <div style={{
+      position: 'absolute', top: 70, left: 0, right: 0, height: 110, background: WHITE,
+      borderBottom: '1.5px solid rgba(14,27,51,0.08)', display: 'flex', alignItems: 'center',
+      padding: '0 40px', gap: 18, zIndex: 5, boxShadow: '0 6px 22px rgba(14,27,51,0.05)',
+    }}>
+      {voltar && <span style={{ fontSize: 44, color: M_NAVY, marginRight: 4 }}>‹</span>}
+      <MChip size={58} />
+      <span style={{ fontFamily: HEAD, fontWeight: 900, fontSize: 36, color: M_NAVY }}>
+        MEDUF <span style={{ color: M_BLUE }}>AI</span>
+      </span>
+      {ferramenta && (
+        <span style={{
+          marginLeft: 'auto', fontFamily: HEAD, fontWeight: 700, fontSize: 24, color: M_BLUE,
+          background: AZUL_SOFT, borderRadius: 999, padding: '10px 22px', maxWidth: 470,
+          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+        }}>{ferramenta}</span>
+      )}
+    </div>
+    <div style={{ position: 'absolute', top: 180, left: 0, right: 0, bottom: 0 }}>
+      {children}
+    </div>
+  </AbsoluteFill>
+);
+
+/* dedo tocando: bolha + ondulação nos toques */
+export const Dedo: React.FC<{ t: number; taps: Array<[number, number, number]> }> = ({ t, taps }) => {
+  const ativo = taps.find(([at]) => t >= at - 0.35 && t < at + 0.55);
+  if (!ativo) return null;
+  const [at, x, y] = ativo;
+  const chegando = win(t, at - 0.35, at);
+  const rip = t < at ? 0 : win(t, at, at + 0.5);
+  return (
+    <div style={{ position: 'absolute', left: x, top: y, zIndex: 50, pointerEvents: 'none' }}>
+      {rip > 0 && (
+        <div style={{
+          position: 'absolute', left: -60, top: -60, width: 120, height: 120, borderRadius: 60,
+          border: '4px solid rgba(21,96,232,0.6)', transform: `scale(${0.4 + rip * 1.5})`,
+          opacity: 1 - rip,
+        }} />
+      )}
+      <div style={{
+        position: 'absolute', left: -34, top: -34, width: 68, height: 68, borderRadius: 34,
+        background: 'rgba(21,96,232,0.28)', border: '3px solid rgba(255,255,255,0.85)',
+        transform: `scale(${0.6 + chegando * 0.4}) ${t >= at && t < at + 0.18 ? 'scale(0.82)' : ''}`,
+        opacity: 0.4 + chegando * 0.6,
+        boxShadow: '0 6px 20px rgba(14,27,51,0.25)',
+      }} />
+    </div>
+  );
+};
+
+/* pilha de navegação: telas deslizando como app de verdade */
+export const NavSlide: React.FC<{
+  t: number; telas: Array<{ at: number; el: React.ReactNode }>;
+}> = ({ t, telas }) => (
+  <AbsoluteFill style={{ overflow: 'hidden' }}>
+    {telas.map(({ at, el }, i) => {
+      const prox = telas[i + 1]?.at ?? Infinity;
+      if (t < at - 0.6 || t > prox + 0.7) return null;
+      const pIn = i === 0 ? 1 : outB(win(t, at, at + 0.55));
+      const pOut = prox === Infinity ? 0 : outB(win(t, prox, prox + 0.55));
+      return (
+        <AbsoluteFill key={i} style={{
+          transform: `translateX(${(1 - pIn) * 108 - pOut * 30}%)`,
+          boxShadow: pIn < 1 ? '-40px 0 90px rgba(14,27,51,0.3)' : undefined,
+        }}>
+          {el}
+          <AbsoluteFill style={{ background: '#0e1b33', opacity: pOut * 0.25, pointerEvents: 'none' }} />
+        </AbsoluteFill>
+      );
+    })}
+  </AbsoluteFill>
+);
+
+/* celular como objeto na cena (chassi com tela 430×880 escalada) */
+export const PhoneShell: React.FC<{
+  width: number; children: React.ReactNode; style?: React.CSSProperties;
+}> = ({ width, children, style }) => {
+  const h = width * (880 / 430) + width * 0.10;
+  const bezel = width * 0.045;
+  const scrW = width - bezel * 2;
+  const scale = scrW / 430;
+  return (
+    <div style={{
+      position: 'relative', width, height: h, borderRadius: width * 0.16,
+      background: 'linear-gradient(160deg,#2c2e33,#101114)',
+      boxShadow: '0 40px 90px -24px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.07)',
+      ...style,
+    }}>
+      <div style={{
+        position: 'absolute', left: bezel, top: bezel, width: scrW, height: h - bezel * 2,
+        borderRadius: width * 0.12, overflow: 'hidden', background: M_BG,
+      }}>
+        <div style={{ width: 430, height: 880, transform: `scale(${scale})`, transformOrigin: 'top left', position: 'relative' }}>
+          {children}
+        </div>
+      </div>
+      <div style={{
+        position: 'absolute', top: bezel * 1.2, left: '50%', transform: 'translateX(-50%)',
+        width: width * 0.3, height: width * 0.055, borderRadius: 999, background: '#0a0a0a',
+      }} />
+    </div>
+  );
+};
+
+/* consenso v2: três fluxos coloridos convergindo num nó */
+export const ConsensoFlux: React.FC<{ t: number; at: number; consAt: number; largura?: number }> =
+  ({ t, at, consAt, largura = 960 }) => {
+    if (t < at) return null;
+    const nomes: Array<[string, string]> = [['GPT', '#10a37f'], ['Claude', '#d97757'], ['Gemini', '#4285f4']];
+    const pCons = t < consAt ? 0 : outB(win(t, consAt, consAt + 0.45));
+    const cx = largura / 2;
+    return (
+      <div style={{ position: 'relative', width: largura, height: 300 }}>
+        {nomes.map(([nome, cor], i) => {
+          const x0 = 90 + i * ((largura - 180) / 2);
+          const vis = outB(win(t, at + i * 0.12, at + i * 0.12 + 0.3));
+          return (
+            <React.Fragment key={nome}>
+              <div style={{
+                position: 'absolute', left: x0 - 80, top: 0, width: 160, textAlign: 'center', opacity: vis,
+              }}>
+                <div style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 10, background: WHITE,
+                  border: `2.5px solid ${cor}`, borderRadius: 999, padding: '12px 22px',
+                }}>
+                  <span style={{ width: 16, height: 16, borderRadius: 8, background: cor }} />
+                  <span style={{ fontFamily: HEAD, fontWeight: 800, fontSize: 26, color: M_NAVY }}>{nome}</span>
+                </div>
+              </div>
+              <svg width={largura} height={300} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+                <path d={`M ${x0} 70 C ${x0} 160, ${cx} 140, ${cx} 210`} fill="none"
+                  stroke={cor} strokeWidth={4} opacity={0.5 * vis} />
+                {/* pulso viajando pela linha */}
+                {t >= at + 0.4 && t < consAt + 0.3 && (
+                  <circle r={9} fill={cor} opacity={0.9}>
+                    <animateMotion dur="1s" repeatCount="indefinite"
+                      path={`M ${x0} 70 C ${x0} 160, ${cx} 140, ${cx} 210`} />
+                  </circle>
+                )}
+              </svg>
+            </React.Fragment>
+          );
+        })}
+        <div style={{
+          position: 'absolute', left: cx - 190, top: 200, width: 380, textAlign: 'center',
+          opacity: pCons, transform: `translateY(${(1 - pCons) * 16}px)`,
+        }}>
+          <div style={{
+            display: 'inline-block', background: `linear-gradient(140deg, ${M_BLUE}, #0a3d99)`,
+            borderRadius: 999, padding: '16px 34px', boxShadow: '0 18px 50px rgba(21,96,232,0.4)',
+          }}>
+            <span style={{ color: WHITE, fontFamily: HEAD, fontWeight: 900, fontSize: 30 }}>
+              consenso das 3 IAs
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+/* flash branco de transição */
+export const flashAt = (t: number, at: number): number => {
+  if (t < at || t > at + 0.35) return 0;
+  const p = win(t, at, at + 0.35);
+  return p < 0.3 ? p / 0.3 : 1 - (p - 0.3) / 0.7;
+};
+
+/* esqueleto carregando com brilho correndo */
+export const Shimmer: React.FC<{ w: number | string; h?: number; frame: number }> = ({ w, h = 22, frame }) => (
+  <div style={{
+    width: w, height: h, borderRadius: h / 2, background: 'rgba(14,27,51,0.08)',
+    overflow: 'hidden', position: 'relative', marginBottom: 12,
+  }}>
+    <div style={{
+      position: 'absolute', top: 0, bottom: 0, width: '40%',
+      left: `${((frame * 2.2) % 160) - 40}%`,
+      background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.85), transparent)',
+    }} />
+  </div>
+);
