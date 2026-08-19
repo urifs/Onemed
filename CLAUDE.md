@@ -3481,6 +3481,46 @@ erros do `tsc` completo seguem em 143 (baseline 144 — nenhum novo).
 > É intencional (download e primeira carga de PDF precisam do arquivo todo) e alterar isso sem
 > conseguir medir em produção traz mais risco que benefício.
 
+---
+
+### 2026-08-19 (mesma sessão) — sino no teste grátis e vitrine só com a turma do ano
+
+**Sino de notificações passa a aparecer no TESTE GRÁTIS** (pedido do dono). Estava bloqueado em
+DOIS lugares, e mexer num só não resolveria: o `MemberHeader` escondia o ícone (`!isTrial`) e a
+RLS de `notification_items` recusava trial. A lista de "cursos em processo de atualização" é
+argumento de compra — quem está decidindo assinar é justamente quem precisa ver que o acervo é
+vivo.
+
+⚠️ **O AVISO do painel continua fora do trial** (regra de 01/08). O problema: o título do sino
+(`notifications_heading`) mora na MESMA tabela do aviso (`announcement_settings`), então liberar a
+tabela para o trial vazaria o aviso junto. Solução: RPC `notifications_heading()` (SECURITY
+DEFINER, gate `is_member() OR admin`) devolve só esse campo — migration
+`20260819140000_notifications_para_trial.sql`. O link do grupo no WhatsApp segue bloqueado pela
+RLS de `community_settings`, então no trial o sino mostra apenas a lista de atualizações. A
+**Loja** continua exclusiva de assinante.
+
+**Vitrine do dashboard só com a turma 2026.** O banner rotativo do `/membros` girava com os
+maiores cursos da categoria "Extensivo & Intensivo · Residência" de QUALQUER ano — anunciar
+"Extensivo 2024" na vitrine passa impressão de acervo parado, mesmo com o material novo logo
+abaixo. Agora só entram cursos do ano (`ANO_DA_VITRINE` em `src/lib/utils.ts`).
+
+- O ano sai do **TÍTULO** (`courseYear()`): é a única fonte — não existe coluna de ano em
+  `courses`, e as pastas de origem no Drive trazem a turma no nome. Com dois anos no título
+  ("Extensivo 2025/2026") vale o maior. `src/test/courseYear.test.ts` trava os casos reais da
+  biblioteca ("R3", "+5mil", "2º Edição", números de 3 e 5 dígitos).
+- **"Continue de onde parou" NÃO é filtrado por ano** — é o progresso do próprio aluno, não
+  vitrine. Ele sai do banner junto com a faixa de recentes, como sempre foi.
+- **Rede de segurança:** sem nenhum curso do ano (biblioteca sincronizando, ou virada de ano antes
+  de importar a turma nova), o banner volta a mostrar os maiores em vez de sumir da tela.
+- Cursos de outros anos continuam no acervo, na busca e nas prateleiras.
+
+> **Virada de ano:** trocar a vitrine para 2027 é editar `ANO_DA_VITRINE` — um lugar só. Enquanto
+> a turma nova não existir, a rede de segurança segura o banner.
+
+⏳ **Deploy:** o frontend sobe com o merge; a migration `20260819140000` precisa ser aplicada
+(sem ela o trial vê o sino vazio — a RLS antiga ainda recusa os itens, e a RPC do título não
+existe).
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
