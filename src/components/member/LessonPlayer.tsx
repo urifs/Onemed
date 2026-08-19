@@ -827,12 +827,16 @@ export function LessonPlayer({
         <div className="hidden sm:flex items-center gap-2">
           <button
             disabled={!hasPrev} onClick={onPrev}
+            title="Aula anterior"
+            aria-label="Aula anterior"
             className="w-9 h-9 rounded-full bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-white/15 flex items-center justify-center text-white transition-colors"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
           <button
             disabled={!hasNext} onClick={onNext}
+            title="Próxima aula"
+            aria-label="Próxima aula"
             className="w-9 h-9 rounded-full bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-white/15 flex items-center justify-center text-white transition-colors"
           >
             <ChevronRight className="w-4 h-4" />
