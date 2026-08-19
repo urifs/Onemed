@@ -194,6 +194,7 @@ const MemberProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
   const { status, lastType, expiredAt, loading: statusLoading } = useMemberStatus();
   const isAffiliate = useIsAffiliate();
+  const location = useLocation();
 
   const spinner = (
     <div className="flex min-h-screen items-center justify-center bg-background">
@@ -202,7 +203,13 @@ const MemberProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   );
 
   if (loading) return spinner;
-  if (!user) return <Navigate to="/login" replace />;
+  // Guarda o destino para o login devolver a pessoa ao lugar de onde ela veio:
+  // um link de aula compartilhado no WhatsApp caía sempre no /membros raiz, e
+  // o aluno tinha que procurar a aula de novo.
+  if (!user) {
+    const destino = location.pathname + location.search;
+    return <Navigate to={`/login?destino=${encodeURIComponent(destino)}`} replace />;
+  }
   if (statusLoading) return spinner;
 
   // Conta de afiliado é SEPARADA da de assinante — quem entrou só como

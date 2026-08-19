@@ -44,9 +44,17 @@ export default function MemberLoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
+  // Para onde ir depois de entrar. `?destino=` é posto pela rota protegida
+  // quando alguém abre um link de aula sem estar logado — sem isso o aluno
+  // caía no /membros raiz e tinha que procurar a aula de novo. Só caminho
+  // interno é aceito (nunca URL absoluta), senão vira um redirecionador
+  // aberto para fora do site.
+  const destinoBruto = searchParams.get('destino') || '';
+  const destino = /^\/(membros|afiliado)(\/|$|\?)/.test(destinoBruto) ? destinoBruto : '/membros';
+
   useEffect(() => {
-    if (!authLoading && user) navigate('/membros', { replace: true });
-  }, [authLoading, user, navigate]);
+    if (!authLoading && user) navigate(destino, { replace: true });
+  }, [authLoading, user, navigate, destino]);
 
   useEffect(() => {
     const prefill = searchParams.get('email');
@@ -118,7 +126,7 @@ export default function MemberLoginPage() {
       refresh_token: data.refresh_token,
     });
     if (sessionErr) throw sessionErr;
-    window.location.href = '/membros';
+    window.location.href = destino;
   };
 
   const identificarEmail = async (e: React.FormEvent) => {

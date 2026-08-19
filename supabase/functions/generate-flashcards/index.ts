@@ -240,6 +240,21 @@ serve(async (req) => {
     const LIMITE_IA_POR_PLANO: Record<string, number> = { trial: 5, annual: 5, lifetime: 10, lifetime_plus: 20 }
     const TETO_SEGURANCA = 100
     const LIMITE_DIARIO = LIMITE_IA_POR_PLANO[planoAtual] ?? TETO_SEGURANCA
+    // Devolve a vaga contada quando a geração é recusada ANTES de qualquer
+    // chamada ao modelo (conteúdo ilegível). Melhor esforço: falhar aqui não
+    // pode derrubar a resposta de erro que o aluno precisa ver.
+    const devolverVagaDoLimite = async () => {
+      if (ehContinuacao) return
+      try {
+        const { data: rl } = await supabase.from('rate_limits')
+          .select('attempts').eq('identifier', user.id).eq('action', rlAction).maybeSingle()
+        if (rl && rl.attempts > 0) {
+          await supabase.from('rate_limits').update({ attempts: rl.attempts - 1 })
+            .eq('identifier', user.id).eq('action', rlAction)
+        }
+      } catch { /* contador é secundário diante da mensagem de erro */ }
+    }
+
     // Continuação de importação paginada não passa pelo contador — a primeira
     // chamada já cobrou a operação inteira.
     if (!ehContinuacao) try {
@@ -529,6 +544,10 @@ serve(async (req) => {
     // melhor do que devolver questões inventadas a partir de um título — o
     // aluno estuda em cima disso achando que veio da aula.
     if (fontesLidas === 0 && !complemento) {
+      // A vaga do limite diário já foi contada lá em cima, antes de saber se
+      // haveria conteúdo legível. Recusar SEM devolver o contador cobra do
+      // aluno uma geração que nunca aconteceu — e o plano Anual só tem 5 no dia.
+      await devolverVagaDoLimite()
       const soVideo = sourceTitles.length > 0
       return json(req, {
         error: soVideo

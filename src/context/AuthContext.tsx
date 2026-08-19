@@ -74,8 +74,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   useEffect(() => {
-    // Safety timeout — never stay loading more than 5s
-    const timeout = setTimeout(() => setLoading(false), 5000);
+    // Failsafe: nunca ficar no spinner para sempre se o getSession travar (já
+    // aconteceu em navegadores com storage bloqueado). Agora só o getSession —
+    // que é LOCAL e instantâneo — corre antes deste ponto, então o prazo é
+    // folgado o bastante para não competir com a rede do aluno.
+    const timeout = setTimeout(() => setLoading(false), 8000);
 
     // Initial session load — wrapped so a thrown/rejected getSession() (seen
     // on some locked-down Safari setups, e.g. iPads with Private Browsing or
@@ -98,24 +101,34 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         // caso que precisava pegar. Se o servidor não devolve usuário, não há
         // sessão. Falha de REDE é o único caso que não derruba: quem está sem
         // sinal não pode ser deslogado.
-        if (session?.user) {
-          const { data: quem, error: sessaoErr } = await supabase.auth.getUser();
-          const semRede = /failed to fetch|networkerror|network request failed|aborted|timeout|load failed/i
-            .test(String(sessaoErr?.message || ''));
-          if (!quem?.user && !semRede) {
-            await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
-            session = null;
-          }
-        }
-
+        // A sessão do armazenamento local vale IMEDIATAMENTE. A conferência
+        // com o servidor (getUser) corre logo abaixo, sem segurar a tela:
+        // ela depende da rede, e prendê-la aqui fazia o failsafe de 5s
+        // disparar em conexão lenta — com `loading` false e `user` ainda null,
+        // a rota protegida despejava no /login um aluno que estava logado.
         setSession(session);
         setUser(session?.user ?? null);
         hadSession.current = !!session?.user;
+
         if (session?.user) {
           lastUserId.current = session.user.id;
           const papel = await checkAdmin(session.user.id);
           setIsAdmin(papel.admin);
           setIsViewer(papel.viewer);
+
+          void supabase.auth.getUser().then(async ({ data: quem, error: sessaoErr }) => {
+            const semRede = /failed to fetch|networkerror|network request failed|aborted|timeout|load failed/i
+              .test(String(sessaoErr?.message || ''));
+            if (quem?.user || semRede) return;
+            // O servidor não reconhece esta sessão: encerra localmente. O
+            // fetch do cliente (client.ts) faz o mesmo no primeiro 401, então
+            // isto é a rede de segurança de quem abre o app e não navega.
+            await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
+            setSession(null);
+            setUser(null);
+            setIsAdmin(false);
+            setIsViewer(false);
+          });
         }
       } catch (err) {
         console.error('getSession failed', err);
