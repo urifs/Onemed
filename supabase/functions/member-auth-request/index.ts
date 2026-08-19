@@ -318,7 +318,13 @@ serve(async (req) => {
     }
 
     if (!activeAccesses?.length && !buyerRows?.length && !isAdminEmail) {
-      return jsonResponse(req, { error: 'Nenhum acesso ativo encontrado para este email. Faça um trial gratuito ou verifique sua compra.' }, 404)
+      // Não convida a "fazer um trial": quem já usou o teste é recusado pelo
+      // create-trial-access logo em seguida, e a maioria de quem chega aqui é
+      // exatamente esse caso (trial vencido) ou um e-mail diferente do da
+      // compra.
+      return jsonResponse(req, {
+        error: 'Não encontramos acesso ativo para este e-mail. Confira se é o mesmo e-mail usado na compra — ou conheça os planos para liberar a plataforma.',
+      }, 404)
     }
 
     const { data: credencial } = await supabase.from('member_credentials')
@@ -349,12 +355,18 @@ serve(async (req) => {
       const agora = Date.now()
       const valido = (expiresAt: string | null | undefined) =>
         !expiresAt || new Date(expiresAt).getTime() > agora
-      const limiteDe = (plano: string | null | undefined) =>
-        (plano && PLAN_DEVICE_LIMITS[plano]) || DEFAULT_DEVICE_LIMIT
+      // Só planos CONHECIDOS entram na conta. O tipo genérico 'paid' (que o
+      // webhook antigo gravava para qualquer compra) não diz qual plano a
+      // pessoa tem: tratá-lo como "padrão 2" dava 2 telas a um comprador do
+      // MENSAL, que o checkout promete com 1 — o `paid` de accesses vencia o
+      // 'monthly' de buyers no Math.max. Agora o padrão só entra quando não há
+      // nenhum plano identificável em lugar nenhum.
+      const limiteConhecido = (plano: string | null | undefined) =>
+        plano && PLAN_DEVICE_LIMITS[plano] ? PLAN_DEVICE_LIMITS[plano] : null
       const planLimits = [
-        ...(activeAccesses || []).filter(a => valido(a.expires_at)).map(a => limiteDe(a.access_type)),
-        ...(buyerRows || []).map(b => limiteDe(b.plan)),
-      ]
+        ...(activeAccesses || []).filter(a => valido(a.expires_at)).map(a => limiteConhecido(a.access_type)),
+        ...(buyerRows || []).map(b => limiteConhecido(b.plan)),
+      ].filter((n): n is number => n != null)
       const baseSessions = planLimits.length > 0 ? Math.max(...planLimits) : DEFAULT_DEVICE_LIMIT
       // Telas EXTRAS compradas (upsell no checkout ou avulso no perfil) somam
       // ao limite do plano — é o que faz a tela a mais valer de verdade.
@@ -382,15 +394,33 @@ serve(async (req) => {
     // Sessão a partir da SENHA. É o mesmo endpoint que o supabase-js usaria no
     // navegador; feito aqui pra que o portão acima (acesso ativo, rate limit) e
     // o limite de telas continuem valendo antes de qualquer sessão existir.
-    const entrarComSenha = async () => {
-      const res = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
-        method: 'POST',
-        headers: { apikey: anonKey, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password: senha }),
-      })
+    // Devolve a sessão, `null` para SENHA ERRADA (400/401 do GoTrue) e
+    // 'indisponivel' quando o serviço de autenticação é que falhou. A diferença
+    // importa: tratar um 5xx como senha errada mandava o aluno redefinir uma
+    // senha que estava certa o tempo todo.
+    const entrarComSenha = async (): Promise<
+      { access_token: string; refresh_token: string; user?: { id?: string } } | null | 'indisponivel'
+    > => {
+      let res: Response
+      try {
+        res = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
+          method: 'POST',
+          headers: { apikey: anonKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password: senha }),
+        })
+      } catch (err) {
+        console.error('login: falha de rede ao falar com o GoTrue', err)
+        return 'indisponivel'
+      }
       const dados = await res.json().catch(() => ({}))
-      if (!res.ok || !dados?.access_token) return null
-      return dados as { access_token: string; refresh_token: string; user?: { id?: string } }
+      if (res.ok && dados?.access_token) {
+        return dados as { access_token: string; refresh_token: string; user?: { id?: string } }
+      }
+      // 400/401 = credencial recusada. Qualquer outro status (429, 5xx) é
+      // problema do serviço, não da senha do aluno.
+      if (res.status === 400 || res.status === 401) return null
+      console.error('login: GoTrue respondeu', res.status, JSON.stringify(dados).slice(0, 200))
+      return 'indisponivel'
     }
 
     // ── recuperação de senha: pedir código ──────────────────────────────────
@@ -467,7 +497,8 @@ serve(async (req) => {
 
       // Já entra com a senha nova (mesmo redeem do login normal).
       const sessao = await entrarComSenha()
-      if (!sessao) return jsonResponse(req, { success: true, passwordReset: true })
+      // Mesma ideia do set-password: a senha nova já valeu, só a sessão faltou.
+      if (!sessao || sessao === 'indisponivel') return jsonResponse(req, { success: true, passwordReset: true })
       await finalizarLogin(userId)
       return jsonResponse(req, {
         success: true, passwordReset: true,
@@ -521,7 +552,9 @@ serve(async (req) => {
       }
 
       const sessao = await entrarComSenha()
-      if (!sessao) {
+      // 'indisponivel' entra aqui junto com null: a senha JÁ foi gravada, e o
+      // que falta é só a sessão — a pessoa entra pela tela de login normal.
+      if (!sessao || sessao === 'indisponivel') {
         // Senha gravada, sessão não veio: a pessoa não fica travada, entra
         // pela tela de login normalmente com a senha que acabou de escolher.
         return jsonResponse(req, { success: true, passwordCreated: true }, 200)
@@ -539,6 +572,11 @@ serve(async (req) => {
         return jsonResponse(req, { error: 'Esta conta ainda não tem senha. Cadastre a sua para entrar.', needsPassword: true }, 409)
       }
       const sessao = await entrarComSenha()
+      if (sessao === 'indisponivel') {
+        return jsonResponse(req, {
+          error: 'Não foi possível entrar agora — o serviço de login está instável. Tente de novo em instantes; sua senha continua a mesma.',
+        }, 503)
+      }
       if (!sessao?.user?.id) return jsonResponse(req, { error: 'Senha incorreta. Tente novamente.' }, 401)
       await finalizarLogin(sessao.user.id)
       return jsonResponse(req, { success: true, access_token: sessao.access_token, refresh_token: sessao.refresh_token })
@@ -594,7 +632,12 @@ serve(async (req) => {
 
     return jsonResponse(req, { success: true, access_token, refresh_token })
   } catch (err: any) {
-    console.error(err)
-    return jsonResponse(req, { error: err.message }, 500)
+    // `err.message` é técnico e em inglês ("fetch failed", "column ... does not
+    // exist") — vira erro cru na cara do aluno numa tela de login. O detalhe
+    // fica no log, que é onde serve para alguma coisa.
+    console.error('member-auth-request:', err?.message || err)
+    return jsonResponse(req, {
+      error: 'Não foi possível concluir agora. Tente novamente em instantes.',
+    }, 500)
   }
 })

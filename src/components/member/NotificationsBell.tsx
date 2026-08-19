@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Bell, MessagesSquare, ExternalLink } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useCommunitySettings } from '@/hooks/useCommunitySettings';
@@ -12,33 +12,41 @@ interface NotificationItem {
 
 const DEFAULT_HEADING = 'Cursos em processo de atualização:';
 
-// A lista e o título vêm do banco (notification_items +
-// announcement_settings.notifications_heading) e são editados no painel admin
-// em /admin/announcements — nada de hardcode: mudar notificação não pode
-// exigir deploy.
+// A lista e o título vêm do banco (notification_items + a RPC
+// notifications_heading) e são editados no painel admin em /admin/announcements
+// — nada de hardcode: mudar notificação não pode exigir deploy. Em cache por
+// 5 min: o sino mora no header e era refeito em TODA navegação, pagando 2
+// consultas por página pra reler a mesma lista.
+//
+// Vale para o teste grátis também (19/08): mostrar o que está sendo atualizado
+// é argumento de compra justamente para quem ainda está decidindo. O AVISO do
+// painel continua sendo só para assinante.
 export function NotificationsBell() {
   const { whatsappGroupUrl } = useCommunitySettings();
-  const [items, setItems] = useState<NotificationItem[]>([]);
-  const [heading, setHeading] = useState(DEFAULT_HEADING);
 
-  useEffect(() => {
-    let cancelled = false;
-    Promise.all([
-      supabase.from('notification_items' as never)
-        .select('id, label, done')
-        .order('sort_order')
-        .then(res => (res.data || []) as unknown as NotificationItem[]),
-      supabase.from('announcement_settings')
-        .select('notifications_heading')
-        .maybeSingle()
-        .then(res => (res.data as { notifications_heading?: string | null } | null)?.notifications_heading || null),
-    ]).then(([rows, head]) => {
-      if (cancelled) return;
-      setItems(rows);
-      if (head?.trim()) setHeading(head);
-    });
-    return () => { cancelled = true; };
-  }, []);
+  const { data } = useQuery({
+    queryKey: ['notifications-bell'],
+    queryFn: async () => {
+      const [rows, head] = await Promise.all([
+        supabase.from('notification_items' as never)
+          .select('id, label, done')
+          .order('sort_order')
+          .then(res => (res.data || []) as unknown as NotificationItem[]),
+        // RPC em vez de ler announcement_settings direto: a tabela guarda
+        // também a MENSAGEM do aviso, que segue fora do teste grátis. A função
+        // devolve só o título do sino, para quem está no trial recebê-lo sem
+        // abrir o resto da tabela.
+        supabase.rpc('notifications_heading' as never)
+          .then(res => (res.data as unknown as string | null) || null),
+      ]);
+      return { items: rows, heading: head?.trim() || DEFAULT_HEADING };
+    },
+    staleTime: 5 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+  });
+
+  const items = data?.items ?? [];
+  const heading = data?.heading ?? DEFAULT_HEADING;
 
   const badgeCount = (whatsappGroupUrl ? 1 : 0) + (items.length > 0 ? 1 : 0);
 

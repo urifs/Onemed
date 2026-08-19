@@ -122,8 +122,15 @@ function ContentTree({ selected, onToggle }: {
     setSearchingLessons(true);
     const timer = setTimeout(() => {
       supabase.rpc('search_lessons' as never, { _query: q, _limit: 40 } as never)
-        .then(({ data }: { data: unknown }) => {
+        .then(({ data, error }: { data: unknown; error: unknown }) => {
           if (!alive) return;
+          // Sem checar o erro, a busca que falha mostra "Nenhuma aula ou
+          // arquivo com esse nome" — o aluno conclui que o material não existe.
+          if (error) {
+            toast.error('A busca de conteúdos falhou. Verifique sua conexão e tente de novo.');
+            setSearchingLessons(false);
+            return;
+          }
           setLessonResults(((data || []) as SearchResult[]));
           setSearchingLessons(false);
         });
@@ -344,6 +351,12 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
         novos.push({ name: file.name, mime, size: file.size, sentBytes: blob.size, partial, data: await readAsBase64(blob) });
       }
       if (novos.length) setUploads(prev => [...prev, ...novos]);
+    } catch (err) {
+      // Sem este catch, um arquivo ilegível (corrompido, permissão negada pelo
+      // sistema) fazia o spinner sumir e nada acontecer — o aluno ficava
+      // clicando em "Gerar" com a lista de arquivos vazia.
+      console.error('Falha ao ler arquivo enviado', err);
+      toast.error('Não foi possível ler esse arquivo. Tente outro, ou converta para PDF antes de enviar.');
     } finally {
       setReading(false);
     }
@@ -358,6 +371,12 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
     // aparece — escolher o conteúdo é o primeiro passo, não um opcional.
     setShowTree(initialSources.length === 0);
     setGenerating(false);
+    setProgresso(null);
+    // "Usar banco já existente" também volta ao padrão: sem isto, quem importou
+    // um PDF de prova e depois abriu o gerador a partir de uma AULA continuava
+    // no modo importação — que transcreve em vez de gerar, e não acha questão
+    // nenhuma numa aula.
+    setImportExisting(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 

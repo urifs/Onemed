@@ -40,6 +40,16 @@ export function QuestionBankViewer({ bank, bankId, onClose, onSave, saved, savin
   saved?: boolean;
   saving?: boolean;
 }) {
+
+  // Fechar um baralho/banco RECÉM-GERADO que ainda não foi salvo joga fora
+  // minutos de geração e uma vaga do limite diário de IA — e o Esc é fácil de
+  // apertar sem querer. Só pergunta quando há mesmo o que perder (onSave
+  // existe e ainda não salvou).
+  const fechar = () => {
+    if (onSave && !saved && !window.confirm('Fechar sem salvar? Este material foi gerado agora e será perdido.')) return;
+    onClose();
+  };
+
   const { user } = useAuth();
   const [answers, setAnswers] = useState<Map<number, number>>(new Map());
   const [exporting, setExporting] = useState(false);
@@ -150,7 +160,7 @@ export function QuestionBankViewer({ bank, bankId, onClose, onSave, saved, savin
         </div>
 
         <button
-          onClick={onClose}
+          onClick={fechar}
           title="Fechar"
           aria-label="Fechar banco de questões"
           className="w-9 h-9 rounded-full bg-secondary border border-border flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"

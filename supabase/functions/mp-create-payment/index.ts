@@ -357,7 +357,16 @@ serve(async (req) => {
     console.log('MP response body:', JSON.stringify(mpData))
 
     if (!mpRes.ok) {
-      throw new Error(`MP Error ${mpRes.status}: ${JSON.stringify(mpData)}`)
+      // O detalhe técnico vai para o log; o comprador recebe uma frase que ele
+      // possa agir sobre. Antes chegava na tela do checkout algo como
+      // `MP Error 400: {"message":"invalid_collector_id"...}` — em inglês, com
+      // JSON, no momento em que a pessoa ia pagar.
+      console.error('MP recusou a preferência:', mpRes.status, JSON.stringify(mpData))
+      const erroDoMP = new Error(
+        'Não foi possível abrir o pagamento agora. Tente de novo em instantes — se continuar, fale com o suporte pelo WhatsApp.',
+      ) as Error & { paraOCliente?: boolean }
+      erroDoMP.paraOCliente = true
+      throw erroDoMP
     }
 
     console.log('MP preference created:', mpData.id)
@@ -407,25 +416,12 @@ serve(async (req) => {
       })
     }
 
-    // Incrementar uso do cupom se aplicado — atômico no banco: o
-    // SELECT-depois-UPDATE antigo perdia incrementos com checkouts
-    // simultâneos e deixava max_uses ser ultrapassado. Se a RPC ainda não
-    // existir (migration pendente), cai no caminho antigo.
-    if (appliedCoupon) {
-      const { error: incErr } = await supabase.rpc('increment_coupon_use', { _coupon_id: appliedCoupon })
-      if (incErr) {
-        const { data: couponRow } = await supabase
-          .from('coupons')
-          .select('times_used')
-          .eq('id', appliedCoupon)
-          .maybeSingle()
-
-        await supabase
-          .from('coupons')
-          .update({ times_used: (couponRow?.times_used ?? 0) + 1 })
-          .eq('id', appliedCoupon)
-      }
-    }
+    // O uso do cupom NÃO é contado aqui. Abrir o checkout não é comprar:
+    // contando na criação da preferência, dez pessoas que desistem no
+    // Mercado Pago esgotavam um cupom de dez usos sem uma venda sequer — e o
+    // cliente seguinte, que ia pagar, via "cupom esgotado". Quem conta é o
+    // mp-webhook, na aprovação do pagamento (dentro da trava atômica de
+    // access_granted, então webhook repetido não conta duas vezes).
 
     return new Response(JSON.stringify({
       init_point: mpData.init_point,
@@ -438,7 +434,15 @@ serve(async (req) => {
 
   } catch (err: any) {
     console.error('Unexpected error:', err?.message || err)
-    return new Response(JSON.stringify({ error: err?.message || 'Erro interno' }), {
+    // As validações deste arquivo lançam mensagens em português, pensadas para
+    // o comprador — essas passam. Qualquer outra é técnica (stack do Deno,
+    // erro do Postgrest) e não pode ir para a tela de pagamento.
+    const paraOCliente = err?.paraOCliente || /[áéíóúâêôãõç]/i.test(String(err?.message || ''))
+    return new Response(JSON.stringify({
+      error: paraOCliente
+        ? err.message
+        : 'Não foi possível iniciar o pagamento agora. Tente novamente em instantes.',
+    }), {
       status: 500, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
     })
   }

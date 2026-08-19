@@ -285,12 +285,22 @@ serve(async (req) => {
         .select('id, drive_file_id, status').eq('item_id', itemId)
 
       let ready = 0
+      // Arquivos cuja verificação NÃO pôde ser feita (rede/5xx do Google).
+      // Eles ficam de fora da limpeza: um arquivo que subiu inteiro e só não
+      // pôde ser conferido agora era apagado como se fosse lixo, e o aluno
+      // perdia o upload — foi assim que uploads reais sumiram do acervo.
+      const naoVerificados: string[] = []
       for (const f of files || []) {
         if (f.status === 'ready') { ready++; continue }
         const res = await fetch(`https://www.googleapis.com/drive/v3/files/${f.drive_file_id}?fields=size,mimeType`, {
           headers: { Authorization: `Bearer ${token}` },
         })
-        if (!res.ok) continue
+        // 404 = o arquivo não existe no Drive: aí é lixo de verdade e pode ser
+        // limpo. Qualquer outra falha é da consulta, não do arquivo.
+        if (!res.ok) {
+          if (res.status !== 404) naoVerificados.push(f.id)
+          continue
+        }
         const meta = await res.json()
         const size = Number(meta.size || 0)
         if (size > 0) {
@@ -304,7 +314,12 @@ serve(async (req) => {
         await supabase.from('archive_items').update({ status: 'ready' }).eq('id', itemId)
       }
       // Arquivos que nunca receberam bytes são lixo de upload abandonado.
-      await supabase.from('archive_files').delete().eq('item_id', itemId).eq('status', 'pending')
+      let limpeza = supabase.from('archive_files').delete().eq('item_id', itemId).eq('status', 'pending')
+      if (naoVerificados.length > 0) {
+        limpeza = limpeza.not('id', 'in', `(${naoVerificados.join(',')})`)
+        console.warn('finalize: preservando arquivos não verificados', naoVerificados.length)
+      }
+      await limpeza
       return json({ success: true, readyFiles: ready })
     }
 
@@ -350,8 +365,15 @@ serve(async (req) => {
       const streamBaseUrl = Deno.env.get('STREAM_PROXY_URL') || 'https://onemed-stream-lesson.onemed-stream.workers.dev'
       const mimeType = f.mime_type || ''
       const expiresAt = Math.floor(Date.now() / 1000) + STREAM_TTL_SECONDS
-      const sig = await hmacHex(streamSecret, `${f.drive_file_id}.${expiresAt}.${mimeType}`)
+      // `intent: 'download'` assina também o sufixo `.dl` e devolve a URL com
+      // `dlok=1` — sem isso o worker ignora o `dl` (por design, o dl sem
+      // assinatura era o furo fechado em 09/08) e o botão "Baixar" do acervo
+      // não baixava nada. Acervo é material entre assinantes, sem trava de
+      // plano — quem pode ABRIR o arquivo pode baixá-lo.
+      const querBaixar = body.intent === 'download'
+      const sig = await hmacHex(streamSecret, `${f.drive_file_id}.${expiresAt}.${mimeType}${querBaixar ? '.dl' : ''}`)
       const url = `${streamBaseUrl}/?id=${encodeURIComponent(f.drive_file_id)}&exp=${expiresAt}&sig=${sig}&mime=${encodeURIComponent(mimeType)}`
+        + (querBaixar ? '&dlok=1' : '')
       return json({ url, expiresAt })
     }
 

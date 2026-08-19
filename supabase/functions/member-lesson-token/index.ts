@@ -98,7 +98,10 @@ serve(async (req) => {
       // e quem manda é a de maior tier — mesmo critério do member_plan_tier.
       supabase.from('accesses').select('access_type').eq('email', email).eq('status', 'active')
         .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`),
-      supabase.from('buyers').select('id').eq('email', email).eq('access_granted', true).limit(1).maybeSingle(),
+      // `plan` vem junto porque a linha de `accesses` de compradores antigos
+      // guarda access_type='paid', que não diz qual plano a pessoa comprou.
+      supabase.from('buyers').select('id, plan').eq('email', email).eq('access_granted', true)
+        .order('created_at', { ascending: false }).limit(1).maybeSingle(),
       supabase.rpc('has_role', { _user_id: user.id, _role: 'admin' }),
     ])
     if (!activeAccesses?.length && !buyer && !isAdmin) {
@@ -144,8 +147,15 @@ serve(async (req) => {
       lifetime_pro: 6, lifetime_plus: 5, lifetime: 4, annual: 3, monthly: 2, trial: 1,
     }
     const PLANOS_BAIXAM_ARQUIVO = new Set(['lifetime', 'lifetime_plus', 'lifetime_pro'])
-    const plano = (activeAccesses || [])
-      .map(a => String(a.access_type || ''))
+    // O plano sai do MAIOR tier entre as linhas de acesso E a compra — sem a
+    // compra, um Vitalício antigo (cuja linha em accesses é 'paid', valor que
+    // não existe em nenhuma das tabelas acima) tinha o download NEGADO mesmo
+    // tendo pago por ele.
+    const plano = [
+      ...(activeAccesses || []).map(a => String(a.access_type || '')),
+      String(buyer?.plan || ''),
+    ]
+      .filter(Boolean)
       .sort((a, b) => (TIER_RANK[b] || 0) - (TIER_RANK[a] || 0))[0] || ''
     const ehVideo = lesson.type === 'video'
     const podeBaixar = !!isAdmin || (ehVideo ? plano === 'lifetime_pro' : PLANOS_BAIXAM_ARQUIVO.has(plano))

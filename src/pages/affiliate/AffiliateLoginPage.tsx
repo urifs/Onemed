@@ -27,6 +27,12 @@ export default function AffiliateLoginPage() {
         if (!msg && error && 'context' in (error as any)) {
           try { msg = (await (error as any).context.json())?.error; } catch { /* não-json */ }
         }
+        // Falha de REDE não é senha errada: dizer "e-mail ou senha incorretos"
+        // fazia o afiliado trocar a senha certa achando que tinha esquecido.
+        const cru = String((error as Error | null)?.message || '');
+        if (!msg && /Failed to send a request|Failed to fetch|NetworkError|Load failed/i.test(cru)) {
+          throw new Error('Não foi possível conectar ao servidor. Verifique sua internet e tente de novo.');
+        }
         throw new Error(msg || 'E-mail ou senha incorretos.');
       }
       await supabase.auth.setSession({

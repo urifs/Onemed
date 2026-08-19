@@ -319,7 +319,12 @@ export default {
         const body = await res.text().catch(() => '');
         if (res.status === 403 && body.includes('downloadQuotaExceeded')) { semSaldo = true; continue; }
 
-        return new Response('Não foi possível carregar o arquivo', { status: 502, headers: cors });
+        // Qualquer outro erro (403 de permissão, 5xx do Google, token
+        // recusado) é DESTA conta — abortar aqui deixava a aula fora do ar
+        // mesmo com a outra conta conseguindo servi-la. Segue para a próxima
+        // tentativa; se nenhuma servir, o tratamento abaixo responde.
+        console.log('Falha ao ler pela conta', conta.nome, '-', res.status, body.slice(0, 120));
+        continue;
       }
     }
 

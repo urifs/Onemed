@@ -3326,6 +3326,201 @@ serve direto, sem precisar compartilhar. Conta de teste criada e apagada.
 
 Uso: `node scripts/sync-drive-extra.mjs <folderId> --curso-unico --aplicar`.
 
+---
+
+### 2026-08-19 (sessão remota) — varredura completa da plataforma (branch `claude/platform-audit-improvements-4sxrip`)
+
+Auditoria de ponta a ponta pedida pelo dono ("erros, bugs, demoras, tudo que quebra a experiência
+— e tire a cara de plataforma criada com IA"). 10 auditores automáticos varreram fatias disjuntas
+(área de membros, player, IA, acervo/comunidade, checkout/landing, auth, admin, edge functions do
+aluno e do dinheiro, cara-de-IA) e cada achado foi conferido no código antes de virar correção.
+**Nada foi deployado nesta sessão** — ver "o que exige deploy" no fim.
+
+**🔴 O que mais custava dinheiro (mp-webhook / mp-create-payment):**
+- **Comissão de afiliado em UPGRADE saía sobre o preço CHEIO do plano novo.** O comprador paga só
+  a diferença, mas a base era a tabela: 30% de R$ 1.497 numa venda de R$ 699 = **64% do que
+  entrou**. A base passou a ser limitada ao que foi cobrado pelo plano.
+- **Reembolso/estorno revertia a comissão mas NÃO revogava o acesso** — quem recebia o dinheiro de
+  volta seguia com acesso vitalício. Agora revoga, com duas travas: só se ESTA compra concedeu o
+  acesso e só se nenhuma outra compra aprovada do mesmo e-mail o sustenta. `cancelled` fica de fora
+  de propósito (no MP é quase sempre boleto/PIX expirado, sem acesso concedido).
+- **Renovação antecipada descartava os dias restantes**: renovar o Anual faltando 40 dias dava 365
+  dias, não 405. Agora soma o saldo futuro.
+- **Cupom era consumido ao ABRIR o checkout**: dez desistências esgotavam um cupom de dez usos sem
+  uma venda, e o cliente seguinte via "cupom esgotado". A contagem foi para a aprovação, dentro da
+  trava atômica de `access_granted` (webhook repetido não conta duas vezes).
+- **"Renovar Assinatura" do menu da conta cobrava sempre o Anual (R$299)**, inclusive de quem tinha
+  o Mensal (R$99), sem mostrar valor antes do redirect ao Mercado Pago.
+
+> As duas primeiras contas viraram `supabase/functions/_shared/billing-rules.ts` — módulo PURO
+> (sem Deno), coberto por `src/test/billingRules.test.ts`. Regra de dinheiro fora do arquivo da
+> função é o que permite testar sem subir nada.
+
+**Acesso e conteúdo:**
+- `member-lesson-token` resolvia o plano só por `accesses.access_type`: comprador **Vitalício
+  antigo** (linha `paid`, valor que não existe em nenhuma tabela de tier) tinha o **download
+  negado mesmo tendo pago**. Passou a considerar também `buyers.plan`.
+- `archive-manage` **finalize apagava o arquivo já enviado** quando a consulta de metadados ao
+  Drive falhava por rede/5xx — o upload do aluno sumia. Só 404 (arquivo inexistente) volta a ser
+  tratado como lixo.
+- Botão **"Baixar" do Acervo Público não baixava nada**: o `file_token` nunca assinava o `.dl`, e o
+  worker ignora `dl` sem `dlok=1` (por design, é o furo fechado em 09/08). A função passou a
+  aceitar `intent:'download'`.
+- Worker de streaming: erro da PRIMEIRA conta de armazenamento (403 de permissão, 5xx) abortava com
+  502 **sem tentar a segunda conta** — aula fora do ar mesmo com a outra conta podendo servi-la.
+
+**Player e visualizadores:**
+- Queda de rede no meio da aula **reiniciava o vídeo do zero** (o retry chamava `.load()` sem
+  guardar o ponto).
+- **Esc na tela cheia fechava o player inteiro** junto com a tela cheia.
+- Setas de 10s sequestravam o teclado até em PDF, matando o scroll da apostila com zoom.
+- **PDF renderizava TODAS as páginas em canvas full-res**: apostila de centenas de páginas
+  estourava a memória do celular. Agora cada página só ganha pixels perto da tela e os devolve ao
+  sair (anotações repintam ao voltar — e passam a aparecer junto com a página, não só no fim).
+- Falha ao salvar anotação era silenciosa: o grifo se perdia sem aviso.
+
+**Erro silencioso virando "está vazio" (o padrão mais repetido da plataforma).** Corrigido em:
+abas Flashcards/Questões/Anotações e busca do dashboard, comentários do curso, respostas de
+thread, itens de playlist, detalhe do acervo (fechava com "Material não encontrado" numa queda de
+rede), loja do aluno, loja e afiliados no admin, painel do afiliado — este último **jogava um
+afiliado ANTIGO na tela de CADASTRO** quando a consulta falhava.
+
+**Admin:**
+- **Acesso Anual/Pago criado em `/admin/access` expirava em MINUTOS** (o campo de duração do fluxo
+  de trial era aplicado a qualquer tipo). Vencimento agora sai do tipo.
+- Salvar cupom dizia "Cupom criado!" com o insert recusado pela RLS.
+- Disparo de SMS em massa saía sem confirmação; revogar acesso de membro também.
+- Público "trials" da campanha de e-mail incluía quem **já comprou** (recebiam "sentimos sua falta,
+  use este cupom").
+- Erro na consulta de `drive_config` virava alarme falso de "Google Drive desconectado" — a conta
+  **visualizadora**, que por design não lê essa tabela, via isso em toda visita.
+- Busca de compras quebrava com vírgula no termo (a vírgula separa condições no `.or()` do
+  PostgREST).
+
+**Cara de plataforma gerada por IA — o que foi removido** (conferido por captura de tela do build
+real, desktop e mobile):
+- **Página 404 era o template cru do Vite**, em inglês ("Oops! Page not found"), sem marca e sem
+  saída.
+- Título do herói tinha `<br />` fixo: no celular a palavra **"de" ficava sozinha numa linha
+  inteira**. Agora `text-balance`.
+- **5 planos num grid de 3 colunas** deixavam a última linha com dois cards à esquerda e um vão à
+  direita (checkout e /planos). Flex com wrap centralizado.
+- No card selecionado os **checks de benefício ficavam vermelhos** — vermelho ao lado de um
+  benefício lê como recusa.
+- `/planos` mostrava **"R$ 1497,00" sem separador de milhar** enquanto o checkout mostrava
+  "R$ 1.497,00" para o mesmo plano; vários preços do checkout saíam com ponto decimal americano.
+- CTA final da landing era **"Pronto para transformar sua carreira médica?"** — pergunta
+  motivacional que não informa nada a quem já rolou a página inteira. Virou a oferta concreta.
+- Plurais de máquina ("2 tela(s) simultânea(s) extra(s)", "1 questõe questão").
+- E-mails de compra e trial ainda ensinavam o **login por link "sem senha"**, extinto em 13/08; a
+  `/claim-access` (morta desde o lockdown de RLS de 15/08 — toda compra real caía em "Compra não
+  encontrada") virou orientação honesta com atalho de suporte.
+- **Mensagens do GoTrue traduzidas** ("Invalid login credentials" etc.): erro cru em inglês numa
+  plataforma inteiramente em português.
+- Textos ao comprador que citavam o **Google Drive** (proibido pela regra do projeto) e promessas
+  que o produto não cumpre: upsell de R$94 prometia "cronogramas personalizados" e "flashcards
+  exclusivos" (são liberados por PLANO, não pelo upsell); FAQ prometia atualização mensal a todo
+  plano; percentuais de comissão anunciados na landing e no e-mail de boas-vindas estavam
+  **abaixo do que é realmente pago** (15/20/25/30 contra 20/25/30).
+
+**Desempenho — code-splitting reintroduzido (bundle inicial −60%: 1.949 kB → 726 kB; gzip 537 →
+213 kB).** A reversão de 07/08 foi feita por suspeita ERRADA: a causa real era o TDZ do
+`CourseDetailPage` (corrigido em `04a183e`), que quebrava com ou sem chunks — o `madge` confirma
+zero ciclo de import. Rotas de membro/admin/checkout/afiliado viraram `lazy()`; públicas
+prerenderizadas e logins seguem estáticas de propósito (o HTML já vem pronto, um chunk faria a
+página piscar). `PdfViewer` (pdfjs, ~380 kB + worker de 1,4 MB) só baixa ao abrir um PDF.
+Chunk com hash antigo que dá 404 após um deploy **recarrega a página uma vez** em vez de morrer no
+error boundary. Também: sino de notificações e link do grupo em cache (eram 4 consultas repetidas
+por navegação) e o filtro Vídeos/Arquivos da busca deixou de refazer a RPC inteira.
+
+> 🔴 **O gate `typecheck:refs` não pegava import quebrado.** Um `import { formatBRL } from
+> '@/lib/plans'` (a função vive em `utils`) passou pelo gate e só quebrou no `vite build` — mesma
+> classe dos três `ReferenceError` de 07/08. O gate passou a incluir
+> **TS2305/TS2307/TS2440/TS2724**; baseline conferido limpo antes da mudança.
+
+**Validação:** 151 testes (10 novos), `typecheck:refs` limpo, build com prerender 27/27, e os
+erros do `tsc` completo seguem em 143 (baseline 144 — nenhum novo).
+
+**Segundo lote (mesma sessão) — login, IA e campanhas:**
+- **Falha do serviço de autenticação virava "Senha incorreta"** — o aluno redefinia uma senha que
+  estava certa. Só 400/401 do GoTrue é senha errada; o resto vira 503 com mensagem própria.
+- **O failsafe de 5s do `AuthContext` expulsava sessão válida em rede lenta**: marcava
+  `loading=false` antes da verificação terminar e, com `user` ainda null, a rota protegida mandava
+  pro `/login` quem estava logado. A sessão local passou a valer na hora, com a conferência no
+  servidor em segundo plano.
+- **Link de aula agora volta pra aula depois do login** (`?destino=`, só caminho interno — URL
+  absoluta seria redirecionador aberto); antes caía sempre no `/membros` raiz.
+- **O manual do `member-assistant` mentia para os alunos**: "trial de 30 minutos" (são 10) e "15
+  gerações/dia" (o limite é por plano).
+- **Geração de IA recusada por conteúdo ilegível consumia uma vaga do limite diário** — no Anual,
+  1 dos 5 do dia. Agora devolve a vaga antes do 422.
+- **Campanha de e-mail que morria no meio de um lote ficava presa em `running` para sempre** (o
+  seletor só procurava `scheduled`): metade da lista recebia, a outra não, sem aviso. Migration
+  `20260819120000` (coluna `updated_at` + trigger) permite recuperar depois de 10 min, com claim
+  otimista pelo próprio `updated_at` para o lote não sair duas vezes.
+- **Erro do Mercado Pago chegava CRU ao comprador** na hora de pagar (`MP Error 400: {...}`).
+- **Comprador do Mensal ganhava 2 telas** em vez da 1 prometida: a linha genérica `paid` de
+  `accesses` caía no padrão 2 e vencia o `monthly` de `buyers` no `Math.max`.
+- `member-capture-location` usava o XFF esquerdo (forjável) — agora `cf-connecting-ip`, a regra
+  deste projeto desde a forense de 15/08.
+
+⏳ **O que exige deploy depois do merge:**
+1. **Frontend** — sobe sozinho com o push na `main` (Vercel).
+2. **Migration** `20260819120000_email_campaign_stuck_recovery.sql` — aplicar ANTES de redeployar o
+   `run-email-campaign` (a função passa a ler e escrever `updated_at`).
+3. **Edge Functions alteradas, redeploy multipart obrigatório:** `mp-webhook`, `mp-create-payment`,
+   `member-lesson-token`, `member-auth-request`, `member-assistant`, `member-capture-location`,
+   `generate-flashcards`, `archive-manage`, `run-email-campaign`, `send-access-email`,
+   `affiliate-register`.
+   ⚠️ `mp-webhook` e `mp-create-payment` mudaram JUNTOS na regra do cupom (a contagem saiu de um e
+   entrou no outro): subir só um deles deixa o cupom sem contagem nenhuma ou com contagem dobrada.
+4. **Worker Cloudflare** (`cloudflare/stream-lesson/worker.js`) — deploy manual separado, com
+   `keep_bindings` (ver o topo deste arquivo).
+
+> **Não mexido de propósito:** o worker responder ao pedido SEM `Range` buscando o arquivo inteiro.
+> É intencional (download e primeira carga de PDF precisam do arquivo todo) e alterar isso sem
+> conseguir medir em produção traz mais risco que benefício.
+
+---
+
+### 2026-08-19 (mesma sessão) — sino no teste grátis e vitrine só com a turma do ano
+
+**Sino de notificações passa a aparecer no TESTE GRÁTIS** (pedido do dono). Estava bloqueado em
+DOIS lugares, e mexer num só não resolveria: o `MemberHeader` escondia o ícone (`!isTrial`) e a
+RLS de `notification_items` recusava trial. A lista de "cursos em processo de atualização" é
+argumento de compra — quem está decidindo assinar é justamente quem precisa ver que o acervo é
+vivo.
+
+⚠️ **O AVISO do painel continua fora do trial** (regra de 01/08). O problema: o título do sino
+(`notifications_heading`) mora na MESMA tabela do aviso (`announcement_settings`), então liberar a
+tabela para o trial vazaria o aviso junto. Solução: RPC `notifications_heading()` (SECURITY
+DEFINER, gate `is_member() OR admin`) devolve só esse campo — migration
+`20260819140000_notifications_para_trial.sql`. O link do grupo no WhatsApp segue bloqueado pela
+RLS de `community_settings`, então no trial o sino mostra apenas a lista de atualizações. A
+**Loja** continua exclusiva de assinante.
+
+**Vitrine do dashboard só com a turma 2026.** O banner rotativo do `/membros` girava com os
+maiores cursos da categoria "Extensivo & Intensivo · Residência" de QUALQUER ano — anunciar
+"Extensivo 2024" na vitrine passa impressão de acervo parado, mesmo com o material novo logo
+abaixo. Agora só entram cursos do ano (`ANO_DA_VITRINE` em `src/lib/utils.ts`).
+
+- O ano sai do **TÍTULO** (`courseYear()`): é a única fonte — não existe coluna de ano em
+  `courses`, e as pastas de origem no Drive trazem a turma no nome. Com dois anos no título
+  ("Extensivo 2025/2026") vale o maior. `src/test/courseYear.test.ts` trava os casos reais da
+  biblioteca ("R3", "+5mil", "2º Edição", números de 3 e 5 dígitos).
+- **"Continue de onde parou" NÃO é filtrado por ano** — é o progresso do próprio aluno, não
+  vitrine. Ele sai do banner junto com a faixa de recentes, como sempre foi.
+- **Rede de segurança:** sem nenhum curso do ano (biblioteca sincronizando, ou virada de ano antes
+  de importar a turma nova), o banner volta a mostrar os maiores em vez de sumir da tela.
+- Cursos de outros anos continuam no acervo, na busca e nas prateleiras.
+
+> **Virada de ano:** trocar a vitrine para 2027 é editar `ANO_DA_VITRINE` — um lugar só. Enquanto
+> a turma nova não existir, a rede de segurança segura o banner.
+
+⏳ **Deploy:** o frontend sobe com o merge; a migration `20260819140000` precisa ser aplicada
+(sem ela o trial vê o sino vazio — a RLS antiga ainda recusa os itens, e a RPC do título não
+existe).
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management

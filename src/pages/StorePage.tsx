@@ -34,6 +34,8 @@ export default function StorePage() {
   const [products, setProducts] = useState<StoreProduct[]>([]);
   const [purchased, setPurchased] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [recarregar, setRecarregar] = useState(0);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [buying, setBuying] = useState<string | null>(null);
 
@@ -45,7 +47,7 @@ export default function StorePage() {
     if (trialLoading || isTrial) { setLoading(false); return; }
     let alive = true;
     (async () => {
-      const [{ data: prods }, { data: orders }] = await Promise.all([
+      const [prodsRes, ordersRes] = await Promise.all([
         supabase.from('store_products' as never)
           .select('id, name, description, tagline, price')
           .eq('active', true)
@@ -59,12 +61,20 @@ export default function StorePage() {
           : Promise.resolve({ data: [] }),
       ]);
       if (!alive) return;
-      setProducts(((prods || []) as unknown as StoreProduct[]));
-      setPurchased(new Set(((orders || []) as { product_id: string }[]).map(o => o.product_id)));
+      // Falha de rede não pode virar "Nenhum recurso disponível": o aluno
+      // conclui que a loja está vazia e não volta mais.
+      if (prodsRes.error) {
+        setLoadError(true);
+        setLoading(false);
+        return;
+      }
+      setLoadError(false);
+      setProducts(((prodsRes.data || []) as unknown as StoreProduct[]));
+      setPurchased(new Set(((ordersRes.data || []) as { product_id: string }[]).map(o => o.product_id)));
       setLoading(false);
     })();
     return () => { alive = false; };
-  }, [user?.id, trialLoading, isTrial]);
+  }, [user?.id, trialLoading, isTrial, recarregar]);
 
   const comprar = async (product: StoreProduct) => {
     if (buying) return;
@@ -153,6 +163,17 @@ export default function StorePage() {
         {loading ? (
           <div className="space-y-3">
             {[0, 1, 2].map(i => <div key={i} className="h-20 rounded-xl bg-secondary animate-pulse" />)}
+          </div>
+        ) : loadError ? (
+          <div className="glass rounded-xl p-8 text-center">
+            <ShoppingBag className="w-8 h-8 text-muted-foreground/40 mx-auto mb-3" />
+            <p className="text-sm text-muted-foreground">Não foi possível carregar a loja. Verifique sua conexão.</p>
+            <button
+              onClick={() => { setLoading(true); setRecarregar(n => n + 1); }}
+              className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-border bg-secondary hover:bg-secondary/70 text-foreground text-sm font-medium px-4 py-2 transition-colors"
+            >
+              Tentar novamente
+            </button>
           </div>
         ) : products.length === 0 ? (
           <div className="glass rounded-xl p-8 text-center">

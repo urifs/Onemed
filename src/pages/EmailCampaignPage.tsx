@@ -87,42 +87,42 @@ const PRESETS: Record<Exclude<TemplateType, 'custom'>, FollowupFields> = {
   followup_1d: {
     subject: 'Sentimos sua falta! - OneMed',
     subjectText: 'Sentimos sua falta!',
-    message: 'Notamos que voce experimentou nosso conteudo ontem. Esperamos que tenha gostado!',
+    message: 'Notamos que você experimentou nosso conteúdo ontem. Esperamos que tenha gostado!',
     couponCode: 'ONEMED10',
     discount: 10,
-    urgency: 'Aproveite nossa oferta especial e garanta acesso ilimitado a todo o conteudo.',
+    urgency: 'Aproveite nossa oferta especial e garanta acesso ilimitado a todo o conteúdo.',
   },
   followup_7d: {
     subject: 'Uma semana se passou... - OneMed',
     subjectText: 'Uma semana se passou...',
-    message: 'Faz uma semana que voce testou o OneMed. Sentimos sua falta!',
+    message: 'Faz uma semana que você testou o OneMed. Sentimos sua falta!',
     couponCode: 'ONEMED20',
     discount: 20,
-    urgency: 'Milhares de medicos ja garantiram acesso. Nao fique de fora!',
+    urgency: 'Milhares de médicos já garantiram acesso. Não fique de fora!',
   },
   followup_30d: {
-    subject: 'Ultima chance! - OneMed',
-    subjectText: 'Ultima chance!',
-    message: 'Faz um mes que voce conheceu o OneMed. Esta pode ser sua ultima oportunidade!',
+    subject: 'Última chance! - OneMed',
+    subjectText: 'Última chance!',
+    message: 'Faz um mês que você conheceu o OneMed. Esta pode ser sua última oportunidade!',
     couponCode: 'ONEMED30',
     discount: 30,
-    urgency: 'Garanta seu acesso agora e transforme sua carreira medica.',
+    urgency: 'Garanta seu acesso agora e transforme sua carreira médica.',
   },
 };
 
 const FREE_TRIAL_PRESET: FreeTrialFields = {
   subject: 'Experimente o OneMed gratuitamente! - OneMed',
-  subjectText: 'Experimente Gratis!',
-  message: 'Conheca o maior acervo de conteudos medicos da America Latina. Teste gratis por 10 minutos e veja tudo o que preparamos para voce!',
-  urgency: 'Acesse agora e descubra +530 cursos e +9.000 livros medicos. Sem compromisso!',
+  subjectText: 'Experimente grátis!',
+  message: 'Conheça o maior acervo de conteúdos médicos da América Latina. Teste grátis por 10 minutos e veja tudo o que preparamos para você!',
+  urgency: 'Acesse agora e descubra +530 cursos e +9.000 livros médicos. Sem compromisso!',
 };
 
 const TEMPLATE_OPTIONS: { id: TemplateType; label: string; sublabel: string }[] = [
   { id: 'followup_1d',  label: 'Acompanhamento 1 dia',    sublabel: 'Cupom 10% · ONEMED10' },
   { id: 'followup_7d',  label: 'Acompanhamento 7 dias',   sublabel: 'Cupom 20% · ONEMED20' },
   { id: 'followup_30d', label: 'Acompanhamento 30 dias',  sublabel: 'Cupom 30% · ONEMED30' },
-  { id: 'free_trial',   label: 'Convite Teste Gratis',     sublabel: 'Botao para teste gratis' },
-  { id: 'custom',       label: 'Email personalizado',      sublabel: 'Escreva do zero' },
+  { id: 'free_trial',   label: 'Convite Teste Grátis',     sublabel: 'Botão para teste grátis' },
+  { id: 'custom',       label: 'E-mail personalizado',     sublabel: 'Escreva do zero' },
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -212,20 +212,26 @@ export default function EmailCampaignPage() {
       const all: string[] = [];
       const cutoff = getPeriodCutoff(period);
 
+      // Compradores aprovados, sempre buscados: no público "trials" eles são
+      // EXCLUÍDOS (mandar "sentimos sua falta, use este cupom" para quem já
+      // comprou é constrangedor e queima desconto à toa) e no público
+      // "buyers" eles são o alvo. Mesmo critério do /admin/trials.
+      const compradores = await fetchAllPages(() =>
+        supabase.from('buyers').select('email').eq('status', 'approved')
+      );
+      const jaComprou = new Set(compradores.map(e => e.toLowerCase()));
+
       if (type === 'trials' || type === 'both') {
         const emails = await fetchAllPages(() => {
           let q = supabase.from('accesses').select('email').eq('access_type', 'trial');
           if (cutoff) q = (q as any).gte('created_at', cutoff);
           return q;
         });
-        all.push(...emails);
+        all.push(...emails.filter(e => !jaComprou.has(e.toLowerCase())));
       }
 
       if (type === 'buyers' || type === 'both') {
-        const emails = await fetchAllPages(() =>
-          supabase.from('buyers').select('email').eq('status', 'approved')
-        );
-        all.push(...emails);
+        all.push(...compradores);
       }
 
       if (seq === fetchSeqRef.current) {
@@ -275,6 +281,15 @@ export default function EmailCampaignPage() {
         setDone(true);
         if (current.status === 'completed') {
           toast.success(`Campanha concluída! ${current.sent_count} enviados, ${current.failed_count} erros.`);
+        } else if (current.status === 'failed') {
+          // Sem este aviso a tela apenas parava de avançar: o admin não sabia
+          // se a campanha terminou, travou ou morreu no meio.
+          toast.error(
+            `A campanha falhou depois de ${current.sent_count || 0} envios. Verifique o histórico e reenvie para quem faltou.`,
+            { duration: 10000 },
+          );
+        } else {
+          toast.info('Campanha cancelada.');
         }
         return;
       }

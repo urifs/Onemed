@@ -228,13 +228,19 @@ export default function DriveSettings() {
         <Card className="bg-background-paper border-border">
           <CardContent className="p-6">
             <div className="space-y-3 text-sm text-muted-foreground">
+              {/* Texto atualizado: o trial não compartilha mais pasta do Drive
+                  desde 19/07/2026 — hoje o Drive é só o armazenamento da
+                  biblioteca, e o aluno assiste dentro da plataforma. */}
               <p className="font-medium text-foreground">Como funciona:</p>
               <ol className="space-y-2 list-decimal list-inside">
-                <li>Clique em "Conectar Google Drive" e autorize o acesso</li>
-                <li>Configure o ID da pasta que será compartilhada</li>
-                <li>Quando um usuário solicitar acesso, ele receberá permissão de visualização</li>
-                <li>Acesso trial expira automaticamente após 30 minutos</li>
+                <li>Conecte a conta Google que guarda a biblioteca de cursos</li>
+                <li>Escolha a pasta raiz onde os cursos estão organizados</li>
+                <li>Use "Sincronizar biblioteca" para importar cursos, módulos e aulas</li>
+                <li>O aluno assiste dentro da plataforma — nada é compartilhado com ele no Drive</li>
               </ol>
+              <p className="pt-1">
+                O teste grátis dá 10 minutos de acesso à área de membros e expira sozinho.
+              </p>
             </div>
           </CardContent>
         </Card>

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import workerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { Check, Eraser, Highlighter, Loader2, Pen, RotateCcw, Trash2, ZoomIn, ZoomOut } from 'lucide-react';
+import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
 import {
@@ -54,6 +55,7 @@ export function PdfViewer({ url, lessonId }: { url: string; title?: string; less
   useEffect(() => { penColorRef.current = penColor; }, [penColor]);
   useEffect(() => { highlightColorRef.current = highlightColor; }, [highlightColor]);
 
+  const avisouFalhaDeSave = useRef(false);
   const persist = useCallback(async () => {
     if (!lessonId || !user) return;
     setSaveState('saving');
@@ -63,9 +65,22 @@ export function PdfViewer({ url, lessonId }: { url: string; title?: string; less
       strokes: strokesRef.current,
       updated_at: new Date().toISOString(),
     } as never, { onConflict: 'user_id,lesson_id' });
+    if (err) {
+      // Continua pendente: o próximo traço (ou o flush ao fechar) tenta de
+      // novo. E avisa UMA vez por sequência de falhas — perder grifos em
+      // silêncio era pior que o toast.
+      dirtyRef.current = true;
+      setSaveState('idle');
+      if (!avisouFalhaDeSave.current) {
+        avisouFalhaDeSave.current = true;
+        toast.error('Não foi possível salvar suas anotações agora. Elas continuam na tela e serão salvas na próxima tentativa.');
+      }
+      return;
+    }
+    avisouFalhaDeSave.current = false;
     dirtyRef.current = false;
-    setSaveState(err ? 'idle' : 'saved');
-    if (!err) setTimeout(() => setSaveState(s => (s === 'saved' ? 'idle' : s)), 2000);
+    setSaveState('saved');
+    setTimeout(() => setSaveState(s => (s === 'saved' ? 'idle' : s)), 2000);
   }, [lessonId, user]);
 
   const scheduleSave = useCallback(() => {
@@ -249,6 +264,72 @@ export function PdfViewer({ url, lessonId }: { url: string; title?: string; less
     // recursos do worker (páginas/fontes) vivos até destroy(). Trocar de aula
     // sem isto vazava um documento + páginas renderizadas a cada troca.
     let pdfDoc: any = null;
+    let observer: IntersectionObserver | null = null;
+
+    // Uma página renderizada em devicePixelRatio custa dezenas de MB de canvas
+    // — pintar TODAS de uma vez estourava a memória do celular nas apostilas
+    // grandes (centenas de páginas) e derrubava a aba. Aqui cada página nasce
+    // como um placeholder do tamanho exato (o scroll não pula) e só ganha
+    // pixels quando se aproxima da tela; ao se afastar, os pixels são
+    // devolvidos (backing store zerado). As anotações moram em `strokesRef` e
+    // são repintadas na volta — nada se perde ao liberar a página.
+    type PageState = {
+      pageNum: number;
+      page: any;
+      viewport: any;
+      canvas: HTMLCanvasElement;
+      overlay: HTMLCanvasElement | null;
+      rendered: boolean;
+      rendering: boolean;
+    };
+    const pageStates = new Map<number, PageState>();
+
+    const outputScale = Math.min(Math.max(window.devicePixelRatio || 1, 1.5), 3);
+
+    async function renderPage(st: PageState) {
+      if (st.rendered || st.rendering || cancelled) return;
+      st.rendering = true;
+      try {
+        const ctx = st.canvas.getContext('2d');
+        if (!ctx) return;
+        st.canvas.width = Math.floor(st.viewport.width * outputScale);
+        st.canvas.height = Math.floor(st.viewport.height * outputScale);
+        await st.page.render({
+          canvasContext: ctx,
+          viewport: st.viewport,
+          canvas: st.canvas,
+          transform: [outputScale, 0, 0, outputScale, 0, 0],
+        }).promise;
+        if (cancelled) return;
+        if (st.overlay) {
+          st.overlay.width = st.canvas.width;
+          st.overlay.height = st.canvas.height;
+          const octx = st.overlay.getContext('2d');
+          if (octx) redrawPage(octx, strokesRef.current, st.pageNum, st.overlay.width, st.overlay.height);
+        }
+        st.rendered = true;
+        if (st.pageNum === 1) setLoading(false);
+      } catch (err) {
+        if (!cancelled) {
+          console.error(`Failed to render PDF page ${st.pageNum}`, err);
+          // A 1ª página falhando não pode prender o spinner pra sempre.
+          if (st.pageNum === 1) setLoading(false);
+        }
+      } finally {
+        st.rendering = false;
+      }
+    }
+
+    function releasePage(st: PageState) {
+      if (!st.rendered || st.rendering) return;
+      // width=0 devolve o backing store — o wrapper mantém o tamanho, então o
+      // layout e a posição do scroll não mexem.
+      st.canvas.width = 0;
+      st.canvas.height = 0;
+      if (st.overlay) { st.overlay.width = 0; st.overlay.height = 0; }
+      st.rendered = false;
+    }
+
     (async () => {
       let pdf;
       for (let attempt = 0; ; attempt++) {
@@ -271,13 +352,17 @@ export function PdfViewer({ url, lessonId }: { url: string; title?: string; less
 
       try {
         const containerWidth = container.clientWidth || 800;
-        // Canvas backing-store resolution defaults to 1 pixel per CSS pixel —
-        // on a phone with devicePixelRatio 2-3x, a page fit to the container
-        // width in "regular" pixels gets stretched across 2-3x as many
-        // physical pixels, which is exactly the blur reported. Render at
-        // devicePixelRatio (floored at 1.5 so even standard displays stay
-        // crisp) and let CSS scale it back down to the same display size.
-        const outputScale = Math.min(Math.max(window.devicePixelRatio || 1, 1.5), 3);
+
+        // Renderiza quando a página entra na janela de ~2 telas; libera ao
+        // sair dela. root = o elemento que de fato rola (o pai overflow-auto).
+        observer = new IntersectionObserver(entries => {
+          for (const entry of entries) {
+            const st = pageStates.get(Number((entry.target as HTMLElement).dataset.page));
+            if (!st) continue;
+            if (entry.isIntersecting) void renderPage(st);
+            else releasePage(st);
+          }
+        }, { root: container.parentElement, rootMargin: '1800px 0px' });
 
         for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
           if (cancelled) return;
@@ -289,50 +374,45 @@ export function PdfViewer({ url, lessonId }: { url: string; title?: string; less
           // Wrapper posicionado: o canvas do PDF embaixo e o de anotação em
           // cima, exatamente do mesmo tamanho.
           const wrapper = document.createElement('div');
-          wrapper.className = 'relative mb-3 shadow-lg rounded overflow-hidden';
+          wrapper.className = 'relative mb-3 shadow-lg rounded overflow-hidden bg-white/5';
           wrapper.dataset.baseW = String(viewport.width);
           wrapper.dataset.baseH = String(viewport.height);
+          wrapper.dataset.page = String(pageNum);
           const z = zoomRef.current;
           wrapper.style.width = `${Math.round(viewport.width * z)}px`;
           wrapper.style.height = `${Math.round(viewport.height * z)}px`;
           container.appendChild(wrapper);
 
+          // Canvas SEM backing store (0×0) até o observer mandar renderizar.
           const canvas = document.createElement('canvas');
-          canvas.width = Math.floor(viewport.width * outputScale);
-          canvas.height = Math.floor(viewport.height * outputScale);
-          canvas.style.width = `${Math.round(viewport.width * zoomRef.current)}px`;
-          canvas.style.height = `${Math.round(viewport.height * zoomRef.current)}px`;
-          const ctx = canvas.getContext('2d');
-          if (!ctx || cancelled) return;
+          canvas.width = 0;
+          canvas.height = 0;
+          canvas.style.width = `${Math.round(viewport.width * z)}px`;
+          canvas.style.height = `${Math.round(viewport.height * z)}px`;
           wrapper.appendChild(canvas);
 
+          let overlay: HTMLCanvasElement | null = null;
           if (canAnnotate) {
-            const overlay = document.createElement('canvas');
-            overlay.width = canvas.width;
-            overlay.height = canvas.height;
-            overlay.style.width = `${Math.round(viewport.width * zoomRef.current)}px`;
-            overlay.style.height = `${Math.round(viewport.height * zoomRef.current)}px`;
+            overlay = document.createElement('canvas');
+            overlay.width = 0;
+            overlay.height = 0;
+            overlay.style.width = canvas.style.width;
+            overlay.style.height = canvas.style.height;
             overlay.className = 'absolute inset-0';
             // Sem ferramenta ativa o overlay é transparente a cliques: o aluno
             // rola e seleciona texto como antes. Só ao escolher caneta ou
-            // marca-texto ele passa a capturar o ponteiro.
-            overlay.style.pointerEvents = 'none';
+            // marca-texto ele passa a capturar o ponteiro. (modeRef, não
+            // 'none' fixo: a página pode materializar com a caneta já ativa.)
+            overlay.style.pointerEvents = modeRef.current ? 'auto' : 'none';
             overlay.style.touchAction = 'none';
             wrapper.appendChild(overlay);
             overlaysRef.current.set(pageNum, overlay);
             attachDrawing(overlay, pageNum);
           }
 
-          await page.render({
-            canvasContext: ctx,
-            viewport,
-            canvas,
-            transform: [outputScale, 0, 0, outputScale, 0, 0],
-          }).promise;
-
-          if (pageNum === 1 && !cancelled) setLoading(false);
+          pageStates.set(pageNum, { pageNum, page, viewport, canvas, overlay, rendered: false, rendering: false });
+          observer.observe(wrapper);
         }
-        if (!cancelled) redrawAll();
       } catch (err) {
         console.error('Failed to render PDF', err);
         if (!cancelled) {
@@ -344,6 +424,7 @@ export function PdfViewer({ url, lessonId }: { url: string; title?: string; less
 
     return () => {
       cancelled = true;
+      observer?.disconnect();
       // Libera worker/páginas do pdf.js (guardado com try: destroy pode
       // rejeitar se o load ainda estava em curso).
       try { pdfDoc?.destroy?.(); } catch { /* ignore */ }

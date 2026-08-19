@@ -4,7 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import {
   Handshake, Copy, Link2, Tag, Megaphone, Banknote, Loader2, LogOut,
-  TrendingUp, CalendarDays, Trophy, ExternalLink, CheckCircle2, Clock,
+  TrendingUp, CalendarDays, Trophy, ExternalLink, CheckCircle2, Clock, RefreshCw, XCircle,
 } from 'lucide-react';
 import { PLAN_LABELS, PLAN_PRICES } from '@/lib/plans';
 import { Seo } from '@/seo/Seo';
@@ -44,6 +44,8 @@ export default function AffiliatePanelPage() {
   const [affiliate, setAffiliate] = useState<Affiliate | null>(null);
   const [sales, setSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [salesError, setSalesError] = useState(false);
   const [couponInput, setCouponInput] = useState('');
   const [savingCoupon, setSavingCoupon] = useState(false);
   const [pixOpen, setPixOpen] = useState(false);
@@ -55,10 +57,15 @@ export default function AffiliatePanelPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      setLoadError(false);
       const { data: userData } = await supabase.auth.getUser();
       if (!userData?.user) { navigate('/afiliado/login'); return; }
-      const { data: aff } = await supabase.from('affiliates' as never)
+      const { data: aff, error: affErr } = await supabase.from('affiliates' as never)
         .select('*').eq('user_id', userData.user.id).maybeSingle();
+      // Consulta que FALHA não é "não é afiliado": com uma rede instável, o
+      // afiliado antigo era despejado na tela de CADASTRO como se a conta dele
+      // não existisse. Erro mostra retry; só a resposta vazia manda cadastrar.
+      if (affErr) { setLoadError(true); return; }
       // Logado (ex: assinante vindo do menu da plataforma) mas ainda sem conta
       // de afiliado → direto pro cadastro, não pra tela de login.
       if (!aff) { navigate('/afiliado/registro'); return; }
@@ -68,8 +75,12 @@ export default function AffiliatePanelPage() {
       setPixKey(a.pix_key || '');
       setPixName(a.pix_name || a.name || '');
       setPixBank(a.pix_bank || '');
-      const { data: rows } = await supabase.from('affiliate_sales' as never)
+      const { data: rows, error: salesErr } = await supabase.from('affiliate_sales' as never)
         .select('*').eq('affiliate_id', a.id).order('created_at', { ascending: false });
+      // Falha aqui não some com o painel (o afiliado já carregou), mas não
+      // pode virar "Nenhuma venda ainda" — isso é dinheiro na conta dele.
+      if (salesErr) { setSalesError(true); return; }
+      setSalesError(false);
       setSales(((rows || []) as unknown as Sale[]));
     } finally {
       setLoading(false);
@@ -82,15 +93,19 @@ export default function AffiliatePanelPage() {
     const now = Date.now();
     const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
     const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
-    const hoje = sales.filter(s => new Date(s.created_at) >= dayStart);
-    const semana = sales.filter(s => new Date(s.created_at).getTime() >= weekAgo);
+    // Venda estornada não conta em lugar nenhum: o comprador foi reembolsado,
+    // então essa comissão não existe mais. Ela segue visível no extrato, com o
+    // rótulo "Estornada", para o afiliado entender o que aconteceu.
+    const valendo = sales.filter(s => s.status !== 'reversed');
+    const hoje = valendo.filter(s => new Date(s.created_at) >= dayStart);
+    const semana = valendo.filter(s => new Date(s.created_at).getTime() >= weekAgo);
     const soma = (arr: Sale[]) => arr.reduce((acc, s) => acc + Number(s.commission_amount), 0);
     return {
       hoje: hoje.length, hojeValor: soma(hoje),
       semana: semana.length, semanaValor: soma(semana),
-      total: sales.length, totalValor: soma(sales),
-      pendente: soma(sales.filter(s => s.status === 'pending')),
-      recebido: soma(sales.filter(s => s.status === 'paid')),
+      total: valendo.length, totalValor: soma(valendo),
+      pendente: soma(valendo.filter(s => s.status === 'pending')),
+      recebido: soma(valendo.filter(s => s.status === 'paid')),
     };
   }, [sales]);
 
@@ -150,7 +165,9 @@ export default function AffiliatePanelPage() {
       const msg = `Olá! Sou afiliado OneMed (${affiliate?.email}) e quero receber minha comissão pendente de ${brl(stats.pendente)}. Chave PIX: ${pixKey.trim()} (${pixBank.trim()}, ${pixName.trim()}).`;
       window.open(`https://wa.me/${SUPPORT_PHONE}?text=${encodeURIComponent(msg)}`, '_blank');
     } catch (err: any) {
-      toast.error('Erro ao salvar: ' + (err?.message || 'desconhecido'));
+      // Mensagem crua do supabase-js vem em inglês e não ajuda ninguém.
+      console.error('Erro ao salvar dados PIX', err);
+      toast.error('Não foi possível salvar seus dados de recebimento. Verifique sua conexão e tente de novo.');
     } finally {
       setSavingPix(false);
     }
@@ -165,6 +182,23 @@ export default function AffiliatePanelPage() {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <Loader2 className="w-8 h-8 text-primary animate-spin" />
+      </div>
+    );
+  }
+  if (loadError) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4 px-4 text-center">
+        <p className="font-secondary text-xl font-bold text-foreground">Não foi possível abrir seu painel</p>
+        <p className="text-sm text-muted-foreground max-w-sm">
+          A conexão falhou ao carregar seus dados de afiliado. Sua conta e suas comissões
+          continuam registradas.
+        </p>
+        <button
+          onClick={load}
+          className="inline-flex items-center gap-2 rounded-xl bg-primary hover:bg-primary-hover text-primary-foreground font-semibold px-5 py-2.5 transition-colors"
+        >
+          <RefreshCw className="w-4 h-4" /> Tentar novamente
+        </button>
       </div>
     );
   }
@@ -315,7 +349,19 @@ export default function AffiliatePanelPage() {
           <div className="px-6 py-4 border-b border-border">
             <h2 className="text-sm font-semibold text-foreground">Suas vendas</h2>
           </div>
-          {sales.length === 0 ? (
+          {salesError ? (
+            <div className="px-6 py-10 text-center">
+              <p className="text-sm text-muted-foreground">
+                Não foi possível carregar suas vendas agora. Elas continuam registradas.
+              </p>
+              <button
+                onClick={load}
+                className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-border bg-secondary hover:bg-secondary/70 text-foreground text-sm font-medium px-4 py-2 transition-colors"
+              >
+                <RefreshCw className="w-3.5 h-3.5" /> Tentar novamente
+              </button>
+            </div>
+          ) : sales.length === 0 ? (
             <p className="px-6 py-10 text-sm text-muted-foreground text-center">
               Nenhuma venda ainda. Compartilhe seu link e as vendas aparecem aqui em tempo real.
             </p>
@@ -347,6 +393,14 @@ export default function AffiliatePanelPage() {
                         {s.status === 'paid' ? (
                           <span className="inline-flex items-center gap-1.5 text-xs font-medium text-accent-success">
                             <CheckCircle2 className="w-3.5 h-3.5" /> Pago
+                          </span>
+                        ) : s.status === 'reversed' ? (
+                          /* Venda reembolsada/estornada pelo comprador: some
+                             dos totais e não fica eternamente como "Pendente",
+                             que fazia o afiliado cobrar uma comissão que não
+                             existe mais. */
+                          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground" title="A compra foi reembolsada ou estornada pelo comprador">
+                            <XCircle className="w-3.5 h-3.5" /> Estornada
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
@@ -489,10 +543,14 @@ function ComoFuncionaAfiliados() {
         </div>
 
         <div>
+          {/* O texto anterior prometia pagamento automático toda noite, mas o
+              fluxo real é o botão "Receber comissão" desta mesma página (salva
+              a chave PIX e abre a conversa com o suporte). */}
           <h3 className="text-sm font-semibold text-foreground mb-1.5">Quando você recebe</h3>
           <p className="text-sm text-muted-foreground">
-            Todas as comissões são pagas automaticamente, toda noite. Não precisa solicitar saque
-            nem atingir valor mínimo.
+            Assim que tiver comissão pendente, use o botão <strong className="text-foreground">Receber comissão</strong> aqui
+            no topo: você cadastra sua chave PIX e a solicitação vai direto para o nosso suporte.
+            Não há valor mínimo para sacar.
           </p>
         </div>
 

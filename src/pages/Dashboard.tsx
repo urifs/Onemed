@@ -20,7 +20,11 @@ export default function Dashboard() {
   const location = useLocation();
   const [stats, setStats] = useState<any>(null);
   const [recentAccesses, setRecentAccesses] = useState<any[]>([]);
-  const [driveConnected, setDriveConnected] = useState(false);
+  // `null` = ainda não se sabe (consulta falhou ou não rodou). É diferente de
+  // `false` (respondeu que está desconectado): a conta VISUALIZADORA não lê
+  // drive_config por design, então "não sei" virava um alarme de "Drive
+  // desconectado" que não era verdade.
+  const [driveConnected, setDriveConnected] = useState<boolean | null>(null);
   const [visitCount, setVisitCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -61,7 +65,7 @@ export default function Dashboard() {
         return true;
       });
       setRecentAccesses(deduped);
-      setDriveConnected(drive.data?.connected || false);
+      setDriveConnected(drive.error ? null : (drive.data?.connected ?? false));
       setVisitCount(visits.count || 0);
     } catch {
       toast.error('Erro ao carregar dados');
@@ -109,7 +113,7 @@ export default function Dashboard() {
         )}
 
         {/* Drive Alert */}
-        {!driveConnected && !loading && !loadError && (
+        {driveConnected === false && !loading && !loadError && (
           <div className="flex items-center gap-3 bg-accent-warning/10 border border-accent-warning/20 text-accent-warning rounded-xl px-4 py-3">
             <AlertTriangle className="w-4 h-4 flex-shrink-0" />
             <span className="text-sm">Google Drive desconectado.</span>

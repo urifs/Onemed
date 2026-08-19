@@ -147,7 +147,7 @@ function getTrialAccessEmail(email: string): string {
     </table>
 
     <p style="color: #64748B; font-size: 13px; margin: 20px 0 0;">
-      Login sem senha — use o e-mail <strong style="color: #94A3B8;">${email}</strong>.
+      Para entrar, use o e-mail <strong style="color: #94A3B8;">${email}</strong> — a senha você cadastra no primeiro acesso.
     </p>
   `
   return getBaseTemplate(content, `Bem-vindo ao ${SITE_NAME}!`)
@@ -200,7 +200,7 @@ function getPaymentApprovedEmail(firstName: string, plan: string, amount?: numbe
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin: 0 0 28px;">
       <tr><td style="padding: 6px 0; color: #94A3B8; font-size: 14px;">1. Clique no botão abaixo para abrir a plataforma</td></tr>
       <tr><td style="padding: 6px 0; color: #94A3B8; font-size: 14px;">2. Entre com o e-mail <strong style="color: white;">${buyerEmail || 'cadastrado na compra'}</strong></td></tr>
-      <tr><td style="padding: 6px 0; color: #94A3B8; font-size: 14px;">3. Sem senha — você recebe um link de acesso por e-mail</td></tr>
+      <tr><td style="padding: 6px 0; color: #94A3B8; font-size: 14px;">3. No primeiro acesso, você cadastra a sua senha na própria tela</td></tr>
     </table>
 
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0">

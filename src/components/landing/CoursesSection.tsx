@@ -63,11 +63,15 @@ export const CoursesSection = () => {
     <section className="py-24 bg-background">
       <div className="shell-page px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-14">
+          {/* Enquanto o catálogo carrega (ou se a RPC falhar), os números
+              dinâmicos ficam de fora — "0 categorias" e "0 cursos disponíveis"
+              numa página de venda são piores que nenhum número. */}
           <h2 className="font-secondary text-3xl md:text-4xl font-bold text-foreground mb-3">
-            +530 cursos médicos, {categories.length} categorias
+            +530 cursos médicos{categories.length > 0 ? `, ${categories.length} categorias` : ''}
           </h2>
           <p className="text-muted-foreground text-lg">
-            As melhores plataformas médicas do Brasil, todas em um só lugar — {totalCourses} cursos disponíveis agora
+            As melhores plataformas médicas do Brasil, todas em um só lugar
+            {totalCourses > 0 ? ` — ${totalCourses} cursos disponíveis agora` : ''}
           </p>
         </div>
 

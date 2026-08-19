@@ -6,8 +6,10 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
   Handshake, ChevronDown, ChevronUp, Banknote, CheckCircle2, Clock, Tag, Users, Loader2,
+  AlertTriangle, RefreshCw,
 } from 'lucide-react';
 import { PLAN_LABELS } from '@/lib/plans';
+import { fetchAllRows } from '@/lib/utils';
 
 interface Affiliate {
   id: string;
@@ -40,18 +42,31 @@ export default function AffiliatesAdminPage() {
   const [affiliates, setAffiliates] = useState<Affiliate[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [paying, setPaying] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(false);
     try {
-      const [affRes, salesRes] = await Promise.all([
+      const [affRes, salesRows] = await Promise.all([
         supabase.from('affiliates' as never).select('*').order('created_at', { ascending: false }),
-        supabase.from('affiliate_sales' as never).select('*').order('created_at', { ascending: false }),
+        // Paginado: o select simples parava nas primeiras 1000 linhas (limite
+        // padrão do PostgREST) — vendas antigas sumiam e a comissão "a pagar"
+        // aparecia menor do que é.
+        fetchAllRows<Sale>((from, to) =>
+          supabase.from('affiliate_sales' as never).select('*').order('created_at', { ascending: false }).range(from, to) as any
+        ),
       ]);
+      // Erro (RLS/rede) resolve a promise com {error} — sem checar, a tela
+      // mostrava tudo vazio como se não houvesse comissão a pagar.
+      if (affRes.error) throw affRes.error;
       setAffiliates(((affRes.data || []) as unknown as Affiliate[]));
-      setSales(((salesRes.data || []) as unknown as Sale[]));
+      setSales(salesRows);
+    } catch (err: any) {
+      toast.error('Erro ao carregar afiliados: ' + (err?.message || 'falha de rede'));
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -112,6 +127,20 @@ export default function AffiliatesAdminPage() {
           </h1>
           <p className="text-muted-foreground mt-1">Contas, vendas e comissões do programa de afiliados</p>
         </div>
+
+        {/* Sem este aviso, uma falha de carga rendia zeros em toda a tela — e
+            "Comissões a pagar R$ 0,00" é indistinguível de "ninguém a receber". */}
+        {loadError && (
+          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3">
+            <AlertTriangle className="w-4 h-4 text-destructive shrink-0" />
+            <p className="text-sm text-foreground flex-1 min-w-[16rem]">
+              Não foi possível carregar afiliados e vendas. Os números abaixo estão incompletos.
+            </p>
+            <Button onClick={load} size="sm" variant="outline" className="gap-1.5 border-border text-foreground">
+              <RefreshCw className="w-3.5 h-3.5" /> Tentar novamente
+            </Button>
+          </div>
+        )}
 
         {/* resumo */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 3xl:max-w-[1400px]">

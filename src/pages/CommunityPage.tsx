@@ -86,7 +86,7 @@ function FeedItemCard({ item, currentUserId, onUpdated }: {
     if (!error) {
       onUpdated(item.id, patch);
       setEditing(false);
-    }
+    } else toast.error('Não foi possível salvar a edição. Tente novamente.');
   };
 
   return (
@@ -252,7 +252,13 @@ export default function CommunityPage() {
       );
       if (error) throw error;
       const rows = (data || []) as FeedItem[];
-      setItems(prev => (offset === 0 ? rows : [...prev, ...rows]));
+      // Página 2+ pode repetir tópico: um post novo entre as páginas desloca o
+      // offset. Dedupe por id, preservando a ordem já exibida.
+      setItems(prev => {
+        if (offset === 0) return rows;
+        const vistos = new Set(prev.map(it => it.id));
+        return [...prev, ...rows.filter(r => !vistos.has(r.id))];
+      });
       setHasMore(rows.length === PAGE_SIZE);
       setLoadError(false);
     } catch (err) {
@@ -324,6 +330,9 @@ export default function CommunityPage() {
     if (!error) {
       setNewTitle(''); setNewBody(''); setNewCategory('none'); setNewCourseId('none');
       load(0);
+    } else {
+      // O texto digitado fica no formulário — só limpa quando publicou.
+      toast.error('Não foi possível publicar o tópico. Tente novamente.');
     }
   };
 

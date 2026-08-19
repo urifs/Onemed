@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { MessageCircleQuestion, X, Send, Loader2, Trash2, BookOpen, ListVideo } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
+import { extractFunctionErrorMessage } from '@/lib/utils';
 import { subscribeOpenLesson, subscribeOpenPlaylist, type OpenLessonRef, type OpenPlaylistRef } from '@/lib/assistantContext';
 
 interface ChatMsg {
@@ -77,7 +78,12 @@ export function AssistantWidget() {
           currentPlaylist: openPlaylist ? { id: openPlaylist.id } : undefined,
         },
       });
-      if (error || data?.error) throw new Error(data?.error || error?.message);
+      // Em status não-2xx o supabase-js devolve data NULO e só "Edge Function
+      // returned a non-2xx status code" — o motivo real (limite diário, plano
+      // sem acesso) vem no CORPO da resposta, que o extractFunctionErrorMessage lê.
+      if (error || data?.error) {
+        throw new Error(data?.error || await extractFunctionErrorMessage(error, 'Não consegui responder agora. Tente novamente em instantes.'));
+      }
       setMsgs(prev => [...prev, { role: 'assistant', content: limparTexto(String(data.reply || '')) }]);
     } catch (err: any) {
       const cru = String(err?.message || '');

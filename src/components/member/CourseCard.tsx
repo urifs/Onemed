@@ -78,7 +78,7 @@ export function CourseCard({ course, progressPercent, isFavorite, onToggleFavori
         </p>
         <p className="text-xs text-muted-foreground mt-1">
           {typeof progressPercent === 'number' && progressPercent > 0
-            ? `${Math.round(progressPercent)}% concluído`
+            ? `${Math.min(100, Math.round(progressPercent))}% concluído`
             : formatDuration(course.total_duration_seconds) || `${course.material_count} materiais`}
         </p>
       </button>

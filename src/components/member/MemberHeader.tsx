@@ -78,20 +78,20 @@ export function MemberHeader() {
           >
             <MessageCircle className="w-4 h-4" />
           </Link>
-          {/* Loja e notificações são para assinante: no teste grátis nem o
-              ícone aparece. */}
+          {/* A LOJA é para assinante: no teste grátis nem o ícone aparece. */}
           {!isTrial && (
-            <>
-              <Link
-                to="/membros/loja"
-                className="w-9 h-9 shrink-0 rounded-full bg-secondary border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors"
-                title="Loja"
-              >
-                <ShoppingBag className="w-4 h-4" />
-              </Link>
-              <NotificationsBell />
-            </>
+            <Link
+              to="/membros/loja"
+              className="w-9 h-9 shrink-0 rounded-full bg-secondary border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors"
+              title="Loja"
+            >
+              <ShoppingBag className="w-4 h-4" />
+            </Link>
           )}
+          {/* O sino APARECE no teste grátis (19/08): a lista de cursos em
+              atualização mostra que o acervo é vivo, e é justamente quem está
+              decidindo assinar que precisa ver isso. */}
+          <NotificationsBell />
           <ThemeToggle />
           <AccountMenu />
         </div>

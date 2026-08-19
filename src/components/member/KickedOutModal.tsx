@@ -34,7 +34,15 @@ export function KickedOutModal() {
 
   const handleClose = () => {
     dismissKickedOut();
-    navigate('/login');
+    // Cada área tem a sua porta de entrada: mandar um afiliado ou um admin
+    // para o login de MEMBRO deixava a pessoa presa numa tela que não abre a
+    // conta dela ("não encontramos acesso ativo para este e-mail").
+    const caminho = window.location.pathname;
+    navigate(
+      caminho.startsWith('/afiliado') ? '/afiliado/login'
+        : caminho.startsWith('/admin') ? '/admin/login'
+          : '/login',
+    );
   };
 
   return (

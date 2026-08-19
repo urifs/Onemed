@@ -83,7 +83,9 @@ export function PlanComparisonTable() {
                   className={`p-3 text-center align-bottom border-b border-border ${p === 'lifetime_pro' ? 'bg-primary/5 rounded-t-xl' : ''}`}
                 >
                   <div className={`font-secondary font-bold ${p === 'lifetime_pro' ? 'text-primary' : 'text-foreground'}`}>{NOMES[p]}</div>
-                  <div className="text-xs text-muted-foreground mt-0.5">{preco(p)}</div>
+                  {/* whitespace-nowrap: sem isso "R$ 99/mês" quebrava entre o
+                      cifrão e o número na coluna mais estreita. */}
+                  <div className="text-xs text-muted-foreground mt-0.5 whitespace-nowrap">{preco(p)}</div>
                 </th>
               ))}
             </tr>

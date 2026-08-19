@@ -1,89 +1,18 @@
-import { useState, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { toast } from 'sonner';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { supabase } from '@/integrations/supabase/client';
-import { CheckCircle, Mail, ArrowRight, LogIn, Loader2, AlertCircle, Stethoscope } from 'lucide-react';
+import { LogIn, ArrowRight, ArrowLeft, MessageCircle, Stethoscope, CheckCircle } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
-import { PLAN_LABELS } from '@/lib/plans';
 
+const SUPPORT_PHONE = '5563999191551';
+
+// Página do fluxo ANTIGO de ativação manual (o e-mail de compra apontava pra
+// cá com ?ref=). Desde o lockdown de RLS de 15/08 o navegador não lê nem
+// escreve em buyers/accesses — o que tornou o formulário antigo um beco sem
+// saída: toda compra real aparecia como "Compra não encontrada". Hoje a
+// liberação é 100% automática pelo webhook do Mercado Pago, então quem cai
+// aqui (link de e-mail antigo) só precisa saber disso e entrar.
 export default function ClaimAccessPage() {
   const [searchParams] = useSearchParams();
-  const externalReference = searchParams.get('ref');
-  const [email, setEmail] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [checking, setChecking] = useState(true);
-  const [registered, setRegistered] = useState(false);
-  const [purchaseInfo, setPurchaseInfo] = useState<any>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [canRetry, setCanRetry] = useState(false);
-  const [retryTick, setRetryTick] = useState(0);
-
-  useEffect(() => {
-    const check = async () => {
-      setChecking(true);
-      setError(null);
-      if (!externalReference) { setError('Link inválido.'); setCanRetry(false); setChecking(false); return; }
-      // Falha de consulta ≠ compra inexistente: um timeout de rede no celular
-      // de quem ACABOU de pagar não pode virar "Compra não encontrada" sem
-      // botão de tentar de novo.
-      const { data, error: fetchErr } = await supabase
-        .from('buyers').select('*').eq('external_reference', externalReference).maybeSingle();
-      if (fetchErr) {
-        setError('Não foi possível verificar sua compra agora. Verifique sua conexão e tente novamente.');
-        setCanRetry(true);
-        setChecking(false);
-        return;
-      }
-      if (!data) { setError('Compra não encontrada.'); setCanRetry(false); setChecking(false); return; }
-      setPurchaseInfo(data);
-      if (data.access_granted) { setRegistered(true); setEmail(data.email || ''); }
-      setChecking(false);
-    };
-    check();
-  }, [externalReference, retryTick]);
-
-  const handleClaim = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email) { toast.error('Informe seu email'); return; }
-    setLoading(true);
-    try {
-      const normalizedEmail = email.toLowerCase();
-
-      // Atomically mark access_granted = true ONLY if it was false
-      // This prevents duplicates when webhook already processed the payment
-      const { data: grantedRows } = await supabase
-        .from('buyers')
-        .update({ email: normalizedEmail, access_granted: true })
-        .eq('external_reference', externalReference!)
-        .eq('access_granted', false)
-        .select('id');
-
-      // Only insert access if we were the ones to flip access_granted
-      if (grantedRows && grantedRows.length > 0) {
-        // Check if paid access already exists (extra safety)
-        const { data: existing } = await supabase
-          .from('accesses')
-          .select('id')
-          .eq('email', normalizedEmail)
-          .eq('status', 'active')
-          .neq('access_type', 'trial')
-          .limit(1);
-
-        if (!existing || existing.length === 0) {
-          await supabase.from('accesses').insert({ email: normalizedEmail, access_type: purchaseInfo?.plan || 'lifetime', status: 'active' });
-        }
-      } else {
-        // access_granted was already true — just update the email if needed
-        await supabase.from('buyers').update({ email: normalizedEmail }).eq('external_reference', externalReference!);
-      }
-
-      setRegistered(true);
-      toast.success('Acesso liberado!');
-    } catch (err: any) { toast.error(err.message); }
-    finally { setLoading(false); }
-  };
+  const ref = searchParams.get('ref');
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
@@ -98,58 +27,41 @@ export default function ClaimAccessPage() {
           </Link>
         </div>
 
-        <div className="bg-card rounded-2xl p-8 border border-border">
-          {checking ? (
-            <div className="text-center py-8">
-              <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto mb-4" />
-              <p className="text-muted-foreground">Verificando sua compra...</p>
-            </div>
-          ) : error ? (
-            <div className="text-center py-8">
-              <AlertCircle className="w-12 h-12 text-primary mx-auto mb-4" />
-              <p className="text-foreground font-medium mb-2">Erro</p>
-              <p className="text-muted-foreground text-sm">{error}</p>
-              {canRetry && (
-                <button
-                  onClick={() => setRetryTick(t => t + 1)}
-                  className="mt-5 inline-flex items-center gap-2 bg-primary hover:bg-primary-hover text-primary-foreground font-semibold px-5 py-2.5 rounded-xl transition-colors"
-                >
-                  Tentar novamente
-                </button>
-              )}
-            </div>
-          ) : registered ? (
-            <div className="text-center">
-              <CheckCircle className="w-16 h-16 text-accent-success mx-auto mb-4" />
-              <h2 className="font-secondary text-2xl font-bold text-foreground mb-2">Acesso Confirmado!</h2>
-              <p className="text-muted-foreground mb-2">Acesso liberado para:</p>
-              <p className="text-primary font-medium mb-6">{email}</p>
-              <Link to={`/login?email=${encodeURIComponent(email)}`}
-                className="inline-flex items-center gap-2 bg-primary hover:bg-primary-hover text-primary-foreground font-semibold px-6 py-3 rounded-lg transition-colors">
-                <LogIn className="w-5 h-5" /> Fazer login <ArrowRight className="w-4 h-4" />
-              </Link>
-            </div>
-          ) : (
-            <>
-              <h2 className="font-secondary text-2xl font-bold text-foreground mb-2">Ativar seu Acesso</h2>
-              <p className="text-muted-foreground text-sm mb-6">
-                Compra confirmada: <span className="text-foreground font-medium">{PLAN_LABELS[purchaseInfo?.plan] || purchaseInfo?.plan}</span>
-              </p>
-              <form onSubmit={handleClaim} className="space-y-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Seu e-mail</label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="seu@email.com" className="pl-10 h-12 bg-secondary border-border text-foreground" required />
-                  </div>
-                </div>
-                <Button type="submit" disabled={loading} className="w-full h-12 bg-primary hover:bg-primary-hover text-primary-foreground font-semibold gap-2">
-                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Ativar Acesso <ArrowRight className="w-4 h-4" /></>}
-                </Button>
-              </form>
-            </>
-          )}
+        <div className="bg-card rounded-2xl p-8 border border-border text-center">
+          <CheckCircle className="w-14 h-14 text-accent-success mx-auto mb-4" />
+          <h1 className="font-secondary text-2xl font-bold text-foreground mb-3">
+            Seu acesso é liberado automaticamente
+          </h1>
+          <p className="text-muted-foreground text-sm mb-6">
+            Assim que o pagamento é aprovado, o acesso já fica ativo no e-mail
+            usado na compra — não precisa ativar nada por aqui. É só entrar:
+            no primeiro acesso você cadastra sua senha na própria tela de login.
+          </p>
+
+          <Link
+            to="/login"
+            className="inline-flex items-center justify-center gap-2 h-12 px-6 w-full bg-primary hover:bg-primary-hover text-primary-foreground font-semibold rounded-lg transition-colors"
+          >
+            <LogIn className="w-4 h-4" /> Entrar na plataforma <ArrowRight className="w-4 h-4" />
+          </Link>
+
+          <a
+            href={`https://wa.me/${SUPPORT_PHONE}?text=${encodeURIComponent(
+              `Olá! Paguei e meu acesso não apareceu.${ref ? ` Referência da compra: ${ref}` : ''}`,
+            )}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-3 inline-flex items-center justify-center gap-2 h-12 px-6 w-full border border-border hover:border-primary/40 bg-secondary/50 text-foreground font-semibold rounded-lg transition-colors"
+          >
+            <MessageCircle className="w-4 h-4 text-[#25D366]" /> Paguei e não consigo entrar
+          </a>
         </div>
+
+        <p className="text-center mt-6">
+          <Link to="/" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+            <ArrowLeft className="w-3.5 h-3.5" /> Voltar para a página inicial
+          </Link>
+        </p>
       </div>
     </div>
   );

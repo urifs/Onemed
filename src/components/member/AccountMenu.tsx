@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
-import { extractFunctionErrorMessage, formatDateSP } from '@/lib/utils';
+import { extractFunctionErrorMessage, formatDateSP, formatBRL } from '@/lib/utils';
 import { PLAN_PRICES } from '@/lib/plans';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
@@ -39,7 +39,9 @@ export function AccountMenu() {
   const [planDetailsOpen, setPlanDetailsOpen] = useState(false);
 
   useEffect(() => {
-    if (infoError && open) toast.error(infoError.message || 'Erro ao carregar dados da conta');
+    // Mensagem fixa em português: o `.message` cru do supabase-js vem em
+    // inglês ("Failed to fetch") e não diz nada útil pro aluno.
+    if (infoError && open) toast.error('Não foi possível carregar os dados da conta. Verifique sua conexão e tente de novo.');
   }, [infoError, open]);
 
   useEffect(() => {
@@ -73,6 +75,13 @@ export function AccountMenu() {
     }
   };
 
+  // Renovação cobra o PLANO ATUAL do aluno. Antes era 'annual' fixo: um aluno
+  // do Mensal clicava em "Renovar Assinatura" esperando os R$99 e caía num
+  // pagamento de R$299 do Anual, sem ver valor nenhum antes do redirect.
+  // Plano legado sem preço de tabela (ex.: 'paid' antigo) cai no Anual, que
+  // era o comportamento de sempre.
+  const renewPlan = info?.plan && PLAN_PRICES[info.plan] ? info.plan : 'annual';
+
   const handleRenew = async () => {
     if (!user?.email) return;
     setRenewing(true);
@@ -81,8 +90,8 @@ export function AccountMenu() {
       const { error: buyerErr } = await supabase.from('buyers').insert({
         email: user.email.toLowerCase(),
         name: name.trim() || null,
-        plan: 'annual',
-        amount: PLAN_PRICES.annual,
+        plan: renewPlan,
+        amount: PLAN_PRICES[renewPlan],
         status: 'pending',
         external_reference: ref,
       });
@@ -90,7 +99,7 @@ export function AccountMenu() {
 
       const { data: result, error: fnErr } = await supabase.functions.invoke('mp-create-payment', {
         body: {
-          plan: 'annual',
+          plan: renewPlan,
           email: user.email.toLowerCase(),
           name: name.trim() || '',
           externalReference: ref,
@@ -245,7 +254,9 @@ export function AccountMenu() {
                   className={hasUpgradeTarget ? 'w-full mt-2 border-border text-foreground hover:bg-secondary gap-1.5' : 'w-full mt-2 bg-primary hover:bg-primary-hover text-primary-foreground gap-1.5'}
                 >
                   {renewing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                  {renewing ? 'Abrindo pagamento...' : 'Renovar Assinatura'}
+                  {renewing
+                    ? 'Abrindo pagamento...'
+                    : `Renovar Plano ${PLAN_LABELS[renewPlan] || 'Anual'} — ${formatBRL(PLAN_PRICES[renewPlan])}`}
                 </Button>
               )}
             </div>

@@ -89,10 +89,13 @@ function welcomeEmailHtml(name: string): string {
         </p>
         <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 16px;">
           <tr><td style="font-size:14px;color:#3f3f46;line-height:1.9;">
-            • <b>15%</b> nas assinaturas do plano Mensal<br/>
-            • <b>20%</b> nas do Anual e do Vitalício<br/>
-            • <b>25%</b> nas do Vitalício Plus<br/>
-            • <b>30%</b> nas do Vitalício Pro<br/>
+            <!-- Percentuais espelham AFFILIATE_COMMISSION_PERCENT do
+                 mp-webhook, que é quem calcula de verdade. Mudou lá, muda
+                 aqui — o e-mail estava anunciando a tabela antiga, MENOR
+                 que a paga. -->
+            • <b>20%</b> nas assinaturas do plano Mensal<br/>
+            • <b>25%</b> nas do Anual e do Vitalício<br/>
+            • <b>30%</b> nas do Vitalício Plus e do Vitalício Pro<br/>
             • Conta <b>Vitalício Pro grátis</b> a partir de 5 vendas
           </td></tr>
         </table>

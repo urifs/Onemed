@@ -13,11 +13,14 @@ export const LANDING_FAQS = [
   },
   {
     question: 'Quanto tempo dura o acesso completo?',
-    answer: 'Temos o acesso completo anual e o vitalício. Durante esse período, você recebe todas as atualizações mensais sem custo adicional.'
+    // Sem prometer "todas as atualizações mensais" a todo plano: a frequência
+    // de atualização incluída varia por plano (só o Vitalício Pro tem as
+    // mensais) — o texto tem que bater com os cards e a tabela do checkout.
+    answer: 'Temos o plano mensal, o anual e três níveis de acesso vitalício. Cada plano inclui um nível de atualização do acervo — no Vitalício Pro, praticamente todo o conteúdo recebe atualizações mensais. O comparativo completo está na página de planos.'
   },
   {
     question: 'O conteúdo está atualizado?',
-    answer: 'Sim! Todos os cursos são do ano de 2025, com atualizações mensais e garantia de atualizações 2026 e 2027. Os livros também são constantemente atualizados e já estão traduzidos.'
+    answer: 'Sim! As turmas mais recentes (2026) já estão no acervo e novos materiais entram toda semana. A frequência das atualizações incluídas varia por plano — veja o comparativo no checkout. Os livros também são atualizados e já chegam traduzidos.'
   },
   {
     question: 'Posso acessar o conteúdo quando quiser?',

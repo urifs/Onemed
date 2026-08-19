@@ -34,13 +34,35 @@ export async function downloadLesson(lesson: DownloadableLesson): Promise<void> 
     throw new Error(await extractFunctionErrorMessage(error, data?.error || 'Não foi possível gerar o link do arquivo'));
   }
 
-  const url = downloadUrlFor(data.url, downloadFilenameFor(lesson));
+  await startFileDownload(downloadUrlFor(data.url, downloadFilenameFor(lesson)));
+}
 
-  // `iframe` em vez de `<a download>` ou `window.open`: o atributo `download`
-  // não vale entre origens diferentes, e `window.open` é bloqueado como popup
-  // quando a chamada acima demora e o clique deixa de ser "recente" aos olhos
-  // do navegador. Com Content-Disposition: attachment, o iframe não navega —
-  // só dispara o download e some.
+/**
+ * Dispara o download de uma URL já assinada, com uma checagem prévia de vida.
+ *
+ * `iframe` em vez de `<a download>` ou `window.open`: o atributo `download`
+ * não vale entre origens diferentes, e `window.open` é bloqueado como popup
+ * quando a geração do link demora e o clique deixa de ser "recente" aos olhos
+ * do navegador. Com Content-Disposition: attachment, o iframe não navega —
+ * só dispara o download e some.
+ *
+ * O problema do iframe é que ele ENGOLE qualquer erro: um 403 de link vencido
+ * ou o 429 de limite diário apareciam como um clique que "não fez nada". A
+ * sonda de 1 byte abaixo lê o status real antes — e o trecho baixado fica no
+ * cache do worker, então o download de verdade não paga nada a mais. Falha de
+ * REDE na sonda não bloqueia: o iframe ainda pode conseguir.
+ */
+export async function startFileDownload(url: string): Promise<void> {
+  let recusa: string | null = null;
+  try {
+    const res = await fetch(url, { headers: { Range: 'bytes=0-0' } });
+    if (!res.ok && res.status !== 206) {
+      recusa = (await res.text().catch(() => '')).slice(0, 300)
+        || `O servidor recusou o download (erro ${res.status}). Tente novamente em instantes.`;
+    }
+  } catch { /* falha de rede/CORS na sonda: o iframe ainda pode conseguir */ }
+  if (recusa) throw new Error(recusa);
+
   const frame = document.createElement('iframe');
   frame.style.display = 'none';
   frame.src = url;

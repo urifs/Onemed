@@ -75,8 +75,25 @@ export function describeAuthError(err: unknown): Error {
       + 'bloqueador de anúncios ou extensão de privacidade, desative e tente de novo.',
     );
   }
+  // O GoTrue responde em inglês ("Invalid login credentials"). Numa plataforma
+  // inteiramente em português isso é erro cru na cara do usuário — e alguns
+  // dos textos são ambíguos até para quem lê inglês.
+  const traduzido = TEXTOS_DE_AUTH.find(([re]) => re.test(message))?.[1];
+  if (traduzido) return new Error(traduzido);
   return err instanceof Error ? err : new Error(message || 'Erro inesperado. Tente novamente.');
 }
+
+const TEXTOS_DE_AUTH: [RegExp, string][] = [
+  [/invalid login credentials/i, 'E-mail ou senha incorretos.'],
+  [/email not confirmed/i, 'Este e-mail ainda não foi confirmado. Verifique sua caixa de entrada.'],
+  [/user already registered|already been registered/i, 'Já existe uma conta com este e-mail.'],
+  [/password should be at least (\d+)/i, 'A senha é curta demais. Use pelo menos 8 caracteres.'],
+  [/for security purposes|only request this after|rate limit|too many requests/i,
+    'Muitas tentativas seguidas. Aguarde alguns instantes e tente de novo.'],
+  [/invalid email|unable to validate email/i, 'E-mail inválido. Confira o endereço digitado.'],
+  [/user not found/i, 'Não encontramos uma conta com este e-mail.'],
+  [/token has expired|invalid.*token/i, 'Este link expirou. Peça um novo e tente de novo.'],
+];
 
 const SAO_PAULO_TIMEZONE = 'America/Sao_Paulo';
 
@@ -384,4 +401,24 @@ export function formatLastSeen(iso: string): string {
   if (hours < 24) return `há ${hours}h`;
   const days = Math.floor(hours / 24);
   return `há ${days} dia${days !== 1 ? 's' : ''}`;
+}
+
+// Ano do curso a partir do TÍTULO ("MEDCURSO 2026" → 2026). É de onde o ano
+// vem em toda a biblioteca: as pastas de origem no Drive trazem a turma no
+// nome, e não existe coluna de ano em `courses`. Com mais de um ano no título
+// (raro, mas acontece em "Extensivo 2025/2026"), vale o MAIOR — é a turma mais
+// nova que o material representa.
+export function courseYear(title: string | null | undefined): number | null {
+  const anos = String(title || '').match(/\b(?:19|20)\d{2}\b/g);
+  if (!anos) return null;
+  return Math.max(...anos.map(Number));
+}
+
+// Ano da turma que a vitrine da área de membros anuncia. Cursos de anos
+// anteriores continuam no acervo e na busca — só não entram no banner
+// rotativo, que é a vitrine da plataforma.
+export const ANO_DA_VITRINE = 2026;
+
+export function isCourseDoAnoDaVitrine(title: string | null | undefined): boolean {
+  return courseYear(title) === ANO_DA_VITRINE;
 }

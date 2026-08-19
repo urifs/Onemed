@@ -23,7 +23,7 @@ import { AiUpsellModal } from '@/components/member/AiUpsellModal';
 import { TrialWelcomeModal } from '@/components/member/TrialWelcomeModal';
 import { CATEGORY_ORDER } from '@/lib/courseCategories';
 import { lessonTypeFromMime } from './ArchivePage';
-import { formatDateTimeSP, formatDuration, matchesSearch, stripYearFromTitle, withTimeout, withRetry, describeLoadError } from '@/lib/utils';
+import { formatDateTimeSP, formatDuration, matchesSearch, stripYearFromTitle, withTimeout, withRetry, describeLoadError, isCourseDoAnoDaVitrine } from '@/lib/utils';
 import type { Database } from '@/integrations/supabase/types';
 
 interface AnnotatedLesson {
@@ -150,7 +150,12 @@ export default function MemberDashboardPage() {
       source: qbNew.source,
     }).select('id').single();
     setQbNewSaving(false);
-    if (error) return;
+    // Gerar um banco custa minutos e uma vaga do limite diário de IA — falhar
+    // o salvamento EM SILÊNCIO jogava esse trabalho fora sem o aluno saber.
+    if (error) {
+      toast.error('Não foi possível salvar o banco de questões. Verifique sua conexão e clique em salvar de novo — a geração não foi perdida.');
+      return;
+    }
     setQbNewSavedId(savedRow?.id || null);
     setQbNewSaved(true);
     setSessionsTick(t => t + 1);
@@ -173,7 +178,10 @@ export default function MemberDashboardPage() {
       source: fcNewDeck.source,
     }).select('id').single();
     setFcNewSaving(false);
-    if (error) return;
+    if (error) {
+      toast.error('Não foi possível salvar o baralho. Verifique sua conexão e clique em salvar de novo — a geração não foi perdida.');
+      return;
+    }
     setFcNewSavedId(savedRow?.id || null);
     setFcNewSaved(true);
     setSessionsTick(t => t + 1);
@@ -375,7 +383,13 @@ export default function MemberDashboardPage() {
     let alive = true;
     setAnnotatedLoading(true);
     supabase.rpc('my_annotated_lessons' as never)
-      .then(({ data }) => { if (alive) setAnnotated(((data || []) as unknown as AnnotatedLesson[])); })
+      .then(({ data, error }) => {
+        if (!alive) return;
+        // Erro do banco RESOLVE a promise (não cai no catch) — sem esta
+        // checagem, a falha virava "você ainda não tem anotações", mentira.
+        if (error) { toast.error('Não foi possível carregar suas anotações. Tente novamente.'); return; }
+        setAnnotated(((data || []) as unknown as AnnotatedLesson[]));
+      })
       .catch(() => { /* rede caiu: sai do spinner */ })
       .finally(() => { if (alive) setAnnotatedLoading(false); });
     return () => { alive = false; };
@@ -395,10 +409,14 @@ export default function MemberDashboardPage() {
         .select('id, deck_id, deck_title, total_cards, correct_first_try, reviews, duration_seconds, created_at')
         .order('created_at', { ascending: false })
         .limit(200),
-    ]).then(([{ data: decksData }, { data: sessData }]: { data: unknown }[]) => {
+    ]).then(([decksRes, sessRes]: { data: unknown; error: unknown }[]) => {
       if (!alive) return;
-      setDecks(((decksData || []) as SavedDeck[]));
-      setSessions(((sessData || []) as StudySession[]));
+      if (decksRes.error || sessRes.error) {
+        toast.error('Não foi possível carregar seus baralhos. Tente novamente.');
+        return;
+      }
+      setDecks(((decksRes.data || []) as SavedDeck[]));
+      setSessions(((sessRes.data || []) as StudySession[]));
     }).catch(() => { /* rede caiu: sai do spinner e mantém o que tinha */ })
       .finally(() => { if (alive) setDecksLoading(false); });
     return () => { alive = false; };
@@ -417,10 +435,16 @@ export default function MemberDashboardPage() {
         .select('id, bank_id, bank_title, total_questions, correct, duration_seconds, created_at')
         .order('created_at', { ascending: false })
         .limit(200),
-    ]).then(([{ data: banksData }, { data: sessData }]: { data: unknown }[]) => {
+    ]).then(([banksRes, sessRes]: { data: unknown; error: unknown }[]) => {
       if (!alive) return;
-      setBanks(((banksData || []) as SavedBank[]));
-      setBankSessions(((sessData || []) as BankSession[]));
+      // Erro do banco resolve a promise com data null — sem checar, a aba
+      // mostrava "nenhum banco criado" pra quem tem vários.
+      if (banksRes.error || sessRes.error) {
+        toast.error('Não foi possível carregar seus bancos de questões. Tente novamente.');
+        return;
+      }
+      setBanks(((banksRes.data || []) as SavedBank[]));
+      setBankSessions(((sessRes.data || []) as BankSession[]));
     }).catch(() => { /* rede caiu: sai do spinner e mantém o que tinha */ })
       .finally(() => { if (alive) setBanksLoading(false); });
     return () => { alive = false; };
@@ -450,8 +474,13 @@ export default function MemberDashboardPage() {
 
   const handleUnfavoriteLesson = async (lessonId: string) => {
     if (!userId) return;
+    const removida = favoriteLessons.find(l => l.lesson_id === lessonId);
     setFavoriteLessons(prev => prev.filter(l => l.lesson_id !== lessonId));
-    await supabase.from('user_lesson_favorites').delete().match({ user_id: userId, lesson_id: lessonId });
+    const { error } = await supabase.from('user_lesson_favorites').delete().match({ user_id: userId, lesson_id: lessonId });
+    if (error && removida) {
+      setFavoriteLessons(prev => [removida, ...prev]);
+      toast.error('Não foi possível remover dos favoritos. Tente de novo.');
+    }
   };
 
   const favoriteVideos = useMemo(() => favoriteLessons.filter(l => l.type === 'video'), [favoriteLessons]);
@@ -460,29 +489,39 @@ export default function MemberDashboardPage() {
   // 81 mil linhas em lessons é demais pra trazer pro cliente e filtrar em
   // JS — a busca de conteúdo roda no banco (search_lessons), com debounce
   // pra não disparar uma consulta a cada tecla.
+  const [contentSearchFailed, setContentSearchFailed] = useState(false);
   useEffect(() => {
-    if (!searchContents || !query.trim()) { setContentResults([]); setContentLoading(false); return; }
+    if (!searchContents || !query.trim()) { setContentResults([]); setContentLoading(false); setContentSearchFailed(false); return; }
     let alive = true;
     setContentLoading(true);
     const timer = setTimeout(() => {
       supabase.rpc('search_lessons', { _query: query.trim(), _limit: 60 })
         .then(({ data, error }) => {
           if (!alive) return;
-          if (error) { console.error('Erro na busca de conteúdo', error); setContentResults([]); return; }
-          
-          let results = (data || []) as ContentResult[];
-          if (contentTypeFilter === 'videos') {
-            results = results.filter(r => r.lesson_type === 'video');
-          } else if (contentTypeFilter === 'files') {
-            results = results.filter(r => r.lesson_type !== 'video');
+          if (error) {
+            console.error('Erro na busca de conteúdo', error);
+            // Falha ≠ zero resultados: mostrar "0 conteúdos encontrados" numa
+            // busca que nem rodou faria o aluno concluir que o material não
+            // existe na plataforma.
+            setContentSearchFailed(true);
+            setContentResults([]);
+            return;
           }
-          
-          setContentResults(results);
+          setContentSearchFailed(false);
+          setContentResults((data || []) as ContentResult[]);
         })
         .finally(() => { if (alive) setContentLoading(false); });
     }, 350);
     return () => { alive = false; clearTimeout(timer); };
-  }, [query, searchContents, contentTypeFilter]);
+    // O filtro Vídeos/Arquivos é aplicado em memória (useMemo abaixo) — trocar
+    // o filtro não refaz a busca inteira no banco.
+  }, [query, searchContents]);
+
+  const visibleContentResults = useMemo(() => {
+    if (contentTypeFilter === 'videos') return contentResults.filter(r => r.lesson_type === 'video');
+    if (contentTypeFilter === 'files') return contentResults.filter(r => r.lesson_type !== 'video');
+    return contentResults;
+  }, [contentResults, contentTypeFilter]);
 
   // Busca geral também olha o Acervo Público — por último e em seção própria:
   // os ITENS (título/descrição, via archive_feed) e os ARQUIVOS dentro de cada
@@ -616,19 +655,37 @@ export default function MemberDashboardPage() {
   };
 
   const featuredPool = useMemo(() => {
-    const pinned = courses.filter(c => c.is_featured);
-    const flagship = courses
+    // A VITRINE anuncia só a turma do ano (ANO_DA_VITRINE): um banner girando
+    // com "Extensivo 2024" passa a impressão de acervo parado, mesmo com o
+    // material novo logo abaixo. Os cursos de outros anos continuam no acervo,
+    // na busca e nas prateleiras — só não entram no banner.
+    const daVitrine = courses.filter(c => isCourseDoAnoDaVitrine(c.title));
+    const pinned = daVitrine.filter(c => c.is_featured);
+    const flagship = daVitrine
       .filter(c => c.category === 'Extensivo & Intensivo · Residência')
       .slice()
       .sort((a, b) => b.lesson_count - a.lesson_count)
       .slice(0, 8);
     const pool: Course[] = [];
     const seen = new Set<string>();
+    // "Continue de onde parou" é o progresso do próprio aluno, não vitrine —
+    // some do banner junto com a faixa de recentes, e não pelo ano do curso.
     const continuing = recentCourses[0]?.course;
     if (continuing) { pool.push(continuing); seen.add(continuing.id); }
     for (const c of pinned) { if (!seen.has(c.id)) { pool.push(c); seen.add(c.id); } }
     for (const c of flagship) { if (!seen.has(c.id)) { pool.push(c); seen.add(c.id); } }
-    if (pool.length === 0 && courses[0]) pool.push(courses[0]);
+    // Rede de segurança: se nenhum curso do ano estiver disponível (biblioteca
+    // ainda sincronizando, ou virada de ano antes de importar a turma nova), o
+    // banner volta a mostrar os maiores em vez de sumir da tela.
+    if (pool.length === 0) {
+      const reserva = courses
+        .filter(c => c.category === 'Extensivo & Intensivo · Residência')
+        .slice()
+        .sort((a, b) => b.lesson_count - a.lesson_count)
+        .slice(0, 8);
+      for (const c of reserva) { if (!seen.has(c.id)) { pool.push(c); seen.add(c.id); } }
+      if (pool.length === 0 && courses[0]) pool.push(courses[0]);
+    }
     return pool;
   }, [courses, recentCourses]);
 
@@ -821,13 +878,15 @@ export default function MemberDashboardPage() {
                     <p className="text-sm text-muted-foreground mb-5 flex items-center gap-2">
                       {contentLoading ? (
                         <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Buscando conteúdos...</>
+                      ) : contentSearchFailed ? (
+                        'A busca falhou. Confira sua conexão e tente digitar de novo.'
                       ) : (
-                        `${contentResults.length} conteúdo${contentResults.length !== 1 ? 's' : ''} encontrado${contentResults.length !== 1 ? 's' : ''}`
+                        `${visibleContentResults.length} conteúdo${visibleContentResults.length !== 1 ? 's' : ''} encontrado${visibleContentResults.length !== 1 ? 's' : ''}`
                       )}
                     </p>
-                    {!contentLoading && contentResults.length > 0 && (
+                    {!contentLoading && visibleContentResults.length > 0 && (
                       <div className="rounded-xl border border-border overflow-hidden divide-y divide-border">
-                        {contentResults.map(r => {
+                        {visibleContentResults.map(r => {
                           const Icon = CONTENT_TYPE_ICON[r.lesson_type] || File;
                           return (
                             <button
@@ -1605,7 +1664,7 @@ function QuestionsTab({ banks, sessions, loading, onOpenBank, onDeleteBank, onCr
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-foreground truncate">{bank.title}</p>
                         <p className="text-xs text-muted-foreground truncate">
-                          {bank.questions.length} questõe{bank.questions.length !== 1 ? 's' : ''}{bank.questions.length === 1 ? ' questão' : ''}
+                          {bank.questions.length === 1 ? '1 questão' : `${bank.questions.length} questões`}
                           {' '}· {bank.difficulty === 'basico' ? 'Básico' : bank.difficulty === 'avancado' ? 'Avançado' : 'Intermediário'}
                           {hist.length > 0
                             ? <> · {hist.length} {hist.length === 1 ? 'prova' : 'provas'} · melhor {melhor}%</>
