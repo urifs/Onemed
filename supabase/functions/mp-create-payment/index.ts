@@ -357,7 +357,16 @@ serve(async (req) => {
     console.log('MP response body:', JSON.stringify(mpData))
 
     if (!mpRes.ok) {
-      throw new Error(`MP Error ${mpRes.status}: ${JSON.stringify(mpData)}`)
+      // O detalhe técnico vai para o log; o comprador recebe uma frase que ele
+      // possa agir sobre. Antes chegava na tela do checkout algo como
+      // `MP Error 400: {"message":"invalid_collector_id"...}` — em inglês, com
+      // JSON, no momento em que a pessoa ia pagar.
+      console.error('MP recusou a preferência:', mpRes.status, JSON.stringify(mpData))
+      const erroDoMP = new Error(
+        'Não foi possível abrir o pagamento agora. Tente de novo em instantes — se continuar, fale com o suporte pelo WhatsApp.',
+      ) as Error & { paraOCliente?: boolean }
+      erroDoMP.paraOCliente = true
+      throw erroDoMP
     }
 
     console.log('MP preference created:', mpData.id)
@@ -425,7 +434,15 @@ serve(async (req) => {
 
   } catch (err: any) {
     console.error('Unexpected error:', err?.message || err)
-    return new Response(JSON.stringify({ error: err?.message || 'Erro interno' }), {
+    // As validações deste arquivo lançam mensagens em português, pensadas para
+    // o comprador — essas passam. Qualquer outra é técnica (stack do Deno,
+    // erro do Postgrest) e não pode ir para a tela de pagamento.
+    const paraOCliente = err?.paraOCliente || /[áéíóúâêôãõç]/i.test(String(err?.message || ''))
+    return new Response(JSON.stringify({
+      error: paraOCliente
+        ? err.message
+        : 'Não foi possível iniciar o pagamento agora. Tente novamente em instantes.',
+    }), {
       status: 500, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
     })
   }

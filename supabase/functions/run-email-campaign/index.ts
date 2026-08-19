@@ -239,10 +239,21 @@ serve(async (req) => {
 
     const now = new Date().toISOString()
 
+    // Uma campanha que morreu no meio de um lote (timeout de 150s, queda do
+    // Resend, deploy) ficava travada em 'running' PARA SEMPRE: o seletor só
+    // procurava 'scheduled'. Resultado: metade da lista recebia o e-mail, a
+    // outra metade não, e nada avisava. `running` parada há mais de
+    // RECUPERAR_APOS_MIN volta para a fila.
+    const RECUPERAR_APOS_MIN = 10
+    const limiteTravada = new Date(Date.now() - RECUPERAR_APOS_MIN * 60_000).toISOString()
+
     const { data: campaign, error: fetchErr } = await (
       targetCampaignId
-        ? supabase.from('email_campaigns').select('*').eq('id', targetCampaignId).eq('status', 'scheduled').maybeSingle()
-        : supabase.from('email_campaigns').select('*').eq('status', 'scheduled').lte('scheduled_at', now).order('scheduled_at', { ascending: true }).limit(1).maybeSingle()
+        ? supabase.from('email_campaigns').select('*').eq('id', targetCampaignId)
+            .or(`status.eq.scheduled,and(status.eq.running,updated_at.lt.${limiteTravada})`).maybeSingle()
+        : supabase.from('email_campaigns').select('*')
+            .or(`and(status.eq.scheduled,scheduled_at.lte.${now}),and(status.eq.running,updated_at.lt.${limiteTravada})`)
+            .order('scheduled_at', { ascending: true }).limit(1).maybeSingle()
     )
 
     if (fetchErr) {
@@ -262,9 +273,16 @@ serve(async (req) => {
     // para running. Sem o .eq('status','scheduled') + .select(), duas
     // invocações concorrentes (cron sobreposto, ou cron + disparo manual)
     // pegavam a mesma campanha e mandavam o mesmo lote DUAS vezes.
+    // O claim aceita os DOIS estados que o seletor traz — 'scheduled' normal e
+    // 'running' travada além da janela —, mas continua exigindo que a linha
+    // esteja exatamente como foi lida (`updated_at`): se outra invocação
+    // avançou a campanha nesse meio-tempo, o carimbo mudou e este claim falha,
+    // que é justamente o que impede o lote de sair duas vezes.
     const { data: claimed } = await supabase.from('email_campaigns')
       .update({ status: 'running' })
-      .eq('id', campaign.id).eq('status', 'scheduled')
+      .eq('id', campaign.id)
+      .eq('updated_at', campaign.updated_at)
+      .in('status', ['scheduled', 'running'])
       .select('id').maybeSingle()
     if (!claimed) {
       return new Response(JSON.stringify({ ok: true, message: 'Campanha já sendo processada' }), {

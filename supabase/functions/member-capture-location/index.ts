@@ -44,7 +44,13 @@ serve(async (req) => {
     const user = userData.user
     const email = (user.email || '').toLowerCase()
 
-    const ip = (req.headers.get('x-forwarded-for') || '').split(',')[0].trim() || req.headers.get('x-real-ip') || ''
+    // Regra deste projeto (forense de 15/08): o IP do cliente é o
+    // `cf-connecting-ip` — a Cloudflare está na frente e ele não é forjável.
+    // O XFF esquerdo é escolhido pelo próprio cliente (qualquer um manda o IP
+    // que quiser) e o `x-real-ip` chega null aqui.
+    const ip = req.headers.get('cf-connecting-ip')
+      || (req.headers.get('x-forwarded-for') || '').split(',')[0].trim()
+      || ''
     if (!ip) return jsonResponse(req, { skipped: true })
 
     const geoRes = await fetch(`https://ipwho.is/${ip}`, { signal: AbortSignal.timeout(3000) })

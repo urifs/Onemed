@@ -318,7 +318,13 @@ serve(async (req) => {
     }
 
     if (!activeAccesses?.length && !buyerRows?.length && !isAdminEmail) {
-      return jsonResponse(req, { error: 'Nenhum acesso ativo encontrado para este email. Faça um trial gratuito ou verifique sua compra.' }, 404)
+      // Não convida a "fazer um trial": quem já usou o teste é recusado pelo
+      // create-trial-access logo em seguida, e a maioria de quem chega aqui é
+      // exatamente esse caso (trial vencido) ou um e-mail diferente do da
+      // compra.
+      return jsonResponse(req, {
+        error: 'Não encontramos acesso ativo para este e-mail. Confira se é o mesmo e-mail usado na compra — ou conheça os planos para liberar a plataforma.',
+      }, 404)
     }
 
     const { data: credencial } = await supabase.from('member_credentials')
@@ -349,12 +355,18 @@ serve(async (req) => {
       const agora = Date.now()
       const valido = (expiresAt: string | null | undefined) =>
         !expiresAt || new Date(expiresAt).getTime() > agora
-      const limiteDe = (plano: string | null | undefined) =>
-        (plano && PLAN_DEVICE_LIMITS[plano]) || DEFAULT_DEVICE_LIMIT
+      // Só planos CONHECIDOS entram na conta. O tipo genérico 'paid' (que o
+      // webhook antigo gravava para qualquer compra) não diz qual plano a
+      // pessoa tem: tratá-lo como "padrão 2" dava 2 telas a um comprador do
+      // MENSAL, que o checkout promete com 1 — o `paid` de accesses vencia o
+      // 'monthly' de buyers no Math.max. Agora o padrão só entra quando não há
+      // nenhum plano identificável em lugar nenhum.
+      const limiteConhecido = (plano: string | null | undefined) =>
+        plano && PLAN_DEVICE_LIMITS[plano] ? PLAN_DEVICE_LIMITS[plano] : null
       const planLimits = [
-        ...(activeAccesses || []).filter(a => valido(a.expires_at)).map(a => limiteDe(a.access_type)),
-        ...(buyerRows || []).map(b => limiteDe(b.plan)),
-      ]
+        ...(activeAccesses || []).filter(a => valido(a.expires_at)).map(a => limiteConhecido(a.access_type)),
+        ...(buyerRows || []).map(b => limiteConhecido(b.plan)),
+      ].filter((n): n is number => n != null)
       const baseSessions = planLimits.length > 0 ? Math.max(...planLimits) : DEFAULT_DEVICE_LIMIT
       // Telas EXTRAS compradas (upsell no checkout ou avulso no perfil) somam
       // ao limite do plano — é o que faz a tela a mais valer de verdade.
@@ -620,7 +632,12 @@ serve(async (req) => {
 
     return jsonResponse(req, { success: true, access_token, refresh_token })
   } catch (err: any) {
-    console.error(err)
-    return jsonResponse(req, { error: err.message }, 500)
+    // `err.message` é técnico e em inglês ("fetch failed", "column ... does not
+    // exist") — vira erro cru na cara do aluno numa tela de login. O detalhe
+    // fica no log, que é onde serve para alguma coisa.
+    console.error('member-auth-request:', err?.message || err)
+    return jsonResponse(req, {
+      error: 'Não foi possível concluir agora. Tente novamente em instantes.',
+    }, 500)
   }
 })
