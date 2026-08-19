@@ -246,6 +246,11 @@ serve(async (req) => {
   const json = (payload: unknown, status = 200) =>
     new Response(JSON.stringify(payload), { status, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } })
 
+  // Declarado FORA do try: o cliente do Supabase nasce lá dentro, então o catch
+  // não o alcança. Sem isto, uma falha no meio da rodada automática não deixava
+  // rastro nenhum — a rodada seguinte simplesmente tentaria de novo, no escuro.
+  let registrarErroAuto: ((msg: string) => Promise<void>) | null = null
+
   try {
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
@@ -253,9 +258,17 @@ serve(async (req) => {
     )
 
     // ── autenticação: cron secret ou admin logado ────────────────────────────
-    const SYNC_SECRET = Deno.env.get('MEMBER_SYNC_SECRET')
+    // Dois segredos servem: o próprio da sincronização e o CRON_SECRET, que é
+    // o que o pg_cron deste projeto já guarda no Vault e usa nos demais jobs.
+    // Sem aceitar os dois, a sincronização automática precisaria de um segredo
+    // novo no Vault só para ela — mais uma peça para desalinhar.
     const providedSecret = req.headers.get('x-cron-secret') || ''
-    const cronOk = !!SYNC_SECRET && SYNC_SECRET !== 'NOT_SET' && (await secureCompare(providedSecret, SYNC_SECRET))
+    const segredosValidos = [Deno.env.get('MEMBER_SYNC_SECRET'), Deno.env.get('CRON_SECRET')]
+      .filter((v): v is string => !!v && v !== 'NOT_SET')
+    let cronOk = false
+    for (const esperado of segredosValidos) {
+      if (await secureCompare(providedSecret, esperado)) { cronOk = true; break }
+    }
 
     let adminOk = false
     if (!cronOk) {
@@ -275,7 +288,11 @@ serve(async (req) => {
 
     const body = await req.json().catch(() => ({}))
     const forceResync: boolean = !!body.forceResync
-    const topPageSize: number = Math.min(Math.max(Number(body.batchSize) || 20, 1), 100)
+    // O modo automático é conduzido pelo cron, não por uma aba aberta: o
+    // catálogo do Drive é paginado, então ele pede a maior página que a API
+    // aceita — 407 pastas de topo cabem em 5 chamadas em vez de 21.
+    const modoAuto: boolean = !!body.auto && cronOk
+    const topPageSize: number = Math.min(Math.max(Number(body.batchSize) || (modoAuto ? 100 : 20), 1), 100)
 
     // Cursor: minúsculo de propósito. Todo o estado pesado da varredura mora
     // na tabela `sync_folder_queue`, não no cursor que trafega a cada chamada.
@@ -291,6 +308,95 @@ serve(async (req) => {
         stage = p.stage === 'crawl' ? 'crawl' : 'discover'
         topPageToken = p.topPageToken || undefined
       } catch { /* cursor de formato antigo: recomeça a descoberta, a fila preserva o progresso */ }
+    }
+
+    // ── modo automático (cron) ───────────────────────────────────────────────
+    // A posição da varredura mora no banco, não no cursor HTTP: cada invocação
+    // tem ~40s de orçamento, então uma rodada são várias invocações e a posição
+    // precisa sobreviver entre elas — inclusive a uma queda no meio.
+    //
+    // Janela em UTC: 07h–10h é 04h–07h em São Paulo, quando quase ninguém está
+    // assistindo aula. A janela é de 3h (e não de uma hora só) para que uma
+    // sequência de disparos perdidos não empurre a rodada para o dia seguinte.
+    const AUTO_JANELA_UTC: [number, number] = [7, 10]
+    // Uma rodada incremental fecha em poucas dezenas de fatias. Este teto existe
+    // para o caso patológico: sem ele, uma falha permanente ficaria repetindo a
+    // cada 2 minutos, o dia inteiro, contra a API do Drive.
+    const AUTO_MAX_FATIAS = 200
+    let estadoAuto: any = null
+
+    if (modoAuto) {
+      const { data: st, error: stErr } = await supabase
+        .from('library_sync_state').select('*').eq('id', true).maybeSingle()
+      if (stErr) return json({ error: 'Falha ao ler o estado da sincronização: ' + stErr.message }, 500)
+      estadoAuto = st || { status: 'idle', slices: 0 }
+
+      if (estadoAuto.status === 'running') {
+        if ((estadoAuto.slices || 0) >= AUTO_MAX_FATIAS) {
+          await supabase.from('library_sync_state').update({
+            status: 'idle', finished_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+            last_error: `Rodada interrompida no limite de ${AUTO_MAX_FATIAS} fatias sem concluir.`,
+          }).eq('id', true)
+          return json({ skipped: true, reason: 'limite de fatias atingido' })
+        }
+        // Retoma exatamente de onde parou.
+        const c = estadoAuto.cursor
+        stage = c?.stage === 'crawl' ? 'crawl' : 'discover'
+        topPageToken = c?.topPageToken || undefined
+      } else {
+        const agora = new Date()
+        const hora = agora.getUTCHours()
+        const naJanela = hora >= AUTO_JANELA_UTC[0] && hora < AUTO_JANELA_UTC[1]
+        const fim = estadoAuto.finished_at ? new Date(estadoAuto.finished_at).getTime() : 0
+        // 20h (e não 24h) para a rodada não escorregar um pouco a cada dia e
+        // acabar caindo fora da janela.
+        const passouUmDia = !fim || (agora.getTime() - fim) > 20 * 60 * 60 * 1000
+        if (!naJanela || !passouUmDia) {
+          return json({ skipped: true, reason: !naJanela ? 'fora da janela diária' : 'já sincronizado hoje' })
+        }
+        await supabase.from('library_sync_state').update({
+          status: 'running', started_at: agora.toISOString(), finished_at: null,
+          updated_at: agora.toISOString(), cursor: null, last_error: null,
+          slices: 0, courses_created: 0, courses_resynced: 0, lessons_imported: 0, folders_crawled: 0,
+        }).eq('id', true)
+        estadoAuto = { ...estadoAuto, status: 'running', slices: 0, courses_created: 0, courses_resynced: 0, lessons_imported: 0, folders_crawled: 0 }
+        stage = 'discover'
+        topPageToken = undefined
+      }
+    }
+
+    if (modoAuto) {
+      registrarErroAuto = async (msg: string) => {
+        await supabase.from('library_sync_state')
+          .update({ last_error: msg.slice(0, 500), updated_at: new Date().toISOString() })
+          .eq('id', true)
+      }
+    }
+
+    // Grava a posição depois de cada fatia. Em modo manual não faz nada — ali
+    // quem guarda o cursor é a aba do painel.
+    const salvarEstadoAuto = async (payload: any) => {
+      if (!modoAuto) return
+      const agora = new Date().toISOString()
+      const acc = {
+        slices: (estadoAuto.slices || 0) + 1,
+        courses_created: (estadoAuto.courses_created || 0) + (payload.coursesCreated || 0),
+        courses_resynced: (estadoAuto.courses_resynced || 0) + (payload.coursesResynced || 0),
+        lessons_imported: (estadoAuto.lessons_imported || 0) + (payload.lessonsImported || 0),
+        folders_crawled: (estadoAuto.folders_crawled || 0) + (payload.foldersCrawled || 0),
+      }
+      const concluiu = !!payload.done
+      await supabase.from('library_sync_state').update({
+        ...acc,
+        cursor: concluiu ? null : (payload.cursor ?? null),
+        status: concluiu ? 'idle' : 'running',
+        finished_at: concluiu ? agora : null,
+        updated_at: agora,
+        // `details` de uma varredura completa tem centenas de linhas: guarda o
+        // resumo, que é o que o painel mostra.
+        last_result: concluiu ? { ...acc, totals: payload.totals ?? null, finished_at: agora } : estadoAuto.last_result ?? null,
+      }).eq('id', true)
+      estadoAuto = { ...estadoAuto, ...acc }
     }
 
     // ── Google Drive: token válido ───────────────────────────────────────────
@@ -430,13 +536,15 @@ serve(async (req) => {
         ? { stage: 'discover', topPageToken: topData.nextPageToken }
         : { stage: 'crawl' }
 
-      return json({
+      const respostaDiscover = {
         done: false,
         stage: 'discover',
         cursor: nextCursor,
         coursesCreated, coursesResynced, modulesImported, lessonsImported, foldersCrawled,
         details,
-      })
+      }
+      await salvarEstadoAuto(respostaDiscover)
+      return json(respostaDiscover)
     }
 
     // ═══ ETAPA 2 · VARREDURA PROFUNDA ════════════════════════════════════════
@@ -636,7 +744,7 @@ serve(async (req) => {
       }
     }
 
-    return json({
+    const respostaCrawl = {
       done: isDone,
       stage: 'crawl',
       cursor: isDone ? null : { stage: 'crawl' },
@@ -644,9 +752,12 @@ serve(async (req) => {
       coursesCreated, coursesResynced, modulesImported, lessonsImported, foldersCrawled,
       totals,
       details,
-    })
+    }
+    await salvarEstadoAuto(respostaCrawl)
+    return json(respostaCrawl)
   } catch (err: any) {
     console.error(err)
+    if (registrarErroAuto) await registrarErroAuto(String(err?.message || err)).catch(() => {})
     return json({ error: err.message }, 500)
   }
 })

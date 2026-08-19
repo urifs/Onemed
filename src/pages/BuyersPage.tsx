@@ -6,14 +6,20 @@ import AdminLayout from '@/components/AdminLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { formatDateTimeSP, todayStartISO, yesterdayStartISO, fetchAllRows, formatBRL } from '@/lib/utils';
+import { formatDateTimeSP, fetchAllRows, formatBRL } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { DollarSign, Users, Clock, TrendingUp, Mail, Calendar, Phone, Trash2, UserPlus, Loader2, RefreshCw, CheckCircle, XCircle, X, Download, AlertTriangle } from 'lucide-react';
+import { DollarSign, Users, Clock, TrendingUp, Mail, Calendar, Phone, Trash2, UserPlus, Loader2, RefreshCw, CheckCircle, XCircle, X, Download, AlertTriangle, ChevronDown } from 'lucide-react';
 import { WhatsAppLink } from '@/components/WhatsAppLink';
 
 const PLAN_LABELS: Record<string, string> = {
   monthly: 'Mensal', annual: 'Anual', lifetime: 'Vitalício', lifetime_plus: 'Vitalício Plus', lifetime_pro: 'Vitalício Pro',
 };
+
+// Quantos compradores por vez. A lista inteira (656 aprovados e crescendo,
+// com fbp/fbc/user-agent em cada linha) chegava de uma vez e era renderizada
+// de uma vez — a página levava segundos para responder. Os NÚMEROS não dependem
+// mais disso: vêm somados do banco pela RPC admin_buyers_overview.
+const PAGE_SIZE = 100;
 
 export default function BuyersPage() {
   const { session } = useAuth();
@@ -21,12 +27,20 @@ export default function BuyersPage() {
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  const [carregandoMais, setCarregandoMais] = useState(false);
+  const [temMais, setTemMais] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [newEmail, setNewEmail] = useState('');
   const [newPlan, setNewPlan] = useState('annual');
   const [newAmount, setNewAmount] = useState('');
   const [creating, setCreating] = useState(false);
   const [search, setSearch] = useState('');
+  const [buscando, setBuscando] = useState(false);
+  // Resultado da busca NO BANCO. Com a lista paginada, filtrar só o que já
+  // está na tela acharia apenas os 100 mais recentes — quem o suporte procura
+  // costuma ser justamente uma compra antiga.
+  const [resultados, setResultados] = useState<any[] | null>(null);
+  const [exportando, setExportando] = useState(false);
   // A lista carrega só os APROVADOS (é dela que sai a receita). Mas o suporte
   // recebe o comprovante de compras que deram errado também — cancelada,
   // recusada, estornada —, e era justamente essa que não aparecia em busca
@@ -34,39 +48,67 @@ export default function BuyersPage() {
   // inteiro e mostra à parte.
   const [foraDaLista, setForaDaLista] = useState<any[]>([]);
 
+  // Uma página de aprovados, do mais recente para o mais antigo. O `id` no fim
+  // da ordenação é o desempate estável: sem ele, duas compras no mesmo instante
+  // podem aparecer duas vezes (ou sumir) entre uma página e a seguinte.
+  const paginaDeCompradores = (de: number) =>
+    supabase.from('buyers').select('*').eq('status', 'approved')
+      .order('created_at', { ascending: false }).order('id', { ascending: false })
+      .range(de, de + PAGE_SIZE - 1);
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     setLoadError(false);
     try {
-      const buyersData = await fetchAllRows((f, t) =>
-        supabase.from('buyers').select('*').eq('status', 'approved').order('created_at', { ascending: false }).range(f, t)
-      );
-      setBuyers(buyersData);
-      const all = buyersData;
-      const todayISO = todayStartISO();
-      const yesterdayISO = yesterdayStartISO();
-      const today = all.filter(b => b.created_at >= todayISO);
-      // Ontem = janela fechada [ontem 00h, hoje 00h): não pode incluir hoje.
-      const yesterday = all.filter(b => b.created_at >= yesterdayISO && b.created_at < todayISO);
-      const byPlan: Record<string, number> = {};
-      for (const plan of Object.keys(PLAN_LABELS)) {
-        byPlan[plan] = today.filter(b => b.plan === plan).length;
+      const [pagina, resumo] = await Promise.all([
+        paginaDeCompradores(0),
+        supabase.rpc('admin_buyers_overview' as never),
+      ]);
+      if (pagina.error) throw pagina.error;
+      setBuyers(pagina.data || []);
+      setTemMais((pagina.data || []).length === PAGE_SIZE);
+
+      // O resumo é separado da lista de propósito: se ele falhar, a tabela
+      // ainda aparece (e os cartões mostram "—") em vez de a página inteira
+      // virar tela de erro.
+      const r: any = resumo.data;
+      if (resumo.error || !r) {
+        console.error('Resumo de compradores indisponível', resumo.error);
+        setStats(null);
+      } else {
+        setStats({
+          totalRevenue: Number(r.total_revenue) || 0,
+          totalCount: Number(r.total_count) || 0,
+          total: Number(r.today?.count) || 0,
+          approved: Number(r.today?.approved) || 0,
+          revenue: Number(r.today?.revenue) || 0,
+          revenueYesterday: Number(r.yesterday?.revenue) || 0,
+          approvedYesterday: Number(r.yesterday?.approved) || 0,
+          byPlan: r.today_by_plan || {},
+        });
       }
-      const somaAmount = (rows: any[]) => rows.reduce((s: number, b: any) => s + (b.amount || 0), 0);
-      setStats({
-        total: today.length,
-        approved: today.filter(b => b.status === 'approved').length,
-        revenue: somaAmount(today.filter(b => b.status === 'approved')),
-        revenueYesterday: somaAmount(yesterday.filter(b => b.status === 'approved')),
-        approvedYesterday: yesterday.filter(b => b.status === 'approved').length,
-        byPlan,
-      });
     } catch {
       toast.error('Erro ao carregar compradores');
       setLoadError(true);
     }
     finally { setLoading(false); }
   }, []);
+
+  const carregarMais = async () => {
+    if (carregandoMais) return;
+    setCarregandoMais(true);
+    const { data, error } = await paginaDeCompradores(buyers.length);
+    if (error) {
+      toast.error('Não foi possível carregar mais compradores. Tente novamente.');
+    } else {
+      // Concatena sem repetir: um comprador novo criado entre uma página e
+      // outra desloca o offset e traria alguém já carregado.
+      const jaTem = new Set(buyers.map(b => b.id));
+      setBuyers(prev => [...prev, ...(data || []).filter(b => !jaTem.has(b.id))]);
+      setTemMais((data || []).length === PAGE_SIZE);
+    }
+    setCarregandoMais(false);
+  };
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -100,15 +142,33 @@ export default function BuyersPage() {
     else { toast.success('Deletado'); fetchData(); }
   };
 
-  const exportTxt = () => {
-    const lines = buyers.map(b => `${b.email} ${b.whatsapp || ''}`.trimEnd());
-    const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `compradores_${new Date().toISOString().slice(0, 10)}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
+  // Busca TODAS as linhas na hora de exportar. Com a tela paginada, exportar o
+  // que está carregado entregaria só os 100 mais recentes — e um arquivo
+  // incompleto que parece completo é pior do que nenhum.
+  const exportTxt = async () => {
+    if (exportando) return;
+    setExportando(true);
+    try {
+      // Só as duas colunas que o arquivo usa — o resto da linha (fbp, fbc,
+      // user-agent) não tem por que atravessar a rede num export de contatos.
+      const todos = await fetchAllRows<any>(async (f, t) =>
+        await supabase.from('buyers').select('email, whatsapp').eq('status', 'approved')
+          .order('created_at', { ascending: false }).range(f, t)
+      );
+      const lines = todos.map((b: any) => `${b.email} ${b.whatsapp || ''}`.trimEnd());
+      const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `compradores_${new Date().toISOString().slice(0, 10)}.txt`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success(`${todos.length} compradores exportados`);
+    } catch {
+      toast.error('Não foi possível exportar. Tente novamente.');
+    } finally {
+      setExportando(false);
+    }
   };
 
   // Antes do pagamento, `payment_id` guarda o id da PREFERÊNCIA do Mercado
@@ -130,41 +190,50 @@ export default function BuyersPage() {
   // Buscar pelo NÚMERO DA TRANSAÇÃO é o caminho de suporte mais comum: o
   // cliente manda o print do comprovante do Mercado Pago e é preciso descobrir
   // de quem é a compra.
-  const filtered = buyers.filter(b =>
-    !search
-    || b.email.toLowerCase().includes(search.toLowerCase())
-    || (b.name || '').toLowerCase().includes(search.toLowerCase())
-    || (b.whatsapp || '').includes(search)
-    || String(b.payment_id || '').includes(search.trim())
-    || String(b.external_reference || '').toLowerCase().includes(search.toLowerCase())
-  );
+  // Dentro do .or(), a vírgula separa CONDIÇÕES e os parênteses agrupam — um
+  // termo que os contenha quebra a sintaxe e a busca inteira falha. As aspas
+  // duplas são o escape do PostgREST para o valor, então saem também.
+  const termoSeguro = (t: string) => t.replace(/["\\,()]/g, ' ').trim();
+
+  // Lista exibida: o resultado da busca quando há termo, senão a página atual.
+  const filtered = resultados ?? buyers;
 
   useEffect(() => {
     const termo = search.trim();
-    if (!termo || filtered.length > 0) { setForaDaLista([]); return; }
+    if (!termo) { setResultados(null); setForaDaLista([]); setBuscando(false); return; }
+    setBuscando(true);
+    let vivo = true;
     const timer = setTimeout(async () => {
-      // Dentro do .or(), a vírgula separa CONDIÇÕES e os parênteses agrupam —
-      // um termo que os contenha quebra a sintaxe e a busca inteira falha.
-      // As aspas duplas são o escape do PostgREST para o valor; por isso elas
-      // próprias saem do termo antes.
-      const seguro = termo.replace(/["\\]/g, '');
-      const { data, error } = await supabase.from('buyers')
-        .select('*')
-        .or(`payment_id.ilike."%${seguro}%",external_reference.ilike."%${seguro}%",email.ilike."%${seguro}%"`)
-        .neq('status', 'approved')
-        .order('created_at', { ascending: false })
-        .limit(20);
-      if (error) {
-        console.error('Busca de compras não aprovadas falhou', error);
-        toast.error('Não foi possível buscar compras fora da lista. Tente novamente.');
-        setForaDaLista([]);
-        return;
+      const seguro = termoSeguro(termo);
+      if (!seguro) { if (vivo) { setResultados([]); setForaDaLista([]); setBuscando(false); } return; }
+      const filtro = `payment_id.ilike."%${seguro}%",external_reference.ilike."%${seguro}%"`
+        + `,email.ilike."%${seguro}%",name.ilike."%${seguro}%",whatsapp.ilike."%${seguro}%"`;
+      // As duas buscas saem juntas: a de aprovados (a lista) e a de compras que
+      // deram errado (o caminho de suporte, mostrado quando a primeira é vazia).
+      const [aprovados, outros] = await Promise.all([
+        supabase.from('buyers').select('*').eq('status', 'approved').or(filtro)
+          .order('created_at', { ascending: false }).limit(PAGE_SIZE),
+        supabase.from('buyers').select('*').neq('status', 'approved').or(filtro)
+          .order('created_at', { ascending: false }).limit(20),
+      ]);
+      if (!vivo) return;
+      if (aprovados.error) {
+        console.error('Busca de compradores falhou', aprovados.error);
+        toast.error('Não foi possível buscar. Tente novamente.');
+        setResultados([]);
+      } else {
+        setResultados(aprovados.data || []);
       }
-      setForaDaLista(data || []);
+      if (outros.error) {
+        console.error('Busca de compras não aprovadas falhou', outros.error);
+        setForaDaLista([]);
+      } else {
+        setForaDaLista((aprovados.data || []).length === 0 ? (outros.data || []) : []);
+      }
+      setBuscando(false);
     }, 400);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, filtered.length]);
+    return () => { vivo = false; clearTimeout(timer); };
+  }, [search]);
 
   const statusBadge = (status: string) => {
     const map: Record<string, [string, string]> = {
@@ -203,8 +272,9 @@ export default function BuyersPage() {
             <p className="text-muted-foreground mt-1">Gerencie os compradores do OneMed</p>
           </div>
           <div className="flex gap-2">
-            <Button onClick={exportTxt} disabled={loading || buyers.length === 0} variant="outline" className="border-border text-muted-foreground hover:text-foreground gap-2">
-              <Download className="w-4 h-4" /> Exportar TXT
+            <Button onClick={exportTxt} disabled={loading || exportando || !stats?.totalCount} variant="outline" className="border-border text-muted-foreground hover:text-foreground gap-2">
+              {exportando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+              {exportando ? 'Exportando…' : 'Exportar TXT'}
             </Button>
             <Button onClick={() => setShowModal(true)} className="bg-primary hover:bg-primary-hover text-primary-foreground gap-2">
               <UserPlus className="w-4 h-4" /> Novo Comprador
@@ -221,7 +291,7 @@ export default function BuyersPage() {
                 <DollarSign className="w-4 h-4 text-accent-success" />
               </div>
               <p className="font-secondary text-2xl font-bold text-foreground">
-                {loading ? '—' : formatBRL(buyers.reduce((s, b) => s + (b.amount || 0), 0))}
+                {stats ? formatBRL(stats.totalRevenue) : '—'}
               </p>
             </CardContent>
           </Card>
@@ -230,7 +300,7 @@ export default function BuyersPage() {
               a mesma coisa — o número de hoje é o que importa, e ontem existe
               para dar a referência de comparação logo abaixo dele. */}
           {[
-            { label: 'Compradores', value: loading ? '—' : buyers.length, ontem: null, icon: Users, color: 'text-primary' },
+            { label: 'Compradores', value: stats ? stats.totalCount : '—', ontem: null, icon: Users, color: 'text-primary' },
             {
               label: 'Receita',
               value: stats ? formatBRL(stats.revenue) : '—',
@@ -292,7 +362,9 @@ export default function BuyersPage() {
             <CardTitle className="text-sm font-semibold text-foreground flex items-center justify-between gap-3">
               <span>Compradores</span>
               <span className="text-xs font-normal text-muted-foreground tabular-nums">
-                {loading ? '—' : `${filtered.length} ${filtered.length === 1 ? 'registro' : 'registros'}`}
+                {loading ? '—'
+                  : resultados !== null ? `${filtered.length} ${filtered.length === 1 ? 'resultado' : 'resultados'}`
+                  : `${buyers.length}${stats ? ` de ${stats.totalCount}` : ''}`}
               </span>
             </CardTitle>
           </CardHeader>
@@ -380,7 +452,26 @@ export default function BuyersPage() {
                 </div>
               )}
               {!loadError && filtered.length === 0 && foraDaLista.length === 0 && !loading && (
-                <p className="text-muted-foreground text-center py-12">Nenhum comprador encontrado</p>
+                buscando
+                  ? <p className="flex items-center justify-center gap-2 text-muted-foreground py-12"><Loader2 className="w-4 h-4 animate-spin" /> Procurando…</p>
+                  : <p className="text-muted-foreground text-center py-12">Nenhum comprador encontrado</p>
+              )}
+
+              {/* "Carregar mais" só na lista paginada. Durante uma busca a
+                  resposta já vem do banco inteiro, não de uma página. */}
+              {!loadError && resultados === null && temMais && (
+                <div className="flex justify-center border-t border-border/40 py-4">
+                  <Button
+                    onClick={carregarMais}
+                    disabled={carregandoMais}
+                    variant="outline"
+                    className="border-border text-muted-foreground hover:text-foreground gap-2"
+                  >
+                    {carregandoMais
+                      ? <><Loader2 className="w-4 h-4 animate-spin" /> Carregando…</>
+                      : <><ChevronDown className="w-4 h-4" /> Carregar mais {PAGE_SIZE}</>}
+                  </Button>
+                </div>
               )}
             </div>
           </CardContent>
