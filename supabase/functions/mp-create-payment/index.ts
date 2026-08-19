@@ -168,7 +168,54 @@ serve(async (req) => {
     // mp-webhook atribuir a venda ao afiliado dono do cupom.
     let appliedCouponCode: string | null = null
 
-    // ── 3b. Upgrade de plano: cobra só a diferença do que a pessoa já pagou.
+    // ── 3b. O que a pessoa JÁ TINHA antes desta compra ───────────────────────
+    // Serve a duas coisas: o preço do upgrade (diferença de tabela) e a
+    // classificação da venda (assinante novo × upgrade × renovação) que vai
+    // pro painel. Compra avulsa de telas não mexe em plano, então nem consulta.
+    const normalizedEmail = String(email).toLowerCase().trim()
+    const LIFETIME_TIER_RANK: Record<string, number> = { lifetime: 1, lifetime_plus: 2, lifetime_pro: 3 }
+
+    const [{ data: previousBuyer }, { data: activeAccesses }] = ehTelasAvulso
+      ? [{ data: null }, { data: null }] as const
+      : await Promise.all([
+          supabase.from('buyers').select('plan, amount')
+            .eq('email', normalizedEmail).eq('access_granted', true)
+            .order('created_at', { ascending: false }).limit(1).maybeSingle(),
+          supabase.from('accesses').select('access_type')
+            .eq('email', normalizedEmail).eq('status', 'active').neq('access_type', 'trial'),
+        ])
+
+    // Mesma resolução de "plano atual" do member-account-info: prefere o
+    // maior tier vitalício entre buyer/accesses, nunca "o primeiro que
+    // aparecer" (uma conta pode ter mais de uma linha ativa em accesses).
+    const bestAccessTier = (activeAccesses || [])
+      .filter(a => LIFETIME_TIER_RANK[a.access_type])
+      .sort((a, b) => LIFETIME_TIER_RANK[b.access_type] - LIFETIME_TIER_RANK[a.access_type])[0]?.access_type
+    const buyerTier = previousBuyer?.plan && LIFETIME_TIER_RANK[previousBuyer.plan] ? previousBuyer.plan : undefined
+    const currentPlan = [buyerTier, bestAccessTier].filter((p): p is string => !!p)
+      .sort((a, b) => LIFETIME_TIER_RANK[b] - LIFETIME_TIER_RANK[a])[0]
+      || previousBuyer?.plan
+      || (activeAccesses || [])[0]?.access_type
+
+    // Origem da venda, DERIVADA do estado anterior — nunca do `isUpgrade` que
+    // o navegador manda (que só diz de qual tela o pedido saiu). Assim vale
+    // pra qualquer caminho de compra e não dá pra forjar. Espelha plan_rank()
+    // da migration 20260819120000.
+    const PLAN_RANK: Record<string, number> = {
+      monthly: 1, paid: 1, annual: 2, lifetime: 3, lifetime_plus: 4, lifetime_pro: 5,
+    }
+    const rankAnterior = Math.max(
+      0,
+      PLAN_RANK[previousBuyer?.plan || ''] || 0,
+      ...(activeAccesses || []).map(a => PLAN_RANK[a.access_type] || 0),
+    )
+    const purchaseKind = ehTelasAvulso
+      ? 'screens'
+      : rankAnterior === 0
+        ? 'new'
+        : (PLAN_RANK[plan] || 0) > rankAnterior ? 'upgrade' : 'renewal'
+
+    // ── 3c. Upgrade de plano: cobra só a diferença do que a pessoa já pagou.
     // Nunca confia num "valor já pago" vindo do cliente — recalcula aqui, e só
     // libera depois de confirmar (via JWT da sessão) que quem pede o upgrade
     // é dono desse email. Sem isso, qualquer um poderia pedir um upgrade pro
@@ -182,34 +229,11 @@ serve(async (req) => {
         })
       }
       const { data: { user: callerUser }, error: authErr } = await supabase.auth.getUser(jwt)
-      if (authErr || !callerUser || (callerUser.email || '').toLowerCase() !== String(email).toLowerCase().trim()) {
+      if (authErr || !callerUser || (callerUser.email || '').toLowerCase() !== normalizedEmail) {
         return new Response(JSON.stringify({ error: 'Sessão inválida para este email' }), {
           status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' }
         })
       }
-
-      const normalizedEmail = String(email).toLowerCase().trim()
-      const LIFETIME_TIER_RANK: Record<string, number> = { lifetime: 1, lifetime_plus: 2, lifetime_pro: 3 }
-
-      const [{ data: previousBuyer }, { data: activeAccesses }] = await Promise.all([
-        supabase.from('buyers').select('plan, amount')
-          .eq('email', normalizedEmail).eq('access_granted', true)
-          .order('created_at', { ascending: false }).limit(1).maybeSingle(),
-        supabase.from('accesses').select('access_type')
-          .eq('email', normalizedEmail).eq('status', 'active').neq('access_type', 'trial'),
-      ])
-
-      // Mesma resolução de "plano atual" do member-account-info: prefere o
-      // maior tier vitalício entre buyer/accesses, nunca "o primeiro que
-      // aparecer" (uma conta pode ter mais de uma linha ativa em accesses).
-      const bestAccessTier = (activeAccesses || [])
-        .filter(a => LIFETIME_TIER_RANK[a.access_type])
-        .sort((a, b) => LIFETIME_TIER_RANK[b.access_type] - LIFETIME_TIER_RANK[a.access_type])[0]?.access_type
-      const buyerTier = previousBuyer?.plan && LIFETIME_TIER_RANK[previousBuyer.plan] ? previousBuyer.plan : undefined
-      const currentPlan = [buyerTier, bestAccessTier].filter((p): p is string => !!p)
-        .sort((a, b) => LIFETIME_TIER_RANK[b] - LIFETIME_TIER_RANK[a])[0]
-        || previousBuyer?.plan
-        || (activeAccesses || [])[0]?.access_type
 
       // O upgrade custa a diferença entre os preços de TABELA dos dois planos
       // — nunca "preço do novo menos o que a pessoa pagou".
@@ -365,6 +389,9 @@ serve(async (req) => {
       // Server-side de propósito (validado 0..10), sobrescrevendo o que o
       // navegador inseriu, pela mesma razão de segurança do `plan`.
       extra_screens: extraScreens,
+      // Assinante novo × upgrade × renovação × telas: derivado acima do que a
+      // conta já tinha, para o painel de compras mostrar a origem da venda.
+      purchase_kind: purchaseKind,
       client_ip: clientIp,
       client_user_agent: clientUserAgent,
       coupon_code: appliedCouponCode,
