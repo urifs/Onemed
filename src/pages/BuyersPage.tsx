@@ -168,6 +168,21 @@ export default function BuyersPage() {
     return <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${cls}`}>{label}</span>;
   };
 
+  // Origem da venda, gravada pelo mp-create-payment a partir do que a conta já
+  // tinha. Compra antiga sem a coluna preenchida mostra "—" em vez de chutar.
+  const origemBadge = (kind: string | null | undefined) => {
+    const map: Record<string, [string, string]> = {
+      new: ['bg-accent-success/15 text-accent-success', 'Novo assinante'],
+      upgrade: ['bg-primary/15 text-primary', 'Upgrade'],
+      renewal: ['bg-secondary text-muted-foreground', 'Renovação'],
+      screens: ['bg-secondary text-muted-foreground', 'Telas extras'],
+    };
+    const achado = kind ? map[kind] : undefined;
+    if (!achado) return <span className="text-muted-foreground text-xs">—</span>;
+    const [cls, label] = achado;
+    return <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${cls}`}>{label}</span>;
+  };
+
   return (
     <AdminLayout>
       <div className="space-y-6">
@@ -257,7 +272,7 @@ export default function BuyersPage() {
               <table className="w-full">
                 <thead className="sticky top-0 z-10">
                   <tr className="border-b border-border">
-                    {['Email', 'WhatsApp', 'Nome', 'Plano', 'Valor', 'Transação', 'Status', 'Data', ''].map(h => (
+                    {['Email', 'WhatsApp', 'Nome', 'Plano', 'Origem', 'Valor', 'Transação', 'Status', 'Data', ''].map(h => (
                       <th key={h} className="text-left px-4 py-3 text-xs font-mono uppercase text-muted-foreground bg-background-paper border-b border-border">{h}</th>
                     ))}
                   </tr>
@@ -273,6 +288,7 @@ export default function BuyersPage() {
                       </td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">{buyer.name || '—'}</td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">{PLAN_LABELS[buyer.plan] || buyer.plan}</td>
+                      <td className="px-4 py-3">{origemBadge(buyer.purchase_kind)}</td>
                       <td className="px-4 py-3 text-sm text-foreground">{buyer.amount ? formatBRL(buyer.amount) : '—'}</td>
                       <td className="px-4 py-3">
                         {numeroTransacao(buyer.payment_id) ? (
