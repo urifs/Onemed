@@ -104,6 +104,11 @@ export default function CourseDetailPage() {
   const [loadError, setLoadError] = useState(false);
   const [loadErrorMessage, setLoadErrorMessage] = useState('');
   const [retryTick, setRetryTick] = useState(0);
+  // O curso chega ANTES das aulas (a busca das aulas pagina em paralelo e
+  // demora nos cursos de 30 mil aulas). Sem este flag, tanto o carregamento
+  // normal quanto uma falha depois do curso carregado caíam no mesmo texto
+  // "sendo sincronizado" — mentira num caso, beco sem saída no outro.
+  const [lessonsReady, setLessonsReady] = useState(false);
   const [query, setQuery] = useState('');
   const autoOpenId = searchParams.get('lesson');
 
@@ -192,6 +197,7 @@ export default function CourseDetailPage() {
     setProgressMap({});
     setActiveLesson(null);
     setLoadError(false);
+    setLessonsReady(false);
     (async () => {
       try {
         await withRetry(async () => {
@@ -270,6 +276,7 @@ export default function CourseDetailPage() {
           for (const p of progressRows) map[p.lesson_id] = p;
           setProgressMap(map);
           setLoadError(false);
+          setLessonsReady(true);
         });
       } catch (err) {
         console.error('Failed to load course', err);
@@ -381,20 +388,25 @@ export default function CourseDetailPage() {
   const handleProgress = async (lessonId: string, watchedSeconds: number, completed: boolean) => {
     if (!user || !course) return;
     const prevRow = pendingProgress.current[lessonId] || progressMap[lessonId];
+    // Conclusão por reprodução é conquista, não estado momentâneo: o player
+    // reporta `completed` pelo ponto atual (>92%), então REVER uma aula já
+    // concluída mandava `false` e apagava o check verde que o aluno ganhou.
+    // Só a caixa "Marcar como não concluída" (handleToggleCompleted) desfaz.
+    const efetivo = completed || !!prevRow?.completed;
     const row = {
       ...(prevRow || { id: '', user_id: user.id, course_id: course.id, lesson_id: lessonId }),
       watched_seconds: watchedSeconds,
-      completed,
+      completed: efetivo,
       last_watched_at: new Date().toISOString(),
     } as Progress;
-    if (!!prevRow?.completed !== completed) {
+    if (!!prevRow?.completed !== efetivo) {
       setProgressMap(prev => ({ ...prev, [lessonId]: row }));
     } else {
       pendingProgress.current[lessonId] = row;
     }
     await supabase.from('lesson_progress').upsert({
       user_id: user.id, course_id: course.id, lesson_id: lessonId,
-      watched_seconds: watchedSeconds, completed, last_watched_at: new Date().toISOString(),
+      watched_seconds: watchedSeconds, completed: efetivo, last_watched_at: new Date().toISOString(),
     }, { onConflict: 'user_id,lesson_id' });
   };
   
@@ -404,7 +416,8 @@ export default function CourseDetailPage() {
   // uma caixa vazia.
   const handleToggleCompleted = async (lesson: Lesson, completed: boolean) => {
     if (!user || !course) return;
-    const watched = completed ? (progressMap[lesson.id]?.watched_seconds ?? lesson.duration_seconds ?? 0) : 0;
+    const anterior = progressMap[lesson.id];
+    const watched = completed ? (anterior?.watched_seconds ?? lesson.duration_seconds ?? 0) : 0;
     setProgressMap(prev => ({
       ...prev,
       [lesson.id]: {
@@ -414,20 +427,33 @@ export default function CourseDetailPage() {
         last_watched_at: new Date().toISOString(),
       } as Progress,
     }));
-    await supabase.from('lesson_progress').upsert({
+    const { error } = await supabase.from('lesson_progress').upsert({
       user_id: user.id, course_id: course.id, lesson_id: lesson.id,
       watched_seconds: watched, completed, last_watched_at: new Date().toISOString(),
     }, { onConflict: 'user_id,lesson_id' });
+    // A marcação otimista precisa voltar atrás se o banco recusou — senão o
+    // check aparece agora e some no F5, sem o aluno saber por quê.
+    if (error) {
+      setProgressMap(prev => {
+        const volta = { ...prev };
+        if (anterior) volta[lesson.id] = anterior;
+        else delete volta[lesson.id];
+        return volta;
+      });
+      toast.error('Não foi possível salvar a marcação. Verifique sua conexão e tente de novo.');
+    }
   };
 
   const handleToggleFavorite = async () => {
     if (!user || !course) return;
     const nextState = !isFavorite;
     setIsFavorite(nextState);
-    if (!nextState) {
-      await supabase.from('user_favorites').delete().match({ user_id: user.id, course_id: course.id });
-    } else {
-      await supabase.from('user_favorites').insert({ user_id: user.id, course_id: course.id });
+    const { error } = nextState
+      ? await supabase.from('user_favorites').insert({ user_id: user.id, course_id: course.id })
+      : await supabase.from('user_favorites').delete().match({ user_id: user.id, course_id: course.id });
+    if (error) {
+      setIsFavorite(!nextState);
+      toast.error('Não foi possível atualizar o favorito. Tente de novo.');
     }
   };
 
@@ -439,10 +465,16 @@ export default function CourseDetailPage() {
       if (currentStatus) next.delete(lesson.id); else next.add(lesson.id);
       return next;
     });
-    if (currentStatus) {
-      await supabase.from('user_lesson_favorites').delete().match({ user_id: user.id, lesson_id: lesson.id });
-    } else {
-      await supabase.from('user_lesson_favorites').insert({ user_id: user.id, lesson_id: lesson.id });
+    const { error } = currentStatus
+      ? await supabase.from('user_lesson_favorites').delete().match({ user_id: user.id, lesson_id: lesson.id })
+      : await supabase.from('user_lesson_favorites').insert({ user_id: user.id, lesson_id: lesson.id });
+    if (error) {
+      setFavoriteLessonIds(prev => {
+        const volta = new Set(prev);
+        if (currentStatus) volta.add(lesson.id); else volta.delete(lesson.id);
+        return volta;
+      });
+      toast.error('Não foi possível atualizar o favorito. Tente de novo.');
     }
   };
 
@@ -530,6 +562,34 @@ export default function CourseDetailPage() {
   }
 
   const CategoryIcon = CATEGORY_ICON[course.category] || File;
+
+  // Estado da lista quando ainda não há aulas na tela — compartilhado entre as
+  // abas Aulas e Arquivos. Três situações distintas que antes eram uma só:
+  // falha (com saída), carregando (honesto) e curso realmente vazio no banco.
+  const estadoAulas = (
+    loadError ? (
+      <div className="flex flex-col items-start gap-3">
+        <p className="text-muted-foreground text-sm">
+          {loadErrorMessage || 'Não foi possível carregar as aulas deste curso.'}
+        </p>
+        <button
+          onClick={() => setRetryTick(t => t + 1)}
+          className="inline-flex items-center gap-2 bg-primary hover:bg-primary-hover text-primary-foreground font-semibold px-4 py-2 rounded-lg text-sm transition-colors"
+        >
+          Tentar novamente
+        </button>
+      </div>
+    ) : !lessonsReady ? (
+      <p className="flex items-center gap-2 text-muted-foreground text-sm">
+        <Loader2 className="w-4 h-4 animate-spin" /> Carregando as aulas do curso…
+      </p>
+    ) : (
+      <p className="text-muted-foreground text-sm">
+        Este curso ainda está sendo preparado — as aulas aparecem aqui assim que a
+        sincronização terminar.
+      </p>
+    )
+  );
 
   return (
     <div className="min-h-screen bg-background">
@@ -635,9 +695,7 @@ export default function CourseDetailPage() {
 
             {tab === 'aulas' ? (
               <>
-                {lessons.length === 0 && (
-                  <p className="text-muted-foreground text-sm">O curso está sendo sincronizado, aguarde alguns segundos.</p>
-                )}
+                {lessons.length === 0 && estadoAulas}
                 {lessons.length > 0 && videoGroups.length === 0 && query.trim() && (
                   <p className="text-muted-foreground text-sm">Nenhuma aula encontrada para "{query}".</p>
                 )}
@@ -656,9 +714,7 @@ export default function CourseDetailPage() {
               </>
             ) : tab === 'arquivos' ? (
               <>
-                {lessons.length === 0 && (
-                  <p className="text-muted-foreground text-sm">O curso está sendo sincronizado, aguarde alguns segundos.</p>
-                )}
+                {lessons.length === 0 && estadoAulas}
                 {lessons.length > 0 && fileGroups.length === 0 && query.trim() && (
                   <p className="text-muted-foreground text-sm">Nenhum arquivo encontrado para "{query}".</p>
                 )}

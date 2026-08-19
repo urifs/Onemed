@@ -39,7 +39,9 @@ export function AccountMenu() {
   const [planDetailsOpen, setPlanDetailsOpen] = useState(false);
 
   useEffect(() => {
-    if (infoError && open) toast.error(infoError.message || 'Erro ao carregar dados da conta');
+    // Mensagem fixa em português: o `.message` cru do supabase-js vem em
+    // inglês ("Failed to fetch") e não diz nada útil pro aluno.
+    if (infoError && open) toast.error('Não foi possível carregar os dados da conta. Verifique sua conexão e tente de novo.');
   }, [infoError, open]);
 
   useEffect(() => {

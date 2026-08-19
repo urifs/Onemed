@@ -12,7 +12,7 @@ const PdfViewer = lazy(() =>
 import { OfficeViewer } from './OfficeViewer';
 import { TxtViewer } from './TxtViewer';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { downloadLesson } from '@/lib/lessonDownload';
+import { downloadLesson, startFileDownload } from '@/lib/lessonDownload';
 import { downloadFilenameFor, downloadUrlFor } from '@/lib/utils';
 import { openLessonInNewTab } from '@/lib/lessonOpen';
 import { DownloadUpsellModal } from './DownloadUpsellModal';
@@ -51,13 +51,17 @@ interface LessonPlayerProps {
   // stream de aula padrão. `bypassDownloadGate` libera o download nesses
   // contextos (o acervo já é conteúdo entre assinantes, sem trava de plano).
   resolveUrl?: (id: string) => Promise<string>;
+  // Versão do link assinada para DOWNLOAD (dlok=1). O link de streaming puro
+  // não serve: o worker ignora o `dl` sem a assinatura, e o "Baixar" virava um
+  // clique que não fazia nada.
+  resolveDownloadUrl?: (id: string) => Promise<string>;
   bypassDownloadGate?: boolean;
 }
 
 export function LessonPlayer({
   lesson, courseTitle, initialWatchedSeconds, onClose, onProgress, onPrev, onNext, hasPrev, hasNext,
   completed, onToggleCompleted, onGenerateFlashcards, onGenerateQuestions,
-  resolveUrl, bypassDownloadGate,
+  resolveUrl, resolveDownloadUrl, bypassDownloadGate,
 }: LessonPlayerProps) {
   const streamUrl = useLessonStreamUrl();
   const getUrl = resolveUrl || streamUrl;
@@ -125,6 +129,13 @@ export function LessonPlayer({
     for (const t of retryTimers.current) clearTimeout(t);
     retryTimers.current = [];
   };
+
+  // Aula atual, para as promessas assíncronas (sondarFalha, renovação de URL)
+  // conferirem antes de aplicar a conclusão: sem isso, uma sonda demorada da
+  // aula ANTERIOR podia ligar o embed/forceTs ou injetar o src antigo na aula
+  // nova que o aluno acabou de abrir.
+  const lessonIdRef = useRef(lesson.id);
+  lessonIdRef.current = lesson.id;
 
   useEffect(() => {
     let alive = true;
@@ -215,7 +226,11 @@ export function LessonPlayer({
     // Sonda só no primeiro erro: se for a propagação de permissão do Drive
     // (o caso comum), a resposta não é 429 nem TS e as tentativas seguem.
     if (src && mediaRetries.current === 0) {
+      const sondaDe = lesson.id;
       void sondarFalha(src).then(({ quotaMsg, ehTs, embedOk, expirado }) => {
+        // O aluno trocou de aula enquanto a sonda rodava: a conclusão é da
+        // aula antiga — aplicar aqui ligaria embed/forceTs na aula errada.
+        if (lessonIdRef.current !== sondaDe) return;
         if (quotaMsg) {
           quotaBlocked.current = true;
           // Só há para onde cair se o arquivo ainda estiver no Drive de
@@ -239,8 +254,8 @@ export function LessonPlayer({
           clearRetryTimers();
           mediaRetries.current = 0;
           getUrl(lesson.id)
-            .then(u => setSrc(u))
-            .catch(() => setError('Não foi possível carregar este arquivo. Tente novamente em instantes.'));
+            .then(u => { if (lessonIdRef.current === sondaDe) setSrc(u); })
+            .catch(() => { if (lessonIdRef.current === sondaDe) setError('Não foi possível carregar este arquivo. Tente novamente em instantes.'); });
           return;
         }
         if (ehTs && !isTsVideo) {
@@ -261,11 +276,23 @@ export function LessonPlayer({
     // aula nova — reiniciando a reprodução do zero no meio do vídeo.
     retryTimers.current.push(window.setTimeout(() => {
       if (quotaBlocked.current) return;
+      // `.load()` zera o currentTime: sem guardar o ponto, uma queda de rede
+      // aos 40 minutos de aula reiniciava o vídeo do zero e o aluno tinha
+      // que procurar onde estava na mão.
+      const v = videoRef.current;
+      const ponto = v?.currentTime || 0;
+      if (v && ponto > 1) {
+        // O elemento <video> é o MESMO entre aulas: o guard impede que um
+        // listener sobrevivente pule a aula NOVA pro ponto da antiga.
+        const deAula = lessonIdRef.current;
+        const retomar = () => { if (lessonIdRef.current === deAula) v.currentTime = ponto; };
+        v.addEventListener('loadedmetadata', retomar, { once: true });
+      }
       if (mpegtsPlayerRef.current) {
         mpegtsPlayerRef.current.unload();
         mpegtsPlayerRef.current.load();
       } else {
-        videoRef.current?.load();
+        v?.load();
       }
     }, delay));
   };
@@ -323,6 +350,24 @@ export function LessonPlayer({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [src, useMpegts]);
+
+  // Botão da tela de erro: recomeça o carregamento do zero (URL assinada
+  // nova, contadores zerados). Antes a tela dizia "Tente novamente em
+  // instantes" sem oferecer NENHUM jeito de tentar além de fechar e reabrir.
+  const tentarDeNovo = () => {
+    const daAula = lesson.id;
+    setError(null);
+    setSrc(null);
+    mediaRetries.current = 0;
+    quotaBlocked.current = false;
+    setUsarEmbed(false);
+    setImgRetryCount(0);
+    urlRenovacoes.current = 0;
+    clearRetryTimers();
+    getUrl(daAula)
+      .then(u => { if (lessonIdRef.current === daAula) setSrc(u); })
+      .catch(err => { if (lessonIdRef.current === daAula) setError(err.message); });
+  };
 
   const handleImageError = () => {
     // Imagem sofre do mesmo 403 de link vencido que o vídeo (mesma URL
@@ -399,9 +444,18 @@ export function LessonPlayer({
       // Minimizado, a plataforma atrás está em uso — o player não sequestra o
       // teclado (Escape/setas pertencem à página).
       if (minimized) return;
-      if (e.key === 'Escape') { onClose(); return; }
-      // Setas ← → também pulam 10s (fora de campos de texto). preventDefault
-      // impede o controle nativo do <video> de aplicar o pulo dele por cima.
+      // Em tela cheia nativa, Esc pertence ao navegador (sair da tela cheia).
+      // Sem esta checagem, o mesmo Esc saía da tela cheia E fechava o player
+      // inteiro — o aluno perdia a aula aberta só por querer voltar ao normal.
+      if (e.key === 'Escape') {
+        if (document.fullscreenElement) return;
+        onClose();
+        return;
+      }
+      // Setas ← → pulam 10s — mas SÓ quando a aula tem mídia. Em PDF/planilha
+      // as setas rolam a página; o preventDefault indiscriminado matava o
+      // scroll horizontal de apostila com zoom.
+      if (lesson.type !== 'video' && lesson.type !== 'audio') return;
       const t = e.target as HTMLElement | null;
       if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
       if (e.key === 'ArrowLeft') { e.preventDefault(); skip(-10); }
@@ -410,7 +464,7 @@ export function LessonPlayer({
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onClose, minimized]);
+  }, [onClose, minimized, lesson.type]);
 
   const handleTimeUpdate = () => {
     const v = videoRef.current;
@@ -555,12 +609,10 @@ export function LessonPlayer({
     setDownloading(true);
     try {
       if (resolveUrl) {
-        const url = await getUrl(lesson.id);
-        const frame = document.createElement('iframe');
-        frame.style.display = 'none';
-        frame.src = downloadUrlFor(url, downloadFilenameFor(lesson));
-        document.body.appendChild(frame);
-        window.setTimeout(() => frame.remove(), 120000);
+        // Contexto externo (acervo): pede o link de DOWNLOAD assinado quando
+        // existe; sem ele, cai no link de streaming (compatibilidade).
+        const url = await (resolveDownloadUrl || getUrl)(lesson.id);
+        await startFileDownload(downloadUrlFor(url, downloadFilenameFor(lesson)));
       } else {
         await downloadLesson(lesson);
       }
@@ -583,13 +635,17 @@ export function LessonPlayer({
     // Abre a aba já (gesto do clique) pra não cair no bloqueador de popup
     // enquanto o fetch do blob ainda está em andamento.
     const win = window.open('', '_blank');
+    if (!win) {
+      toast.error('Seu navegador bloqueou a aba de impressão. Libere os pop-ups deste site e tente de novo.');
+      return;
+    }
     try {
       const res = await fetch(src);
+      if (!res.ok && res.status !== 206) throw new Error();
       const blob = await res.blob();
       const blobUrl = URL.createObjectURL(blob);
-      if (!win) { URL.revokeObjectURL(blobUrl); return; }
       win.location.href = blobUrl;
-      const tryPrint = () => { try { win.print(); } catch { /* ignore */ } };
+      const tryPrint = () => { try { win.print(); } catch { /* visualizador da aba assume */ } };
       win.addEventListener('load', tryPrint);
       // Fallback: o visualizador nativo de PDF do navegador às vezes não
       // dispara 'load' no window pai.
@@ -600,7 +656,8 @@ export function LessonPlayer({
       setTimeout(() => URL.revokeObjectURL(blobUrl), 5 * 60 * 1000);
     } catch (err) {
       console.error('Failed to open file for printing', err);
-      win?.close();
+      win.close();
+      toast.error('Não foi possível preparar o arquivo para impressão. Tente novamente em instantes.');
     }
   };
 
@@ -799,7 +856,15 @@ export function LessonPlayer({
             className="w-full h-full rounded-lg border-0 bg-black"
           />
         ) : error ? (
-          <p className="text-white/70 text-sm max-w-sm text-center">{error}</p>
+          <div className="max-w-sm text-center">
+            <p className="text-white/70 text-sm mb-4">{error}</p>
+            <button
+              onClick={tentarDeNovo}
+              className="inline-flex items-center gap-2 bg-white/10 hover:bg-white/15 text-white font-semibold px-5 py-2.5 rounded-lg text-sm transition-colors"
+            >
+              <RotateCcw className="w-4 h-4" /> Tentar novamente
+            </button>
+          </div>
         ) : !src ? (
           <Loader2 className="w-8 h-8 text-primary animate-spin" />
         ) : isTsVideo && !mpegtsLib ? (

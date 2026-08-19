@@ -812,9 +812,17 @@ function DetailDialog({ itemId, initialFileId, currentUserId, onClose, onChanged
   };
 
   // Link do arquivo do acervo (worker de streaming), do mesmo jeito que a aula.
-  // Usado pelo LessonPlayer (reprodução/visualização) e pelo download.
+  // Usado pelo LessonPlayer para reprodução/visualização.
   const resolveArchiveUrl = useCallback(async (fileId: string): Promise<string> => {
     const { url } = await invokeArchive({ action: 'file_token', fileId });
+    return url;
+  }, []);
+
+  // Versão para DOWNLOAD: o servidor assina também o `.dl` e devolve a URL com
+  // `dlok=1`. Com o link de streaming puro o worker ignora o `dl` e o botão
+  // "Baixar" não baixava nada.
+  const resolveArchiveDownloadUrl = useCallback(async (fileId: string): Promise<string> => {
+    const { url } = await invokeArchive({ action: 'file_token', fileId, intent: 'download' });
     return url;
   }, []);
 
@@ -1050,6 +1058,7 @@ function DetailDialog({ itemId, initialFileId, currentUserId, onClose, onChanged
           onClose={() => setPlaying(null)}
           onProgress={() => { /* acervo não registra progresso de aula */ }}
           resolveUrl={resolveArchiveUrl}
+          resolveDownloadUrl={resolveArchiveDownloadUrl}
           bypassDownloadGate
         />,
         document.body,

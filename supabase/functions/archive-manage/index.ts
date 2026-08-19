@@ -350,8 +350,15 @@ serve(async (req) => {
       const streamBaseUrl = Deno.env.get('STREAM_PROXY_URL') || 'https://onemed-stream-lesson.onemed-stream.workers.dev'
       const mimeType = f.mime_type || ''
       const expiresAt = Math.floor(Date.now() / 1000) + STREAM_TTL_SECONDS
-      const sig = await hmacHex(streamSecret, `${f.drive_file_id}.${expiresAt}.${mimeType}`)
+      // `intent: 'download'` assina também o sufixo `.dl` e devolve a URL com
+      // `dlok=1` — sem isso o worker ignora o `dl` (por design, o dl sem
+      // assinatura era o furo fechado em 09/08) e o botão "Baixar" do acervo
+      // não baixava nada. Acervo é material entre assinantes, sem trava de
+      // plano — quem pode ABRIR o arquivo pode baixá-lo.
+      const querBaixar = body.intent === 'download'
+      const sig = await hmacHex(streamSecret, `${f.drive_file_id}.${expiresAt}.${mimeType}${querBaixar ? '.dl' : ''}`)
       const url = `${streamBaseUrl}/?id=${encodeURIComponent(f.drive_file_id)}&exp=${expiresAt}&sig=${sig}&mime=${encodeURIComponent(mimeType)}`
+        + (querBaixar ? '&dlok=1' : '')
       return json({ url, expiresAt })
     }
 

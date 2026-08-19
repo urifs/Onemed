@@ -15,10 +15,22 @@ interface PlanDetailsModalProps {
   grantedAt?: string | null;
 }
 
+// Rótulos que só existem aqui: PLAN_LABELS (plans.ts) cobre os planos à
+// venda, mas esta tela também abre para trial, admin e o 'paid' legado — sem
+// isto o aluno via o slug cru ("trial") como nome do plano.
+const EXTRA_LABELS: Record<string, string> = {
+  trial: 'Teste Grátis',
+  paid: 'Plano Pago',
+  admin: 'Administrador',
+};
+
 export function PlanDetailsModal({ open, onOpenChange, plan, email, whatsapp, amountPaid, expiresAt, isLifetime, grantedAt }: PlanDetailsModalProps) {
   const features = PLAN_FEATURES[plan] || [];
   // Admin não passa pelo enforce_session_limit, então não tem teto de telas.
   const deviceLimit = plan === 'admin' ? 'Ilimitado' : PLAN_DEVICE_LIMITS[plan] ?? DEFAULT_DEVICE_LIMIT;
+  // Trial e admin não têm valor de tabela — "R$ 0,00" como preço do plano só
+  // confundiria; a linha some.
+  const mostraValor = amountPaid > 0 && plan !== 'trial' && plan !== 'admin';
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -32,7 +44,7 @@ export function PlanDetailsModal({ open, onOpenChange, plan, email, whatsapp, am
         <div className="space-y-4">
           <div className="rounded-xl border border-primary/30 bg-primary/5 p-4">
             <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold mb-1">Seu plano</p>
-            <p className="text-foreground text-lg font-bold">{PLAN_LABELS[plan] || plan}</p>
+            <p className="text-foreground text-lg font-bold">{PLAN_LABELS[plan] || EXTRA_LABELS[plan] || 'Plano OneMed'}</p>
           </div>
 
           {features.length > 0 && (
@@ -49,12 +61,14 @@ export function PlanDetailsModal({ open, onOpenChange, plan, email, whatsapp, am
           )}
 
           <div className="rounded-xl border border-border divide-y divide-border overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-2.5 text-sm">
-              {/* Valor de TABELA do plano atual — nunca a diferença paga num
-                  upgrade (o servidor já manda o preço cheio em amountPaid). */}
-              <span className="text-muted-foreground flex items-center gap-2"><DollarSign className="w-3.5 h-3.5" /> Valor do plano</span>
-              <span className="text-foreground font-medium">{formatBRL(amountPaid)}</span>
-            </div>
+            {mostraValor && (
+              <div className="flex items-center justify-between px-4 py-2.5 text-sm">
+                {/* Valor de TABELA do plano atual — nunca a diferença paga num
+                    upgrade (o servidor já manda o preço cheio em amountPaid). */}
+                <span className="text-muted-foreground flex items-center gap-2"><DollarSign className="w-3.5 h-3.5" /> Valor do plano</span>
+                <span className="text-foreground font-medium">{formatBRL(amountPaid)}</span>
+              </div>
+            )}
             <div className="flex items-center justify-between px-4 py-2.5 text-sm">
               <span className="text-muted-foreground flex items-center gap-2"><Calendar className="w-3.5 h-3.5" /> Vencimento</span>
               <span className="text-foreground font-medium">{isLifetime ? 'Nunca expira' : expiresAt ? formatDateSP(expiresAt) : '—'}</span>

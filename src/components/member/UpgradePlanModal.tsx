@@ -241,7 +241,7 @@ export function UpgradePlanModal({ open, onOpenChange, currentPlan, userEmail, u
           )}
 
           <p className="text-xs text-muted-foreground text-center">
-            Você paga só a diferença do que já investiu — o valor acima já desconta o que você pagou no seu plano atual.
+            Você paga só a diferença entre os planos — o valor acima já desconta o preço integral do seu plano atual.
           </p>
         </div>
       </DialogContent>
