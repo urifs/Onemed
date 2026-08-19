@@ -3552,6 +3552,99 @@ abaixo. Agora só entram cursos do ano (`ANO_DA_VITRINE` em `src/lib/utils.ts`).
 aplicada e conferida em produção com conta de trial real — o sino lista os itens, o aviso do
 painel continua fora do trial, e a RPC do título recusa anônimo.
 
+### 2026-08-19 (sessão remota) — INCIDENTE: autorização do Google revogada derrubou TODOS os vídeos
+
+**Relato do dono, em produção:** "NENHUM VÍDEO ESTÁ CONSEGUINDO REPRODUZIR, PARA TODOS OS
+CLIENTES", com o print do erro nativo do `<video>` ("Não há nenhum vídeo com formato ou tipo MIME
+suportados").
+
+**Não era formato nem código — era credencial.** O worker respondia **502** para toda aula:
+
+```
+drive-storage-token  → 500   invalid_grant: "Token has been expired or revoked"
+drive-access-token   → 200   (devolve o access_token GUARDADO, sem validar)
+                       ↳ o Google recusa esse token com 401
+worker → nenhuma conta serve → 502 → o <video> mostra "MIME não suportado"
+```
+
+As DUAS contas do Google tiveram a autorização revogada. A de conteúdo
+(`onemedcursos`) já estava morta às **17:35**; a de armazenamento (`ufgravity`) aguentou até o
+access_token dela vencer às **17:59** — e foi aí que tudo parou. `drive_storage_accounts.updated_at`
+era **12/08, exatamente 7 dias antes**: é a assinatura do app OAuth com status **"Testing"** no
+Google Cloud, cujos refresh tokens o Google expira em 7 dias.
+
+⚠️ **`drive-access-token` responder 200 não significa que o token PRESTA:** ele só renova quando
+`token_expiry` está perto, e devolve o valor guardado no resto do tempo. Com a autorização
+revogada, o Google invalida o access_token que ainda não venceu no relógio — a função devolve 200
+e o Drive responde 401. **Ao diagnosticar, teste o token CONTRA o Google**, não confie no 200.
+
+**Saída de emergência medida e DESCARTADA:** o embed público do Drive (plano B das aulas sem
+franquia) responde **401 em 12 de 12 arquivos** sondados anonimamente — os cursos são
+compartilhados só com a nossa conta de leitura. Não existe contorno sem a credencial; reconectar
+era o único caminho.
+
+**Resolvido pelo dono reconectando as duas contas** em `/admin/drive` (os dois fluxos já pedem
+`access_type=offline` + `prompt=consent`, então o Google devolve refresh token novo; o
+`drive-oauth-callback` só sobrescreve o refresh token quando vem um novo). Verificado depois pelo
+caminho REAL do aluno: **13/13 aulas de cursos diferentes** com 206 e bytes de verdade (MP4,
+MPEG-TS e PDF), `x-cache: MISS` — busca real no Google, não cache.
+
+> ⚠️ **Cuidado ao verificar streaming:** o cache de trechos do worker devolve 206 de um trecho já
+> visto MESMO com a origem fora do ar. Uma "verificação" que bate num trecho já buscado dá falso
+> positivo — foi o que quase me fez declarar a plataforma no ar durante o incidente. Confira o
+> header `x-cache` e use uma faixa que ninguém pediu ainda.
+
+**Pendência do dono, para não repetir a cada 7 dias:** publicar o app OAuth (Google Cloud Console →
+Google Auth Platform → Público-alvo → **PUBLICAR APLICATIVO**), projeto `110017470335`. Enquanto
+estiver em "Testing", os refresh tokens morrem toda semana. O client da conta de armazenamento é
+outro (`GOOGLE_STORAGE_CLIENT_ID`) e pode estar em outro projeto — precisa ser publicado também.
+
+---
+
+### 2026-08-19 (sessão remota) — sincronização DIÁRIA da biblioteca + landing com o catálogo inteiro
+
+**Pedido:** "os cursos da landing devem ser os mesmos da plataforma de membros e sempre
+sincronizados, sincronizar todo dia... tem muito curso que não está lá ainda".
+
+**A landing já lia a mesma fonte** (`public_course_catalog`, ao vivo, 405 cursos ativos). O que
+faltava eram duas coisas diferentes:
+
+1. **A varredura do Drive só acontecia no clique** — o botão "Sincronizar biblioteca" do painel,
+   com o laço rodando na ABA do navegador. Curso novo no Drive só entrava quando alguém lembrava.
+2. **A landing mostrava só 6 das 18 categorias**, o resto atrás de um botão "Ver todas" —
+   "Extensivo & Intensivo · Residência", com 56 cursos e a que mais vende, era uma das escondidas.
+
+| Arquivo | Mudança |
+|---|---|
+| `20260819150000_library_auto_sync.sql` | `library_sync_state` (linha única, PK booleana com CHECK): posição da varredura, acumulados da rodada e resultado da última. RPC `library_sync_status()` (admin/viewer). Cron `library-auto-sync` a cada 2 min |
+| `member-sync-library` v44 | Modo `auto`: retoma do cursor GRAVADO, começa uma rodada por dia na janela 07h–10h UTC (04h–07h SP), teto de 200 fatias, registra falha. Passa a aceitar `CRON_SECRET` além do `MEMBER_SYNC_SECRET` |
+| `CoursesSection.tsx` | Todas as categorias; título igual ao da área de membros (o ano deixou de ser removido); estados de carregando e de ERRO com "tentar novamente"; categoria fora do mapa fixo entra no fim em vez de sumir |
+| `DriveSettings.tsx` | Card "Sincronização automática": estado, última rodada, cursos criados, fila e última falha |
+
+**Por que o estado NÃO pode viver no cursor HTTP:** cada invocação da Edge Function tem ~40s de
+orçamento, então uma rodada são várias invocações. É o mesmo motivo da fila durável de 31/07.
+O cron a cada 2 min é quase sempre um no-op de UM SELECT (a função decide se é hora); a frequência
+é o que faz a rodada fechar em ~20 min e o que recupera uma rodada interrompida.
+
+**Verificado em produção, ciclo completo:** forcei o estado para `running` e observei 4 fatias de
+`discover` (100 pastas por página, cursor persistido entre elas) → `crawl` → `done`, com o estado
+voltando a `idle` e a chamada seguinte respondendo `{"skipped":true,"reason":"fora da janela
+diária"}`. Totais conferidos: **411 cursos · 34.375 pastas · 210.557 arquivos · 12,19 TB · zero
+pasta com erro**. Na landing em produção (navegador real): **18 categorias renderizadas, zero erro
+de runtime**.
+
+**Compradores: 100 de cada vez.** A página puxava os 656 aprovados de uma vez com `select *`
+(fbp/fbc/user-agent em cada linha) só para somar receita no navegador.
+`admin_buyers_overview()` (migration `20260819160000`) soma no banco — receita acumulada, hoje,
+ontem e vendas por plano, com a janela do dia em **São Paulo**. A lista virou paginada de 100 com
+"Carregar mais", ordenada por `created_at desc, id desc` (sem o desempate por `id`, duas compras no
+mesmo instante repetem ou somem entre páginas), e a **busca passou a ir ao banco** — filtrar o que
+está na tela acharia só os 100 mais recentes, e o suporte procura justamente compras antigas.
+Exportar TXT busca todas as linhas na hora. Índice `buyers(status, created_at desc, id)`:
+`EXPLAIN` confirma Index Scan, 0,4 ms na primeira página.
+
+---
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
