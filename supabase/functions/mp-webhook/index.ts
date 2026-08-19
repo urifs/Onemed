@@ -332,8 +332,16 @@ async function processAffiliateSale(
     const amount = Number(transactionAmount ?? buyer.amount ?? 0)
     // Preço de tabela do plano; sem tabela (plano legado), o valor pago pelo
     // plano — nunca o total da transação, que inclui upsells.
-    const commissionBase = AFFILIATE_PLAN_PRICES[buyer.plan]
+    const precoDeTabela = AFFILIATE_PLAN_PRICES[buyer.plan]
       ?? (buyer.plan_amount != null ? Number(buyer.plan_amount) : amount)
+    // Num UPGRADE o comprador paga só a DIFERENÇA entre os planos, mas o preço
+    // de tabela é o do plano novo inteiro: a comissão saía sobre um valor que
+    // ninguém pagou (30% de R$1.497 numa venda de R$699 de diferença = 64% do
+    // que entrou). A base nunca pode passar do que foi cobrado pelo plano.
+    const cobradoPeloPlano = buyer.plan_amount != null ? Number(buyer.plan_amount) : null
+    const commissionBase = buyer.purchase_kind === 'upgrade' && cobradoPeloPlano != null
+      ? Math.min(precoDeTabela, cobradoPeloPlano)
+      : precoDeTabela
     const commission = Math.round(commissionBase * percent) / 100
 
     const { data: inserted, error: insErr } = await supabase.from('affiliate_sales')
@@ -642,6 +650,42 @@ serve(async (req) => {
       }
     }
 
+    // Dinheiro devolvido de verdade (reembolso/estorno) também tira o acesso
+    // que ESTA compra liberou — antes só a comissão do afiliado era revertida
+    // e o comprador seguia com acesso vitalício depois de receber o dinheiro
+    // de volta.
+    //
+    // 'cancelled' fica de fora de propósito: no Mercado Pago é quase sempre um
+    // boleto/PIX que expirou sem pagamento, e aí nenhum acesso foi concedido.
+    //
+    // Duas travas antes de revogar: (1) só se ESTA compra tinha concedido o
+    // acesso (access_granted), e (2) só se não houver OUTRA compra aprovada do
+    // mesmo e-mail sustentando o acesso — quem reembolsou o Mensal e depois
+    // comprou o Vitalício não pode perder o Vitalício.
+    if (['refunded', 'charged_back'].includes(status) && buyer.access_granted && buyer.email) {
+      const emailComprador = String(buyer.email).toLowerCase()
+      const { data: outrasCompras } = await supabase.from('buyers')
+        .select('id')
+        .ilike('email', emailComprador)
+        .eq('status', 'approved')
+        .eq('access_granted', true)
+        .neq('id', buyer.id)
+        .limit(1)
+
+      if (outrasCompras && outrasCompras.length > 0) {
+        console.warn('Estorno sem revogar: outra compra aprovada sustenta o acesso de', emailComprador)
+      } else {
+        const { error: revokeErr } = await supabase.from('accesses')
+          .update({ status: 'revoked' })
+          .ilike('email', emailComprador)
+          .eq('status', 'active')
+          .neq('access_type', 'trial')
+        if (revokeErr) console.error('Erro ao revogar acesso após estorno:', revokeErr.message)
+        else console.log('Acesso revogado após', status, 'para', emailComprador)
+        await supabase.from('buyers').update({ access_granted: false }).eq('id', buyer.id)
+      }
+    }
+
     // If approved, grant access and send email
     if (status === 'approved') {
       // Atomically mark access_granted = true ONLY if it was false
@@ -656,6 +700,20 @@ serve(async (req) => {
       if (!grantedRows || grantedRows.length === 0) {
         console.log('Access already granted for:', buyer.email, '— skipping duplicate (atomic check)')
         return new Response('ok', { headers: getCorsHeaders(req) })
+      }
+
+      // Uso do cupom contado AQUI, não na criação da preferência: quem abre o
+      // checkout e desiste não pode gastar um uso de um cupom com limite. A
+      // flag atômica acima garante uma contagem por venda, mesmo com webhook
+      // repetido. Falha aqui não desfaz a venda — o acesso vale mais que a
+      // estatística do cupom.
+      if (buyer.coupon_code) {
+        const { data: cupom } = await supabase.from('coupons')
+          .select('id').ilike('code', String(buyer.coupon_code)).maybeSingle()
+        if (cupom?.id) {
+          const { error: incErr } = await supabase.rpc('increment_coupon_use', { _coupon_id: cupom.id })
+          if (incErr) console.error('Erro ao contar uso do cupom:', incErr.message)
+        }
       }
 
       // Telas simultâneas extras compradas nesta transação (upsell no checkout
@@ -685,17 +743,29 @@ serve(async (req) => {
       // da conta — sem expiry, uma compra anual parecia idêntica a vitalícia.
       const accessType = PLAN_ACCESS_TYPE[buyer.plan] || 'paid'
       const durationDays = PLAN_DURATION_DAYS[buyer.plan]
-      const expiresAt = durationDays ? new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000).toISOString() : null
 
       const { data: existingAccess } = await supabase
         .from('accesses')
-        .select('id, access_type')
+        .select('id, access_type, expires_at')
         .eq('email', buyer.email)
         .eq('status', 'active')
         .neq('access_type', 'trial')
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle()
+
+      // Renovação ANTECIPADA soma ao que ainda resta, em vez de reiniciar a
+      // contagem de hoje: quem renovava o Anual faltando 40 dias perdia esses
+      // 40 dias — pagava por 12 meses e recebia 12 meses menos o que já tinha.
+      // Só conta prazo futuro (acesso vencido reinicia do zero, como antes).
+      const restanteMs = (() => {
+        const venc = existingAccess?.expires_at ? new Date(existingAccess.expires_at).getTime() : 0
+        const resta = venc - Date.now()
+        return resta > 0 ? resta : 0
+      })()
+      const expiresAt = durationDays
+        ? new Date(Date.now() + restanteMs + durationDays * 24 * 60 * 60 * 1000).toISOString()
+        : null
 
       // Nunca rebaixa quem já tem um nível vitalício igual ou superior — mas
       // permite upgrade (ex: já tinha lifetime, comprou lifetime_plus).

@@ -554,13 +554,16 @@ export default function CheckoutPage() {
           <div className="flex-1">
             <h3 className="font-secondary text-xl font-bold text-foreground mb-2">Atualizações Semanais + Lançamentos Instantâneos</h3>
             <p className="text-muted-foreground mb-4">Receba novos conteúdos toda semana na plataforma e tenha acesso imediato aos lançamentos assim que forem disponibilizados.</p>
+            {/* Só o que este upsell realmente entrega. "Cronogramas
+                personalizados" e "flashcards exclusivos" saíram daqui: essas
+                ferramentas são liberadas pelo PLANO (o servidor decide por
+                plano, não por upsell), então prometê-las aqui vendia algo que
+                a compra não muda. */}
             <ul className="space-y-2 mb-4">
               {[
                 'Novos cursos e materiais toda semana',
-                'Acesso prioritário a lançamentos',
-                'Cronogramas de estudo personalizados',
-                'Acesso a flashcards exclusivos',
-                'Notificações de novos conteúdos',
+                'Acesso prioritário aos lançamentos',
+                'Notificações quando entra conteúdo novo',
               ].map((f, i) => (
                 <li key={i} className="flex items-center gap-2 text-sm">
                   <Check className="w-4 h-4 text-accent-success flex-shrink-0" />
@@ -630,7 +633,7 @@ export default function CheckoutPage() {
               >−</button>
               <div className="min-w-[3rem] text-center">
                 <span className="text-2xl font-bold text-foreground tabular-nums">{extraScreens}</span>
-                <span className="block text-[11px] text-muted-foreground">tela(s)</span>
+                <span className="block text-[11px] text-muted-foreground">{extraScreens === 1 ? 'tela' : 'telas'}</span>
               </div>
               <button
                 type="button"
@@ -680,7 +683,11 @@ export default function CheckoutPage() {
             <p className="text-foreground font-semibold">{PLANS[selectedPlan].name}</p>
             {upsellSelected && <p className="text-accent-success text-sm">+ Atualizações Semanais</p>}
             {upsell2Selected && <p className="text-accent-info text-sm">+ Proteção Proxy</p>}
-            {extraScreens > 0 && <p className="text-primary text-sm">+ {extraScreens} tela(s) simultânea(s) extra(s)</p>}
+            {extraScreens > 0 && (
+              <p className="text-primary text-sm">
+                + {extraScreens === 1 ? '1 tela simultânea extra' : `${extraScreens} telas simultâneas extras`}
+              </p>
+            )}
           </div>
           <p className="text-accent-success font-bold text-lg">{formatBRL(getTotalPrice())}</p>
         </div>
