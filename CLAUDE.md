@@ -3645,6 +3645,22 @@ Exportar TXT busca todas as linhas na hora. Índice `buyers(status, created_at d
 
 ---
 
+## Google OAuth — os DOIS projetos (publicar para os tokens não expirarem)
+
+Descobertos em 19/08 pelo `tokeninfo` do próprio token vivo de cada conta
+(`https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=…` devolve `issued_to`;
+o número antes do hífen é o projeto). São projetos **diferentes** — publicar um só
+deixa a outra conta caindo a cada 7 dias:
+
+| conta | client_id | projeto |
+|---|---|---|
+| conteúdo `onemedcursos@gmail.com` | `110017470335-2l6er8r451vj5…` | **110017470335** |
+| armazenamento `ufgravity@gmail.com` | `21552280575-dlv6s3mluvcmn…` | **21552280575** |
+
+Publicar em: `https://console.cloud.google.com/auth/audience?project=<projeto>` →
+**PUBLICAR APLICATIVO**. Enquanto o status for "Testing", o Google expira os refresh
+tokens em 7 dias — foi exatamente o que derrubou todos os vídeos em 19/08.
+
 ## Meta Ads — Contexto Geral
 
 > Documentação completa em: https://github.com/urifs/onemedcursos-ads-management
@@ -3666,12 +3682,18 @@ Exportar TXT busca todas as linhas na hora. Índice `buyers(status, created_at d
 
 ### Renovação do META_CAPI_ACCESS_TOKEN
 
-> **🔴 VENCIDO desde 2026-07-14 13:16 PDT** (erro 190, confirmado em 31/07/2026 pela
-> função `admin-capi-health`). Enquanto não for renovado, NENHUMA compra chega à Meta
-> pelo servidor — só o disparo do navegador em `/payment/success`, que a maior parte
-> dos compradores nunca vê. Depois de renovar, rodar o reenvio em `/admin` →
-> card "Rastreamento Meta" → "Reenviar compras não enviadas" (a Meta só aceita
-> eventos de até **7 dias** atrás; o que passou disso é perda definitiva).
+> ✅ **RESOLVIDO — o token foi renovado e a CAPI está entregando.** Conferido em
+> 19/08/2026 na tabela `capi_events`: **382 eventos nos últimos 30 dias, 382 com
+> sucesso, ZERO falhas em toda a história da tabela.** O apagão de 14/07 a ~31/07
+> (erro 190, `Session has expired`) acabou.
+>
+> Como o token é de 60 dias, isto volta a vencer. O sintoma é silencioso — a falha
+> só ia para `console.error` e a retenção de log é de minutos. **A verificação barata
+> é olhar `capi_events`:** `select count(*) filter (where not success) from capi_events
+> where created_at > now() - interval '2 days'`. Diferente de zero, o token caiu.
+> Depois de renovar, rodar o reenvio em `/admin` → card "Rastreamento Meta" →
+> "Reenviar compras não enviadas" (a Meta só aceita eventos de até **7 dias** atrás;
+> o que passou disso é perda definitiva).
 
 **Caminho mais curto (não precisa do client_secret):**
 Events Manager → pixel "Site onemed" (`797374160058274`) → Configurações →
