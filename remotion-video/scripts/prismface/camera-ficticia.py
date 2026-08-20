@@ -46,7 +46,8 @@ cx, cy = W * 0.5, H * 0.38
 R, Rv = W * RMUL, H * RVMUL
 GX, GY = np.meshgrid(np.arange(W, dtype=np.float32), np.arange(H, dtype=np.float32))
 LIM = 1.45
-KX, KY = 0.62, 0.55   # recentragem parcial: gira no lugar sem perder a pista de translação
+KX, KY = 0.55, 0.15
+ESCORCO = 1.0        # quanto do encurtamento real é aplicado   # recentragem parcial: gira no lugar sem perder a pista de translação
 
 def amostra(sx, sy):
     x0 = np.clip(np.floor(sx), 0, W - 1).astype(np.int32); x1 = np.clip(x0 + 1, 0, W - 1)
@@ -62,6 +63,10 @@ def girar(yaw_deg, pitch_deg, dx=0.0, dy=0.0, esc=1.0, roll_deg=0.0):
     Y0 = (GY - cy) / esc - dy
     X = cx + X0 * math.cos(rl) + Y0 * math.sin(rl)
     Y = cy - X0 * math.sin(rl) + Y0 * math.cos(rl)
+    # encurtamento do rosto ao virar: largura cai com cos(yaw), altura com cos(pitch).
+    # é escala global, então nenhum traço deforma — o rosto só fica mais estreito.
+    X = cx + (X - cx) / max(0.55, math.cos(yaw) ** ESCORCO)
+    Y = cy + (Y - cy) / max(0.60, math.cos(pitch) ** ESCORCO)
     phi = np.clip(np.arcsin(np.clip((X - cx) / R, -0.999, 0.999)) - yaw, -LIM, LIM)
     th  = np.clip(np.arcsin(np.clip((Y - cy) / Rv, -0.999, 0.999)) - pitch, -LIM, LIM)
     # recentraliza: a cabeça gira no lugar em vez de deslizar para a borda
@@ -73,8 +78,8 @@ def girar(yaw_deg, pitch_deg, dx=0.0, dy=0.0, esc=1.0, roll_deg=0.0):
 UM = [(2.0, 0, 0),
       (0.7, -YAW, 0), (2.4, -YAW, 0), (0.7, 0, 0),
       (0.7,  YAW, 0), (2.4,  YAW, 0), (0.7, 0, 0),
-      (0.6, 0, -PITCH), (2.0, 0, -PITCH), (0.6, 0, 0),
-      (0.6, 0,  PITCH), (2.0, 0,  PITCH), (0.6, 0, 0)]
+      (0.6, 0, -PITCH), (3.0, 0, -PITCH), (0.6, 0, 0),
+      (0.6, 0,  PITCH), (3.0, 0,  PITCH), (0.6, 0, 0)]
 CICLO = UM * CICLOS
 total = sum(c[0] for c in CICLO); n = int(total * FPS)
 ease = lambda p: p * p * (3 - 2 * p)

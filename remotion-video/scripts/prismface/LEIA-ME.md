@@ -61,3 +61,45 @@ ffmpeg -i out/prismface-demo.mp4 -vf "fps=1,scale=150:-1" /tmp/q/f%03d.jpg
 
 Detector de rosto automático ajuda, mas **erra por omissão** (não pegou o mapa 3D
 nem as miniaturas do comparador). A conferência que vale é olhar os quadros.
+
+---
+
+## Versão 2 — a plataforma redesenhada (PF02)
+
+O redesenho deixou a leitura curta e tocável: a tela mostra o essencial e o
+detalhe abre numa folha que sobe do rodapé. O filme passou a mostrar isso
+acontecendo, então a gravação **interage** em vez de só rolar a página:
+
+| take | o que é gravado |
+|---|---|
+| `t_leitura` | a leitura abre com a foto e os pontos; um ponto é tocado e a folha abre |
+| `t_mapa3d` | "Ver o mapa em três dimensões" e o rosto girando com o dedo |
+| `t_achados` | as linhas de achado e a folha com o detalhe região por região |
+| `t_ritual` | as abas Manhã/Noite e a folha de um passo |
+| `t_evolucao` | os cartões de semana |
+| `t_jornada` | o comparador "antes e agora" deslizando |
+
+`gravar-telas-v2.js` faz tudo isso. Três detalhes que custaram tempo:
+
+1. **POST precisa do corpo.** A interceptação de rede tem que repassar
+   `method`, `headers` e `postData` — sem isso qualquer ação do app (inclusive
+   `/api/analyze`) falha com "Failed to fetch" e a tela mostra erro.
+2. **Arrastar pinta seleção azul.** Um `user-select: none` global entra por
+   init script; sem ele o comparador fica com meia tela azul no vídeo.
+3. **A leitura tem teto de 3 por 24 h.** Se `/api/analyze` responder 429, não é
+   falha: é o limite do produto.
+
+### Leitura com o rosto fictício
+
+Vale insistir para a captura fechar com 3 poses válidas — aí a leitura inteira
+(foto, mapa 3D, comparador) nasce com o rosto fictício e nada precisa ser
+substituído depois. O que destravou isso foi o **encurtamento**: além do giro,
+a largura do quadro cai com `cos(yaw)` e a altura com `cos(pitch)`, que é o
+sinal geométrico que o detector de pose usa. É escala global — nenhum traço do
+rosto deforma.
+
+```bash
+python3 camera-ficticia.py 34 26 0.86 1.05 /tmp/cam.y4m 7
+```
+
+Com 3 de 5 poses o app oferece "Seguir com as fotos que já temos".
