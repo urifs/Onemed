@@ -135,6 +135,7 @@ import { V42_Prescricao, V42_DURATION } from './creatives/V42_Prescricao';
 import { V43_Exames, V43_DURATION } from './creatives/V43_Exames';
 import { V44_Anamnese, V44_DURATION } from './creatives/V44_Anamnese';
 import { V45_Bolso, V45_DURATION } from './creatives/V45_Bolso';
+import { PF01_Prismface, PF01_DURATION } from './creatives/PF01_Prismface';
 import { C73_Quiz, C73_DURATION, C74_Quiz, C74_DURATION, C75_Quiz, C75_DURATION, C76_Quiz, C76_DURATION, C77_Quiz, C77_DURATION, C78_Quiz, C78_DURATION, C79_Quiz, C79_DURATION, C80_Quiz, C80_DURATION, C81_Quiz, C81_DURATION, C82_Quiz, C82_DURATION } from './creatives/QuizComps';
 import { AD01, AD02, AD03, AD04, AD05, AD06, AD07, AD08, AD09, AD10 } from './creatives/AdImages';
 import { POSTS, makePostComp } from './creatives/PostImages';
@@ -291,6 +292,7 @@ const CREATIVES: Array<[string, React.FC, number]> = [
   ['V43-Exames', V43_Exames, V43_DURATION],
   ['V44-Anamnese', V44_Anamnese, V44_DURATION],
   ['V45-Bolso', V45_Bolso, V45_DURATION],
+  ['PF01-Prismface', PF01_Prismface, PF01_DURATION],
 ];
 
 export const RemotionRoot: React.FC = () => {

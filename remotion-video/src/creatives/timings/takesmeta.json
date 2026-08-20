@@ -14,5 +14,16 @@
  "n_dose": 40.88,
  "n_sugestao": 44.12,
  "n_diag": 38.64,
- "n_anam": 42.88
+ "n_anam": 42.88,
+ "t_captura": 248.08,
+ "t_config": 11.08,
+ "t_jornada": 25.88,
+ "t_landing": 17.84,
+ "t_leitura": 34.52,
+ "t_login": 18.64,
+ "t_notif": 9.12,
+ "t_plano": 32.96,
+ "t_prep": 13.4,
+ "t_ritual": 27.88,
+ "t_metodo": 23.92
 }
