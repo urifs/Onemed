@@ -2,7 +2,7 @@ import React from 'react';
 import { AbsoluteFill, Audio, Sequence, staticFile, useCurrentFrame } from 'remotion';
 import timing from './timings/pf.json';
 import {
-  FPS, DELAY, FontesPrism, AREIA, PORCELANA, LINHO, ROSA_PO, ROSA, CAFE, TAUPE, SALVIA,
+  FPS, DELAY, FontesPrism, AREIA, PORCELANA, LINHO, ROSA, CAFE, TAUPE, SALVIA,
   DISPLAY, SANS, FundoPrism, Arco, Celular, Eyebrow, Titulo, Chip, VarreduraArco,
   win, outB, suave, surge,
 } from './prismkit';
@@ -141,6 +141,7 @@ const CAPS: Cap[] = [
 ];
 
 const fimUltimo = CAPS[CAPS.length - 1].fim;
+const FIM_S = PF01_DURATION / FPS;
 
 export const PF01_Prismface: React.FC = () => {
   const frame = useCurrentFrame();
@@ -157,7 +158,6 @@ export const PF01_Prismface: React.FC = () => {
   /* fecho */
   const fechoAt = fimUltimo;
   const pFecho = outB(win(t, fechoAt + 0.2, fechoAt + 1.2));
-  const pAviso = outB(win(t, fechoAt + 3.2, fechoAt + 4.2));
 
   return (
     <AbsoluteFill style={{ background: AREIA }}>
@@ -262,15 +262,6 @@ export const PF01_Prismface: React.FC = () => {
               prismface.com.br
             </div>
           </div>
-          {/* aviso obrigatório do produto */}
-          <div style={{
-            position: 'absolute', left: 80, right: 80, bottom: 120, opacity: pAviso,
-            background: `${ROSA_PO}80`, borderRadius: 14, padding: '30px 34px',
-            fontFamily: SANS, fontSize: 26, color: CAFE, lineHeight: 1.5, textAlign: 'center',
-          }}>
-            Este conteúdo é orientação cosmética e de bem-estar. Não substitui consulta
-            com dermatologista ou médico. Fórmulas manipuladas e itens sinalizados exigem prescrição.
-          </div>
         </AbsoluteFill>
       )}
 
@@ -278,7 +269,10 @@ export const PF01_Prismface: React.FC = () => {
       <Sequence from={Math.round(D * FPS)}>
         <Audio src={staticFile('narration/pf.mp3')} />
       </Sequence>
-      <Audio src={staticFile('narration/pf_musica.mp3')} volume={0.5} />
+      <Audio
+        src={staticFile('narration/pf_musica.mp3')}
+        volume={f => 0.5 * (1 - suave(win(f / FPS, FIM_S - 2.2, FIM_S)))}
+      />
     </AbsoluteFill>
   );
 };
