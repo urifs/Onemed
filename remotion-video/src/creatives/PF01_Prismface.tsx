@@ -35,7 +35,7 @@ const CAPS: Cap[] = [
     zoom: [0.98, 1.03], desloca: [30, -10],
   },
   {
-    at: D + 7.9, fim: D + 13.0, take: 't_login', from: 9.6,
+    at: D + 7.9, fim: D + 13.0, take: 't_painel', from: 3.0,
     eyebrow: 'seu espaço',
     titulo: <>Tudo começa<br />por você</>,
     chips: [[D + 8.6, D + 12.8, 'sua conta, seu histórico, seu ritmo']],
@@ -56,7 +56,7 @@ const CAPS: Cap[] = [
     zoom: [1.0, 1.04], desloca: [0, -24],
   },
   {
-    at: D + 23.2, fim: D + 29.4, take: 't_captura', from: 18.0,
+    at: D + 23.2, fim: D + 29.4, take: 't_captura', from: 11.0,
     eyebrow: 'captura guiada por voz',
     titulo: <>Cinco poses.<br />A voz conduz.</>,
     chips: [
@@ -66,20 +66,20 @@ const CAPS: Cap[] = [
     zoom: [1.02, 1.07], desloca: [-10, -34],
   },
   {
-    at: D + 29.4, fim: D + 35.4, take: 't_captura', from: 44.0,
+    at: D + 29.4, fim: D + 35.4, take: 't_captura', from: 20.0,
     eyebrow: 'sem precisar olhar a tela',
     titulo: <>A voz pede,<br />o som confirma</>,
     chips: [[D + 31.9, D + 35.2, 'nenhum vídeo é gravado — só as fotos de cada pose']],
     zoom: [1.03, 1.08], desloca: [-14, -40],
   },
   {
-    at: D + 35.4, fim: D + 38.6, take: 't_captura', from: 74.0,
+    at: D + 35.4, fim: D + 38.6, take: 't_leitura', from: 5.2,
     eyebrow: 'sua leitura de pele',
     titulo: <>Seu rosto vira<br />um mapa</>,
     zoom: [1.04, 1.09], desloca: [-16, -44],
   },
   {
-    at: D + 38.6, fim: D + 56.0, take: 't_leitura', from: 11.2,
+    at: D + 38.6, fim: D + 56.0, take: 't_leitura', from: 9.8,
     eyebrow: 'região por região',
     titulo: <>O que foi visto,<br />e como cuidar</>,
     chips: [
@@ -91,7 +91,7 @@ const CAPS: Cap[] = [
     zoom: [1.0, 1.09], desloca: [10, -70],
   },
   {
-    at: D + 56.0, fim: D + 79.2, take: 't_plano', from: 2.4,
+    at: D + 56.0, fim: D + 79.2, take: 't_ritualdet', from: 7.0,
     eyebrow: 'seu ritual',
     titulo: <>Manhã e noite,<br />passo a passo</>,
     chips: [
@@ -104,7 +104,7 @@ const CAPS: Cap[] = [
     zoom: [1.0, 1.09], desloca: [10, -80],
   },
   {
-    at: D + 79.2, fim: D + 92.0, take: 't_ritual', from: 2.0,
+    at: D + 79.2, fim: D + 92.0, take: 't_ritual', from: 1.0,
     eyebrow: 'seu cronograma',
     titulo: <>A plataforma<br />acompanha seu dia</>,
     chips: [
@@ -115,21 +115,21 @@ const CAPS: Cap[] = [
     zoom: [1.0, 1.06], desloca: [0, -50],
   },
   {
-    at: D + 92.0, fim: D + 98.0, take: 't_notif', from: 1.2,
+    at: D + 92.0, fim: D + 98.0, take: 't_notif', from: 1.0,
     eyebrow: 'a cada semana',
     titulo: <>Uma nova leitura,<br />o que mudou</>,
     chips: [[D + 93.0, D + 97.8, 'comparação região por região, semana a semana']],
     zoom: [1.0, 1.05], desloca: [0, -26],
   },
   {
-    at: D + 98.0, fim: D + 105.2, take: 't_jornada', from: 12.6,
+    at: D + 98.0, fim: D + 105.2, take: 't_jornada2', from: 15.0,
     eyebrow: 'minha jornada',
     titulo: <>Dias de ritual,<br />sequência, evolução</>,
     chips: [[D + 99.0, D + 105.0, 'sua história de pele, num só lugar']],
     zoom: [1.0, 1.07], desloca: [10, -56],
   },
   {
-    at: D + 105.2, fim: D + 115.0, take: 't_config', from: 0.8,
+    at: D + 105.2, fim: D + 115.0, take: 't_config', from: 3.0,
     eyebrow: 'privacidade',
     titulo: <>Suas fotos são<br />dado biométrico</>,
     chips: [
