@@ -137,6 +137,7 @@ import { V44_Anamnese, V44_DURATION } from './creatives/V44_Anamnese';
 import { V45_Bolso, V45_DURATION } from './creatives/V45_Bolso';
 import { PF01_Prismface, PF01_DURATION } from './creatives/PF01_Prismface';
 import { PF02_Prismface, PF02_DURATION } from './creatives/PF02_Prismface';
+import { PF03_Prismface, PF03_DURATION } from './creatives/PF03_Prismface';
 import { PRISM_POSTS } from './creatives/PrismPosts';
 import { C73_Quiz, C73_DURATION, C74_Quiz, C74_DURATION, C75_Quiz, C75_DURATION, C76_Quiz, C76_DURATION, C77_Quiz, C77_DURATION, C78_Quiz, C78_DURATION, C79_Quiz, C79_DURATION, C80_Quiz, C80_DURATION, C81_Quiz, C81_DURATION, C82_Quiz, C82_DURATION } from './creatives/QuizComps';
 import { AD01, AD02, AD03, AD04, AD05, AD06, AD07, AD08, AD09, AD10 } from './creatives/AdImages';
@@ -296,6 +297,7 @@ const CREATIVES: Array<[string, React.FC, number]> = [
   ['V45-Bolso', V45_Bolso, V45_DURATION],
   ['PF01-Prismface', PF01_Prismface, PF01_DURATION],
   ['PF02-Prismface', PF02_Prismface, PF02_DURATION],
+  ['PF03-Prismface', PF03_Prismface, PF03_DURATION],
 ];
 
 export const RemotionRoot: React.FC = () => {
