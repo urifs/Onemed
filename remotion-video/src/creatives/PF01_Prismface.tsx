@@ -2,7 +2,7 @@ import React from 'react';
 import { AbsoluteFill, Audio, Sequence, staticFile, useCurrentFrame } from 'remotion';
 import timing from './timings/pf.json';
 import {
-  FPS, DELAY, AREIA, PORCELANA, LINHO, ROSA_PO, ROSA, CAFE, TAUPE, SALVIA,
+  FPS, DELAY, FontesPrism, AREIA, PORCELANA, LINHO, ROSA_PO, ROSA, CAFE, TAUPE, SALVIA,
   DISPLAY, SANS, FundoPrism, Arco, Celular, Eyebrow, Titulo, Chip, VarreduraArco,
   win, outB, suave, surge,
 } from './prismkit';
@@ -161,6 +161,7 @@ export const PF01_Prismface: React.FC = () => {
 
   return (
     <AbsoluteFill style={{ background: AREIA }}>
+      <FontesPrism />
       <FundoPrism t={t} />
 
       {/* ---------- corpo: capítulo atual ---------- */}

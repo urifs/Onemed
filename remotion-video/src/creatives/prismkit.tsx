@@ -24,21 +24,25 @@ export const FPS = 30;
 export const DELAY = 0.6;
 
 /* fontes do próprio produto, carregadas antes do primeiro quadro */
-const handle = delayRender('fontes prism.face');
-if (typeof document !== 'undefined') {
-  const carregar = async () => {
-    const prata = new FontFace('PrataVid', `url(${staticFile('fonts/Prata-Regular.ttf')})`);
-    const fig = new FontFace('FigtreeVid', `url(${staticFile('fonts/Figtree-Regular.ttf')})`);
-    const figSb = new FontFace('FigtreeVid', `url(${staticFile('fonts/Figtree-SemiBold.ttf')})`, { weight: '600' });
-    await Promise.all([prata.load(), fig.load(), figSb.load()]).then(fs => {
-      fs.forEach(f => (document.fonts as unknown as FontFaceSet).add(f));
-    });
-    continueRender(handle);
-  };
-  carregar().catch(() => continueRender(handle));
-} else {
-  continueRender(handle);
-}
+export const FontesPrism: React.FC = () => {
+  const [handle] = React.useState(() => delayRender('fontes prism.face'));
+  React.useEffect(() => {
+    const css = `
+      @font-face { font-family: 'PrataVid'; src: url('${staticFile('fonts/Prata-Regular.ttf')}') format('truetype'); font-display: block; }
+      @font-face { font-family: 'FigtreeVid'; src: url('${staticFile('fonts/Figtree-Regular.ttf')}') format('truetype'); font-weight: 400; font-display: block; }
+      @font-face { font-family: 'FigtreeVid'; src: url('${staticFile('fonts/Figtree-SemiBold.ttf')}') format('truetype'); font-weight: 600; font-display: block; }
+    `;
+    const el = document.createElement('style');
+    el.textContent = css;
+    document.head.appendChild(el);
+    Promise.all([
+      document.fonts.load("400 40px 'PrataVid'"),
+      document.fonts.load("400 40px 'FigtreeVid'"),
+      document.fonts.load("600 40px 'FigtreeVid'"),
+    ]).then(() => continueRender(handle)).catch(() => continueRender(handle));
+  }, [handle]);
+  return null;
+};
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 export const win = (t: number, a: number, b: number) => clamp01((t - a) / (b - a));
