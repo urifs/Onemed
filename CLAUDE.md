@@ -3683,6 +3683,69 @@ Conferido com os 195 pedidos reais: 79 aprovados, R$ 4.289,96 — bate com o ban
 
 ---
 
+### 2026-08-21 (sessão remota) — as ferramentas de IA passam a LER o vídeo
+
+**Relato do dono:** o gerador de flashcards dizia que não conseguiu ler o conteúdo do material,
+"independente se é vídeo ou PDF" — e são ferramentas pagas.
+
+**A causa, medida antes de mexer:** as funções mandavam **os primeiros 10 MB do arquivo** ao
+modelo. Um MP4 só é decifrável em pedaço quando o índice (caixa `moov`) está no COMEÇO. Sondei 25
+aulas caminhando pelos cabeçalhos das caixas: **19 (76%) têm o índice no FIM**. Nelas o modelo
+recebia bytes indecifráveis e a ferramenta caía em "usei só o título" — o aluno pagava por uma
+geração feita em cima do NOME do arquivo.
+
+| situação | aulas | o que a IA lia |
+|---|---|---|
+| vídeo com índice no fim | ~76% dos vídeos | **nada** |
+| vídeo com índice no início | ~24% | só os ~2 primeiros minutos |
+| `video/mp2t` (nem entrava no filtro de mime) | **12.015** | **nada** |
+| PDF acima de 13 MB | **5.699** | **nada** |
+
+**A saída: mandar a VOZ do professor, que é onde o conteúdo da aula está.** Áudio de 10 minutos
+pesa 1,4 a 18 MB; o vídeo equivalente tem centenas de MB.
+
+`supabase/functions/_shared/media-audio.ts` (novo) extrai a trilha de áudio **sem ffmpeg**:
+1. Caminha pelos cabeçalhos das caixas de topo (16 bytes cada) até achar o `moov`, esteja onde
+   estiver — custa alguns KB, não baixa o arquivo.
+2. Baixa só o `moov` e lê as tabelas da trilha de som (`stsd`/`stts`/`stsc`/`stsz`/`stco`/`co64`),
+   que dizem onde cada amostra de áudio mora.
+3. Escolhe janela e agrupamento que caibam em **DOIS orçamentos ao mesmo tempo** — nº de
+   requisições (≤48) e bytes transferidos (≤60 MB) —, descendo de 20 para 1,5 minuto até caber.
+   Isso é necessário porque as amostras vivem intercaladas com o vídeo: pedir só elas custa
+   **1.300 a 18.000 requisições**, e pedir o trecho contínuo custa **23 a 387 MB**.
+4. Remonta com cabeçalho ADTS → um `.aac` que o modelo lê direto.
+
+⚠️ **Blocos em PARALELO (8 por vez):** sequencial, o pior caso levava 70s — a function tem 150s e
+ainda precisa chamar o modelo depois. Com paralelismo caiu para 20s.
+
+**MPEG-TS tem caminho próprio** (`extrairAudioDeTsProgressivo`): não tem índice, então lê do começo
+em janelas de 16 MB até juntar áudio suficiente. Descobre o PID de áudio pelo PMT e junta a carga
+dos pacotes pulando o cabeçalho PES. Cobre também os arquivos de extensão mentirosa (os 62 `.flv`
+que são TS por dentro).
+
+**Também nesta leva:** PDF acima do orçamento vai nas **primeiras páginas** (`primeirasPaginas`,
+pdf-lib com `ignoreEncryption`) em vez de ser descartado; e o filtro de formatos passou a aceitar
+qualquer `video/*` e `audio/*` — quem decide agora é o extrator, não uma lista de containers.
+
+**Validação:** 12/12 MP4 de cursos diferentes e 6/6 MPEG-TS produziram AAC que o `ffprobe`
+reconhece, com duração e taxa esperadas. Em produção, na aula de **622 MB com o índice em 591 MB**
+(a IA lia zero dela): 5 cartas com conteúdo clínico da fala do professor, em 18s — "fator de risco
+para icterícia neonatal hemolítica, em ~20% das mães", "taquipneia transitória, síndrome de
+aspiração meconial, doença da membrana hialina". O `member-assistant` (v13), na mesma aula,
+responde citando o que o professor diz.
+
+⚠️ O direcionamento do prompt importa: sem instrução, a janela inicial (abertura da aula) gerava
+cartas sobre a ESTRUTURA da aula ("qual o tema principal"). O texto que acompanha o áudio agora
+manda extrair o conteúdo médico e ignorar saudação, avisos de turma e "o que veremos hoje".
+
+**Ainda pendente (a próxima etapa desta frente):** cache de transcrição
+(`lesson_transcripts` + job em segundo plano). Hoje cada geração lê uma JANELA da aula (1,5 a 15
+min) e transfere de novo. Transcrevendo uma vez e guardando, as ferramentas passam a ler a aula
+INTEIRA, na hora, sem gastar franquia de download de novo. Formatos ainda sem leitura: epub, docx
+e Anki (18.488 arquivos no total, contando os já resolvidos).
+
+---
+
 ## Google OAuth — os DOIS projetos (publicar para os tokens não expirarem)
 
 Descobertos em 19/08 pelo `tokeninfo` do próprio token vivo de cada conta
