@@ -305,7 +305,12 @@ export async function montarPlanilhaDaLoja(pedidos: OrderRow[], opts: ExportOpti
     }
     const linhas = [...porEmail.entries()].map(([email, itens]) => {
       const ap = itens.filter(i => i.status === 'approved');
-      const instantes = itens.map(i => new Date(i.created_at).getTime()).filter(n => !Number.isNaN(n));
+      // "Compra" aqui é a compra CONCLUÍDA: só aprovados, e no instante do
+      // PAGAMENTO quando ele existe — mesmo critério de "Primeira/Última
+      // venda" do quadro por curso. Sobre todos os pedidos, um checkout
+      // aberto e nunca pago virava a "última compra" da pessoa, e quem só
+      // tem pendente ganhava data de compra sem ter comprado nada.
+      const instantes = ap.map(i => new Date(i.paid_at || i.created_at).getTime()).filter(n => !Number.isNaN(n));
       return {
         email,
         nome: itens.find(i => i.buyer_name)?.buyer_name || '',

@@ -78,7 +78,13 @@ export default function BuyersPage() {
       } else {
         setStats({
           totalRevenue: Number(r.total_revenue) || 0,
+          // Duas grandezas diferentes, e cada uma tem o seu lugar:
+          // `totalCount` são LINHAS de compra (denominador da lista paginada),
+          // `totalPessoas` são pessoas distintas (o cartão "Compradores").
+          // Renovação, upgrade e telas extras criam linha nova para o mesmo
+          // e-mail — hoje são 663 linhas para 643 pessoas.
           totalCount: Number(r.total_count) || 0,
+          totalPessoas: Number(r.total_buyers ?? r.total_count) || 0,
           total: Number(r.today?.count) || 0,
           approved: Number(r.today?.approved) || 0,
           revenue: Number(r.today?.revenue) || 0,
@@ -155,7 +161,18 @@ export default function BuyersPage() {
         await supabase.from('buyers').select('email, whatsapp').eq('status', 'approved')
           .order('created_at', { ascending: false }).range(f, t)
       );
-      const lines = todos.map((b: any) => `${b.email} ${b.whatsapp || ''}`.trimEnd());
+      // Uma linha por PESSOA, não por compra. Quem renovou ou fez upgrade tem
+      // várias linhas em `buyers`, e numa lista de contatos isso vira mensagem
+      // repetida para o mesmo cliente. A consulta vem em ordem decrescente de
+      // data, então a primeira ocorrência de cada e-mail é a compra mais
+      // recente — é dela que o WhatsApp mais atual sai.
+      const porEmail = new Map<string, any>();
+      for (const b of todos as any[]) {
+        const chave = String(b.email || '').trim().toLowerCase();
+        if (!chave || porEmail.has(chave)) continue;
+        porEmail.set(chave, b);
+      }
+      const lines = [...porEmail.values()].map((b: any) => `${b.email} ${b.whatsapp || ''}`.trimEnd());
       const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -163,7 +180,7 @@ export default function BuyersPage() {
       a.download = `compradores_${new Date().toISOString().slice(0, 10)}.txt`;
       a.click();
       URL.revokeObjectURL(url);
-      toast.success(`${todos.length} compradores exportados`);
+      toast.success(`${lines.length} compradores exportados`);
     } catch {
       toast.error('Não foi possível exportar. Tente novamente.');
     } finally {
@@ -300,7 +317,7 @@ export default function BuyersPage() {
               a mesma coisa — o número de hoje é o que importa, e ontem existe
               para dar a referência de comparação logo abaixo dele. */}
           {[
-            { label: 'Compradores', value: stats ? stats.totalCount : '—', ontem: null, icon: Users, color: 'text-primary' },
+            { label: 'Compradores', value: stats ? stats.totalPessoas : '—', ontem: null, icon: Users, color: 'text-primary' },
             {
               label: 'Receita',
               value: stats ? formatBRL(stats.revenue) : '—',

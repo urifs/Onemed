@@ -217,6 +217,13 @@ export default function StoreAdminPage() {
               <div className="divide-y divide-border">
                 {products.map(p => {
                   const compradores = aprovados.filter(o => o.product_id === p.id);
+                  // PESSOAS, não linhas: `compradores` é uma lista de PEDIDOS
+                  // aprovados, e nada impede a mesma pessoa comprar o mesmo
+                  // recurso duas vezes. Um badge com ícone de gente afirmando
+                  // "compradores" tem que contar gente — é o mesmo critério da
+                  // exportação ("pagantes") e da coluna "Compradores pagantes"
+                  // da planilha, que hoje respondiam diferente da tela.
+                  const pessoas = new Set(compradores.map(o => o.email.toLowerCase())).size;
                   const aberto = expanded === p.id;
                   return (
                   <div key={p.id}>
@@ -244,7 +251,7 @@ export default function StoreAdminPage() {
                       className="inline-flex items-center gap-1.5 text-xs text-muted-foreground shrink-0 tabular-nums"
                       title="Compradores (pagamentos aprovados)"
                     >
-                      <Users className="w-3.5 h-3.5" /> {compradores.length}
+                      <Users className="w-3.5 h-3.5" /> {pessoas}
                     </span>
                     <span className="text-sm font-semibold text-foreground tabular-nums shrink-0">{formatBRL(p.price)}</span>
                     <button
@@ -282,7 +289,10 @@ export default function StoreAdminPage() {
                       ) : (
                         <div className="space-y-2">
                           <p className="text-xs uppercase tracking-wide font-semibold text-muted-foreground">
-                            {compradores.length} comprador{compradores.length !== 1 ? 'es' : ''} ·
+                            {pessoas} comprador{pessoas !== 1 ? 'es' : ''}
+                            {/* Só aparece quando os dois números divergem — alguém
+                                que comprou o mesmo recurso mais de uma vez. */}
+                            {compradores.length !== pessoas && <> · {compradores.length} pagamentos</>} ·
                             {' '}{formatBRL(compradores.reduce((t, o) => t + Number(o.price_paid), 0))}
                           </p>
                           {compradores.map(o => (
