@@ -3746,6 +3746,45 @@ e Anki (18.488 arquivos no total, contando os já resolvidos).
 
 ---
 
+### 2026-08-21 (sessão remota) — curso "MedWay 2026" importado (1.058 aulas, 212 GB)
+
+Pasta `1YbuKwKxK5p3_VuG6k5FlRp5mANYAbeHa`, da conta de ARMAZENAMENTO (`ufgravity`) — a conta de
+conteúdo nem a enxerga (404). O link É o curso, então `--curso-unico`.
+
+**Varredura independente antes de gravar** (recursiva, atalhos resolvidos): 206 pastas, 1.059
+arquivos, 212,51 GB, **zero erros de listagem** — números idênticos aos do script.
+
+| armadilha conhecida | resultado |
+|---|---|
+| `.gdrive` (ponteiros de backup) | 0 |
+| downloads pela metade (`.crdownload`, `.part`) | 0 |
+| arquivos de 0 byte | 0 |
+| `drive_file_id` já na plataforma | 0 |
+| **stub falso de 55.855 bytes** | **1 — descartado** |
+
+⚠️ O stub era `Flashcards Originais.apkg.zip`: 55.855 bytes exatos e começando com `<?xml ve` —
+não é baralho do Anki, é a mesma assinatura de stub de 04/08. Como era o ÚNICO item da pasta
+`[FLASHCARDS]`, o módulo ficaria vazio no mapa do curso; removido.
+
+Importado: **1.058 aulas** (536 vídeos + 522 PDFs), 8 módulos na ordem certa (CRONOGRAMA,
+01. Mentoria … 07. Radiologia). Categoria corrigida de "Outros cursos" para **"Extensivo &
+Intensivo · Residência"**, a mesma dos MedWay irmãos (Extensivo, Intensivo SP, CR Medway).
+
+**Verificado pelo caminho REAL do aluno** (conta de teste criada e apagada): streaming **7/7** em
+módulos diferentes, com bytes de verdade (`ftyp` nos MP4, `%PDF` nos PDFs); e o gerador de
+flashcards leu a aula introdutória sem nenhum aviso, com o extrator de áudio novo.
+
+> A pasta ser da conta de armazenamento **não exigiu compartilhamento** desta vez: desde 12/08 o
+> worker e as ferramentas de IA tentam a conta de armazenamento PRIMEIRO. Foi o motivo de testar o
+> streaming de verdade em vez de assumir — em 05/08 um caso igual importou e não tocava.
+
+**`scripts/sync-drive-extra.mjs` dispensa a `SUPABASE_SECRET_KEY`:** sem ela, o token do Google é
+renovado pelo PRÓPRIO BANCO — um `net.http_post` para `drive-health-check` (que renova à força) e
+depois a leitura de `drive_storage_accounts.access_token`. Só o `SUPABASE_MGMT_TOKEN` é
+obrigatório agora.
+
+---
+
 ## Google OAuth — os DOIS projetos (publicar para os tokens não expirarem)
 
 Descobertos em 19/08 pelo `tokeninfo` do próprio token vivo de cada conta

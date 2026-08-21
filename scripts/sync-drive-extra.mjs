@@ -14,7 +14,8 @@
 //   node scripts/sync-drive-extra.mjs <folderId>            # só relatório
 //   node scripts/sync-drive-extra.mjs <folderId> --aplicar  # grava
 //
-// Variáveis: SUPABASE_MGMT_TOKEN, SUPABASE_SECRET_KEY
+// Variáveis: SUPABASE_MGMT_TOKEN (obrigatória) e SUPABASE_SECRET_KEY (opcional —
+//   sem ela o token do Google é renovado pelo próprio banco, via drive-health-check)
 // Opcional:  MAPA_CURSOS='<folderId>=<courseId>,...' força o destino de uma
 //            pasta (quando o curso na plataforma nasceu de outra pasta).
 // ─────────────────────────────────────────────────────────────────────────────
@@ -30,7 +31,7 @@ if (!ROOT) { console.error('uso: node scripts/sync-drive-extra.mjs <folderId> [-
 const REF = process.env.SUPABASE_PROJECT_REF || 'jrrybiohwqabsdurqudc';
 const MGMT_TOKEN = process.env.SUPABASE_MGMT_TOKEN;
 const SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
-if (!MGMT_TOKEN || !SECRET_KEY) { console.error('faltam SUPABASE_MGMT_TOKEN / SUPABASE_SECRET_KEY'); process.exit(1); }
+if (!MGMT_TOKEN) { console.error('falta SUPABASE_MGMT_TOKEN'); process.exit(1); }
 
 const FN = `https://${REF}.supabase.co/functions/v1`;
 const MGMT = `https://api.supabase.com/v1/projects/${REF}/database/query`;
@@ -90,17 +91,46 @@ const escapar = v => (v === null || v === undefined ? 'null' : `'${String(v).rep
 
 // ─── Drive, pela conta de armazenamento ──────────────────────────────────────
 let token = null, tokenAt = 0;
+
+/**
+ * Token do Google pela função de borda — exige a service_role key.
+ * Sem ela (o caso de quem só tem o token de management), o caminho abaixo
+ * manda o próprio banco chamar a sonda de saúde, que renova o token à força,
+ * e depois lê o valor renovado. É o mesmo efeito, sem precisar da chave.
+ */
+async function tokenPeloBanco() {
+  const [{ r: reqId }] = await sql(
+    `select net.http_post(
+       url := 'https://${REF}.supabase.co/functions/v1/drive-health-check',
+       headers := json_build_object('Content-Type','application/json','x-cron-secret',
+         COALESCE((SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name='CRON_SECRET' LIMIT 1), ''))::jsonb,
+       body := '{}'::jsonb, timeout_milliseconds := 50000) as r`);
+  for (let i = 0; i < 20; i++) {
+    await sleep(3000);
+    const pronto = await sql(`select count(*) as c from net._http_response where id = ${reqId}`);
+    if (Number(pronto[0]?.c) > 0) break;
+  }
+  const linhas = await sql(
+    `select access_token from drive_storage_accounts where connected order by updated_at desc limit 1`);
+  return linhas[0]?.access_token || null;
+}
+
 async function getToken(force = false) {
   if (!force && token && Date.now() - tokenAt < 40 * 60 * 1000) return token;
   for (let a = 0; a < 5; a++) {
     try {
-      const r = await fetch(`${FN}/drive-storage-token`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${SECRET_KEY}`, 'Content-Type': 'application/json' },
-        body: '{}',
-      });
-      const j = await r.json();
-      if (j.accessToken) { token = j.accessToken; tokenAt = Date.now(); return token; }
+      if (SECRET_KEY) {
+        const r = await fetch(`${FN}/drive-storage-token`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${SECRET_KEY}`, 'Content-Type': 'application/json' },
+          body: '{}',
+        });
+        const j = await r.json();
+        if (j.accessToken) { token = j.accessToken; tokenAt = Date.now(); return token; }
+      } else {
+        const t = await tokenPeloBanco();
+        if (t) { token = t; tokenAt = Date.now(); return token; }
+      }
     } catch { /* tenta de novo */ }
     await sleep(1000 * (a + 1));
   }
