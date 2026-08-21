@@ -6,7 +6,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
   Handshake, ChevronDown, ChevronUp, Banknote, CheckCircle2, Clock, Tag, Users, Loader2,
-  AlertTriangle, RefreshCw,
+  AlertTriangle, RefreshCw, XCircle,
 } from 'lucide-react';
 import { PLAN_LABELS } from '@/lib/plans';
 import { fetchAllRows } from '@/lib/utils';
@@ -75,12 +75,18 @@ export default function AffiliatesAdminPage() {
   useEffect(() => { load(); }, [load]);
 
   const porAfiliado = useMemo(() => {
-    const map = new Map<string, { vendas: Sale[]; pendente: number; pago: number }>();
-    for (const a of affiliates) map.set(a.id, { vendas: [], pendente: 0, pago: 0 });
+    const map = new Map<string, { vendas: Sale[]; validas: number; pendente: number; pago: number }>();
+    for (const a of affiliates) map.set(a.id, { vendas: [], validas: 0, pendente: 0, pago: 0 });
     for (const s of sales) {
       const e = map.get(s.affiliate_id);
       if (!e) continue;
+      // O extrato mostra TODAS as linhas, inclusive as estornadas — é o
+      // histórico. Mas a CONTAGEM de vendas não pode incluí-las: a comissão
+      // já foi anulada pelo mp-webhook e não entra em "a pagar" nem em
+      // "pagas", então o número de vendas crescia enquanto o dinheiro não.
+      // Mesmo critério do painel do próprio afiliado.
       e.vendas.push(s);
+      if (s.status !== 'reversed') e.validas++;
       // 'reversed' (venda reembolsada) NÃO entra em pago nem em pendente —
       // sem este if explícito, o else jogava a comissão estornada de volta
       // no "a pagar".
@@ -93,7 +99,9 @@ export default function AffiliatesAdminPage() {
   const totais = useMemo(() => ({
     pendente: sales.filter(s => s.status === 'pending').reduce((a, s) => a + Number(s.commission_amount), 0),
     pago: sales.filter(s => s.status === 'paid').reduce((a, s) => a + Number(s.commission_amount), 0),
-    vendas: sales.length,
+    // Venda estornada não é venda: fica de fora aqui pelo mesmo motivo que já
+    // está fora dos dois cartões de comissão ao lado.
+    vendas: sales.filter(s => s.status !== 'reversed').length,
   }), [sales]);
 
   // "Já quitado": marca TODAS as vendas pendentes do afiliado como pagas.
@@ -225,7 +233,7 @@ export default function AffiliatesAdminPage() {
                           </p>
                         </div>
                         <div className="text-right shrink-0">
-                          <p className="text-sm font-semibold text-foreground">{info.vendas.length} venda{info.vendas.length === 1 ? '' : 's'}</p>
+                          <p className="text-sm font-semibold text-foreground">{info.validas} venda{info.validas === 1 ? '' : 's'}</p>
                           <p className="text-xs">
                             {info.pendente > 0
                               ? <span className="text-primary font-medium">{brl(info.pendente)} a pagar</span>
@@ -268,9 +276,16 @@ export default function AffiliatesAdminPage() {
                                       <td className="px-2 py-2.5 text-muted-foreground whitespace-nowrap">{brl(s.amount)}</td>
                                       <td className="px-2 py-2.5 font-semibold text-foreground whitespace-nowrap">{brl(s.commission_amount)}</td>
                                       <td className="px-2 py-2.5 whitespace-nowrap">
+                                        {/* Três estados, não dois: com o ternário
+                                            binário a venda ESTORNADA caía no else e
+                                            aparecia como "Pendente" — dizendo ao dono
+                                            que ele deve uma comissão que foi anulada,
+                                            justamente na tela onde ele decide o PIX. */}
                                         {s.status === 'paid'
                                           ? <span className="inline-flex items-center gap-1 text-xs text-accent-success"><CheckCircle2 className="w-3 h-3" /> Pago {s.paid_at ? new Date(s.paid_at).toLocaleDateString('pt-BR') : ''}</span>
-                                          : <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Clock className="w-3 h-3" /> Pendente</span>}
+                                          : s.status === 'reversed'
+                                            ? <span title="A compra foi reembolsada ou estornada pelo comprador" className="inline-flex items-center gap-1 text-xs text-muted-foreground line-through"><XCircle className="w-3 h-3" /> Estornada</span>
+                                            : <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Clock className="w-3 h-3" /> Pendente</span>}
                                       </td>
                                     </tr>
                                   ))}

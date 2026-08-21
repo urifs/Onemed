@@ -100,21 +100,47 @@ export function StoreExportDialog({ open, onOpenChange, orders }: Props) {
   const [abaDeCompradores, setAbaDeCompradores] = useState(true);
   const [exportando, setExportando] = useState(false);
 
-  // Os cursos vêm dos PEDIDOS, não do catálogo: um curso removido da loja
-  // continua tendo histórico de compra, e ele precisa poder ser exportado.
-  const cursos = useMemo(() => {
-    const m = new Map<string, { chave: string; nome: string; qtd: number }>();
-    for (const o of orders) {
-      const chave = o.product_id || `nome:${o.product_name}`;
-      if (!m.has(chave)) m.set(chave, { chave, nome: o.product_name, qtd: 0 });
-      m.get(chave)!.qtd++;
-    }
-    return [...m.values()].sort((a, b) => b.qtd - a.qtd);
-  }, [orders]);
-
+  // ⚠️ Declarado ANTES de `cursos` de propósito: `useMemo` roda durante a
+  // renderização, então referenciar algo declarado abaixo estoura TDZ.
   const { inicio, fim, label: periodoLabel } = useMemo(
     () => intervaloDoPreset(preset, de, ate), [preset, de, ate],
   );
+
+  const dentroDoPeriodo = useMemo(() => (o: OrderRow) => {
+    // Filtrar por PAGAMENTO exclui quem nunca pagou — é o que se quer num
+    // relatório de caixa, e seria um erro silencioso somar pendentes ali.
+    const ref = baseData === 'pagamento' ? o.paid_at : o.created_at;
+    if (!ref) return baseData !== 'pagamento';
+    const t = new Date(ref).getTime();
+    if (inicio && t < inicio.getTime()) return false;
+    if (fim && t >= fim.getTime()) return false;
+    return true;
+  }, [baseData, inicio, fim]);
+
+  // Os cursos vêm dos PEDIDOS, não do catálogo: um curso removido da loja
+  // continua tendo histórico de compra, e ele precisa poder ser exportado.
+  //
+  // Dois números por curso, e a distinção importa: `pagantes` são PESSOAS
+  // distintas com pagamento aprovado (quem comprou duas vezes conta uma), e
+  // `pedidos` é quanta LINHA vai no arquivo com os filtros atuais. Antes havia
+  // só um número — a contagem crua de pedidos — que se lia como "compradores"
+  // e inflava tudo: um curso com 55 pagantes aparecia como 115, porque somava
+  // os checkouts abandonados que nunca viraram pagamento.
+  const cursos = useMemo(() => {
+    const statusEscolhidos = new Set(statusSel);
+    const m = new Map<string, { chave: string; nome: string; pedidos: number; pagantes: Set<string> }>();
+    for (const o of orders) {
+      if (!dentroDoPeriodo(o)) continue;
+      const chave = o.product_id || `nome:${o.product_name}`;
+      if (!m.has(chave)) m.set(chave, { chave, nome: o.product_name, pedidos: 0, pagantes: new Set() });
+      const c = m.get(chave)!;
+      if (statusEscolhidos.has(o.status)) c.pedidos++;
+      if (o.status === 'approved') c.pagantes.add(o.email.toLowerCase());
+    }
+    return [...m.values()]
+      .map(c => ({ chave: c.chave, nome: c.nome, pedidos: c.pedidos, pagantes: c.pagantes.size }))
+      .sort((a, b) => b.pagantes - a.pagantes || b.pedidos - a.pedidos);
+  }, [orders, statusSel, dentroDoPeriodo]);
 
   const filtrados = useMemo(() => {
     const chavesEscolhidas = cursosSel === null ? null : new Set(cursosSel);
@@ -122,16 +148,9 @@ export function StoreExportDialog({ open, onOpenChange, orders }: Props) {
     return orders.filter(o => {
       if (!statusEscolhidos.has(o.status)) return false;
       if (chavesEscolhidas && !chavesEscolhidas.has(o.product_id || `nome:${o.product_name}`)) return false;
-      // Filtrar por PAGAMENTO exclui quem nunca pagou — é o que se quer num
-      // relatório de caixa, e seria um erro silencioso somar pendentes ali.
-      const ref = baseData === 'pagamento' ? o.paid_at : o.created_at;
-      if (!ref) return baseData === 'pagamento' ? false : true;
-      const t = new Date(ref).getTime();
-      if (inicio && t < inicio.getTime()) return false;
-      if (fim && t >= fim.getTime()) return false;
-      return true;
+      return dentroDoPeriodo(o);
     });
-  }, [orders, cursosSel, statusSel, baseData, inicio, fim]);
+  }, [orders, cursosSel, statusSel, dentroDoPeriodo]);
 
   const receita = filtrados
     .filter(o => o.status === 'approved')
@@ -237,8 +256,17 @@ export function StoreExportDialog({ open, onOpenChange, orders }: Props) {
                 <button type="button" onClick={() => setCursosSel([])} className="text-xs text-muted-foreground hover:text-foreground hover:underline">Limpar</button>
               </div>
             </div>
+            <p className="text-xs text-muted-foreground">
+              <strong className="text-foreground">pagantes</strong> = pessoas distintas com pagamento aprovado ·{' '}
+              <strong className="text-foreground">pedidos</strong> = linhas que vão no arquivo com os filtros de agora
+              (inclui checkout iniciado e não concluído, se o status estiver marcado).
+            </p>
             <div className="max-h-52 overflow-y-auto rounded-lg border border-border divide-y divide-border/40">
-              {cursos.length === 0 && <p className="text-sm text-muted-foreground p-3">Nenhum pedido na loja ainda.</p>}
+              {cursos.length === 0 && (
+                <p className="text-sm text-muted-foreground p-3">
+                  {orders.length === 0 ? 'Nenhum pedido na loja ainda.' : 'Nenhum curso teve pedido no período escolhido.'}
+                </p>
+              )}
               {cursos.map(c => {
                 const marcado = cursosSel === null || cursosSel.includes(c.chave);
                 return (
@@ -253,7 +281,10 @@ export function StoreExportDialog({ open, onOpenChange, orders }: Props) {
                       }}
                     />
                     <span className="text-sm text-foreground flex-1 truncate">{c.nome}</span>
-                    <span className="text-xs text-muted-foreground tabular-nums">{c.qtd}</span>
+                    <span className="text-xs tabular-nums whitespace-nowrap">
+                      <strong className="text-accent-success font-semibold">{c.pagantes}</strong>
+                      <span className="text-muted-foreground"> pagantes · {c.pedidos} pedidos</span>
+                    </span>
                   </label>
                 );
               })}
