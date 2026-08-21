@@ -3645,6 +3645,44 @@ Exportar TXT busca todas as linhas na hora. Índice `buyers(status, created_at d
 
 ---
 
+### 2026-08-20 (sessão remota) — exportação da Loja para Excel
+
+**Pedido:** exportar tudo da loja para Excel, organizado, com tabela de compradores por curso,
+todas as informações de cada comprador, e filtros por data e por curso.
+
+Botão **"Exportar Excel"** em `/admin/loja` abre um diálogo de filtros e gera um `.xlsx` de
+verdade (`exceljs`), não um CSV renomeado.
+
+| peça | detalhe |
+|---|---|
+| `src/lib/storeExport.ts` | Monta a planilha. `montarPlanilhaDaLoja()` devolve os BYTES (é o que permite testar reabrindo o arquivo); `exportStoreToExcel()` faz o download |
+| `src/components/admin/StoreExportDialog.tsx` | Filtros: período (presets + intervalo), data-base (compra × pagamento), quais cursos, quais status, e o que vai no arquivo |
+| `src/test/storeExport.test.ts` | 9 testes — fuso, nome de aba, agrupamento, e um que gera o arquivo e reabre conferindo célula |
+
+**Abas:** `Resumo` (filtros aplicados + totais + quadro por curso com receita, ticket médio e
+primeira/última venda) · `Pedidos` (16 colunas: curso, e-mail, nome, WhatsApp, plano, valor,
+status, data E hora da compra e do pagamento, transação, referência, id) · `Compradores` (uma
+linha por pessoa, total gasto, cursos comprados) · **uma aba por curso**. Cabeçalho congelado,
+autofiltro, moeda e data formatadas, linha de total por aba.
+
+⚠️ **Excel não guarda fuso horário.** Gravar o instante UTC faria uma compra das 21h em São
+Paulo cair no dia seguinte. `dataSP()` monta a hora de São Paulo e a rotula como UTC — o número
+que o Excel mostra passa a ser o mesmo do painel. Quem calcula o deslocamento é o `Intl`, no
+instante certo, então horário de verão histórico sai correto.
+
+⚠️ **A lista de cursos do filtro vem dos PEDIDOS, não do catálogo:** curso removido da loja
+continua tendo histórico de compra e precisa poder ser exportado.
+
+⚠️ **Depois de gravar e reabrir um `.xlsx`, a coluna só é acessível por ÍNDICE** — a `key` do
+exceljs vive em memória, não dentro do arquivo. Um teste que usa `getCell('total')` no workbook
+relido estoura "Out of bounds".
+
+`exceljs` entra por **import dinâmico**: 938 kB que só baixam no clique de exportar. Verificado
+em produção — `StoreAdminPage-*.js` tem 29 kB e referencia `exceljs.min-*.js`, servido à parte.
+Conferido com os 195 pedidos reais: 79 aprovados, R$ 4.289,96 — bate com o banco.
+
+---
+
 ## Google OAuth — os DOIS projetos (publicar para os tokens não expirarem)
 
 Descobertos em 19/08 pelo `tokeninfo` do próprio token vivo de cada conta
