@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { ShoppingBag, Plus, Pencil, Trash2, Loader2, Eye, EyeOff, ExternalLink, ChevronDown, Users, MessageCircle } from 'lucide-react';
+import { ShoppingBag, Plus, Pencil, Trash2, Loader2, Eye, EyeOff, ExternalLink, ChevronDown, Users, MessageCircle, FileSpreadsheet } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { AdminLayout } from '@/components/AdminLayout';
 import { Button } from '@/components/ui/button';
@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { formatBRL, formatDateTimeSP } from '@/lib/utils';
 import { PLAN_LABELS } from '@/lib/plans';
+import { StoreExportDialog } from '@/components/admin/StoreExportDialog';
 
 interface Product {
   id: string;
@@ -49,6 +50,7 @@ export default function StoreAdminPage() {
   const [form, setForm] = useState({ ...VAZIO });
   const [saving, setSaving] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -169,6 +171,14 @@ export default function StoreAdminPage() {
             >
               <ExternalLink className="w-3.5 h-3.5" /> Ver a loja
             </a>
+            <Button
+              onClick={() => setExportOpen(true)}
+              disabled={loading || orders.length === 0}
+              variant="outline"
+              className="border-border text-muted-foreground hover:text-foreground gap-2"
+            >
+              <FileSpreadsheet className="w-4 h-4" /> Exportar Excel
+            </Button>
             <Button onClick={abrirNovo}><Plus className="w-4 h-4" /> Novo produto</Button>
           </div>
         </div>
@@ -412,6 +422,8 @@ export default function StoreAdminPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <StoreExportDialog open={exportOpen} onOpenChange={setExportOpen} orders={orders} />
     </AdminLayout>
   );
 }
