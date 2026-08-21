@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { extrairAudioDeMp4, extrairAudioDeTsProgressivo, type LerRange } from '../_shared/media-audio.ts'
 import { PDFDocument } from 'https://esm.sh/pdf-lib@1.17.1'
 
 // Assistente da área de membros (widget flutuante). Gemini 2.5 Flash pela
@@ -43,32 +44,12 @@ const LLM_MODEL = 'gemini/gemini-2.5-flash'
 const MAX_HISTORY = 12
 const MAX_MSG_CHARS = 2000
 const PDF_ATTACH_MAX = 12 * 1024 * 1024
-const AV_CHUNK = 12 * 1024 * 1024
 // PDF maior que o limite por chamada: quebrado por PÁGINAS em partes, cada
 // parte lida pelo modelo separadamente (extração guiada pela pergunta) e a
 // resposta final montada com os trechos — o material é lido POR COMPLETO.
 const PDF_PART_TARGET = 9 * 1024 * 1024
 const PDF_MAX_PARTS = 6
 
-// Mesmo detector do generate-flashcards: pedaço de MP4/MOV sem o índice
-// (moov) dentro é ilegível pra IA — melhor nem anexar.
-function mp4TemMoov(bytes: Uint8Array): boolean {
-  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
-  let off = 0
-  while (off + 8 <= bytes.length) {
-    let size = dv.getUint32(off)
-    const type = String.fromCharCode(bytes[off + 4], bytes[off + 5], bytes[off + 6], bytes[off + 7])
-    if (type === 'moov') return true
-    if (size === 1) {
-      if (off + 16 > bytes.length) return false
-      size = dv.getUint32(off + 8) * 4294967296 + dv.getUint32(off + 12)
-    } else if (size === 0) return false
-    if (size < 8) return false
-    off += size
-  }
-  return false
-}
-const MP4_FAMILY = /^(video\/(mp4|quicktime)|audio\/(mp4|x-m4a))/i
 const ANEXAVEL = /^(application\/pdf|image\/(png|jpe?g|webp)|video\/|audio\/|text\/)/i
 
 // Manual da plataforma — é daqui que saem respostas sobre "como faço X".
@@ -264,13 +245,53 @@ serve(async (req) => {
         if (includeLessonContent !== false && ANEXAVEL.test(mime)) {
           try {
             let bytes: Uint8Array | null = null
-            if (lesson.storage_path) {
-              const { data: blob } = await supabase.storage.from('lesson-media').download(lesson.storage_path)
-              if (blob) {
-                const buf = new Uint8Array(await blob.arrayBuffer())
-                bytes = isAv ? buf.subarray(0, AV_CHUNK) : buf
+            let audioAac: Uint8Array | null = null
+            let minutosAudio = 0
+
+            // Vídeo/áudio: vai a TRILHA DE ÁUDIO, não um pedaço do arquivo.
+            // O trecho inicial só é decifrável quando o índice do MP4 está no
+            // começo, e 76% das aulas do acervo têm o índice no FIM — nelas o
+            // assistente respondia sem nunca ter ouvido a aula.
+            if (isAv && (lesson.size_bytes || 0) > 0) {
+              const lerRange: LerRange = async (de, ate) => {
+                if (lesson.storage_path) {
+                  const { data } = await supabase.storage.from('lesson-media').createSignedUrl(lesson.storage_path, 120)
+                  if (!data?.signedUrl) return null
+                  const r = await fetch(data.signedUrl, { headers: { Range: `bytes=${de}-${ate}` } })
+                  if (!(r.ok || r.status === 206)) { await r.body?.cancel().catch(() => {}); return null }
+                  return new Uint8Array(await r.arrayBuffer())
+                }
+                for (const fn of ['drive-storage-token', 'drive-access-token']) {
+                  const tokRes = await fetch(`${supabaseUrl}/functions/v1/${fn}`, {
+                    method: 'POST',
+                    headers: { Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json' },
+                    body: '{}',
+                  })
+                  if (!tokRes.ok) continue
+                  const { accessToken } = await tokRes.json()
+                  if (!accessToken) continue
+                  const r = await fetch(`https://www.googleapis.com/drive/v3/files/${lesson.drive_file_id}?alt=media`,
+                    { headers: { Authorization: `Bearer ${accessToken}`, Range: `bytes=${de}-${ate}` } })
+                  if (r.ok || r.status === 206) return new Uint8Array(await r.arrayBuffer())
+                  await r.body?.cancel().catch(() => {})
+                  if (r.status !== 403 && r.status !== 404) break
+                }
+                return null
               }
-            } else if (lesson.drive_file_id) {
+              try {
+                const opts = { maxAudio: 11 * 1024 * 1024 }
+                const r = /mp2t|mpegts|x-flv/i.test(mime)
+                  ? await extrairAudioDeTsProgressivo(lerRange, lesson.size_bytes || 0, opts)
+                  : (await extrairAudioDeMp4(lerRange, lesson.size_bytes || 0, opts))
+                    ?? (await extrairAudioDeTsProgressivo(lerRange, lesson.size_bytes || 0, opts))
+                if (r?.bytes?.length) { audioAac = r.bytes; minutosAudio = r.minutos }
+              } catch (e) { console.warn('Áudio da aula indisponível:', (e as Error)?.message) }
+            }
+
+            if (lesson.storage_path && !isAv) {
+              const { data: blob } = await supabase.storage.from('lesson-media').download(lesson.storage_path)
+              if (blob) bytes = new Uint8Array(await blob.arrayBuffer())
+            } else if (lesson.drive_file_id && !isAv) {
               // Duas contas de leitura: o `downloadQuotaExceeded` do Google
               // acompanha a conta que PEDE, não o arquivo, e a conta de
               // conteúdo ficou restringida. Armazenamento primeiro, conteúdo
@@ -285,18 +306,12 @@ serve(async (req) => {
                 const { accessToken } = await tokRes.json()
                 if (!accessToken) continue
                 const res = await fetch(`https://www.googleapis.com/drive/v3/files/${lesson.drive_file_id}?alt=media`,
-                  { headers: { Authorization: `Bearer ${accessToken}`, ...(isAv ? { Range: `bytes=0-${AV_CHUNK - 1}` } : {}) } })
+                  { headers: { Authorization: `Bearer ${accessToken}` } })
                 if (res.ok || res.status === 206) { bytes = new Uint8Array(await res.arrayBuffer()); break }
                 await res.body?.cancel().catch(() => {})
                 if (res.status !== 403 && res.status !== 404) break
               }
             }
-            // Trecho de MP4 sem índice legível: não anexa (o modelo rejeitaria).
-            if (bytes && isAv && bytes.length < (lesson.size_bytes || Infinity)
-                && MP4_FAMILY.test(mime) && !mp4TemMoov(bytes)) {
-              bytes = null
-            }
-
             if (bytes && bytes.length > 0 && mime === 'application/pdf' && bytes.length > PDF_ATTACH_MAX) {
               // ── PDF grande: LEITURA COMPLETA por partes ─────────────────
               // Divide por páginas; o modelo extrai de CADA parte o que é
@@ -336,8 +351,12 @@ serve(async (req) => {
               } else {
                 aulaAbertaTxt += ` O material completo (${totalPaginas} páginas) foi lido e não contém nada diretamente relacionado à pergunta — diga isso ao aluno e responda com seu conhecimento, deixando claro.`
               }
-            } else if (bytes && bytes.length > 0 && bytes.length <= PDF_ATTACH_MAX * (isAv ? 2 : 1)) {
-              parts.push({ type: 'text', text: `Conteúdo do material aberto ("${lesson.title}")${isAv ? ' — trecho inicial do vídeo/áudio' : ''}:` })
+            } else if (audioAac && audioAac.length > 0) {
+              parts.push({ type: 'text', text: `Áudio da aula aberta ("${lesson.title}") — primeiros ${minutosAudio.toFixed(0)} min. A fala do professor É o conteúdo desta aula:` })
+              parts.push({ type: 'file', file: { file_data: `data:audio/aac;base64,${toB64(audioAac)}` } })
+              aulaAbertaTxt += ' O ÁUDIO desta aula está anexado nesta mensagem — responda com base no que o professor diz. Nunca diga que não consegue acessar o conteúdo.'
+            } else if (bytes && bytes.length > 0 && bytes.length <= PDF_ATTACH_MAX) {
+              parts.push({ type: 'text', text: `Conteúdo do material aberto ("${lesson.title}"):` })
               parts.push({ type: 'file', file: { file_data: `data:${mime};base64,${toB64(bytes)}` } })
               aulaAbertaTxt += ' O CONTEÚDO deste material está anexado nesta mensagem — responda com base nele, citando trechos quando ajudar. Nunca diga que não consegue acessar o conteúdo.'
             }

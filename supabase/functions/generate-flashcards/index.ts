@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { extrairAudioDeMp4, extrairAudioDeTsProgressivo, type LerRange } from '../_shared/media-audio.ts'
 import { PDFDocument, PDFDict, PDFName, PDFRawStream } from 'https://esm.sh/pdf-lib@1.17.1'
 
 // Gera flashcards (estilo Anki) a partir de aulas e arquivos do acervo, com
@@ -38,7 +39,6 @@ const LLM_MODEL = 'gemini/gemini-2.5-flash'
 // 13MB brutos ≈ 17,3MB em base64 — folga sob o teto de ~20MB do Gemini,
 // sobrando espaço pro prompt.
 const MEDIA_BUDGET = 13 * 1024 * 1024
-const VIDEO_CHUNK = 10 * 1024 * 1024
 const MAX_LESSONS = 8
 const MAX_CARDS = 30
 // Uploads do próprio aluno: chegam em base64 no corpo da requisição e são
@@ -76,32 +76,47 @@ const DIFFICULTY_TEXT: Record<string, string> = {
 }
 
 // Mimes que o Gemini aceita inline. docx/xlsx ficam de fora — viram aviso.
-const GEMINI_OK = /^(application\/pdf|image\/(png|jpe?g|webp|heic|heif)|video\/(mp4|webm|quicktime|x-matroska|mpeg)|audio\/|text\/)/i
+// Todo vídeo e todo áudio entram: o que vai para o modelo é a TRILHA DE ÁUDIO
+// extraída (ver _shared/media-audio.ts), então o container deixou de importar.
+// A lista antiga barrava `video/mp2t` — 12.015 aulas do acervo que as
+// ferramentas de IA nunca leram uma única vez.
+const GEMINI_OK = /^(application\/pdf|image\/(png|jpe?g|webp|heic|heif)|video\/|audio\/|text\/)/i
 
-// Vídeos MP4/MOV precisam do índice (caixa "moov") DENTRO do trecho enviado —
-// quando o arquivo foi gravado com o moov no FIM (comum em gravação direta),
-// o pedaço inicial é ilegível pra IA e derruba a chamada inteira com
-// INVALID_ARGUMENT. Percorre as caixas de topo do MP4 procurando o moov.
-function mp4TemMoov(bytes: Uint8Array): boolean {
-  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
-  let off = 0
-  while (off + 8 <= bytes.length) {
-    let size = dv.getUint32(off)
-    const type = String.fromCharCode(bytes[off + 4], bytes[off + 5], bytes[off + 6], bytes[off + 7])
-    if (type === 'moov') return true
-    if (size === 1) {
-      if (off + 16 > bytes.length) return false
-      size = dv.getUint32(off + 8) * 4294967296 + dv.getUint32(off + 12)
-    } else if (size === 0) {
-      return false
+
+/**
+ * Recorta um PDF grande nas primeiras páginas que cabem no orçamento.
+ *
+ * 5.699 apostilas do acervo passam de 13 MB e viravam "usado só o título" —
+ * a ferramenta cobrava do aluno e não lia uma linha do material. Uma apostila
+ * começa pelo sumário e pelos capítulos iniciais, então as primeiras páginas
+ * são a melhor aproximação possível dentro do que o modelo aceita.
+ *
+ * `ignoreEncryption` é necessário: as apostilas das editoras vêm com senha de
+ * proprietário (medido em 07/2026 — AES-256 com P=2580), que bloqueia edição
+ * mas permite leitura e cópia.
+ */
+async function primeirasPaginas(bytes: Uint8Array, orcamento: number): Promise<Uint8Array | null> {
+  try {
+    const doc = await PDFDocument.load(bytes, { ignoreEncryption: true, throwOnInvalidObject: false })
+    const total = doc.getPageCount()
+    if (!total) return null
+    // Estimativa pela média de bytes por página, com margem de 15%.
+    let paginas = Math.max(1, Math.floor((orcamento * 0.85) / (bytes.length / total)))
+    for (let tentativa = 0; tentativa < 4; tentativa++) {
+      paginas = Math.min(paginas, total)
+      const novo = await PDFDocument.create()
+      const copiadas = await novo.copyPages(doc, Array.from({ length: paginas }, (_, i) => i))
+      for (const pg of copiadas) novo.addPage(pg)
+      const saida = await novo.save()
+      if (saida.length <= orcamento || paginas <= 1) return saida
+      // Estourou: reduz proporcionalmente e tenta de novo.
+      paginas = Math.max(1, Math.floor(paginas * (orcamento / saida.length) * 0.9))
     }
-    if (size < 8) return false
-    off += size
+    return null
+  } catch {
+    return null
   }
-  return false
 }
-
-const MP4_FAMILY = /^(video\/(mp4|quicktime)|audio\/(mp4|x-m4a))/i
 
 // ── imagens embutidas no PDF ──────────────────────────────────────────────
 // Questão de prova que depende de figura (ECG, radiografia, foto clínica)
@@ -393,6 +408,47 @@ serve(async (req) => {
       return null
     }
 
+    // ── áudio da aula: é ISSO que a IA passa a ler nos vídeos ─────────────
+    // Antes ia "os primeiros 10 MB do arquivo", que só é decifrável quando o
+    // índice do MP4 está no começo — e 76% das aulas do acervo têm o índice no
+    // FIM. Nesses casos o modelo recebia lixo e a ferramenta caía no título.
+    // Agora vai a voz do professor, que é onde o conteúdo da aula está.
+    const lerRangeDrive = (fileId: string): LerRange =>
+      (a, b) => lerDoDrive(fileId, `bytes=${a}-${b}`)
+
+    const lerRangeStorage = (caminho: string): LerRange => async (a, b) => {
+      const { data } = await supabase.storage.from('lesson-media').createSignedUrl(caminho, 120)
+      if (!data?.signedUrl) return null
+      const res = await fetch(data.signedUrl, { headers: { Range: `bytes=${a}-${b}` } })
+      if (!(res.ok || res.status === 206)) { await res.body?.cancel().catch(() => {}); return null }
+      return new Uint8Array(await res.arrayBuffer())
+    }
+
+    /**
+     * Devolve a trilha de áudio de uma aula/arquivo em AAC, ou null se não der.
+     * MPEG-TS não tem índice e é lido do começo; o resto passa pelo `moov`.
+     */
+    const audioDaFonte = async (
+      mime: string, tamanho: number, driveId: string | null, storagePath: string | null, orcamento: number,
+    ) => {
+      if (!tamanho || tamanho <= 0) return null
+      const ler = storagePath ? lerRangeStorage(storagePath) : driveId ? lerRangeDrive(driveId) : null
+      if (!ler) return null
+      const opts = { maxAudio: Math.max(1024 * 1024, Math.min(orcamento, 11 * 1024 * 1024)) }
+      try {
+        if (/mp2t|mpegts|x-flv/i.test(mime)) return await extrairAudioDeTsProgressivo(ler, tamanho, opts)
+        const r = await extrairAudioDeMp4(ler, tamanho, opts)
+        if (r) return r
+        // Container que não é MP4 (mkv, webm) nem TS: tenta TS mesmo assim —
+        // vários arquivos do acervo têm extensão mentirosa (medido em 08/2026:
+        // 62 ".flv" que eram MPEG-TS por dentro).
+        return await extrairAudioDeTsProgressivo(ler, tamanho, opts)
+      } catch (err) {
+        console.error('Falha ao extrair áudio', mime, (err as Error)?.message)
+        return null
+      }
+    }
+
     const sourceTitles: string[] = []
     // PDFs cujo conteúdo foi lido — candidatos à extração de imagens. A
     // extração só roda com UM PDF na geração: a referência do modelo é o
@@ -417,14 +473,26 @@ serve(async (req) => {
         warnings.push(`"${up.name}" tem um formato que a IA não lê (envie PDF, imagem, áudio, vídeo ou texto).`)
         continue
       }
-      if (MP4_FAMILY.test(up.mime)) {
+      // Vídeo enviado pelo aluno passa pelo mesmo extrator: o arquivo já está
+      // inteiro em memória, então a leitura por faixa é só um recorte.
+      if (/^video\//i.test(up.mime)) {
         const raw = Uint8Array.from(atob(up.data), c => c.charCodeAt(0))
-        if (!mp4TemMoov(raw)) {
-          warnings.push(`"${up.name}" está num formato de vídeo que a IA não lê em trecho — usado só o nome.`)
+        const lerLocal: LerRange = (a2, b2) => Promise.resolve(raw.subarray(a2, Math.min(b2 + 1, raw.length)))
+        const audio = /mp2t|mpegts/i.test(up.mime)
+          ? await extrairAudioDeTsProgressivo(lerLocal, raw.length, { maxAudio: Math.min(budget, 11 * 1024 * 1024) })
+          : await extrairAudioDeMp4(lerLocal, raw.length, { maxAudio: Math.min(budget, 11 * 1024 * 1024) })
+        if (audio && audio.bytes.length) {
           sourceTitles.push(up.name)
-          parts.push({ type: 'text', text: `Material (somente nome do arquivo): "${up.name}"` })
+          budget -= audio.bytes.length
+          parts.push({ type: 'text', text: `Material enviado pelo aluno: "${up.name}" — áudio do vídeo:` })
+          parts.push({ type: 'file', file: { file_data: `data:audio/aac;base64,${b64(audio.bytes)}` } })
+          fontesLidas++
           continue
         }
+        warnings.push(`Não foi possível extrair o áudio de "${up.name}" — usado só o nome.`)
+        sourceTitles.push(up.name)
+        parts.push({ type: 'text', text: `Material (somente nome do arquivo): "${up.name}"` })
+        continue
       }
       sourceTitles.push(up.name)
       budget -= rawSize
@@ -449,9 +517,24 @@ serve(async (req) => {
         continue
       }
 
-      // PDFs precisam ir inteiros; áudio/vídeo pode ir em pedaço.
-      const want = isAv ? Math.min(VIDEO_CHUNK, budget) : (lesson.size_bytes || 0)
-      if (!isAv && want > budget) {
+      // Vídeo e áudio: manda a TRILHA DE ÁUDIO em vez de um pedaço do arquivo.
+      if (isAv) {
+        const audio = await audioDaFonte(mime, lesson.size_bytes || 0, lesson.drive_file_id, lesson.storage_path, budget)
+        if (audio && audio.bytes.length) {
+          budget -= audio.bytes.length
+          parts.push({ type: 'text', text: `Material: "${lesson.title}" (curso: ${courseTitle}) — ÁUDIO da aula, primeiros ${audio.minutos.toFixed(0)} min. A fala do professor É o conteúdo. Extraia o conteúdo MÉDICO dito (definições, condutas, valores, critérios, casos) e ignore abertura, saudação, avisos de turma e "o que veremos hoje" — não faça cartas sobre a estrutura da aula:` })
+          parts.push({ type: 'file', file: { file_data: `data:audio/aac;base64,${b64(audio.bytes)}` } })
+          fontesLidas++
+          continue
+        }
+        warnings.push(`Não foi possível extrair o áudio de "${lesson.title}" — usado só o título.`)
+        parts.push({ type: 'text', text: `Material (somente título): "${lesson.title}" (curso: ${courseTitle})` })
+        continue
+      }
+
+      // PDFs e imagens vão inteiros.
+      const want = lesson.size_bytes || 0
+      if (want > budget && mime !== 'application/pdf') {
         warnings.push(`"${lesson.title}" é grande demais para esta geração — usado só o título.`)
         parts.push({ type: 'text', text: `Material (somente título): "${lesson.title}" (curso: ${courseTitle})` })
         continue
@@ -462,14 +545,22 @@ serve(async (req) => {
       try {
         if (lesson.storage_path) {
           const { data: blob } = await supabase.storage.from('lesson-media').download(lesson.storage_path)
-          if (blob) {
-            const buf = new Uint8Array(await blob.arrayBuffer())
-            bytes = isAv ? buf.subarray(0, want) : buf
-          }
+          if (blob) bytes = new Uint8Array(await blob.arrayBuffer())
         } else if (lesson.drive_file_id) {
-          bytes = await lerDoDrive(lesson.drive_file_id, isAv ? `bytes=0-${want - 1}` : undefined)
+          bytes = await lerDoDrive(lesson.drive_file_id)
         }
       } catch { /* cai no aviso abaixo */ }
+
+      // PDF acima do orçamento: em vez de descartar (5.699 apostilas do acervo
+      // caíam aqui e viravam "só o título"), manda as primeiras páginas — que
+      // é onde estão o sumário e a maior parte do conteúdo de uma apostila.
+      if (bytes && mime === 'application/pdf' && bytes.length > budget) {
+        const cortado = await primeirasPaginas(bytes, budget)
+        if (cortado) {
+          warnings.push(`"${lesson.title}" é grande: a IA leu as primeiras páginas.`)
+          bytes = cortado
+        }
+      }
 
       if (!bytes || bytes.length === 0) {
         warnings.push(`Não foi possível ler "${lesson.title}" — usado só o título.`)
@@ -477,16 +568,14 @@ serve(async (req) => {
         continue
       }
 
-      // Pedaço de MP4 sem o índice dentro = ilegível pra IA. Cai pro título
-      // com aviso em vez de derrubar a geração inteira.
-      if (isAv && bytes.length < (lesson.size_bytes || Infinity) && MP4_FAMILY.test(mime) && !mp4TemMoov(bytes)) {
-        warnings.push(`"${lesson.title}" é um vídeo num formato que a IA não lê em trecho — usado só o título.`)
+      if (bytes.length > budget) {
+        warnings.push(`"${lesson.title}" é grande demais para esta geração — usado só o título.`)
         parts.push({ type: 'text', text: `Material (somente título): "${lesson.title}" (curso: ${courseTitle})` })
         continue
       }
 
       budget -= bytes.length
-      parts.push({ type: 'text', text: `Material: "${lesson.title}" (curso: ${courseTitle})${isAv ? ' — trecho inicial da aula em vídeo/áudio' : ''}:` })
+      parts.push({ type: 'text', text: `Material: "${lesson.title}" (curso: ${courseTitle}):` })
       parts.push({ type: 'file', file: { file_data: `data:${mime};base64,${b64(bytes)}` } })
       fontesLidas++
       if (mime === 'application/pdf') pdfLidos.push({ nome: lesson.title, bytes })
@@ -507,8 +596,22 @@ serve(async (req) => {
         continue
       }
 
-      const want = isAv ? Math.min(VIDEO_CHUNK, budget) : (af.size_bytes || 0)
-      if (!isAv && want > budget) {
+      if (isAv) {
+        const audio = await audioDaFonte(mime, af.size_bytes || 0, af.drive_file_id, null, budget)
+        if (audio && audio.bytes.length) {
+          budget -= audio.bytes.length
+          parts.push({ type: 'text', text: `Material do Acervo Público: "${af.name}" (em «${af.item_title}») — ÁUDIO, primeiros ${audio.minutos.toFixed(0)} min. Extraia o conteúdo MÉDICO dito e ignore abertura e avisos:` })
+          parts.push({ type: 'file', file: { file_data: `data:audio/aac;base64,${b64(audio.bytes)}` } })
+          fontesLidas++
+          continue
+        }
+        warnings.push(`Não foi possível extrair o áudio de "${af.name}" — usado só o nome.`)
+        parts.push({ type: 'text', text: `Material do Acervo Público (somente nome): "${af.name}" (em «${af.item_title}»)` })
+        continue
+      }
+
+      const want = af.size_bytes || 0
+      if (want > budget && mime !== 'application/pdf') {
         warnings.push(`"${af.name}" é grande demais para esta geração — usado só o nome.`)
         parts.push({ type: 'text', text: `Material do Acervo Público (somente nome): "${af.name}" (em «${af.item_title}»)` })
         continue
@@ -517,8 +620,16 @@ serve(async (req) => {
 
       let bytes: Uint8Array | null = null
       try {
-        bytes = await lerDoDrive(af.drive_file_id, isAv ? `bytes=0-${want - 1}` : undefined)
+        bytes = await lerDoDrive(af.drive_file_id)
       } catch { /* cai no aviso abaixo */ }
+
+      if (bytes && mime === 'application/pdf' && bytes.length > budget) {
+        const cortado = await primeirasPaginas(bytes, budget)
+        if (cortado) {
+          warnings.push(`"${af.name}" é grande: a IA leu as primeiras páginas.`)
+          bytes = cortado
+        }
+      }
 
       if (!bytes || bytes.length === 0) {
         warnings.push(`Não foi possível ler "${af.name}" — usado só o nome.`)
@@ -526,14 +637,14 @@ serve(async (req) => {
         continue
       }
 
-      if (isAv && bytes.length < (af.size_bytes || Infinity) && MP4_FAMILY.test(mime) && !mp4TemMoov(bytes)) {
-        warnings.push(`"${af.name}" é um vídeo num formato que a IA não lê em trecho — usado só o nome.`)
+      if (bytes.length > budget) {
+        warnings.push(`"${af.name}" é grande demais para esta geração — usado só o nome.`)
         parts.push({ type: 'text', text: `Material do Acervo Público (somente nome): "${af.name}" (em «${af.item_title}»)` })
         continue
       }
 
       budget -= bytes.length
-      parts.push({ type: 'text', text: `Material do Acervo Público: "${af.name}" (em «${af.item_title}»)${isAv ? ' — trecho inicial do vídeo/áudio' : ''}:` })
+      parts.push({ type: 'text', text: `Material do Acervo Público: "${af.name}" (em «${af.item_title}»):` })
       parts.push({ type: 'file', file: { file_data: `data:${mime};base64,${b64(bytes)}` } })
       fontesLidas++
       if (mime === 'application/pdf') pdfLidos.push({ nome: af.name, bytes })
