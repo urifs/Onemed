@@ -174,8 +174,8 @@ export async function montarPlanilhaDaLoja(pedidos: OrderRow[], opts: ExportOpti
   // ── Resumo ────────────────────────────────────────────────────────────────
   const resumo = wb.addWorksheet('Resumo');
   resumo.columns = [
-    { width: 30 }, { width: 14 }, { width: 12 }, { width: 12 }, { width: 12 },
-    { width: 18 }, { width: 16 }, { width: 21 }, { width: 21 },
+    { width: 34 }, { width: 21 }, { width: 15 }, { width: 17 }, { width: 17 },
+    { width: 18 }, { width: 18 }, { width: 16 }, { width: 21 }, { width: 21 },
   ];
 
   const titulo = resumo.addRow(['OneMed — Loja · Exportação']);
@@ -240,8 +240,13 @@ export async function montarPlanilhaDaLoja(pedidos: OrderRow[], opts: ExportOpti
   resumo.addRow([]);
   const hCursos = resumo.addRow(['Por curso']);
   hCursos.font = { bold: true, size: 13 };
+  // "Compradores pagantes" é PESSOA distinta com pagamento aprovado; "Pedidos"
+  // é linha. Os dois rótulos são explícitos de propósito: um número chamado só
+  // "Pedidos" ao lado do nome do curso se lê como "compradores" e infla a
+  // leitura — a loja tem mais checkout abandonado do que venda concluída.
   const cabCursos = resumo.addRow([
-    'Curso / Produto', 'Pedidos', 'Aprovados', 'Pendentes', 'Cancelados',
+    'Curso / Produto', 'Compradores pagantes', 'Pedidos (total)', 'Pedidos aprovados',
+    'Pedidos pendentes', 'Pedidos cancelados',
     'Receita aprovada', 'Ticket médio', 'Primeira venda', 'Última venda',
   ]);
   cabCursos.font = { bold: true, color: { argb: 'FFFFFFFF' } };
@@ -256,6 +261,7 @@ export async function montarPlanilhaDaLoja(pedidos: OrderRow[], opts: ExportOpti
     const ultima = instantes.length ? new Date(Math.max(...instantes)).toISOString() : null;
     const r = resumo.addRow([
       c.nome,
+      new Set(ap.map(i => i.email.toLowerCase())).size,
       c.itens.length,
       ap.length,
       c.itens.filter(i => i.status === 'pending').length,
@@ -265,10 +271,10 @@ export async function montarPlanilhaDaLoja(pedidos: OrderRow[], opts: ExportOpti
       dataSP(primeira),
       dataSP(ultima),
     ]);
-    r.getCell(6).numFmt = MOEDA;
     r.getCell(7).numFmt = MOEDA;
-    r.getCell(8).numFmt = DATA_HORA;
+    r.getCell(8).numFmt = MOEDA;
     r.getCell(9).numFmt = DATA_HORA;
+    r.getCell(10).numFmt = DATA_HORA;
   }
 
   // ── Todos os pedidos ──────────────────────────────────────────────────────

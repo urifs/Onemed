@@ -124,4 +124,28 @@ describe('montarPlanilhaDaLoja', () => {
     expect(ws.getRow(2).getCell(6).value).toBe(2);
     expect(Number(ws.getRow(2).getCell(7).value)).toBeCloseTo(149, 2);
   });
+
+  it('no Resumo, "compradores pagantes" conta PESSOA e não pedido', async () => {
+    const ExcelJS = (await import('exceljs')).default;
+    // Mesma pessoa comprando o mesmo curso 3x + um pendente de outra pessoa:
+    // 1 pagante, 4 pedidos, 3 aprovados.
+    const buffer = await montarPlanilhaDaLoja([
+      pedido({ id: 'a', price_paid: 10 }),
+      pedido({ id: 'b', price_paid: 10 }),
+      pedido({ id: 'c', price_paid: 10 }),
+      pedido({ id: 'd', email: 'outro@exemplo.com', status: 'pending', paid_at: null }),
+    ], opts);
+    const lido = new ExcelJS.Workbook();
+    await lido.xlsx.load(buffer);
+    const ws = lido.getWorksheet('Resumo')!;
+    // Acha a linha do curso pelo nome, sem depender do número da linha.
+    let linha = 0;
+    ws.eachRow((row, n) => { if (row.getCell(1).value === 'MedReview 2026') linha = n; });
+    expect(linha).toBeGreaterThan(0);
+    const r = ws.getRow(linha);
+    expect(r.getCell(2).value).toBe(1); // compradores pagantes (pessoas)
+    expect(r.getCell(3).value).toBe(4); // pedidos (total)
+    expect(r.getCell(4).value).toBe(3); // pedidos aprovados
+    expect(r.getCell(5).value).toBe(1); // pendentes
+  });
 });
