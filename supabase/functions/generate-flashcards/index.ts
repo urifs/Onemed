@@ -194,6 +194,9 @@ serve(async (req) => {
   // Relógio da requisição: usado para decidir se ainda cabe uma segunda
   // chamada ao modelo sem estourar o limite de execução da function.
   const inicioReq = Date.now()
+  // Declarada FORA do try: o catch final precisa devolver a geração cobrada, e
+  // `devolverVagaDoLimite` nasce lá dentro (depende do usuário autenticado).
+  let devolverVagaNoCatch: (() => Promise<void>) | null = null
   if (req.method === 'OPTIONS') return new Response('ok', { headers: getCorsHeaders(req) })
 
   try {
@@ -255,9 +258,13 @@ serve(async (req) => {
     const LIMITE_IA_POR_PLANO: Record<string, number> = { trial: 5, annual: 5, lifetime: 10, lifetime_plus: 20 }
     const TETO_SEGURANCA = 100
     const LIMITE_DIARIO = LIMITE_IA_POR_PLANO[planoAtual] ?? TETO_SEGURANCA
-    // Devolve a vaga contada quando a geração é recusada ANTES de qualquer
-    // chamada ao modelo (conteúdo ilegível). Melhor esforço: falhar aqui não
-    // pode derrubar a resposta de erro que o aluno precisa ver.
+    // Devolve a vaga contada. Melhor esforço: falhar aqui não pode derrubar a
+    // resposta de erro que o aluno precisa ver.
+    //
+    // ⚠️ Toda saída de ERRO tem que passar por `falhar()` abaixo. Antes, a vaga
+    // só era devolvida no caso de conteúdo ilegível, então timeout, erro do
+    // modelo e resposta inválida cobravam uma geração do dia sem entregar nada
+    // — em 3 dias de produção, 5 de 42 tentativas (12%) terminaram assim.
     const devolverVagaDoLimite = async () => {
       if (ehContinuacao) return
       try {
@@ -269,6 +276,13 @@ serve(async (req) => {
         }
       } catch { /* contador é secundário diante da mensagem de erro */ }
     }
+
+    /** Erro ao aluno DEVOLVENDO a geração cobrada — nada foi entregue. */
+    const falhar = async (msg: string, status = 502) => {
+      await devolverVagaDoLimite()
+      return json(req, { error: msg }, status)
+    }
+    devolverVagaNoCatch = devolverVagaDoLimite
 
     // Continuação de importação paginada não passa pelo contador — a primeira
     // chamada já cobrou a operação inteira.
@@ -322,7 +336,7 @@ serve(async (req) => {
       }))
 
     if (ids.length === 0 && archIds.length === 0 && enviados.length === 0) {
-      return json(req, { error: 'Selecione ao menos uma aula, arquivo ou envie um arquivo seu' }, 400)
+      return await falhar('Selecione ao menos uma aula, arquivo ou envie um arquivo seu', 400)
     }
     const nCards = Math.min(Math.max(Number(count) || 10, 1), MAX_CARDS)
     const nivel = DIFFICULTY_TEXT[difficulty] ? difficulty : 'intermediario'
@@ -337,7 +351,7 @@ serve(async (req) => {
         .select('id, title, type, mime_type, drive_file_id, storage_path, size_bytes, courses(title)')
         .in('id', ids)
       : { data: [] as never[] }
-    if (ids.length > 0 && !lessons?.length) return json(req, { error: 'Conteúdo não encontrado' }, 404)
+    if (ids.length > 0 && !lessons?.length) return await falhar('Conteúdo não encontrado', 404)
 
     // Arquivos do Acervo Público: consultados com o JWT DO ALUNO — a RLS do
     // acervo (assinante-nunca-trial + item público-ou-próprio) decide o que
@@ -358,7 +372,7 @@ serve(async (req) => {
         drive_file_id: r.drive_file_id, item_title: r.archive_items?.title || '',
       }))
       if (!archFiles.length && ids.length === 0 && enviados.length === 0) {
-        return json(req, { error: 'Conteúdo do acervo não encontrado' }, 404)
+        return await falhar('Conteúdo do acervo não encontrado', 404)
       }
     }
 
@@ -744,8 +758,20 @@ serve(async (req) => {
     })
 
     // ── chama o Gemini ─────────────────────────────────────────────────────
+    // ── relógio: a function é CORTADA aos 150s ────────────────────────────
+    // Quando isso acontece o processo morre sem responder: o aluno fica com a
+    // tela girando para sempre e a geração do dia já foi cobrada, sem forma de
+    // devolver. Medido em produção (3 dias): 5 de 42 tentativas terminaram
+    // assim. Então a chamada ao modelo passa a ter prazo PRÓPRIO, menor que o
+    // da plataforma — quem para é a função, com tempo de sobra para avisar e
+    // devolver a vaga.
+    const PRAZO_TOTAL_MS = 138_000
+    const restanteMs = () => PRAZO_TOTAL_MS - (Date.now() - inicioReq)
+
     const chamarLLM = (conteudo: unknown[]) => fetch(LLM_URL, {
       method: 'POST',
+      // Margem de 6s para montar a resposta depois que a chamada volta.
+      signal: AbortSignal.timeout(Math.max(5_000, restanteMs() - 6_000)),
       headers: {
         Authorization: `Bearer ${Deno.env.get('EMERGENT_LLM_KEY')}`,
         'Content-Type': 'application/json',
@@ -809,8 +835,17 @@ serve(async (req) => {
     const obterCartas = async (promptFinal: unknown, teto: number): Promise<Carta[] | null> => {
       const conteudo = [...parts, promptFinal]
       const t0Chamada = Date.now()
-      let llmRes = await chamarLLM(conteudo)
-      let llmData = await llmRes.json()
+      let llmRes: Response
+      let llmData: Record<string, unknown>
+      try {
+        llmRes = await chamarLLM(conteudo)
+        llmData = await llmRes.json()
+      } catch (err) {
+        // Estourou o prazo próprio (ou a rede caiu): devolve null e quem chama
+        // trata como rodada sem resultado — melhor do que a function ser morta.
+        console.error('Chamada ao modelo interrompida:', (err as Error)?.message)
+        return null
+      }
 
       if (!llmRes.ok && llmRes.status === 400) {
         const soTexto = (conteudo as { type: string }[]).filter(p => p.type === 'text')
@@ -834,12 +869,14 @@ serve(async (req) => {
       // em que a function é cortada com 504 e o aluno não recebe nada. Só
       // repete se o que já se passou couber mais uma chamada do mesmo tamanho.
       const gastoNaChamada = Date.now() - t0Chamada
-      const cabeRepetir = (Date.now() - inicioReq) + gastoNaChamada * 1.2 < 130_000
+      const cabeRepetir = gastoNaChamada * 1.2 < restanteMs()
       if (cartas.length === 0 && cabeRepetir) {
         console.warn('Resposta inválida do modelo; repetindo a chamada uma vez')
-        llmRes = await chamarLLM(conteudo)
-        llmData = await llmRes.json()
-        if (llmRes.ok) cartas = validar(extrairCartas(llmData.choices?.[0]?.message?.content || '') || [], teto)
+        try {
+          llmRes = await chamarLLM(conteudo)
+          llmData = await llmRes.json()
+          if (llmRes.ok) cartas = validar(extrairCartas((llmData as any).choices?.[0]?.message?.content || '') || [], teto)
+        } catch { /* sem tempo: entrega o que houver */ }
       }
       return cartas
     }
@@ -925,7 +962,7 @@ serve(async (req) => {
           // falha de LLM no meio: entrega o que já foi transcrito nesta chamada
           // e sinaliza para o cliente continuar do mesmo ponto.
           if (cards.length > 0) { cortadoPorTempo = true; proximoInicio = inicio; break }
-          return json(req, { error: 'A IA não conseguiu ler este banco de questões agora. Tente novamente em instantes.' }, 502)
+          return await falhar('A IA não conseguiu ler este banco de questões agora. Tente novamente em instantes.')
         }
         // Dedupe em duas camadas:
         // - Entre lotes, por ENUNCIADO (o modelo às vezes repete a questão de
@@ -966,7 +1003,7 @@ serve(async (req) => {
         if (ehContinuacao) {
           return json(req, { title: 'Banco de questões', difficulty: nivel, format: formato, cards: [], warnings, importDone: true, importNextStart: null, source: [] })
         }
-        return json(req, { error: 'Não encontrei questões no documento selecionado. Confira se o PDF é mesmo um banco de questões.' }, 422)
+        return await falhar('Não encontrei questões no documento selecionado. Confira se o PDF é mesmo um banco de questões.', 422)
       }
       // A transcrição fiel traz junto os prefixos do documento ("Questão 3.",
       // "A)"), que duplicariam a numeração/letras da interface. Tirar o
@@ -980,10 +1017,10 @@ serve(async (req) => {
     } else {
       const geradas = await obterCartas(promptNormal, MAX_CARDS)
       if (geradas === null) {
-        return json(req, { error: 'A IA não conseguiu processar este conteúdo agora. Tente novamente em instantes.' }, 502)
+        return await falhar('A IA não conseguiu processar este conteúdo agora. Tente novamente em instantes.')
       }
       if (geradas.length === 0) {
-        return json(req, { error: 'A IA devolveu uma resposta inválida. Tente gerar de novo.' }, 502)
+        return await falhar('A IA devolveu uma resposta inválida. Tente gerar de novo.')
       }
       cards = geradas
 
@@ -1097,7 +1134,7 @@ serve(async (req) => {
     }
 
     if (sourceTitles.length === 0) {
-      return json(req, { error: 'Nenhum conteúdo pôde ser lido para gerar os flashcards' }, 422)
+      return await falhar('Nenhum conteúdo pôde ser lido para gerar os flashcards', 422)
     }
     const title = sourceTitles[0].replace(/\.[a-z0-9]{2,5}$/i, '')
       + (sourceTitles.length > 1 ? ` +${sourceTitles.length - 1}` : '')
@@ -1120,6 +1157,13 @@ serve(async (req) => {
     })
   } catch (err) {
     console.error('Erro inesperado:', (err as Error)?.message || err)
-    return json(req, { error: 'Erro interno ao gerar os flashcards' }, 500)
+    // Nada foi entregue: a geração cobrada volta para o aluno.
+    if (devolverVagaNoCatch) await devolverVagaNoCatch().catch(() => {})
+    const abortou = /abort|timeout|deadline/i.test(String((err as Error)?.message || ''))
+    return json(req, {
+      error: abortou
+        ? 'A geração passou do tempo e foi interrompida — nenhuma geração foi descontada do seu dia. Tente pedir menos questões, ou escolher menos conteúdos de uma vez.'
+        : 'Erro interno ao gerar os flashcards',
+    }, abortou ? 504 : 500)
   }
 })

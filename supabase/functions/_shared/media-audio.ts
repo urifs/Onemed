@@ -96,7 +96,18 @@ function trakDeAudio(moov: Uint8Array): Caixa | null {
   return null
 }
 
-function lerTrilha(moov: Uint8Array, trak: Caixa): Trilha | null {
+/**
+ * Tabelas da trilha de áudio, montando SÓ as amostras dos primeiros
+ * `maxSegundos` — e nunca mais que isso.
+ *
+ * ⚠️ A primeira versão expandia tudo: um array de durações por amostra, outro
+ * de tamanhos e um objeto `{off,size,dur}` por amostra. Numa aula de 73 min são
+ * ~205 mil amostras, e só os objetos passavam de 100 MB — a function morria com
+ * WORKER_RESOURCE_LIMIT em segundos, antes mesmo de baixar qualquer áudio.
+ * Aqui as tabelas são lidas direto do buffer do moov, sem cópia, e o laço para
+ * assim que a janela é preenchida.
+ */
+function lerTrilha(moov: Uint8Array, trak: Caixa, maxSegundos: number): Trilha | null {
   const mdhd = achar(moov, ['mdia', 'mdhd'], trak.dataOff, trak.dataEnd)
   const stbl = achar(moov, ['mdia', 'minf', 'stbl'], trak.dataOff, trak.dataEnd)
   if (!mdhd || !stbl) return null
@@ -136,46 +147,49 @@ function lerTrilha(moov: Uint8Array, trak: Caixa): Trilha | null {
   const stco = pega('stco'), co64 = pega('co64')
   if (!stts || !stsc || !stsz || !(stco || co64)) return null
 
-  const duracoes: number[] = []
+  // stts é uma tabela COMPACTA (contagem, duração) — percorrida com cursor em
+  // vez de ser expandida amostra a amostra.
   const nStts = u32(moov, stts.dataOff + 4)
-  for (let i = 0; i < nStts; i++) {
-    const cnt = u32(moov, stts.dataOff + 8 + i * 8)
-    const dur = u32(moov, stts.dataOff + 12 + i * 8)
-    // Teto defensivo: tabela corrompida não pode estourar a memória da function.
-    for (let j = 0; j < cnt && duracoes.length < 2_000_000; j++) duracoes.push(dur)
+  let sttsIdx = 0, sttsResta = nStts ? u32(moov, stts.dataOff + 8) : 0
+  const duracaoDe = (): number => {
+    while (sttsResta === 0 && sttsIdx + 1 < nStts) {
+      sttsIdx++
+      sttsResta = u32(moov, stts.dataOff + 8 + sttsIdx * 8)
+    }
+    if (sttsResta > 0) sttsResta--
+    return u32(moov, stts.dataOff + 12 + sttsIdx * 8)
   }
 
   const tamUnico = u32(moov, stsz.dataOff + 4)
-  const nSamp = Math.min(u32(moov, stsz.dataOff + 8), 2_000_000)
-  const tamanhos = new Array<number>(nSamp)
-  for (let i = 0; i < nSamp; i++) tamanhos[i] = tamUnico || u32(moov, stsz.dataOff + 12 + i * 4)
+  const nSamp = u32(moov, stsz.dataOff + 8)
+  const tamanhoDe = (i: number) => tamUnico || u32(moov, stsz.dataOff + 12 + i * 4)
 
   const base = (stco || co64)!
   const nCh = u32(moov, base.dataOff + 4)
-  const chunks = new Array<number>(nCh)
-  for (let i = 0; i < nCh; i++) {
-    chunks[i] = stco ? u32(moov, stco.dataOff + 8 + i * 4) : u64(moov, co64!.dataOff + 8 + i * 8)
-  }
+  const offsetDoChunk = (c: number) => stco
+    ? u32(moov, stco.dataOff + 8 + c * 4)
+    : u64(moov, co64!.dataOff + 8 + c * 8)
 
   const nSc = u32(moov, stsc.dataOff + 4)
-  const sc: { primeiro: number; porChunk: number }[] = []
-  for (let i = 0; i < nSc; i++) {
-    sc.push({
-      primeiro: u32(moov, stsc.dataOff + 8 + i * 12),
-      porChunk: u32(moov, stsc.dataOff + 12 + i * 12),
-    })
-  }
-  if (!sc.length) return null
+  if (!nSc) return null
+  const scPrimeiro = (i: number) => u32(moov, stsc.dataOff + 8 + i * 12)
+  const scPorChunk = (i: number) => u32(moov, stsc.dataOff + 12 + i * 12)
 
+  // Uma amostra a mais que a janela pedida, para o planejador poder cortar.
+  const limiteTicks = maxSegundos * timescale
   const amostras: Amostra[] = []
-  let idx = 0
-  for (let c = 0; c < nCh && idx < nSamp; c++) {
-    let porChunk = sc[0].porChunk
-    for (let k = 0; k < sc.length; k++) if (c + 1 >= sc[k].primeiro) porChunk = sc[k].porChunk
-    let pos = chunks[c]
-    for (let s = 0; s < porChunk && idx < nSamp; s++, idx++) {
-      amostras.push({ off: pos, size: tamanhos[idx], dur: duracoes[idx] ?? duracoes[duracoes.length - 1] ?? 1024 })
-      pos += tamanhos[idx]
+  let idx = 0, acumulado = 0, scAtual = 0
+  for (let c = 0; c < nCh && idx < nSamp && acumulado <= limiteTicks; c++) {
+    while (scAtual + 1 < nSc && c + 1 >= scPrimeiro(scAtual + 1)) scAtual++
+    const porChunk = scPorChunk(scAtual)
+    let pos = offsetDoChunk(c)
+    for (let sm = 0; sm < porChunk && idx < nSamp; sm++, idx++) {
+      const tam = tamanhoDe(idx)
+      const dur = duracaoDe()
+      if (tam > 0) amostras.push({ off: pos, size: tam, dur })
+      pos += tam
+      acumulado += dur
+      if (acumulado > limiteTicks) break
     }
   }
   return amostras.length ? { timescale, canais, taxa, asc, amostras } : null
@@ -247,7 +261,7 @@ export async function extrairAudioDeMp4(
   ler: LerRange, tamanho: number, opts: OpcoesAudio = {},
 ): Promise<AudioExtraido | null> {
   const maxPedidos = opts.maxPedidos ?? 48
-  const maxTransferencia = opts.maxTransferencia ?? 60 * 1024 * 1024
+  const maxTransferencia = opts.maxTransferencia ?? 48 * 1024 * 1024
   const maxAudio = opts.maxAudio ?? 11 * 1024 * 1024
 
   const mb = await acharMoov(ler, tamanho)
@@ -257,7 +271,8 @@ export async function extrairAudioDeMp4(
 
   const trak = trakDeAudio(moov)
   if (!trak) return null
-  const t = lerTrilha(moov, trak)
+  // A maior janela da lista abaixo — nunca monta tabela além disso.
+  const t = lerTrilha(moov, trak, JANELAS_MIN[0] * 60)
   if (!t) return null
 
   for (const min of JANELAS_MIN) {
@@ -275,41 +290,68 @@ export async function extrairAudioDeMp4(
       const transfer = b.reduce((s, x) => s + (x.fim - x.ini), 0)
       if (transfer > maxTransferencia) continue
 
-      // Busca os blocos em PARALELO. Sequencial, 42 pedidos levavam ~70s — a
-      // function tem 150s no total e ainda precisa chamar o modelo depois.
-      const CONCORRENCIA = 8
-      const pedacos: (Uint8Array | null)[] = new Array(b.length).fill(null)
-      for (let i = 0; i < b.length; i += CONCORRENCIA) {
-        const fatia = b.slice(i, i + CONCORRENCIA)
-        const res = await Promise.all(fatia.map(bloco => ler(bloco.ini, bloco.fim - 1)))
-        for (let k = 0; k < res.length; k++) {
-          if (!res[k]) return null
-          pedacos[i + k] = res[k]
+      // ── busca os bytes SEM segurar tudo na memória ──────────────────────
+      // A primeira versão baixava todos os blocos e só depois montava a saída:
+      // o pico era a soma de TODOS eles. Com um bloco de 46 MB a function
+      // morria com WORKER_RESOURCE_LIMIT aos 12s — sem tempo nem de avisar.
+      //
+      // Agora o buffer de saída é alocado uma vez (o tamanho é conhecido pelas
+      // tabelas) e cada pedaço é escrito nele assim que chega, em fatias
+      // pequenas e paralelismo baixo. O pico passa a ser
+      // CONCORRENCIA × MAX_PEDACO, independente do tamanho do vídeo.
+      const MAX_PEDACO = 8 * 1024 * 1024
+      const CONCORRENCIA = 4
+
+      const totalBytes = usar.reduce((sm, a) => sm + a.size + 7, 0)
+      const out = new Uint8Array(totalBytes)
+      // Onde cada amostra começa dentro da saída — permite escrever fora de
+      // ordem, conforme os pedaços chegam.
+      const ordenadas = usar.slice().sort((x, y) => x.off - y.off)
+      const destino = new Map<number, number>()
+      let cursor = 0
+      for (const a of usar) { destino.set(a.off, cursor); cursor += a.size + 7 }
+
+      // Blocos grandes viram sub-pedaços — mas cortados NAS AMOSTRAS, não a
+      // cada 8 MB cegos: uma amostra partida entre dois pedaços não seria
+      // escrita por nenhum dos dois e deixaria quadros corrompidos no áudio.
+      const pedidosDeBytes: { ini: number; fim: number }[] = []
+      for (const bloco of b) {
+        const dentro = ordenadas.filter(a => a.off >= bloco.ini && a.off + a.size <= bloco.fim)
+        if (!dentro.length) continue
+        let ini = dentro[0].off
+        let fim = dentro[0].off + dentro[0].size
+        for (let i = 1; i < dentro.length; i++) {
+          const proxFim = dentro[i].off + dentro[i].size
+          if (proxFim - ini > MAX_PEDACO) { pedidosDeBytes.push({ ini, fim }); ini = dentro[i].off }
+          fim = proxFim
+        }
+        pedidosDeBytes.push({ ini, fim })
+      }
+
+      let escritas = 0
+      const escrever = async (pedido: { ini: number; fim: number }) => {
+        const dados = await ler(pedido.ini, pedido.fim - 1)
+        if (!dados) throw new Error('leitura de bloco falhou')
+        for (const a of ordenadas) {
+          if (a.off + a.size <= pedido.ini) continue
+          if (a.off >= pedido.fim) break
+          const d = destino.get(a.off)
+          if (d === undefined) continue
+          out.set(adts(a.size, t.asc, t.canais, t.taxa), d)
+          out.set(dados.subarray(a.off - pedido.ini, a.off - pedido.ini + a.size), d + 7)
+          escritas++
         }
       }
-      const acharBytes = (off: number, size: number): Uint8Array | null => {
-        for (let i = 0; i < b.length; i++) {
-          if (off >= b[i].ini && off + size <= b[i].fim) {
-            const rel = off - b[i].ini
-            return pedacos[i]!.subarray(rel, rel + size)
-          }
+
+      try {
+        for (let i = 0; i < pedidosDeBytes.length; i += CONCORRENCIA) {
+          await Promise.all(pedidosDeBytes.slice(i, i + CONCORRENCIA).map(escrever))
         }
+      } catch {
         return null
       }
-      const partes: Uint8Array[] = []
-      let totalBytes = 0
-      for (const a of usar) {
-        const dados = acharBytes(a.off, a.size)
-        if (!dados || dados.length !== a.size) continue
-        const cab = adts(a.size, t.asc, t.canais, t.taxa)
-        partes.push(cab, dados)
-        totalBytes += cab.length + dados.length
-      }
-      if (!partes.length) return null
-      const out = new Uint8Array(totalBytes)
-      let p = 0
-      for (const x of partes) { out.set(x, p); p += x.length }
-      return { bytes: out, minutos: acc / t.timescale / 60, transferido: transfer, pedidos: b.length }
+      if (!escritas) return null
+      return { bytes: out, minutos: acc / t.timescale / 60, transferido: transfer, pedidos: pedidosDeBytes.length }
     }
   }
   return null
@@ -393,7 +435,7 @@ export function extrairAudioDeTs(buf: Uint8Array, maxAudio = 11 * 1024 * 1024): 
 export async function extrairAudioDeTsProgressivo(
   ler: LerRange, tamanho: number, opts: OpcoesAudio = {},
 ): Promise<AudioExtraido | null> {
-  const maxTransferencia = opts.maxTransferencia ?? 60 * 1024 * 1024
+  const maxTransferencia = opts.maxTransferencia ?? 48 * 1024 * 1024
   const maxAudio = opts.maxAudio ?? 11 * 1024 * 1024
   const JANELA = 16 * 1024 * 1024
 

@@ -21,7 +21,19 @@ const AUTH_TIMEOUT_MS = 25000;
 // its own 6-minute per-batch allowance; admin-backfill-lesson-durations reads
 // real bytes from Drive per lesson — a batch of 8 measured at ~30s) — exempt
 // them from the blanket timeout.
-const TIMEOUT_EXEMPT = /\/functions\/v1\/(member-sync-library|run-email-campaign|admin-backfill-lesson-durations|admin-capi-health|admin-capi-backfill|generate-flashcards|generate-study-plan|member-assistant|archive-manage)/;
+const TIMEOUT_EXEMPT = /\/functions\/v1\/(member-sync-library|run-email-campaign|admin-backfill-lesson-durations|admin-capi-health|admin-capi-backfill|archive-manage)/;
+// As ferramentas de IA levam de 20s a ~2min por geração, muito além do
+// orçamento de uma consulta comum — mas isentá-las de prazo NENHUM tinha um
+// custo alto: quando a Edge Function morria sem responder (ela é cortada aos
+// 150s), a promessa nunca resolvia e o aluno ficava com "Gerando suas
+// questões…" girando até recarregar o navegador. Relatado por cliente, e
+// visível nos logs: 504 e 502 na função com a tela presa do outro lado.
+//
+// O prazo aqui é MAIOR que o da função de propósito: quando ela consegue
+// responder, é a mensagem dela que o aluno vê; este limite é só a rede de
+// segurança para quando não vem resposta alguma.
+const AI_PATH = /\/functions\/v1\/(generate-flashcards|generate-study-plan|member-assistant)/;
+const AI_TIMEOUT_MS = 165000;
 // member-auth-request/create-trial-access are the login/trial entry points —
 // same reasoning as /auth/v1/ below, just implemented as our own Edge
 // Functions instead of GoTrue's built-in endpoints.
@@ -83,9 +95,11 @@ function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}): Pro
     return fetch(input, init).then(res => { checarSessaoMorta(url, res); return res; });
   }
 
-  const timeoutMs = PAYMENT_PATH.test(url)
-    ? PAYMENT_TIMEOUT_MS
-    : AUTH_PATH.test(url) ? AUTH_TIMEOUT_MS : FETCH_TIMEOUT_MS;
+  const timeoutMs = AI_PATH.test(url)
+    ? AI_TIMEOUT_MS
+    : PAYMENT_PATH.test(url)
+      ? PAYMENT_TIMEOUT_MS
+      : AUTH_PATH.test(url) ? AUTH_TIMEOUT_MS : FETCH_TIMEOUT_MS;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   if (init.signal) {

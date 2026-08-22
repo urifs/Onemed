@@ -463,8 +463,19 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
       onGenerated(data as GeneratedDeck);
     } catch (err: any) {
       const cru = String(err?.message || '');
-      const rede = /Failed to send a request|Failed to fetch|NetworkError|aborted/i.test(cru);
-      toast.error(rede ? 'A conexão caiu durante a geração. Tente de novo.' : cru || 'Não foi possível gerar os flashcards');
+      // Tempo esgotado e conexão caída são coisas diferentes para o aluno: uma
+      // pede menos conteúdo, a outra pede tentar de novo. Antes as duas caíam
+      // na mesma frase ("a conexão caiu"), que mandava insistir no que ia
+      // estourar de novo.
+      const tempo = /timed? ?out|timeout|signal timed out|deadline/i.test(cru);
+      const rede = !tempo && /Failed to send a request|Failed to fetch|NetworkError|aborted/i.test(cru);
+      toast.error(
+        tempo
+          ? 'A geração passou do tempo e foi interrompida. Tente pedir menos questões, ou selecionar menos conteúdo de uma vez.'
+          : rede
+            ? 'A conexão caiu durante a geração. Tente de novo.'
+            : cru || 'Não foi possível gerar os flashcards',
+      );
       setGenerating(false);
       setProgresso(null);
     }
@@ -493,7 +504,10 @@ export function FlashcardGeneratorModal({ open, onOpenChange, initialSources, on
             <p className="text-xs text-muted-foreground">
               {ehQuestoes && importExisting
                 ? 'Bancos grandes são transcritos em partes automaticamente — pode levar alguns minutos. Mantenha esta tela aberta.'
-                : 'Esse processo pode levar alguns minutos — a IA está lendo o conteúdo selecionado. Mantenha esta tela aberta.'}
+                /* "alguns minutos" prometia o que o servidor não entrega: ele
+                   se interrompe sozinho perto de 2min e responde. Dizer a
+                   faixa real evita o aluno achar que travou aos 40s. */
+                : 'A IA está lendo o conteúdo selecionado — costuma levar de 30 segundos a 2 minutos. Mantenha esta tela aberta.'}
             </p>
           </div>
         ) : (
