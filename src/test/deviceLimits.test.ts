@@ -57,19 +57,21 @@ describe('telas extras no perfil', () => {
   const comExtras = (plano: string, extras: number) =>
     (PLAN_FEATURES[plano] || []).map(f =>
       extras > 0 && /\d+\s*telas?\s+simult/i.test(f)
-        ? f.replace(/\d+\s*telas?\s+simult\w*/i,
+        ? f.replace(/\d+\s*telas?\s+simult[âa]neas?/i,
             `${(PLAN_DEVICE_LIMITS[plano] ?? DEFAULT_DEVICE_LIMIT) + extras} telas simultâneas`)
           + ` (${PLAN_DEVICE_LIMITS[plano] ?? DEFAULT_DEVICE_LIMIT} do plano + ${extras} extra${extras > 1 ? 's' : ''})`
         : f);
 
   it('soma as extras ao benefício de telas e diz de onde vêm', () => {
     const linha = comExtras('lifetime', 2).find(f => /telas? simult/i.test(f));
-    expect(linha).toContain('4 telas simultâneas');
-    expect(linha).toContain('2 do plano + 2 extras');
+    // Texto EXATO: com `toContain` um replace quebrado no acento
+    // ("4 telas simultâneasâneas") passava despercebido.
+    expect(linha).toBe('4 telas simultâneas (2 do plano + 2 extras)');
   });
 
   it('usa o singular com uma tela extra', () => {
-    expect(comExtras('lifetime', 1).find(f => /telas? simult/i.test(f))).toContain('+ 1 extra)');
+    expect(comExtras('lifetime', 1).find(f => /telas? simult/i.test(f)))
+      .toBe('3 telas simultâneas (2 do plano + 1 extra)');
   });
 
   it('sem extras, o texto do plano fica intocado', () => {
