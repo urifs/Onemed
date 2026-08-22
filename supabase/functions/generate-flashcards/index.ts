@@ -118,6 +118,31 @@ async function primeirasPaginas(bytes: Uint8Array, orcamento: number): Promise<U
   }
 }
 
+// ── texto do PDF (plano B do filtro de conteúdo) ───────────────────────────
+// Apostila médica com fotos clínicas (dermatoses, lesões, radiografias) faz o
+// Gemini disparar o filtro de segurança como FALSO POSITIVO: a resposta volta
+// com finish_reason='content_filter' e conteúdo VAZIO — o aluno via "A IA
+// devolveu uma resposta inválida" e a tela voltava pra configuração. Medido em
+// 08/2026: o MESMO material como TEXTO puro (sem as imagens) passa e gera as
+// questões. Então, quando o PDF-arquivo é bloqueado, reenviamos só o TEXTO.
+// safety_settings no proxy do Gemini foi testado e NÃO tem efeito (o proxy
+// gerenciado ignora o campo), por isso a saída é trocar a mídia, não afrouxar
+// o filtro. unpdf é a build serverless do pdf.js; import dinâmico + try/catch
+// para que uma falha de carregamento nunca derrube o boot da função.
+const TEXTO_PDF_MAX = 120_000
+async function extrairTextoPdf(bytes: Uint8Array): Promise<string> {
+  try {
+    const { getDocumentProxy, extractText } = await import('https://esm.sh/unpdf@1.8.1')
+    const pdf = await getDocumentProxy(bytes)
+    const { text } = await extractText(pdf, { mergePages: true })
+    const t = (Array.isArray(text) ? text.join('\n') : String(text || '')).trim()
+    return t.slice(0, TEXTO_PDF_MAX)
+  } catch (err) {
+    console.error('Falha ao extrair texto do PDF:', (err as Error)?.message)
+    return ''
+  }
+}
+
 // ── imagens embutidas no PDF ──────────────────────────────────────────────
 // Questão de prova que depende de figura (ECG, radiografia, foto clínica)
 // virava texto com um marcador "IMG" — o modelo enxerga a imagem no PDF mas
@@ -467,7 +492,7 @@ serve(async (req) => {
     // PDFs cujo conteúdo foi lido — candidatos à extração de imagens. A
     // extração só roda com UM PDF na geração: a referência do modelo é o
     // número da página, que ficaria ambíguo entre dois documentos.
-    const pdfLidos: { nome: string; bytes: Uint8Array }[] = []
+    const pdfLidos: { nome: string; bytes: Uint8Array; parteIdx: number }[] = []
     // Quantas fontes tiveram o CONTEÚDO realmente lido (não só o título).
     // Sem isto, uma aula em vídeo que a IA não consegue abrir virava 15
     // questões inventadas a partir do NOME do arquivo — com cara de legítimas,
@@ -514,7 +539,7 @@ serve(async (req) => {
       parts.push({ type: 'file', file: { file_data: `data:${up.mime};base64,${up.data}` } })
       fontesLidas++
       if (up.mime === 'application/pdf') {
-        pdfLidos.push({ nome: up.name, bytes: Uint8Array.from(atob(up.data), c => c.charCodeAt(0)) })
+        pdfLidos.push({ nome: up.name, bytes: Uint8Array.from(atob(up.data), c => c.charCodeAt(0)), parteIdx: parts.length - 1 })
       }
     }
 
@@ -592,7 +617,7 @@ serve(async (req) => {
       parts.push({ type: 'text', text: `Material: "${lesson.title}" (curso: ${courseTitle}):` })
       parts.push({ type: 'file', file: { file_data: `data:${mime};base64,${b64(bytes)}` } })
       fontesLidas++
-      if (mime === 'application/pdf') pdfLidos.push({ nome: lesson.title, bytes })
+      if (mime === 'application/pdf') pdfLidos.push({ nome: lesson.title, bytes, parteIdx: parts.length - 1 })
     }
 
     // ── arquivos do Acervo Público (mesma régua das aulas) ─────────────────
@@ -661,7 +686,7 @@ serve(async (req) => {
       parts.push({ type: 'text', text: `Material do Acervo Público: "${af.name}" (em «${af.item_title}»):` })
       parts.push({ type: 'file', file: { file_data: `data:${mime};base64,${b64(bytes)}` } })
       fontesLidas++
-      if (mime === 'application/pdf') pdfLidos.push({ nome: af.name, bytes })
+      if (mime === 'application/pdf') pdfLidos.push({ nome: af.name, bytes, parteIdx: parts.length - 1 })
     }
 
     // Nenhuma fonte foi lida de verdade: sem o complemento escrito pelo aluno,
@@ -829,6 +854,31 @@ serve(async (req) => {
             && typeof c.correct === 'number' && c.correct >= 0 && c.correct < (c.options as string[]).length))
       .slice(0, teto)
 
+    // Plano B do filtro de conteúdo: o mesmo material com as imagens trocadas
+    // pelo TEXTO extraído do PDF. Memoizado — vale para a rodada principal e a
+    // de complemento, sem extrair o texto duas vezes.
+    let partesTextoCache: unknown[] | null = null
+    let partesTextoTentado = false
+    let jaAvisouTexto = false
+    let bloqueioConteudo = false
+    const montarPartesTexto = async (): Promise<unknown[] | null> => {
+      if (partesTextoTentado) return partesTextoCache
+      partesTextoTentado = true
+      if (!pdfLidos.length) return null
+      const copia = parts.slice()
+      let trocou = false
+      for (const { parteIdx, bytes, nome } of pdfLidos) {
+        if (parteIdx < 0 || parteIdx >= copia.length) continue
+        const txt = await extrairTextoPdf(bytes)
+        if (txt) {
+          copia[parteIdx] = { type: 'text', text: `Conteúdo do material "${nome}" (texto extraído do PDF):\n${txt}` }
+          trocou = true
+        }
+      }
+      partesTextoCache = trocou ? copia : null
+      return partesTextoCache
+    }
+
     // Uma rodada completa: chamada + fallback sem mídia (400) + parse + uma
     // repetição automática em resposta inválida.
     let avisoMidiaDado = false
@@ -864,13 +914,34 @@ serve(async (req) => {
         return null
       }
       let cartas = validar(extrairCartas(llmData.choices?.[0]?.message?.content || '') || [], teto)
-      // A repetição automática DOBRA o tempo da rodada. Num PDF grande cada
-      // chamada leva ~75s, então repetir levava a requisição a 150s — o limite
-      // em que a function é cortada com 504 e o aluno não recebe nada. Só
-      // repete se o que já se passou couber mais uma chamada do mesmo tamanho.
+      const finishReason = String((llmData as { choices?: { finish_reason?: string }[] }).choices?.[0]?.finish_reason || '')
+      const conteudoVazio = !String(llmData.choices?.[0]?.message?.content || '').trim()
+      // Filtro de segurança do Gemini (falso positivo em foto clínica): resposta
+      // OK, finish_reason='content_filter', conteúdo VAZIO. Repetir o MESMO PDF
+      // seria bloqueado igual — então trocamos o arquivo pelo TEXTO extraído,
+      // que passa. Só quando há PDF de fonte e ainda há tempo de sobra.
+      if (cartas.length === 0 && (finishReason === 'content_filter' || conteudoVazio) && pdfLidos.length && restanteMs() > 30_000) {
+        const partesTexto = await montarPartesTexto()
+        if (partesTexto) {
+          console.warn('Bloqueio de conteúdo no PDF; reenviando como texto extraído')
+          if (!jaAvisouTexto) {
+            warnings.push('O material tem imagens que a IA não pôde processar — a geração usou o texto do documento.')
+            jaAvisouTexto = true
+          }
+          try {
+            llmRes = await chamarLLM([...partesTexto, promptFinal])
+            llmData = await llmRes.json()
+            if (llmRes.ok) cartas = validar(extrairCartas((llmData as { choices?: { message?: { content?: string } }[] }).choices?.[0]?.message?.content || '') || [], teto)
+          } catch { /* sem tempo: entrega o que houver */ }
+        }
+        if (cartas.length === 0) bloqueioConteudo = true
+      }
+      // Resposta inválida "comum" (JSON quebrado, não bloqueio): uma repetição
+      // idêntica costuma resolver. DOBRA o tempo da rodada, então só repete se
+      // o que já se passou couber mais uma chamada do mesmo tamanho.
       const gastoNaChamada = Date.now() - t0Chamada
       const cabeRepetir = gastoNaChamada * 1.2 < restanteMs()
-      if (cartas.length === 0 && cabeRepetir) {
+      if (cartas.length === 0 && !bloqueioConteudo && cabeRepetir) {
         console.warn('Resposta inválida do modelo; repetindo a chamada uma vez')
         try {
           llmRes = await chamarLLM(conteudo)
@@ -1020,7 +1091,14 @@ serve(async (req) => {
         return await falhar('A IA não conseguiu processar este conteúdo agora. Tente novamente em instantes.')
       }
       if (geradas.length === 0) {
-        return await falhar('A IA devolveu uma resposta inválida. Tente gerar de novo.')
+        // bloqueioConteudo: o filtro do Gemini barrou o material (imagens
+        // clínicas) e nem o texto extraído passou — repetir não adianta,
+        // então aponta um caminho de saída em vez de "tente de novo".
+        return await falhar(
+          bloqueioConteudo
+            ? 'A IA não conseguiu processar este material (o filtro de conteúdo bloqueou as imagens do documento). Tente gerar a partir do vídeo da aula, de outra apostila ou envie um arquivo.'
+            : 'A IA devolveu uma resposta inválida. Tente gerar de novo.',
+        )
       }
       cards = geradas
 
