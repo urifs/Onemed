@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { trackPurchase } from '@/lib/pixel';
 import {
@@ -15,9 +16,26 @@ import { PLAN_LABELS, PLAN_PRICES } from '@/lib/plans';
 export default function PaymentSuccessPage() {
   const [searchParams] = useSearchParams();
   const [purchaseInfo, setPurchaseInfo] = useState<any>(null);
+  const queryClient = useQueryClient();
 
   const paymentId = searchParams.get('payment_id');
   const status = searchParams.get('status');
+
+  // Os dados da conta ficam em cache de 1 minuto e são compartilhados por
+  // todas as telas — quem acabou de comprar (upgrade, renovação, tela extra)
+  // voltava do Mercado Pago e continuava vendo o estado ANTIGO no perfil.
+  //
+  // O webhook do MP pode chegar depois do redirect, então não basta invalidar
+  // uma vez: as repetições cobrem a janela em que a compra ainda está sendo
+  // confirmada do outro lado.
+  useEffect(() => {
+    if (status !== 'approved') return;
+    const invalidar = () => queryClient.invalidateQueries({ queryKey: ['member-account-info'] });
+    invalidar();
+    const t1 = setTimeout(invalidar, 4000);
+    const t2 = setTimeout(invalidar, 12000);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [status, queryClient]);
 
   useEffect(() => {
     const pending = localStorage.getItem('pending_purchase');

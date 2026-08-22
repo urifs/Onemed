@@ -316,6 +316,8 @@ export function AccountMenu() {
         expiresAt={info.expiresAt}
         isLifetime={info.isLifetime}
         grantedAt={info.grantedAt}
+        extraScreens={info.extraScreens ?? 0}
+        deviceLimit={info.deviceLimit ?? null}
       />
     )}
     </>
