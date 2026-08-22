@@ -35,7 +35,7 @@ export function PlanDetailsModal({ open, onOpenChange, plan, email, whatsapp, am
   // passa a refletir o que a conta REALMENTE tem, dizendo de onde vem.
   const features = (PLAN_FEATURES[plan] || []).map(f =>
     extraScreens > 0 && /\d+\s*telas?\s+simult/i.test(f)
-      ? f.replace(/\d+\s*telas?\s+simult\w*/i,
+      ? f.replace(/\d+\s*telas?\s+simult[âa]neas?/i,
           `${(PLAN_DEVICE_LIMITS[plan] ?? DEFAULT_DEVICE_LIMIT) + extraScreens} telas simultâneas`)
         + ` (${PLAN_DEVICE_LIMITS[plan] ?? DEFAULT_DEVICE_LIMIT} do plano + ${extraScreens} extra${extraScreens > 1 ? 's' : ''})`
       : f);
