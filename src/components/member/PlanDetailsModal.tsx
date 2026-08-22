@@ -1,5 +1,5 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Check, Mail, Phone, Calendar, DollarSign, Monitor, Crown } from 'lucide-react';
+import { Check, Mail, Phone, Calendar, DollarSign, Monitor, MonitorUp, Crown } from 'lucide-react';
 import { PLAN_LABELS, PLAN_FEATURES, PLAN_DEVICE_LIMITS, DEFAULT_DEVICE_LIMIT } from '@/lib/plans';
 import { formatDateSP, formatBRL } from '@/lib/utils';
 
@@ -13,6 +13,10 @@ interface PlanDetailsModalProps {
   expiresAt: string | null;
   isLifetime: boolean;
   grantedAt?: string | null;
+  /** Telas extras COMPRADAS além do limite do plano. */
+  extraScreens?: number;
+  /** Limite total já somado pelo servidor (plano + extras). */
+  deviceLimit?: number | null;
 }
 
 // Rótulos que só existem aqui: PLAN_LABELS (plans.ts) cobre os planos à
@@ -24,10 +28,18 @@ const EXTRA_LABELS: Record<string, string> = {
   admin: 'Administrador',
 };
 
-export function PlanDetailsModal({ open, onOpenChange, plan, email, whatsapp, amountPaid, expiresAt, isLifetime, grantedAt }: PlanDetailsModalProps) {
+export function PlanDetailsModal({ open, onOpenChange, plan, email, whatsapp, amountPaid, expiresAt, isLifetime, grantedAt, extraScreens = 0, deviceLimit }: PlanDetailsModalProps) {
   const features = PLAN_FEATURES[plan] || [];
   // Admin não passa pelo enforce_session_limit, então não tem teto de telas.
-  const deviceLimit = plan === 'admin' ? 'Ilimitado' : PLAN_DEVICE_LIMITS[plan] ?? DEFAULT_DEVICE_LIMIT;
+  const telasDoPlano = PLAN_DEVICE_LIMITS[plan] ?? DEFAULT_DEVICE_LIMIT;
+  // O TOTAL vem do servidor, que é quem soma as telas extras compradas — e é o
+  // mesmo número que o limite de sessões aplica. Recalcular aqui pela tabela do
+  // plano ignorava as extras: quem comprava uma tela continuava vendo o limite
+  // antigo no perfil, sem sinal nenhum de que a compra valeu.
+  const totalTelas = plan === 'admin'
+    ? 'Ilimitado'
+    : (typeof deviceLimit === 'number' ? deviceLimit : telasDoPlano + extraScreens);
+  const temExtras = plan !== 'admin' && extraScreens > 0;
   // Trial e admin não têm valor de tabela — "R$ 0,00" como preço do plano só
   // confundiria; a linha some.
   const mostraValor = amountPaid > 0 && plan !== 'trial' && plan !== 'admin';
@@ -73,10 +85,23 @@ export function PlanDetailsModal({ open, onOpenChange, plan, email, whatsapp, am
               <span className="text-muted-foreground flex items-center gap-2"><Calendar className="w-3.5 h-3.5" /> Vencimento</span>
               <span className="text-foreground font-medium">{isLifetime ? 'Nunca expira' : expiresAt ? formatDateSP(expiresAt) : '—'}</span>
             </div>
-            <div className="flex items-center justify-between px-4 py-2.5 text-sm">
-              <span className="text-muted-foreground flex items-center gap-2"><Monitor className="w-3.5 h-3.5" /> Telas simultâneas</span>
-              <span className="text-foreground font-medium">{deviceLimit}</span>
+            <div className="flex items-start justify-between px-4 py-2.5 text-sm gap-3">
+              <span className="text-muted-foreground flex items-center gap-2 shrink-0"><Monitor className="w-3.5 h-3.5" /> Telas simultâneas</span>
+              <span className="text-right">
+                <span className="text-foreground font-medium">{totalTelas}</span>
+                {temExtras && (
+                  <span className="block text-xs text-muted-foreground mt-0.5">
+                    {telasDoPlano} do plano + {extraScreens} extra{extraScreens > 1 ? 's' : ''}
+                  </span>
+                )}
+              </span>
             </div>
+            {temExtras && (
+              <div className="flex items-center justify-between px-4 py-2.5 text-sm">
+                <span className="text-muted-foreground flex items-center gap-2"><MonitorUp className="w-3.5 h-3.5 text-accent-success" /> Telas extras compradas</span>
+                <span className="text-accent-success font-medium">+{extraScreens}</span>
+              </div>
+            )}
             {grantedAt && (
               <div className="flex items-center justify-between px-4 py-2.5 text-sm">
                 <span className="text-muted-foreground flex items-center gap-2"><Calendar className="w-3.5 h-3.5" /> Desde</span>
