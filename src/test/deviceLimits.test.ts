@@ -49,3 +49,30 @@ describe('telas simultâneas: o que se promete é o que se aplica', () => {
     }
   });
 });
+
+describe('telas extras no perfil', () => {
+  // O modal reescreve o benefício de telas quando a conta comprou extras —
+  // sem isso, "2 telas simultâneas" aparecia logo acima de "Telas
+  // simultâneas 4", contradizendo a si mesmo na mesma tela.
+  const comExtras = (plano: string, extras: number) =>
+    (PLAN_FEATURES[plano] || []).map(f =>
+      extras > 0 && /\d+\s*telas?\s+simult/i.test(f)
+        ? f.replace(/\d+\s*telas?\s+simult\w*/i,
+            `${(PLAN_DEVICE_LIMITS[plano] ?? DEFAULT_DEVICE_LIMIT) + extras} telas simultâneas`)
+          + ` (${PLAN_DEVICE_LIMITS[plano] ?? DEFAULT_DEVICE_LIMIT} do plano + ${extras} extra${extras > 1 ? 's' : ''})`
+        : f);
+
+  it('soma as extras ao benefício de telas e diz de onde vêm', () => {
+    const linha = comExtras('lifetime', 2).find(f => /telas? simult/i.test(f));
+    expect(linha).toContain('4 telas simultâneas');
+    expect(linha).toContain('2 do plano + 2 extras');
+  });
+
+  it('usa o singular com uma tela extra', () => {
+    expect(comExtras('lifetime', 1).find(f => /telas? simult/i.test(f))).toContain('+ 1 extra)');
+  });
+
+  it('sem extras, o texto do plano fica intocado', () => {
+    expect(comExtras('lifetime', 0)).toEqual(PLAN_FEATURES['lifetime']);
+  });
+});

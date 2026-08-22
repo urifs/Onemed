@@ -29,7 +29,16 @@ const EXTRA_LABELS: Record<string, string> = {
 };
 
 export function PlanDetailsModal({ open, onOpenChange, plan, email, whatsapp, amountPaid, expiresAt, isLifetime, grantedAt, extraScreens = 0, deviceLimit }: PlanDetailsModalProps) {
-  const features = PLAN_FEATURES[plan] || [];
+  // A lista de benefícios descreve o PLANO, então traz o número de telas de
+  // tabela. Com telas extras compradas isso ficava contradizendo a linha logo
+  // abaixo ("2 telas simultâneas" acima de "Telas simultâneas 4"). Aqui o item
+  // passa a refletir o que a conta REALMENTE tem, dizendo de onde vem.
+  const features = (PLAN_FEATURES[plan] || []).map(f =>
+    extraScreens > 0 && /\d+\s*telas?\s+simult/i.test(f)
+      ? f.replace(/\d+\s*telas?\s+simult\w*/i,
+          `${(PLAN_DEVICE_LIMITS[plan] ?? DEFAULT_DEVICE_LIMIT) + extraScreens} telas simultâneas`)
+        + ` (${PLAN_DEVICE_LIMITS[plan] ?? DEFAULT_DEVICE_LIMIT} do plano + ${extraScreens} extra${extraScreens > 1 ? 's' : ''})`
+      : f);
   // Admin não passa pelo enforce_session_limit, então não tem teto de telas.
   const telasDoPlano = PLAN_DEVICE_LIMITS[plan] ?? DEFAULT_DEVICE_LIMIT;
   // O TOTAL vem do servidor, que é quem soma as telas extras compradas — e é o
