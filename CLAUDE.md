@@ -3785,6 +3785,57 @@ obrigatório agora.
 
 ---
 
+### 2026-08-24 (sessão remota) — aula .ts "terminava" em 4-5min: worker passa a encadear janelas
+
+**Relato (vários clientes, prints):** a lista mostra 20-26min e, ao abrir, o player mostra e
+encerra em 4-5min ("2:59 / 4:12"). Localizado pelo padrão exato das durações do print: curso
+**Intensivo ECG Rhanderson Cardoso**, aulas `.ts` (MPEG-TS via mpegts.js).
+
+**O arquivo e o banco estavam CERTOS.** Sonda de linha do tempo (PCR/PTS em 25 pontos + cauda,
+ranges de 96KB): `Aula_D.ts` tem mídia contínua de 1,4s a 1172s — exatamente os 1171s de
+`duration_seconds` (metadado do Drive). Zero descontinuidade. O que quebrava era a REPRODUÇÃO:
+
+1. O mpegts.js abre a aula SEM header Range (arquivo inteiro) e, com `lazyLoad` (padrão), ABORTA
+   o download ao ter ~3min de buffer à frente;
+2. ao retomar (ou em qualquer seek), manda **`Range: bytes=N-`** (aberto);
+3. o worker respondia **só uma janela de 24MB** (teto de 31/07 para o Drive não recusar);
+4. `IOController._onLoaderComplete` do mpegts.js **trata resposta completa como FIM DO ARQUIVO**
+   (não confere o tamanho total — conferido no fonte) → `endOfStream()` → duração congela e a
+   aula "termina": 3min de buffer + ~24MB ≈ os 4-5min dos relatos.
+
+O `<video>` nativo nunca sofreu disso (lê o Content-Range e repede sozinho) — por isso só as
+aulas TS quebravam. Afetava as **2.552 aulas TS maiores que 24MB** desde 31/07.
+
+**Correção (worker `cloudflare/stream-lesson/worker.js`, deploy manual feito):** pedido ABERTO
+(`bytes=N-`, método GET) agora recebe **as janelas do Drive ENCADEADAS num único corpo de
+resposta** — 206 com `Content-Range: bytes N-(total-1)/total` e stream contínuo até o fim,
+como qualquer servidor HTTP. Por trás nada mudou: cada janela continua vindo do cache do
+datacenter → contas (storage→conteúdo, 401 renova) → escada 24→1,5MB, e sendo gravada no cache
+alinhada à grade. Detalhes:
+- **Orçamento de subrequests** (`ORCAMENTO_SUBREQ=40`, plano Free corta em 50): quando estoura
+  (arquivo muito grande sem cache), o stream TRUNCA — Content-Length não bate, o mpegts.js
+  reconecta sozinho (`EARLY_EOF` → `_internalSeek`, conferido no fonte) e o nativo repede o
+  range. Truncar é degradação; nunca corrupção.
+- **Guard anti-corrupção:** janela do meio só é emendada se vier 206 começando EXATAMENTE em
+  `proximo` (um 200 de arquivo inteiro no meio da emenda corromperia o vídeo).
+- Range FECHADO (`bytes=A-B`), pedido SEM Range, export e HEAD: **comportamento antigo intacto**.
+- `x-cache: HIT-CHAIN|MISS-CHAIN` marca o modo encadeado (primeira janela).
+
+**Verificado em produção pelo caminho real do aluno** (conta trial criada e apagada):
+`bytes=34000000-` na Aula_D devolveu **188.516.048 bytes exatos** (total−34M) num único 206
+em 11s (antes: ~16MB até a grade); estrutura TS íntegra (18.920/18.920 pacotes na cadência de
+188B); **7/7 emendas de janela byte-idênticas** ao Drive direto + último KB idêntico; range
+fechado 1KB exato sem chain; sem Range = 200 legado; repetição = `HIT-CHAIN`; arquivo <24MB
+com range aberto = janela única sem chain. Nenhuma mudança de frontend necessária — o fix vale
+para todo cliente no instante do deploy do worker.
+
+> ⚠️ Regra aprendida: **resposta "completa" ≠ arquivo completo para o mpegts.js.** Qualquer
+> proxy/CDN na frente de aulas TS precisa entregar o range aberto ATÉ O FIM (ou truncar com
+> Content-Length maior), nunca responder menos bytes do que promete o Content-Length com
+> status limpo — o mpegts.js interpreta como EOF e encerra a aula ali.
+
+---
+
 ## Google OAuth — os DOIS projetos (publicar para os tokens não expirarem)
 
 Descobertos em 19/08 pelo `tokeninfo` do próprio token vivo de cada conta
