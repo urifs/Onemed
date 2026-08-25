@@ -3836,6 +3836,41 @@ para todo cliente no instante do deploy do worker.
 
 ---
 
+### 2026-08-25 (sessão remota) — 4 cursos EstratégiaMed 2026 importados (3.777 aulas, 931 GB)
+
+4 pastas do Drive (todas da conta de ARMAZENAMENTO `ufgravity`, cada link É um curso →
+`sync-drive-extra.mjs --curso-unico`):
+
+| curso | categoria | módulos | aulas | horas | tamanho |
+|---|---|---|---|---|---|
+| Curso Pré-Internato 2.0 | Prescrições & Plantão | 38 | 75 | 38,9h | 38 GB |
+| Cursos Sprints (6 instituições) | Extensivo & Intensivo · Residência | 44 | 380 | 132,2h | 195 GB |
+| **Extensivo** (22 especialidades) | Extensivo & Intensivo · Residência | 1.148 | 3.258 | 672,3h | 693 GB |
+| Trilha ENAMED 10 Semanas | Extensivo & Intensivo · Residência | 100 | 64 | 5,0h | 5,4 GB |
+
+Zero erro de listagem, zero duplicata por `drive_file_id`, zero stub/`.gdrive`/download parcial.
+Categorias corrigidas à mão depois do import — o `categoryOf` do script devolveu
+"Residência & Provas" (categoria que NÃO existe na taxonomia ativa) e "Outros cursos".
+
+**Durações: 100% dos 1.478 vídeos.** O Drive não tinha `videoMediaMetadata` em 443 deles
+(upload recente, ainda sem processamento) — preenchidos lendo os CABEÇALHOS do próprio arquivo
+(caixa `moov`/`mvhd`; ranges de KB, não consome franquia): 439/442 no caminho normal e os 4
+restantes tinham **`mdat` com tamanho declarado ERRADO** (lixo depois do fim declarado — o
+caminhador de caixas para; achado o `mvhd` varrendo os últimos 4MB, com sanidade de
+bitrate/duração antes de gravar).
+
+**Verificado pelo caminho REAL do aluno** (conta trial criada e apagada): 12/12 aulas
+amostradas dos 4 cursos (módulos e tipos variados) respondem 206 com bytes de verdade
+(assinaturas `ftyp`/`%PDF`). Ordenação natural conferida (1→2→3..., ordens distintas = nº de
+aulas em todos). A Trilha ENAMED tem 100 módulos para 64 aulas — subpastas vazias na origem,
+mesmo caso dos 1.977 módulos-folha vazios já documentados (o feed esconde; o CourseTree não).
+
+⚠️ Aplicação interrompida no meio (timeout do shell) deixa curso com módulos e 0 aulas — o
+script é aditivo/idempotente: rodar de novo completa sem duplicar (aconteceu com Sprints e
+Trilha nesta sessão, resolvido com o re-run).
+
+---
+
 ## Google OAuth — os DOIS projetos (publicar para os tokens não expirarem)
 
 Descobertos em 19/08 pelo `tokeninfo` do próprio token vivo de cada conta
