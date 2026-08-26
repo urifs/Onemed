@@ -3904,6 +3904,37 @@ confira o efeito contando as linhas depois.
 
 ---
 
+### 2026-08-26 (sessão remota) — gerenciamento da comunidade: pausa global + restrição por usuário
+
+**Pedido do dono:** na aba Comunidade do painel, poder (1) desativar temporariamente a criação de
+novos posts — ninguém posta nem responde; (2) restringir usuários específicos por um tempo
+escolhido. **O enforcement é NO BANCO** (policy de INSERT de `course_comments`): esconder botão
+no frontend não impede POST direto na API.
+
+| Peça | O quê |
+|---|---|
+| `20260826020000_community_management.sql` | `community_settings.posting_paused`; tabela `community_restrictions` (PK user_id — re-restringir sobrescreve o prazo; `restricted_until` NULL = permanente); RPCs `community_posting_status()` (estado + razão + até quando, usada pelo frontend) e `community_can_post()` (gate da policy), ambas SECURITY DEFINER com REVOKE de anon; policy de INSERT recriada = condições antigas + `AND (SELECT community_can_post())`, na MESMA transação (sem janela sem policy) |
+| `AdminCommunityPage` | Card "Gerenciamento da comunidade": switch de pausa (com confirmação ao ativar), lista de restritos (Liberar por linha, limpeza de expiradas), diálogo "Restringir usuário" (busca em profiles, duração 1h/6h/24h/3d/7d/30d/permanente, motivo) e botão por comentário para restringir o autor direto da tabela |
+| `src/lib/communityPosting.ts` + `useCommunityPostingStatus` | Módulo PURO com a mensagem por razão (testável) + hook react-query (staleTime 30s) |
+| `CommunityPage` / `CommunityTab` | Banner quando bloqueado + botão de publicar desabilitado |
+| As 3 superfícies de post | Recusa da RLS (42501) vira a mensagem CERTA perguntando a razão ao servidor (`explainPostDenial`) — em vez de "tente novamente" que nunca funcionaria |
+
+**Decisão de produto:** admin NUNCA é bloqueado (com a comunidade pausada a equipe ainda publica
+avisos). Curtidas e edição de posts existentes ficaram fora do escopo de propósito (o pedido foi
+postar/responder).
+
+**Verificado em produção:** 11 sondas SQL (com rollback) — membro normal continua postando
+(nada quebrou), pausa bloqueia membro e NÃO bloqueia admin, restrição ativa/permanente bloqueia,
+expirada libera, restrição de um usuário não afeta outro, anon sem EXECUTE; estado real intocado
+ao fim (pausa off, 0 restrições). E2E REST com membro real (criado por accesses+set-password,
+apagado depois): posta 201 → restrito 2h → 403/42501 com a RPC devolvendo `until` → liberado →
+201. 173 testes verdes (4 novos), typecheck:refs limpo, build 27/27.
+
+> A migration já está aplicada; o card no painel e os avisos ao aluno entram com o merge do
+> frontend na `main`. Até lá nada muda para ninguém (pausa desligada, zero restrições).
+
+---
+
 ## Google OAuth — os DOIS projetos (publicar para os tokens não expirarem)
 
 Descobertos em 19/08 pelo `tokeninfo` do próprio token vivo de cada conta

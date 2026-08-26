@@ -13,6 +13,7 @@ import { CommunityLocked } from '@/components/member/CommunityLocked';
 import { MemberHeader } from '@/components/member/MemberHeader';
 import { NameRequiredModal } from '@/components/member/NameRequiredModal';
 import { CommentThread } from '@/components/member/CommentThread';
+import { useCommunityPostingStatus, explainPostDenial } from '@/hooks/useCommunityPostingStatus';
 import { PlanAvatarRing, PlanBadge } from '@/components/member/PlanBadge';
 import { LikeButton } from '@/components/member/LikeButton';
 import { Button } from '@/components/ui/button';
@@ -236,6 +237,7 @@ export default function CommunityPage() {
   const [newCategory, setNewCategory] = useState<string>('none');
   const [newCourseId, setNewCourseId] = useState<string>('none');
   const [posting, setPosting] = useState(false);
+  const { blockedMessage } = useCommunityPostingStatus();
   const [courses, setCourses] = useState<CourseOption[]>([]);
   const [filter, setFilter] = useState('all');
   const [sort, setSort] = useState('recent');
@@ -332,7 +334,10 @@ export default function CommunityPage() {
       load(0);
     } else {
       // O texto digitado fica no formulário — só limpa quando publicou.
-      toast.error('Não foi possível publicar o tópico. Tente novamente.');
+      // Recusa da RLS pode ser pausa/restrição — aí a mensagem certa vem do
+      // servidor, em vez de um "tente novamente" que nunca vai funcionar.
+      const motivo = await explainPostDenial(error);
+      toast.error(motivo || 'Não foi possível publicar o tópico. Tente novamente.');
     }
   };
 
@@ -377,6 +382,12 @@ export default function CommunityPage() {
         </div>
 
         {whatsappGroupUrl && <WhatsAppGroupCard url={whatsappGroupUrl} />}
+
+        {blockedMessage && (
+          <div className="rounded-xl border border-accent-warning/30 bg-accent-warning/10 px-4 py-3 text-sm text-foreground">
+            {blockedMessage}
+          </div>
+        )}
 
         <div className="glass rounded-xl p-5">
           <p className="text-sm font-semibold text-foreground mb-3">Abrir um novo tópico</p>
@@ -433,7 +444,7 @@ export default function CommunityPage() {
           <div className="flex justify-end mt-2.5">
             <button
               onClick={handleNewTopic}
-              disabled={posting || !newBody.trim()}
+              disabled={posting || !newBody.trim() || !!blockedMessage}
               className="inline-flex items-center gap-1.5 bg-primary hover:bg-primary-hover disabled:opacity-40 disabled:cursor-not-allowed text-primary-foreground text-sm font-semibold px-4 py-2 rounded-lg transition-colors"
             >
               <Send className="w-3.5 h-3.5" /> Publicar

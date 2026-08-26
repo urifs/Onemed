@@ -10,6 +10,7 @@ import { useIsTrial } from '@/hooks/useIsTrial';
 import { CommunityLocked } from './CommunityLocked';
 import { NameRequiredModal } from './NameRequiredModal';
 import { CommentThread } from './CommentThread';
+import { useCommunityPostingStatus, explainPostDenial } from '@/hooks/useCommunityPostingStatus';
 import { PlanAvatarRing, PlanBadge } from './PlanBadge';
 import { LikeButton } from './LikeButton';
 
@@ -36,6 +37,7 @@ export function CommunityTab({ courseId }: { courseId: string }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [posting, setPosting] = useState(false);
+  const { blockedMessage } = useCommunityPostingStatus();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editBody, setEditBody] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
@@ -77,7 +79,10 @@ export function CommunityTab({ courseId }: { courseId: string }) {
     });
     setPosting(false);
     if (!error) { setBody(''); load(); }
-    else toast.error('Não foi possível publicar o comentário. Tente novamente.');
+    else {
+      const motivo = await explainPostDenial(error);
+      toast.error(motivo || 'Não foi possível publicar o comentário. Tente novamente.');
+    }
   };
 
   const handlePost = () => ensureName(doPost);
@@ -102,6 +107,11 @@ export function CommunityTab({ courseId }: { courseId: string }) {
     <div className="max-w-2xl">
       {!trialLoading && isTrial ? <CommunityLocked compact /> : (
       <>
+      {blockedMessage && (
+        <div className="rounded-xl border border-accent-warning/30 bg-accent-warning/10 px-4 py-3 text-sm text-foreground mb-4">
+          {blockedMessage}
+        </div>
+      )}
       <div className="flex gap-3 mb-8">
         <div className="w-9 h-9 rounded-full bg-primary/15 border border-primary/25 flex items-center justify-center text-primary font-semibold text-sm shrink-0">
           {initials(user?.user_metadata?.name as string | undefined, user?.email)}
@@ -119,7 +129,7 @@ export function CommunityTab({ courseId }: { courseId: string }) {
           <div className="flex justify-end mt-2">
             <button
               onClick={handlePost}
-              disabled={posting || !body.trim()}
+              disabled={posting || !body.trim() || !!blockedMessage}
               className="inline-flex items-center gap-1.5 bg-primary hover:bg-primary-hover disabled:opacity-40 disabled:cursor-not-allowed text-primary-foreground text-sm font-semibold px-4 py-2 rounded-lg transition-colors"
             >
               <Send className="w-3.5 h-3.5" /> Comentar
