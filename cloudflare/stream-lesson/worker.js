@@ -110,6 +110,17 @@ const DICA_TTL_SECONDS = 30 * 60;
 // parou (o mpegts.js reconecta sozinho no EARLY_EOF; o <video> nativo repede o
 // range). Truncar é degradação, nunca corrupção: os bytes entregues são exatos.
 const ORCAMENTO_SUBREQ = 40;
+// Quantas janelas COMPLETAS um pedido aberto de <video>/<audio> NATIVO recebe
+// por resposta. O player nativo lê o Content-Range e repede a continuação
+// sozinho — então para ele o worker promete SÓ o que consegue garantir dentro
+// do orçamento e fecha limpo (prometido == entregue). Prometer o arquivo
+// inteiro e truncar no orçamento fazia o Chrome parar a aula aos ~285MB
+// (aula de 30min "acabava" aos 8-10min — medido em produção, 26/08). O
+// mpegts.js é o oposto: trata resposta completa como fim do ARQUIVO, então
+// para ele a promessa vai até o EOF e o truncamento (que ele reconecta
+// sozinho) é o custo aceito. Os dois se distinguem pelo Sec-Fetch-Dest:
+// elemento de mídia manda "video"/"audio"; fetch() do mpegts.js manda "empty".
+const JANELAS_POR_RESPOSTA_NATIVO = 8;
 
 // ── DUAS contas de leitura, nesta ordem ────────────────────────────────────
 // O `downloadQuotaExceeded` do Google diz "a cota deste ARQUIVO", mas medimos
@@ -200,6 +211,8 @@ export default {
     // por trás cada janela continua vindo do cache/escada como antes. Pedido
     // FECHADO (bytes=A-B) segue respondendo só a janela, como sempre.
     const range = ehExport ? null : request.headers.get('range');
+    const fetchDest = (request.headers.get('sec-fetch-dest') || '').toLowerCase();
+    const clienteNativo = fetchDest === 'video' || fetchDest === 'audio';
     const casaFaixa = range && /^bytes=(\d+)-(\d*)$/.exec(range);
     const inicio = casaFaixa ? Number(casaFaixa[1]) : null;
     const fimPedido = casaFaixa && casaFaixa[2] !== '' ? Number(casaFaixa[2]) : null;
@@ -516,10 +529,17 @@ export default {
       return new Response(primeiro.body, { status: primeiro.status, headers });
     }
 
+    // Fim da resposta: nativo ganha um trecho garantido (alinhado à grade de
+    // 24MB — todas as janelas da escada dividem 24MB, então nenhuma janela
+    // cruza esse fim); mpegts.js ganha até o fim do arquivo.
+    const fimResposta = clienteNativo
+      ? Math.min(span.total - 1, (Math.floor((span.ate + 1) / CHUNK) + JANELAS_POR_RESPOSTA_NATIVO) * CHUNK - 1)
+      : span.total - 1;
+
     const headers = new Headers(cors);
     if (primeiro.contentType) headers.set('content-type', primeiro.contentType);
-    headers.set('content-length', String(span.total - inicio));
-    headers.set('content-range', `bytes ${inicio}-${span.total - 1}/${span.total}`);
+    headers.set('content-length', String(fimResposta - inicio + 1));
+    headers.set('content-range', `bytes ${inicio}-${fimResposta}/${span.total}`);
     headers.set('accept-ranges', 'bytes');
     headers.set('cache-control', 'private, max-age=0, no-store');
     headers.set('x-cache', primeiro.deCache ? 'HIT-CHAIN' : 'MISS-CHAIN');
@@ -532,7 +552,7 @@ export default {
       let completou = false;
       try {
         await primeiro.body.pipeTo(writable, { preventClose: true });
-        while (proximo < span.total && subreq < ORCAMENTO_SUBREQ) {
+        while (proximo <= fimResposta && subreq < ORCAMENTO_SUBREQ) {
           let corpo = null;
           let fimJanela = null;
           for (const j of ESCADA_JANELAS.filter(x => x <= janelaAtual)) {
@@ -573,7 +593,7 @@ export default {
           await corpo.pipeTo(writable, { preventClose: true });
           proximo = fimJanela + 1;
         }
-        completou = proximo >= span.total;
+        completou = proximo > fimResposta;
       } catch { /* cliente desconectou (pausa, troca de aula) ou janela caiu no meio */ }
       try {
         const w = writable.getWriter();

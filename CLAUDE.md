@@ -3935,6 +3935,37 @@ apagado depois): posta 201 → restrito 2h → 403/42501 com a RPC devolvendo `u
 
 ---
 
+### 2026-08-26 (sessão remota) — REGRESSÃO do encadeamento: MP4 nativo grande "acabava" aos 8-10min
+
+**Relato (cliente, mesmo sintoma do caso .ts):** aula de 20-30min carrega só 5-10min. O worker
+no ar estava com o encadeamento de 24/08 — mas a vítima agora era o **`<video>` NATIVO** (mp4):
+o chain prometia o arquivo INTEIRO no Content-Range/Content-Length e TRUNCAVA no orçamento de
+subrequests. Medido em produção na aula exata que um aluno travou (Extensivo, 890MB, ~4Mbps):
+prometido 933.990.308 bytes, entregue **298.479.296 (~285MB ≈ 10min)** — o Chrome vê o
+mismatch e encerra, em vez de repedir. Antes do chain, o nativo recebia janelas limpas de 24MB
+e repedía sozinho — ou seja, o fix do mpegts.js QUEBROU o nativo para arquivos maiores que o
+orçamento (~285MB sem cache; só aulas grandes/bitrate alto).
+
+**Correção (worker, deploy manual feito):** os dois clientes se distinguem pelo
+**`Sec-Fetch-Dest`** (elemento de mídia manda `video`/`audio`; o fetch() do mpegts.js manda
+`empty`):
+- **Nativo** → promessa SÓ do que o orçamento garante: primeira janela + 8 janelas completas de
+  24MB (`JANELAS_POR_RESPOSTA_NATIVO`), fim alinhado à grade (toda janela da escada divide
+  24MB, nada cruza o fim), fechamento LIMPO com prometido == entregue — o player repede a
+  continuação como sempre fez, agora em passos de ~216MB.
+- **mpegts.js** (sem o header) → como antes: promessa até o EOF; truncamento no orçamento é
+  reconectado por ele (EARLY_EOF).
+
+**Verificado em produção na mesma aula:** nativo bytes=0- → `bytes 0-226492415/933990308` com
+**226.492.416 bytes exatos** entregues; continuação bytes=226492416- → próximo span exato;
+sem o header → promessa até 933990307 (mpegts intacto); range fechado 1KB exato.
+
+> Regra que fica: **para `<video>` nativo, NUNCA prometer mais do que se vai entregar** — ele
+> lida perfeitamente com 206 curto (repede), e péssimo com truncamento. O mpegts.js é o
+> inverso. O `Sec-Fetch-Dest` é o que separa os dois no worker.
+
+---
+
 ## Google OAuth — os DOIS projetos (publicar para os tokens não expirarem)
 
 Descobertos em 19/08 pelo `tokeninfo` do próprio token vivo de cada conta
