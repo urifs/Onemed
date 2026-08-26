@@ -104,6 +104,12 @@ const CACHE_MAX_BYTES = 32 * 1024 * 1024;
 // Quanto tempo a janela/conta que funcionou fica lembrada por arquivo. Sem
 // isso, um arquivo difícil pagaria as recusas da escada inteira a CADA trecho.
 const DICA_TTL_SECONDS = 30 * 60;
+// Teto de subchamadas (fetch/cache) por requisição. O plano Free da
+// Cloudflare corta em 50; o encadeamento para ANTES disso e trunca o stream —
+// o cliente percebe (Content-Length não bate) e refaz o pedido do ponto em que
+// parou (o mpegts.js reconecta sozinho no EARLY_EOF; o <video> nativo repede o
+// range). Truncar é degradação, nunca corrupção: os bytes entregues são exatos.
+const ORCAMENTO_SUBREQ = 40;
 
 // ── DUAS contas de leitura, nesta ordem ────────────────────────────────────
 // O `downloadQuotaExceeded` do Google diz "a cota deste ARQUIVO", mas medimos
@@ -178,10 +184,21 @@ export default {
     if (ehExport && !exportMime) return new Response('Tipo de arquivo do Google não suportado', { status: 415, headers: cors });
 
     // O navegador pede `bytes=0-` (do início até o fim) e o Drive recusa o
-    // pedido ABERTO — ele avalia o pedido pelo arquivo inteiro. Com um teto
-    // explícito a mesma aula responde normalmente; responder 206 com um trecho
-    // menor que o pedido é HTTP normal, o navegador lê o Content-Range e pede
-    // a continuação sozinho.
+    // pedido ABERTO — ele avalia o pedido pelo arquivo inteiro. Por isso o
+    // Drive é sempre consultado em JANELAS. Mas responder ao ALUNO só a
+    // primeira janela quebrava o mpegts.js: o <video> nativo lê o
+    // Content-Range e pede a continuação sozinho, só que o mpegts.js (aulas
+    // .ts) trata o fim de QUALQUER resposta completa como fim do arquivo
+    // (IOController._onLoaderComplete não confere o tamanho total) — a aula
+    // "terminava" em 4-5 minutos: 3min de buffer do lazyLoad + uma janela de
+    // 24MB da retomada, com a duração no player congelando ali. Medido em
+    // 08/2026 no curso de ECG (arquivo íntegro, PCR contínuo de 0 a 19,5min).
+    //
+    // A saída: para pedido ABERTO (bytes=N-), o worker ENCADEIA as janelas do
+    // Drive num único corpo de resposta — o cliente recebe um stream contínuo
+    // de N até o fim do arquivo, como qualquer servidor HTTP normal, enquanto
+    // por trás cada janela continua vindo do cache/escada como antes. Pedido
+    // FECHADO (bytes=A-B) segue respondendo só a janela, como sempre.
     const range = ehExport ? null : request.headers.get('range');
     const casaFaixa = range && /^bytes=(\d+)-(\d*)$/.exec(range);
     const inicio = casaFaixa ? Number(casaFaixa[1]) : null;
@@ -189,11 +206,15 @@ export default {
 
     const cache = caches.default;
     const ehGet = request.method === 'GET';
+    // Subchamadas (fetch/cache) gastas nesta requisição — o encadeamento lá
+    // embaixo para antes de estourar o teto da plataforma.
+    let subreq = 0;
 
     // A janela e a conta que funcionaram por último neste arquivo vêm primeiro.
     let janelaInicial = CHUNK;
     let contasOrdenadas = CONTAS;
     {
+      subreq++;
       const dica = await cache.match(dicaKeyFor(fileId)).catch(() => null);
       if (dica) {
         const [j, c] = (await dica.text().catch(() => '')).split('|');
@@ -249,6 +270,7 @@ export default {
     const tokens = new Map();
     const buscarToken = async (conta, force) => {
       try {
+        subreq++;
         const tokenRes = await fetch(`${env.SUPABASE_URL}/functions/v1/${conta.fn}`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json' },
@@ -282,68 +304,50 @@ export default {
     };
 
     let driveRes = null;
+    let cacheHit = null;
     let faixaServida = null;
     let janelaServida = null;
     let contaServida = null;
     let semSaldo = false;
     let semAcesso = false;
 
-    busca:
-    for (const tentativa of faixas) {
-      // ── cache primeiro: trecho já visto não volta ao Drive ─────────────
-      // (a assinatura já foi conferida — o cache não afrouxa a autenticação;
-      // ele só evita gastar a franquia do arquivo com bytes repetidos. A chave
-      // não inclui a conta: os bytes são os mesmos, venham de onde vierem)
-      const cacheKey = cacheKeyFor(fileId, tentativa.faixa, exportMime);
-      if (ehGet) {
-        const hit = await cache.match(cacheKey).catch(() => null);
-        if (hit) return responderDoCache(hit);
-      }
-
+    // Uma ida ao Drive por UMA faixa, tentando as contas na ordem preferida,
+    // com renovação forçada no 401. Devolve a Response boa ou null, marcando
+    // semSaldo/semAcesso para o tratamento de erro decidir depois. É o mesmo
+    // caminho para o primeiro trecho e para as janelas encadeadas.
+    const buscarNoDrive = async (faixa) => {
       for (const conta of contasOrdenadas) {
         const token = await pegarToken(conta);
         if (!token) continue;
 
-        const res = ehExport
-          ? await fetch(
-            `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=${encodeURIComponent(exportMime)}`,
-            { headers: { Authorization: `Bearer ${token}` } },
-          )
-          : await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              ...(tentativa.faixa ? { Range: tentativa.faixa } : {}),
-            },
-          });
+        const irAoDrive = (tok) => {
+          subreq++;
+          return ehExport
+            ? fetch(
+              `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=${encodeURIComponent(exportMime)}`,
+              { headers: { Authorization: `Bearer ${tok}` } },
+            )
+            : fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+              headers: {
+                Authorization: `Bearer ${tok}`,
+                ...(faixa ? { Range: faixa } : {}),
+              },
+            });
+        };
 
-        let resposta = res;
+        let resposta = await irAoDrive(token);
 
         // 401 = o Google recusou ESTE token (revogado, ou trocado por outra
         // reconexão). Renova à força e tenta uma vez; se ainda falhar, segue
         // para a próxima conta.
         if (resposta.status === 401) {
           const novo = await renovarToken(conta);
-          if (novo) {
-            resposta = ehExport
-              ? await fetch(
-                `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=${encodeURIComponent(exportMime)}`,
-                { headers: { Authorization: `Bearer ${novo}` } },
-              )
-              : await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
-                headers: {
-                  Authorization: `Bearer ${novo}`,
-                  ...(tentativa.faixa ? { Range: tentativa.faixa } : {}),
-                },
-              });
-          }
+          if (novo) resposta = await irAoDrive(novo);
         }
 
         if (resposta.ok || resposta.status === 206) {
-          driveRes = resposta;
-          faixaServida = tentativa.faixa;
-          janelaServida = tentativa.janela;
           contaServida = conta.nome;
-          break busca;
+          return resposta;
         }
 
         // 404 = esta conta não enxerga o arquivo (pasta ainda não
@@ -362,11 +366,64 @@ export default {
         // mesmo com a outra conta conseguindo servi-la. Segue para a próxima
         // tentativa; se nenhuma servir, o tratamento abaixo responde.
         console.log('Falha ao ler pela conta', conta.nome, '-', resposta.status, body.slice(0, 120));
-        continue;
+      }
+      return null;
+    };
+
+    // Grava um trecho vindo do Drive no cache do datacenter enquanto ele é
+    // servido. tee(): o mesmo fluxo de bytes vai pro destino E pro cache, sem
+    // segurar a janela em memória. Só trechos com tamanho conhecido e dentro
+    // do teto; a Cache API não aceita 206, então o status/content-range
+    // originais viajam em cabeçalhos x-orig-*. Devolve o corpo para o cliente.
+    const guardarNoCache = (res, faixa) => {
+      const tamanho = Number(res.headers.get('content-length') || 0);
+      if (!(ehGet && res.body && tamanho > 0 && tamanho <= CACHE_MAX_BYTES
+          && (res.status === 200 || res.status === 206))) return res.body;
+      const [cliente, paraCache] = res.body.tee();
+      const cacheHeaders = new Headers();
+      const ct = res.headers.get('content-type');
+      if (ct) cacheHeaders.set('content-type', ct);
+      cacheHeaders.set('content-length', String(tamanho));
+      cacheHeaders.set('x-orig-status', String(res.status));
+      const cr = res.headers.get('content-range');
+      if (cr) cacheHeaders.set('x-orig-content-range', cr);
+      cacheHeaders.set('cache-control', `public, max-age=${CACHE_TTL_SECONDS}`);
+      subreq++;
+      ctx.waitUntil(
+        cache.put(
+          cacheKeyFor(fileId, faixa, exportMime),
+          new Response(paraCache, { status: 200, headers: cacheHeaders }),
+        ).catch(() => {}),
+      );
+      return cliente;
+    };
+
+    busca:
+    for (const tentativa of faixas) {
+      // ── cache primeiro: trecho já visto não volta ao Drive ─────────────
+      // (a assinatura já foi conferida — o cache não afrouxa a autenticação;
+      // ele só evita gastar a franquia do arquivo com bytes repetidos. A chave
+      // não inclui a conta: os bytes são os mesmos, venham de onde vierem)
+      if (ehGet) {
+        subreq++;
+        const hit = await cache.match(cacheKeyFor(fileId, tentativa.faixa, exportMime)).catch(() => null);
+        if (hit) {
+          cacheHit = hit;
+          faixaServida = tentativa.faixa;
+          janelaServida = tentativa.janela;
+          break busca;
+        }
+      }
+      const res = await buscarNoDrive(tentativa.faixa);
+      if (res) {
+        driveRes = res;
+        faixaServida = tentativa.faixa;
+        janelaServida = tentativa.janela;
+        break busca;
       }
     }
 
-    if (!driveRes) {
+    if (!driveRes && !cacheHit) {
       if (!semSaldo) {
         return new Response(
           semAcesso ? 'Arquivo indisponível' : 'Não foi possível carregar o arquivo',
@@ -389,6 +446,7 @@ export default {
       // de infraestrutura nosso.
       let embedOk = '0';
       try {
+        subreq++;
         const probe = await fetch(`https://drive.google.com/file/d/${fileId}/preview`, { redirect: 'manual' });
         if (probe.status === 200) embedOk = '1';
       } catch { /* na dúvida, não oferece o embed */ }
@@ -404,6 +462,7 @@ export default {
     // Guarda a janela e a conta que funcionaram, para os próximos trechos
     // deste arquivo não pagarem as recusas da escada de novo.
     if (ehGet && contaServida) {
+      subreq++;
       ctx.waitUntil(cache.put(
         dicaKeyFor(fileId),
         new Response(`${janelaServida || ''}|${contaServida}`, {
@@ -412,43 +471,117 @@ export default {
       ).catch(() => {}));
     }
 
-    // ── grava o trecho no cache do datacenter enquanto serve o aluno ─────
-    // tee(): o mesmo fluxo de bytes vai pro navegador E pro cache, sem
-    // segurar o arquivo em memória. Só trechos com tamanho conhecido e
-    // dentro do teto; a Cache API não aceita 206, então o status/content-range
-    // originais viajam em cabeçalhos x-orig-*.
-    let bodyParaCliente = driveRes.body;
-    const tamanho = Number(driveRes.headers.get('content-length') || 0);
-    if (ehGet && driveRes.body && tamanho > 0 && tamanho <= CACHE_MAX_BYTES
-        && (driveRes.status === 200 || driveRes.status === 206)) {
-      const [cliente, paraCache] = driveRes.body.tee();
-      bodyParaCliente = cliente;
-      const cacheHeaders = new Headers();
-      const ct = driveRes.headers.get('content-type');
-      if (ct) cacheHeaders.set('content-type', ct);
-      cacheHeaders.set('content-length', String(tamanho));
-      cacheHeaders.set('x-orig-status', String(driveRes.status));
-      const cr = driveRes.headers.get('content-range');
-      if (cr) cacheHeaders.set('x-orig-content-range', cr);
-      cacheHeaders.set('cache-control', `public, max-age=${CACHE_TTL_SECONDS}`);
-      ctx.waitUntil(
-        cache.put(
-          cacheKeyFor(fileId, faixaServida, exportMime),
-          new Response(paraCache, { status: 200, headers: cacheHeaders }),
-        ).catch(() => {}),
-      );
+    // Primeiro trecho normalizado, venha do cache ou do Drive.
+    const primeiro = cacheHit
+      ? {
+        status: Number(cacheHit.headers.get('x-orig-status')) || 200,
+        body: cacheHit.body,
+        contentType: cacheHit.headers.get('content-type'),
+        contentRange: cacheHit.headers.get('x-orig-content-range'),
+        deCache: true,
+      }
+      : {
+        status: driveRes.status,
+        body: guardarNoCache(driveRes, faixaServida),
+        contentType: driveRes.headers.get('content-type'),
+        contentRange: driveRes.headers.get('content-range'),
+        deCache: false,
+      };
+
+    // ── modo encadeado: pedido ABERTO ganha o arquivo até o fim ──────────
+    // `bytes N-M/total` do primeiro trecho diz o tamanho do arquivo; quando o
+    // trecho NÃO chega ao fim e o pedido era aberto, as janelas seguintes são
+    // buscadas (cache → contas → escada, como qualquer trecho) e emendadas no
+    // MESMO corpo de resposta. É o que faz o mpegts.js enxergar a aula
+    // inteira: para ele, fim de resposta é fim de arquivo.
+    const parseContentRange = (cr) => {
+      const m = cr && /^bytes (\d+)-(\d+)\/(\d+)$/.exec(cr);
+      return m ? { de: Number(m[1]), ate: Number(m[2]), total: Number(m[3]) } : null;
+    };
+    const span = parseContentRange(primeiro.contentRange);
+    const encadear = ehGet && casaFaixa && fimPedido === null && !ehExport
+      && primeiro.status === 206 && span && span.ate < span.total - 1;
+
+    if (!encadear) {
+      if (cacheHit) return responderDoCache(cacheHit);
+      const headers = new Headers(cors);
+      for (const h of ['content-type', 'content-length', 'content-range']) {
+        const v = driveRes.headers.get(h);
+        if (v) headers.set(h, v);
+      }
+      headers.set('accept-ranges', 'bytes');
+      headers.set('cache-control', 'private, max-age=0, no-store');
+      headers.set('x-cache', cacheHit ? 'HIT' : 'MISS');
+      aplicaDownload(headers);
+      return new Response(primeiro.body, { status: primeiro.status, headers });
     }
 
     const headers = new Headers(cors);
-    for (const h of ['content-type', 'content-length', 'content-range']) {
-      const v = driveRes.headers.get(h);
-      if (v) headers.set(h, v);
-    }
+    if (primeiro.contentType) headers.set('content-type', primeiro.contentType);
+    headers.set('content-length', String(span.total - inicio));
+    headers.set('content-range', `bytes ${inicio}-${span.total - 1}/${span.total}`);
     headers.set('accept-ranges', 'bytes');
     headers.set('cache-control', 'private, max-age=0, no-store');
-    headers.set('x-cache', 'MISS');
+    headers.set('x-cache', primeiro.deCache ? 'HIT-CHAIN' : 'MISS-CHAIN');
     aplicaDownload(headers);
 
-    return new Response(bodyParaCliente, { status: driveRes.status, headers });
+    const { readable, writable } = new TransformStream();
+    const bombear = async () => {
+      let proximo = span.ate + 1;
+      let janelaAtual = janelaServida || janelaInicial;
+      let completou = false;
+      try {
+        await primeiro.body.pipeTo(writable, { preventClose: true });
+        while (proximo < span.total && subreq < ORCAMENTO_SUBREQ) {
+          let corpo = null;
+          let fimJanela = null;
+          for (const j of ESCADA_JANELAS.filter(x => x <= janelaAtual)) {
+            const faixa = faixaPara(proximo, null, j);
+            subreq++;
+            const hit = await cache.match(cacheKeyFor(fileId, faixa, null)).catch(() => null);
+            if (hit) {
+              // Só emenda trecho cujo corpo comece exatamente em `proximo` —
+              // um 200 guardado (arquivo inteiro) começaria no byte 0 e
+              // corromperia o vídeo se entrasse no meio da emenda.
+              const cr = parseContentRange(hit.headers.get('x-orig-content-range'));
+              const st = Number(hit.headers.get('x-orig-status')) || 200;
+              if (st !== 206 || !cr || cr.de !== proximo) { await hit.body?.cancel().catch(() => {}); break; }
+              corpo = hit.body;
+              fimJanela = cr.ate;
+              janelaAtual = j;
+              break;
+            }
+            const res = await buscarNoDrive(faixa);
+            if (!res) continue; // escada desce para a próxima janela
+            const cr = parseContentRange(res.headers.get('content-range'));
+            if (res.status !== 206 || !cr || cr.de !== proximo) {
+              // Resposta que não começa em `proximo` (200 de arquivo inteiro,
+              // range ignorado) não pode ser emendada — melhor truncar e
+              // deixar o cliente repedir do que corromper o stream.
+              await res.body?.cancel().catch(() => {});
+              break;
+            }
+            corpo = guardarNoCache(res, faixa);
+            fimJanela = cr.ate;
+            janelaAtual = j;
+            break;
+          }
+          // Janela indisponível (saldo esgotou no meio) ou tamanho sem pé nem
+          // cabeça: para aqui. O truncamento é visível pro cliente
+          // (Content-Length não bate) e ele refaz o pedido do ponto certo.
+          if (!corpo || fimJanela === null || fimJanela < proximo) break;
+          await corpo.pipeTo(writable, { preventClose: true });
+          proximo = fimJanela + 1;
+        }
+        completou = proximo >= span.total;
+      } catch { /* cliente desconectou (pausa, troca de aula) ou janela caiu no meio */ }
+      try {
+        const w = writable.getWriter();
+        if (completou) await w.close();
+        else await w.abort('trecho indisponível');
+      } catch { /* stream já encerrado pelo próprio cliente */ }
+    };
+    ctx.waitUntil(bombear());
+    return new Response(readable, { status: 206, headers });
   },
 };

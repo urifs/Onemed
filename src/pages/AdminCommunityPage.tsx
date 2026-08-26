@@ -9,8 +9,15 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { Switch } from '@/components/ui/switch';
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
 import { formatDateTimeSP, fetchAllRows } from '@/lib/utils';
-import { AlertTriangle, RefreshCw, Search, Trash2, MessageCircle, MessagesSquare, BadgeCheck, Link2, Pin, PinOff } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Search, Trash2, MessageCircle, MessagesSquare, BadgeCheck, Link2, Pin, PinOff, PauseCircle, UserX, ShieldAlert } from 'lucide-react';
 
 interface CommunitySettingsRow {
   id: string;
@@ -86,6 +93,308 @@ function WhatsAppGroupSettingsCard() {
   );
 }
 
+// ─── Gerenciamento da comunidade: pausa global + restrições por usuário ─────
+// A regra de verdade mora no BANCO (policy de INSERT em course_comments):
+// este card só liga/desliga o que o servidor aplica. Admin nunca é bloqueado.
+
+interface RestrictionRow {
+  user_id: string;
+  restricted_until: string | null;
+  reason: string | null;
+  created_at: string;
+  profile?: { name: string | null; email: string | null };
+}
+
+const DURACOES = [
+  { value: '1h', label: '1 hora', ms: 3600e3 },
+  { value: '6h', label: '6 horas', ms: 6 * 3600e3 },
+  { value: '24h', label: '24 horas', ms: 24 * 3600e3 },
+  { value: '3d', label: '3 dias', ms: 3 * 86400e3 },
+  { value: '7d', label: '7 dias', ms: 7 * 86400e3 },
+  { value: '30d', label: '30 dias', ms: 30 * 86400e3 },
+  { value: 'permanente', label: 'Permanente (até remover)', ms: null as number | null },
+];
+
+function restricaoAtiva(r: RestrictionRow) {
+  return r.restricted_until === null || new Date(r.restricted_until) > new Date();
+}
+
+function RestrictUserDialog({ open, onOpenChange, prefill, onDone }: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  prefill: { user_id: string; label: string } | null;
+  onDone: () => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<{ id: string; name: string | null; email: string | null }[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [selected, setSelected] = useState<{ user_id: string; label: string } | null>(null);
+  const [duracao, setDuracao] = useState('24h');
+  const [reason, setReason] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (open) { setSelected(prefill); setQuery(''); setResults([]); setDuracao('24h'); setReason(''); }
+  }, [open, prefill]);
+
+  const buscar = async (q: string) => {
+    setQuery(q);
+    if (q.trim().length < 2) { setResults([]); return; }
+    setSearching(true);
+    const { data } = await (supabase as any)
+      .from('profiles')
+      .select('id, name, email')
+      .or(`email.ilike.%${q.trim().replace(/[,()]/g, '')}%,name.ilike.%${q.trim().replace(/[,()]/g, '')}%`)
+      .limit(8);
+    setSearching(false);
+    setResults(data || []);
+  };
+
+  const salvar = async () => {
+    if (!selected) return;
+    setSaving(true);
+    try {
+      const d = DURACOES.find(x => x.value === duracao)!;
+      const until = d.ms === null ? null : new Date(Date.now() + d.ms).toISOString();
+      const { data: me } = await supabase.auth.getUser();
+      const { error } = await (supabase as any).from('community_restrictions').upsert({
+        user_id: selected.user_id,
+        restricted_until: until,
+        reason: reason.trim() || null,
+        created_by: me?.user?.id || null,
+      }, { onConflict: 'user_id' });
+      if (error) throw error;
+      toast.success(`${selected.label} restringido ${d.ms === null ? 'permanentemente' : `por ${d.label.toLowerCase()}`}`);
+      onOpenChange(false);
+      onDone();
+    } catch (err: any) {
+      toast.error('Erro ao restringir: ' + (err?.message || 'desconhecido'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="bg-background-paper border-border">
+        <DialogHeader>
+          <DialogTitle className="text-foreground flex items-center gap-2">
+            <UserX className="w-4 h-4 text-destructive" /> Restringir usuário
+          </DialogTitle>
+          <DialogDescription className="text-muted-foreground">
+            O usuário não conseguirá publicar nem responder na comunidade durante o período. Ele continua vendo tudo normalmente.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          {selected ? (
+            <div className="flex items-center justify-between rounded-lg bg-secondary border border-border px-3 py-2">
+              <p className="text-sm text-foreground truncate">{selected.label}</p>
+              {!prefill && (
+                <Button variant="ghost" size="sm" onClick={() => setSelected(null)} className="text-muted-foreground shrink-0">trocar</Button>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              <Input
+                value={query}
+                onChange={e => buscar(e.target.value)}
+                placeholder="Buscar por e-mail ou nome…"
+                className="bg-secondary border-border text-foreground"
+              />
+              {searching && <p className="text-xs text-muted-foreground">Buscando…</p>}
+              {results.map(r => (
+                <button
+                  key={r.id}
+                  onClick={() => setSelected({ user_id: r.id, label: r.name || r.email || r.id })}
+                  className="w-full text-left rounded-lg border border-border bg-secondary/60 hover:bg-secondary px-3 py-2"
+                >
+                  <p className="text-sm text-foreground">{r.name || 'Sem nome'}</p>
+                  <p className="text-xs text-muted-foreground">{r.email}</p>
+                </button>
+              ))}
+              {!searching && query.trim().length >= 2 && results.length === 0 && (
+                <p className="text-xs text-muted-foreground">Nenhum usuário encontrado.</p>
+              )}
+            </div>
+          )}
+          <div>
+            <p className="text-xs text-muted-foreground mb-1.5">Duração da restrição</p>
+            <Select value={duracao} onValueChange={setDuracao}>
+              <SelectTrigger className="bg-secondary border-border text-foreground"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {DURACOES.map(d => <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground mb-1.5">Motivo (opcional, só a equipe vê)</p>
+            <Input value={reason} onChange={e => setReason(e.target.value)} placeholder="Ex.: spam, ofensas…" className="bg-secondary border-border text-foreground" />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} className="border-border text-foreground">Cancelar</Button>
+          <Button onClick={salvar} disabled={!selected || saving} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
+            {saving ? 'Salvando…' : 'Restringir'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CommunityManagementCard({ refreshKey, onRestrictClick }: { refreshKey: number; onRestrictClick: () => void }) {
+  const [paused, setPaused] = useState(false);
+  const [settingsId, setSettingsId] = useState<string | null>(null);
+  const [restr, setRestr] = useState<RestrictionRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [togglingPause, setTogglingPause] = useState(false);
+  const [confirmPause, setConfirmPause] = useState(false);
+  const [removingId, setRemovingId] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [{ data: st }, { data: rows }] = await Promise.all([
+        (supabase as any).from('community_settings').select('id, posting_paused').maybeSingle(),
+        (supabase as any).from('community_restrictions').select('user_id, restricted_until, reason, created_at').order('created_at', { ascending: false }),
+      ]);
+      setPaused(!!st?.posting_paused);
+      setSettingsId(st?.id || null);
+      const lista: RestrictionRow[] = rows || [];
+      if (lista.length) {
+        const { data: profs } = await (supabase as any).from('profiles').select('id, name, email').in('id', lista.map(r => r.user_id));
+        const byId = new Map<string, { name: string | null; email: string | null }>((profs || []).map((p: any) => [p.id, { name: p.name, email: p.email }]));
+        for (const r of lista) r.profile = byId.get(r.user_id);
+      }
+      setRestr(lista);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load, refreshKey]);
+
+  const aplicarPausa = async (novo: boolean) => {
+    setTogglingPause(true);
+    try {
+      if (settingsId) {
+        const { error } = await (supabase as any).from('community_settings').update({ posting_paused: novo }).eq('id', settingsId);
+        if (error) throw error;
+      } else {
+        const { data, error } = await (supabase as any).from('community_settings').insert({ posting_paused: novo }).select('id').single();
+        if (error) throw error;
+        setSettingsId(data?.id || null);
+      }
+      setPaused(novo);
+      toast.success(novo ? 'Novas publicações PAUSADAS para todos os alunos' : 'Publicações liberadas novamente');
+    } catch (err: any) {
+      toast.error('Erro ao salvar: ' + (err?.message || 'desconhecido'));
+    } finally {
+      setTogglingPause(false);
+      setConfirmPause(false);
+    }
+  };
+
+  const removerRestricao = async (r: RestrictionRow) => {
+    setRemovingId(r.user_id);
+    try {
+      const { error } = await (supabase as any).from('community_restrictions').delete().eq('user_id', r.user_id);
+      if (error) throw error;
+      setRestr(prev => prev.filter(x => x.user_id !== r.user_id));
+      toast.success('Restrição removida');
+    } catch (err: any) {
+      toast.error('Erro ao remover: ' + (err?.message || 'desconhecido'));
+    } finally {
+      setRemovingId(null);
+    }
+  };
+
+  const ativas = restr.filter(restricaoAtiva);
+  const expiradas = restr.filter(r => !restricaoAtiva(r));
+
+  return (
+    <Card className="bg-background-paper border-border">
+      <CardContent className="p-5 space-y-4">
+        <div className="flex items-center gap-2">
+          <ShieldAlert className="w-4 h-4 text-primary" />
+          <p className="font-secondary text-base font-semibold text-foreground">Gerenciamento da comunidade</p>
+        </div>
+
+        <div className="flex items-start justify-between gap-4 rounded-lg border border-border bg-secondary/40 px-4 py-3">
+          <div>
+            <p className="text-sm font-medium text-foreground flex items-center gap-1.5">
+              <PauseCircle className="w-4 h-4 text-accent-warning" /> Pausar novas publicações
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Com a pausa ativa, nenhum aluno consegue publicar nem responder — as publicações existentes continuam visíveis. A equipe (admin) continua podendo publicar.
+            </p>
+            {paused && <p className="text-xs font-semibold text-accent-warning mt-1">Pausa ATIVA agora — alunos estão vendo o aviso na comunidade.</p>}
+          </div>
+          <Switch
+            checked={paused}
+            disabled={loading || togglingPause}
+            onCheckedChange={(v) => { if (v) setConfirmPause(true); else aplicarPausa(false); }}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium text-foreground">Usuários restritos {loading ? '' : `(${ativas.length})`}</p>
+            <Button size="sm" variant="outline" onClick={onRestrictClick} className="border-border text-foreground gap-1.5">
+              <UserX className="w-3.5 h-3.5" /> Restringir usuário
+            </Button>
+          </div>
+          {!loading && ativas.length === 0 && (
+            <p className="text-xs text-muted-foreground">Nenhum usuário restrito no momento.</p>
+          )}
+          {ativas.map(r => (
+            <div key={r.user_id} className="flex items-center justify-between gap-3 rounded-lg border border-border bg-secondary/40 px-3 py-2">
+              <div className="min-w-0">
+                <p className="text-sm text-foreground truncate">{r.profile?.name || r.profile?.email || r.user_id}</p>
+                <p className="text-xs text-muted-foreground truncate">
+                  {r.restricted_until ? `Até ${formatDateTimeSP(r.restricted_until)}` : 'Permanente (até remover)'}
+                  {r.reason ? ` · ${r.reason}` : ''}
+                </p>
+              </div>
+              <Button
+                size="sm" variant="ghost"
+                onClick={() => removerRestricao(r)}
+                disabled={removingId === r.user_id}
+                className="text-muted-foreground hover:text-foreground shrink-0"
+              >
+                {removingId === r.user_id ? 'Removendo…' : 'Liberar'}
+              </Button>
+            </div>
+          ))}
+          {expiradas.length > 0 && (
+            <p className="text-xs text-muted-foreground">
+              {expiradas.length} restrição(ões) já expirada(s) —{' '}
+              <button className="underline hover:text-foreground" onClick={() => expiradas.forEach(removerRestricao)}>limpar</button>
+            </p>
+          )}
+        </div>
+
+        <AlertDialog open={confirmPause} onOpenChange={setConfirmPause}>
+          <AlertDialogContent className="bg-background-paper border-border">
+            <AlertDialogHeader>
+              <AlertDialogTitle className="text-foreground">Pausar a comunidade inteira?</AlertDialogTitle>
+              <AlertDialogDescription className="text-muted-foreground">
+                Nenhum aluno vai conseguir publicar ou responder até você desativar a pausa. As publicações existentes continuam visíveis, e a equipe continua podendo publicar.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel className="border-border text-foreground">Cancelar</AlertDialogCancel>
+              <AlertDialogAction onClick={() => aplicarPausa(true)} disabled={togglingPause} className="bg-accent-warning hover:bg-accent-warning/90 text-background">
+                {togglingPause ? 'Pausando…' : 'Pausar publicações'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </CardContent>
+    </Card>
+  );
+}
+
 interface CommentRow {
   id: string;
   body: string;
@@ -116,6 +425,9 @@ export default function AdminCommunityPage() {
   const [deleteTarget, setDeleteTarget] = useState<CommentRow | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [togglingPinId, setTogglingPinId] = useState<string | null>(null);
+  const [restrictOpen, setRestrictOpen] = useState(false);
+  const [restrictPrefill, setRestrictPrefill] = useState<{ user_id: string; label: string } | null>(null);
+  const [mgmtRefresh, setMgmtRefresh] = useState(0);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -215,6 +527,11 @@ export default function AdminCommunityPage() {
 
         <WhatsAppGroupSettingsCard />
 
+        <CommunityManagementCard
+          refreshKey={mgmtRefresh}
+          onRestrictClick={() => { setRestrictPrefill(null); setRestrictOpen(true); }}
+        />
+
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 3xl:max-w-[1400px]">
           {[
             { label: 'Total', value: comments.length },
@@ -291,6 +608,19 @@ export default function AdminCommunityPage() {
                               {c.pinned ? <PinOff className="w-4 h-4" /> : <Pin className="w-4 h-4" />}
                             </Button>
                           )}
+                          {!adminIds.has(c.user_id) && (
+                            <Button
+                              variant="ghost" size="icon"
+                              onClick={() => {
+                                setRestrictPrefill({ user_id: c.user_id, label: c.profiles?.name || c.profiles?.email || 'este usuário' });
+                                setRestrictOpen(true);
+                              }}
+                              className="text-muted-foreground hover:text-accent-warning"
+                              title="Restringir este usuário de postar/responder"
+                            >
+                              <UserX className="w-4 h-4" />
+                            </Button>
+                          )}
                           <Button variant="ghost" size="icon" onClick={() => setDeleteTarget(c)} className="text-muted-foreground hover:text-destructive">
                             <Trash2 className="w-4 h-4" />
                           </Button>
@@ -319,6 +649,13 @@ export default function AdminCommunityPage() {
           </CardContent>
         </Card>
       </div>
+
+      <RestrictUserDialog
+        open={restrictOpen}
+        onOpenChange={setRestrictOpen}
+        prefill={restrictPrefill}
+        onDone={() => setMgmtRefresh(k => k + 1)}
+      />
 
       <AlertDialog open={!!deleteTarget} onOpenChange={open => !open && setDeleteTarget(null)}>
         <AlertDialogContent className="bg-background-paper border-border">

@@ -6,6 +6,7 @@ import { Send, ChevronDown, BadgeCheck, Pencil } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
 import { useRequireName } from '@/hooks/useRequireName';
+import { explainPostDenial } from '@/hooks/useCommunityPostingStatus';
 import { NameRequiredModal } from './NameRequiredModal';
 import { PlanAvatarRing, PlanBadge } from './PlanBadge';
 import { LikeButton } from './LikeButton';
@@ -214,7 +215,12 @@ export function CommentThread({ rootId, replyCount }: { rootId: string; replyCou
     });
     setPosting(false);
     if (!error) { onSuccess(); loadReplies(); }
-    else toast.error('Não foi possível enviar sua resposta. Tente novamente.');
+    else {
+      // Comunidade pausada / usuário restrito: a RLS recusa e a razão real
+      // vem do servidor — "tente novamente" aqui só frustraria.
+      const motivo = await explainPostDenial(error);
+      toast.error(motivo || 'Não foi possível enviar sua resposta. Tente novamente.');
+    }
   };
 
   // ensureName também na resposta ANINHADA: sem isto, quem nunca definiu nome

@@ -3785,6 +3785,156 @@ obrigatório agora.
 
 ---
 
+### 2026-08-24 (sessão remota) — aula .ts "terminava" em 4-5min: worker passa a encadear janelas
+
+**Relato (vários clientes, prints):** a lista mostra 20-26min e, ao abrir, o player mostra e
+encerra em 4-5min ("2:59 / 4:12"). Localizado pelo padrão exato das durações do print: curso
+**Intensivo ECG Rhanderson Cardoso**, aulas `.ts` (MPEG-TS via mpegts.js).
+
+**O arquivo e o banco estavam CERTOS.** Sonda de linha do tempo (PCR/PTS em 25 pontos + cauda,
+ranges de 96KB): `Aula_D.ts` tem mídia contínua de 1,4s a 1172s — exatamente os 1171s de
+`duration_seconds` (metadado do Drive). Zero descontinuidade. O que quebrava era a REPRODUÇÃO:
+
+1. O mpegts.js abre a aula SEM header Range (arquivo inteiro) e, com `lazyLoad` (padrão), ABORTA
+   o download ao ter ~3min de buffer à frente;
+2. ao retomar (ou em qualquer seek), manda **`Range: bytes=N-`** (aberto);
+3. o worker respondia **só uma janela de 24MB** (teto de 31/07 para o Drive não recusar);
+4. `IOController._onLoaderComplete` do mpegts.js **trata resposta completa como FIM DO ARQUIVO**
+   (não confere o tamanho total — conferido no fonte) → `endOfStream()` → duração congela e a
+   aula "termina": 3min de buffer + ~24MB ≈ os 4-5min dos relatos.
+
+O `<video>` nativo nunca sofreu disso (lê o Content-Range e repede sozinho) — por isso só as
+aulas TS quebravam. Afetava as **2.552 aulas TS maiores que 24MB** desde 31/07.
+
+**Correção (worker `cloudflare/stream-lesson/worker.js`, deploy manual feito):** pedido ABERTO
+(`bytes=N-`, método GET) agora recebe **as janelas do Drive ENCADEADAS num único corpo de
+resposta** — 206 com `Content-Range: bytes N-(total-1)/total` e stream contínuo até o fim,
+como qualquer servidor HTTP. Por trás nada mudou: cada janela continua vindo do cache do
+datacenter → contas (storage→conteúdo, 401 renova) → escada 24→1,5MB, e sendo gravada no cache
+alinhada à grade. Detalhes:
+- **Orçamento de subrequests** (`ORCAMENTO_SUBREQ=40`, plano Free corta em 50): quando estoura
+  (arquivo muito grande sem cache), o stream TRUNCA — Content-Length não bate, o mpegts.js
+  reconecta sozinho (`EARLY_EOF` → `_internalSeek`, conferido no fonte) e o nativo repede o
+  range. Truncar é degradação; nunca corrupção.
+- **Guard anti-corrupção:** janela do meio só é emendada se vier 206 começando EXATAMENTE em
+  `proximo` (um 200 de arquivo inteiro no meio da emenda corromperia o vídeo).
+- Range FECHADO (`bytes=A-B`), pedido SEM Range, export e HEAD: **comportamento antigo intacto**.
+- `x-cache: HIT-CHAIN|MISS-CHAIN` marca o modo encadeado (primeira janela).
+
+**Verificado em produção pelo caminho real do aluno** (conta trial criada e apagada):
+`bytes=34000000-` na Aula_D devolveu **188.516.048 bytes exatos** (total−34M) num único 206
+em 11s (antes: ~16MB até a grade); estrutura TS íntegra (18.920/18.920 pacotes na cadência de
+188B); **7/7 emendas de janela byte-idênticas** ao Drive direto + último KB idêntico; range
+fechado 1KB exato sem chain; sem Range = 200 legado; repetição = `HIT-CHAIN`; arquivo <24MB
+com range aberto = janela única sem chain. Nenhuma mudança de frontend necessária — o fix vale
+para todo cliente no instante do deploy do worker.
+
+> ⚠️ Regra aprendida: **resposta "completa" ≠ arquivo completo para o mpegts.js.** Qualquer
+> proxy/CDN na frente de aulas TS precisa entregar o range aberto ATÉ O FIM (ou truncar com
+> Content-Length maior), nunca responder menos bytes do que promete o Content-Length com
+> status limpo — o mpegts.js interpreta como EOF e encerra a aula ali.
+
+---
+
+### 2026-08-25 (sessão remota) — 4 cursos EstratégiaMed 2026 importados (3.777 aulas, 931 GB)
+
+4 pastas do Drive (todas da conta de ARMAZENAMENTO `ufgravity`, cada link É um curso →
+`sync-drive-extra.mjs --curso-unico`):
+
+| curso | categoria | módulos | aulas | horas | tamanho |
+|---|---|---|---|---|---|
+| Curso Pré-Internato 2.0 | Prescrições & Plantão | 38 | 75 | 38,9h | 38 GB |
+| Cursos Sprints (6 instituições) | Extensivo & Intensivo · Residência | 44 | 380 | 132,2h | 195 GB |
+| **Extensivo** (22 especialidades) | Extensivo & Intensivo · Residência | 1.148 | 3.258 | 672,3h | 693 GB |
+| Trilha ENAMED 10 Semanas | Extensivo & Intensivo · Residência | 100 | 64 | 5,0h | 5,4 GB |
+
+Zero erro de listagem, zero duplicata por `drive_file_id`, zero stub/`.gdrive`/download parcial.
+Categorias corrigidas à mão depois do import — o `categoryOf` do script devolveu
+"Residência & Provas" (categoria que NÃO existe na taxonomia ativa) e "Outros cursos".
+
+**Durações: 100% dos 1.478 vídeos.** O Drive não tinha `videoMediaMetadata` em 443 deles
+(upload recente, ainda sem processamento) — preenchidos lendo os CABEÇALHOS do próprio arquivo
+(caixa `moov`/`mvhd`; ranges de KB, não consome franquia): 439/442 no caminho normal e os 4
+restantes tinham **`mdat` com tamanho declarado ERRADO** (lixo depois do fim declarado — o
+caminhador de caixas para; achado o `mvhd` varrendo os últimos 4MB, com sanidade de
+bitrate/duração antes de gravar).
+
+**Verificado pelo caminho REAL do aluno** (conta trial criada e apagada): 12/12 aulas
+amostradas dos 4 cursos (módulos e tipos variados) respondem 206 com bytes de verdade
+(assinaturas `ftyp`/`%PDF`). Ordenação natural conferida (1→2→3..., ordens distintas = nº de
+aulas em todos). A Trilha ENAMED tem 100 módulos para 64 aulas — subpastas vazias na origem,
+mesmo caso dos 1.977 módulos-folha vazios já documentados (o feed esconde; o CourseTree não).
+
+⚠️ Aplicação interrompida no meio (timeout do shell) deixa curso com módulos e 0 aulas — o
+script é aditivo/idempotente: rodar de novo completa sem duplicar (aconteceu com Sprints e
+Trilha nesta sessão, resolvido com o re-run).
+
+---
+
+### 2026-08-26 (sessão remota) — admin não conseguia excluir postagem da comunidade (RLS recursiva)
+
+**Relato:** "Erro ao excluir: infinite recursion detected in policy for relation course_comments"
+ao excluir postagem pelo painel admin (aba Comunidade).
+
+**Causa:** a policy de DELETE de `course_comments` (criada em 22/07) consultava a PRÓPRIA tabela
+no `EXISTS` que checa "comentário sem respostas" — avaliar a subquery reaplica a RLS da mesma
+relação → 42P17. Todo DELETE direto na tabela falhava desde então; só o painel admin faz esse
+DELETE (o aluno não tem exclusão na UI), por isso o sintoma era exclusivo do admin. Varredura em
+`pg_policies`: era a ÚNICA policy auto-referente do banco.
+
+**Correção (migration `20260826000000_fix_course_comments_delete_recursion.sql`, aplicada):**
+a checagem virou `comment_has_replies(uuid)` — SECURITY DEFINER lê a tabela por fora da RLS,
+eliminando a recursão; a policy foi recriada com a MESMA regra (dono exclui sem respostas; admin
+exclui qualquer um), com `(SELECT ...)` nos gates e `REVOKE EXECUTE FROM anon` explícito.
+
+**Verificado em produção** (transações com rollback — nada apagado): admin exclui qualquer
+comentário ✓; dono exclui o próprio sem respostas ✓; dono não-admin NÃO exclui o que tem
+respostas ✓; terceiro não exclui alheio ✓; anon sem EXECUTE na função ✓.
+
+> Regra que fica: **policy de uma tabela nunca pode consultar a própria tabela** — a checagem
+> vai numa função SECURITY DEFINER. O erro só aparece em runtime, nunca no CREATE POLICY.
+
+**Verificação final (26/08), pelo plano de execução real:** num DELETE com WHERE, o Postgres
+exige que a linha passe TAMBÉM na policy de SELECT (o plano mostra as duas AND-adas). Admin
+passa nas duas → exclusão funciona (confirmado sem RETURNING, com rollback, num post real de
+aluno com respostas). Trial não passa no SELECT — não excluiria nada, mas trial nem vê a
+comunidade por design. ⚠️ Ao sondar RLS de DELETE: `RETURNING`/`Prefer: return=representation`
+adicionam a exigência de SELECT na resposta e enganam o teste — sonde com `return=minimal` e
+confira o efeito contando as linhas depois.
+
+---
+
+### 2026-08-26 (sessão remota) — gerenciamento da comunidade: pausa global + restrição por usuário
+
+**Pedido do dono:** na aba Comunidade do painel, poder (1) desativar temporariamente a criação de
+novos posts — ninguém posta nem responde; (2) restringir usuários específicos por um tempo
+escolhido. **O enforcement é NO BANCO** (policy de INSERT de `course_comments`): esconder botão
+no frontend não impede POST direto na API.
+
+| Peça | O quê |
+|---|---|
+| `20260826020000_community_management.sql` | `community_settings.posting_paused`; tabela `community_restrictions` (PK user_id — re-restringir sobrescreve o prazo; `restricted_until` NULL = permanente); RPCs `community_posting_status()` (estado + razão + até quando, usada pelo frontend) e `community_can_post()` (gate da policy), ambas SECURITY DEFINER com REVOKE de anon; policy de INSERT recriada = condições antigas + `AND (SELECT community_can_post())`, na MESMA transação (sem janela sem policy) |
+| `AdminCommunityPage` | Card "Gerenciamento da comunidade": switch de pausa (com confirmação ao ativar), lista de restritos (Liberar por linha, limpeza de expiradas), diálogo "Restringir usuário" (busca em profiles, duração 1h/6h/24h/3d/7d/30d/permanente, motivo) e botão por comentário para restringir o autor direto da tabela |
+| `src/lib/communityPosting.ts` + `useCommunityPostingStatus` | Módulo PURO com a mensagem por razão (testável) + hook react-query (staleTime 30s) |
+| `CommunityPage` / `CommunityTab` | Banner quando bloqueado + botão de publicar desabilitado |
+| As 3 superfícies de post | Recusa da RLS (42501) vira a mensagem CERTA perguntando a razão ao servidor (`explainPostDenial`) — em vez de "tente novamente" que nunca funcionaria |
+
+**Decisão de produto:** admin NUNCA é bloqueado (com a comunidade pausada a equipe ainda publica
+avisos). Curtidas e edição de posts existentes ficaram fora do escopo de propósito (o pedido foi
+postar/responder).
+
+**Verificado em produção:** 11 sondas SQL (com rollback) — membro normal continua postando
+(nada quebrou), pausa bloqueia membro e NÃO bloqueia admin, restrição ativa/permanente bloqueia,
+expirada libera, restrição de um usuário não afeta outro, anon sem EXECUTE; estado real intocado
+ao fim (pausa off, 0 restrições). E2E REST com membro real (criado por accesses+set-password,
+apagado depois): posta 201 → restrito 2h → 403/42501 com a RPC devolvendo `until` → liberado →
+201. 173 testes verdes (4 novos), typecheck:refs limpo, build 27/27.
+
+> A migration já está aplicada; o card no painel e os avisos ao aluno entram com o merge do
+> frontend na `main`. Até lá nada muda para ninguém (pausa desligada, zero restrições).
+
+---
+
 ## Google OAuth — os DOIS projetos (publicar para os tokens não expirarem)
 
 Descobertos em 19/08 pelo `tokeninfo` do próprio token vivo de cada conta
