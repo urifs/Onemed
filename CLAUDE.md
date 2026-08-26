@@ -3871,6 +3871,31 @@ Trilha nesta sessão, resolvido com o re-run).
 
 ---
 
+### 2026-08-26 (sessão remota) — admin não conseguia excluir postagem da comunidade (RLS recursiva)
+
+**Relato:** "Erro ao excluir: infinite recursion detected in policy for relation course_comments"
+ao excluir postagem pelo painel admin (aba Comunidade).
+
+**Causa:** a policy de DELETE de `course_comments` (criada em 22/07) consultava a PRÓPRIA tabela
+no `EXISTS` que checa "comentário sem respostas" — avaliar a subquery reaplica a RLS da mesma
+relação → 42P17. Todo DELETE direto na tabela falhava desde então; só o painel admin faz esse
+DELETE (o aluno não tem exclusão na UI), por isso o sintoma era exclusivo do admin. Varredura em
+`pg_policies`: era a ÚNICA policy auto-referente do banco.
+
+**Correção (migration `20260826000000_fix_course_comments_delete_recursion.sql`, aplicada):**
+a checagem virou `comment_has_replies(uuid)` — SECURITY DEFINER lê a tabela por fora da RLS,
+eliminando a recursão; a policy foi recriada com a MESMA regra (dono exclui sem respostas; admin
+exclui qualquer um), com `(SELECT ...)` nos gates e `REVOKE EXECUTE FROM anon` explícito.
+
+**Verificado em produção** (transações com rollback — nada apagado): admin exclui qualquer
+comentário ✓; dono exclui o próprio sem respostas ✓; dono não-admin NÃO exclui o que tem
+respostas ✓; terceiro não exclui alheio ✓; anon sem EXECUTE na função ✓.
+
+> Regra que fica: **policy de uma tabela nunca pode consultar a própria tabela** — a checagem
+> vai numa função SECURITY DEFINER. O erro só aparece em runtime, nunca no CREATE POLICY.
+
+---
+
 ## Google OAuth — os DOIS projetos (publicar para os tokens não expirarem)
 
 Descobertos em 19/08 pelo `tokeninfo` do próprio token vivo de cada conta
