@@ -3894,6 +3894,14 @@ respostas ✓; terceiro não exclui alheio ✓; anon sem EXECUTE na função ✓
 > Regra que fica: **policy de uma tabela nunca pode consultar a própria tabela** — a checagem
 > vai numa função SECURITY DEFINER. O erro só aparece em runtime, nunca no CREATE POLICY.
 
+**Verificação final (26/08), pelo plano de execução real:** num DELETE com WHERE, o Postgres
+exige que a linha passe TAMBÉM na policy de SELECT (o plano mostra as duas AND-adas). Admin
+passa nas duas → exclusão funciona (confirmado sem RETURNING, com rollback, num post real de
+aluno com respostas). Trial não passa no SELECT — não excluiria nada, mas trial nem vê a
+comunidade por design. ⚠️ Ao sondar RLS de DELETE: `RETURNING`/`Prefer: return=representation`
+adicionam a exigência de SELECT na resposta e enganam o teste — sonde com `return=minimal` e
+confira o efeito contando as linhas depois.
+
 ---
 
 ## Google OAuth — os DOIS projetos (publicar para os tokens não expirarem)
