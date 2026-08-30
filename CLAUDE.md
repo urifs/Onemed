@@ -38,7 +38,7 @@
 
 | Serviço | Token / Valor |
 |---------|--------------|
-| **Supabase Management API** | `sbp_d4e0be5b7dd285b557fb136fdb2ab65045ef74a1` |
+| **Supabase Management API** | ⚠️ NÃO fica no repo (push revoga o token — GitHub secret scanning avisa a Supabase). Pedir ao dono no chat |
 | **Vercel API Token** | `vcp_1flOV1BNzH45cGJZWrbWBntxpTiKK7a9OEq7BbNwpqcHH4fAmX16x8u1` |
 | **Cloudflare API Token** | `cfut_U6GR6uJmiuON1dNVvBCra46fNVpy4H2d4OO6dq4Mb9b7ed40` |
 
@@ -77,7 +77,7 @@
 
 ```bash
 # Autenticar Supabase CLI
-export SUPABASE_ACCESS_TOKEN="sbp_d4e0be5b7dd285b557fb136fdb2ab65045ef74a1"
+export SUPABASE_ACCESS_TOKEN="sbp_...(pedir ao dono — token não fica no repo, push revoga)"
 
 # Deploy de uma Edge Function específica
 supabase functions deploy <nome> --project-ref jrrybiohwqabsdurqudc --use-api
@@ -3963,6 +3963,63 @@ sem o header → promessa até 933990307 (mpegts intacto); range fechado 1KB exa
 > Regra que fica: **para `<video>` nativo, NUNCA prometer mais do que se vai entregar** — ele
 > lida perfeitamente com 206 curto (repede), e péssimo com truncamento. O mpegts.js é o
 > inverso. O `Sec-Fetch-Dest` é o que separa os dois no worker.
+
+---
+
+### 2026-08-30 (sessão remota) — varredura TOTAL de vídeos: 113.834 aulas sondadas, 38 corrigidas, 452 mortas aguardando remoção
+
+**Pedido do dono (furioso, após novo print de aula de 4min):** varrer a plataforma INTEIRA atrás
+de toda aula "mostra 20min, toca 4-5min" e corrigir. Antes de varrer, o print foi periciado: o
+arquivo estava 100% são (ffmpeg decodifica inteiro) — a foto era ANTERIOR ao fix do worker de
+24/08. As correções de streaming (24/08 + 26/08) já tinham resolvido a classe principal; a
+varredura foi atrás do que restava: **arquivos danificados na origem**.
+
+**Como varreu (sem contas de teste, direto no Drive com os tokens da plataforma):**
+`/tmp/sweep/sweep3.mjs` — TS: PTS em 5 pontos + cauda (12.015 aulas); MP4: caminhada pelas caixas
+ftyp/moov/mdat + mvhd (101.819 aulas, dedupe). Tokens renovados pelo próprio banco
+(`drive-health-check` via `net.http_post` + leitura de `drive_storage_accounts`/`drive_config`).
+
+**Resultado: os 12.015 TS estão 100% sãos.** MP4: 101.067 OK + 394 defeitos reais + 358 minúsculos.
+
+⚠️ **Falso positivo que quase virou estrago: 253 "DURACAO_INFLADA" eram fMP4 (MP4 fragmentado).**
+`mvhd.duration=0` é normal em fMP4 (a duração vive nos fragmentos) — o classificador leu 0 e
+achou que o banco mentia. ffprobe em 3 amostras: duração real = duração do banco (108/111/116s
+exatos), decode 100% limpo. **NENHUMA ação. Regra: mvhd=0 ≠ duração 0 — é assinatura de fMP4;
+confirme com ffprobe antes de "corrigir" duração.**
+
+**Correções aplicadas em produção (verificadas byte a byte, 17/17 e 18/18):**
+- **18 aulas `mime→video/mp2t`**: MPEG-TS disfarçado de .mp4 (17 `*.fhls-fastly_skyfire*` + 1
+  "Fibrilação atrial") — ffprobe confirma mpegts h264, durações batem com o banco. Tocam via
+  mpegts.js, mesma classe dos casos de 04/08.
+- **17 repoints**: aula quebrada apontada para cópia sã de outra cópia do curso. Critérios de
+  pareamento (nesta ordem): mesmo caminho de módulo + mesmo título; título específico + mesmo
+  tamanho ±2% (mesmo encode); manual validado a olho (typo "Fisiolofia", prefixo de turma,
+  "split_"). **Título genérico ("1. ext.mp4" — cursos onde TODA aula tem esse nome) NUNCA casa
+  por tamanho** — a identidade é o caminho do módulo. Inclui o "Aula - Delirium" (WMV/ASF
+  disfarçado de .mp4, 430MB) → cópia sã de 34MB com duração idêntica (909 vs 910s).
+- **3 durações** preenchidas (db=0 → real do mvhd × fração).
+
+**452 aulas mortas AGUARDAM autorização do dono para remoção** (classificador barrou DELETE em
+massa — decisão destrutiva é dele mesmo): 77 truncadas/zeradas sem cópia sã em lugar nenhum
+(68 sem moov = nunca abrem; resto morre antes da metade), 17 duplicatas quebradas cuja cópia sã
+já está NO MESMO curso, 358 stubs (0 bytes NO PRÓPRIO Drive, lixo `._` AppleDouble de 4KB,
+<64KB). Só 5 delas têm progresso (7 registros). **Backup integral (490 linhas + 22 progressos) e
+mapa de restauração em `scripts/varredura-mp4-2026-08-30.json`.**
+
+**Achados de perícia que ficam de regra:**
+- Truncamento real se detecta por `mdat` declarando fim ALÉM do tamanho do arquivo; cabeça
+  zerada com moov válido na cauda = ferramenta de download que falhou (6 casos, todos com cópia
+  sã em outro curso).
+- Arquivos `*.fhls-fastly_skyfire*` são despejos HLS (MPEG-TS ou só-áudio) — nunca MP4.
+- Stubs de 4.096 bytes começando com `._` são resource forks do macOS (AppleDouble), não vídeo.
+- Cursos gêmeos (Sala de Parada Academy ↔ MeuStaff - Emergência; Estratégia INTENSIVO ↔
+  Atualizações de diretrizes; Medcof HIIT ↔ Medcof 2024) quebram e curam em pares — a cópia sã
+  do gêmeo é o primeiro lugar onde procurar.
+
+🔴 **Token do Supabase Management NÃO fica mais neste arquivo.** O token anterior (gravado aqui)
+foi revogado automaticamente após um push — o GitHub secret scanning avisa a Supabase, que mata
+o token (3ª ocorrência). O token atual foi passado pelo dono no chat e vive só na sessão. **Nunca
+commitar `sbp_...`; quando morrer, pedir ao dono outro em supabase.com/dashboard/account/tokens.**
 
 ---
 
