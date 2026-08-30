@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useDeferredValue } from 'react';
+import { memo, useState, useEffect, useCallback, useMemo, useDeferredValue } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -10,6 +10,35 @@ import { formatDateTimeSP, todayStartISO, fetchAllRows } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Users, Clock, Search, Filter, RefreshCw, MessageCircle, UserCheck, Send, AlertTriangle } from 'lucide-react';
 import { WhatsAppLink } from '@/components/WhatsAppLink';
+
+// Linha memoizada: sem isto, cada "Mostrar mais" re-renderizava TODAS as
+// linhas já na tela (a lista chega a centenas), e cada clique na página
+// pagava esse custo de novo. Com memo, só as linhas NOVAS montam.
+const statusBadgeDe = (status: string) => {
+  const map: Record<string, [string, string]> = {
+    active: ['badge-active', 'Ativo'],
+    expired: ['badge-expired', 'Expirado'],
+    revoked: ['badge-revoked', 'Revogado'],
+  };
+  const [cls, label] = map[status] || ['badge-pending', status];
+  return <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${cls}`}>{label}</span>;
+};
+
+const TrialRow = memo(function TrialRow({ trial }: { trial: any }) {
+  return (
+    <tr className="border-b border-border/40 hover:bg-secondary/30 transition-colors">
+      <td className="px-4 py-3 text-sm text-foreground">{trial.email}</td>
+      <td className="px-4 py-3 text-sm text-muted-foreground">
+        {trial.whatsapp ? (
+          <WhatsAppLink phone={trial.whatsapp} showIcon className="text-accent-success" />
+        ) : '—'}
+      </td>
+      <td className="px-4 py-3">{statusBadgeDe(trial.status)}</td>
+      <td className="px-4 py-3 text-sm text-muted-foreground">{formatDateTimeSP(trial.created_at)}</td>
+      <td className="px-4 py-3 text-sm text-muted-foreground">{formatDateTimeSP(trial.expires_at)}</td>
+    </tr>
+  );
+});
 
 export default function TrialUsersPage() {
   const { session } = useAuth();
@@ -133,16 +162,6 @@ export default function TrialUsersPage() {
 
   const visiveisLista = useMemo(() => filtered.slice(0, visiveis), [filtered, visiveis]);
 
-  const statusBadge = (status: string) => {
-    const map: Record<string, [string, string]> = {
-      active: ['badge-active', 'Ativo'],
-      expired: ['badge-expired', 'Expirado'],
-      revoked: ['badge-revoked', 'Revogado'],
-    };
-    const [cls, label] = map[status] || ['badge-pending', status];
-    return <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${cls}`}>{label}</span>;
-  };
-
   return (
     <AdminLayout>
       <div className="space-y-6">
@@ -227,19 +246,7 @@ export default function TrialUsersPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {visiveisLista.map(trial => (
-                    <tr key={trial.id} className="border-b border-border/40 hover:bg-secondary/30 transition-colors">
-                      <td className="px-4 py-3 text-sm text-foreground">{trial.email}</td>
-                      <td className="px-4 py-3 text-sm text-muted-foreground">
-                        {trial.whatsapp ? (
-                          <WhatsAppLink phone={trial.whatsapp} showIcon className="text-accent-success" />
-                        ) : '—'}
-                      </td>
-                      <td className="px-4 py-3">{statusBadge(trial.status)}</td>
-                      <td className="px-4 py-3 text-sm text-muted-foreground">{formatDateTimeSP(trial.created_at)}</td>
-                      <td className="px-4 py-3 text-sm text-muted-foreground">{formatDateTimeSP(trial.expires_at)}</td>
-                    </tr>
-                  ))}
+                  {visiveisLista.map(trial => <TrialRow key={trial.id} trial={trial} />)}
                 </tbody>
               </table>
               {loadError && !loading && (
