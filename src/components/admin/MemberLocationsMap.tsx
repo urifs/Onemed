@@ -1,19 +1,20 @@
 import { useMemo } from 'react';
 import 'leaflet/dist/leaflet.css';
 import { useTheme } from 'next-themes';
-import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet';
+import { MapContainer, CircleMarker, Popup } from 'react-leaflet';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { MapPin, Circle, AlertTriangle } from 'lucide-react';
 import { useVisibleMemberLocations, LocationPoint } from '@/hooks/useVisibleMemberLocations';
 import { CountryFlag } from '@/components/admin/CountryFlag';
+import { MapBaseLayers } from '@/components/admin/MapBaseLayers';
 import { formatLastSeen } from '@/lib/utils';
 
 // Mesmo tom de --primary de src/index.css (claro e escuro) — todo ponto no
 // mapa usa a cor da marca; online/offline se distingue por opacidade e
 // tamanho, não por cor.
 const THEME_COLORS = {
-  dark: { dot: 'hsl(0, 84%, 60%)', tiles: 'dark_all' },
-  light: { dot: 'hsl(0, 74%, 46%)', tiles: 'light_all' },
+  dark: { dot: 'hsl(0, 84%, 60%)' },
+  light: { dot: 'hsl(0, 74%, 46%)' },
 };
 
 // IPs de geolocalização costumam devolver a mesma lat/lng pra cidade/ISP
@@ -91,10 +92,7 @@ export function MemberLocationsMap() {
               scrollWheelZoom={false}
               style={{ height: '100%', width: '100%' }}
             >
-              <TileLayer
-                url={`https://{s}.basemaps.cartocdn.com/${colors.tiles}/{z}/{x}/{y}{r}.png`}
-                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-              />
+              <MapBaseLayers light={resolvedTheme === 'light'} />
               {plotted.map(p => (
                 <CircleMarker
                   key={p.user_id}

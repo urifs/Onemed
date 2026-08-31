@@ -1,8 +1,9 @@
 import { useMemo } from 'react';
 import 'leaflet/dist/leaflet.css';
 import { useTheme } from 'next-themes';
-import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet';
+import { MapContainer, CircleMarker, Popup } from 'react-leaflet';
 import { SecLocation } from '@/hooks/useSecurityOverview';
+import { MapBaseLayers } from '@/components/admin/MapBaseLayers';
 import { formatLastSeen } from '@/lib/utils';
 
 // Espalha pontos que caem exatamente na mesma lat/lng (cidade/ISP) de forma
@@ -14,11 +15,6 @@ function jitter(seed: string): [number, number] {
   const rad = 0.02 + (Math.abs(h >> 8) % 100) / 100 * 0.03;
   return [Math.cos(ang) * rad, Math.sin(ang) * rad];
 }
-
-const TILES = {
-  dark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-  light: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-};
 
 export function SecurityMap({ locais }: { locais: SecLocation[] }) {
   const { resolvedTheme } = useTheme();
@@ -41,7 +37,7 @@ export function SecurityMap({ locais }: { locais: SecLocation[] }) {
   return (
     <div className="h-[420px] w-full rounded-lg overflow-hidden border border-border">
       <MapContainer center={[-14.2, -51.9]} zoom={3} className="h-full w-full" style={{ background: isLight ? '#e8ecef' : '#0b1220' }} worldCopyJump>
-        <TileLayer url={isLight ? TILES.light : TILES.dark} attribution="&copy; OpenStreetMap &copy; CARTO" />
+        <MapBaseLayers light={isLight} />
         {pontos.map((p, i) => (
           <CircleMarker key={(p.email || '') + i} center={p.center} radius={p.raio}
             pathOptions={{ color: p.cor, fillColor: p.cor, fillOpacity: 0.7, weight: p.risco ? 2 : 1 }}>
