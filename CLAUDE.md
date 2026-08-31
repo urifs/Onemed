@@ -4046,6 +4046,39 @@ auth.users).
 
 ---
 
+### 2026-08-31 (sessão remota) — mapas do painel com "API KEY REQUIRED": CARTO → Esri Canvas
+
+**Relato (print do dono):** o Mapa de Usuários do `/admin` coberto de marcas d'água diagonais
+"API KEY REQUIRED · carto.com/basemaps/apikey".
+
+**A CARTO passou a exigir chave e carimba o aviso DENTRO da imagem do tile, respondendo
+HTTP 200.** Conferido na origem, baixando um tile e OLHANDO os pixels — status, content-type e
+tamanho não denunciam nada. Consequência prática: **nenhum código detecta essa falha**; o mapa
+só suja na tela. ⚠️ Ao avaliar provedor de tiles, confira o PIXEL, não a resposta HTTP.
+
+**Trocado por Esri Canvas** (`server.arcgisonline.com`): sem chave, temas claro e escuro
+nativos, zoom 0–23 (não precisa de `maxNativeZoom`), atribuição Esri/HERE/Garmin/OSM. Amostras
+dos dois temas foram compostas e conferidas visualmente antes de escrever o código.
+
+| Onde | Mudança |
+|---|---|
+| `src/components/admin/MapBaseLayers.tsx` (novo) | Camadas de fundo dos DOIS mapas num lugar só. Antes cada mapa tinha a própria cópia da URL — trocar de provedor exigia lembrar dos dois |
+| `MemberLocationsMap.tsx` · `SecurityMap.tsx` | Passam a usar `<MapBaseLayers light={…} />` |
+| `src/test/mapTiles.test.ts` (novo) | Trava a ordem `{z}/{y}/{x}`, exige base+rótulos nos dois temas e falha se QUALQUER arquivo do `src` voltar a apontar pra `cartocdn.com` |
+
+⚠️ **Duas pegadinhas do Esri, ambas cobertas por teste:**
+1. A URL é **`{z}/{y}/{x}`** (linha antes da coluna), o inverso do `{z}/{x}/{y}` da maioria dos
+   provedores. Trocar os dois entrega o pedaço errado do mundo em cada quadrado, sem erro no
+   console.
+2. A base **não traz nomes** de cidade/país (a `dark_all` da CARTO trazia): os rótulos são uma
+   SEGUNDA camada por cima. As duas ficam no `tilePane` do Leaflet, então seguem abaixo dos
+   marcadores — nome de cidade nunca cobre ponto de usuário.
+
+Conferido que o projeto **não tem CSP** (nem no `vercel.json` nem nos headers de produção), então
+o host novo não precisa de liberação. 180 testes verdes, `typecheck:refs` limpo, build 27/27.
+
+---
+
 ## Google OAuth — os DOIS projetos (publicar para os tokens não expirarem)
 
 Descobertos em 19/08 pelo `tokeninfo` do próprio token vivo de cada conta
