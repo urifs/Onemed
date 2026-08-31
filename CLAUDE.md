@@ -3999,11 +3999,12 @@ confirme com ffprobe antes de "corrigir" duração.**
   disfarçado de .mp4, 430MB) → cópia sã de 34MB com duração idêntica (909 vs 910s).
 - **3 durações** preenchidas (db=0 → real do mvhd × fração).
 
-**452 aulas mortas AGUARDAM autorização do dono para remoção** (classificador barrou DELETE em
-massa — decisão destrutiva é dele mesmo): 77 truncadas/zeradas sem cópia sã em lugar nenhum
-(68 sem moov = nunca abrem; resto morre antes da metade), 17 duplicatas quebradas cuja cópia sã
-já está NO MESMO curso, 358 stubs (0 bytes NO PRÓPRIO Drive, lixo `._` AppleDouble de 4KB,
-<64KB). Só 5 delas têm progresso (7 registros). **Backup integral (490 linhas + 22 progressos) e
+**452 aulas mortas REMOVIDAS (autorizadas pelo dono na mesma sessão):** 77 truncadas/zeradas sem
+cópia sã em lugar nenhum (68 sem moov = nunca abrem; resto morre antes da metade), 17 duplicatas
+quebradas cuja cópia sã já está NO MESMO curso, 358 stubs (0 bytes NO PRÓPRIO Drive, lixo `._`
+AppleDouble de 4KB, <64KB). Só 5 delas tinham progresso (7 registros, no backup). Junto: 249
+módulos-folha esvaziados removidos e `recalc_course_totals` em 36 cursos. Conferido depois:
+0 sobras, 17 repontadas vivas com duração. **Backup integral (490 linhas + 22 progressos) e
 mapa de restauração em `scripts/varredura-mp4-2026-08-30.json`.**
 
 **Achados de perícia que ficam de regra:**
