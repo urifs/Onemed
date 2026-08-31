@@ -61,6 +61,9 @@ import { C41_Linhas, C41_DURATION } from './creatives/C41_Linhas';
 import { C42_Pilha, C42_DURATION } from './creatives/C42_Pilha';
 import { MB01_Linhas, MB01_DURATION } from './creatives/MB01_Linhas';
 import { MB02_Pilha, MB02_DURATION } from './creatives/MB02_Pilha';
+import { MB03_Procurando, MB03_DURATION } from './creatives/MB03_Procurando';
+import { MB04_Validade, MB04_DURATION } from './creatives/MB04_Validade';
+import { MB05_Madrugada, MB05_DURATION } from './creatives/MB05_Madrugada';
 import { C43_Recibo, C43_DURATION } from './creatives/C43_Recibo';
 import { C44_Zapping, C44_DURATION } from './creatives/C44_Zapping';
 import { C45_ZoomInf, C45_DURATION } from './creatives/C45_ZoomInf';
@@ -212,6 +215,9 @@ const CREATIVES: Array<[string, React.FC, number]> = [
   ['C42-Pilha', C42_Pilha, C42_DURATION],
   ['MB01-Linhas', MB01_Linhas, MB01_DURATION],
   ['MB02-Pilha', MB02_Pilha, MB02_DURATION],
+  ['MB03-Procurando', MB03_Procurando, MB03_DURATION],
+  ['MB04-Validade', MB04_Validade, MB04_DURATION],
+  ['MB05-Madrugada', MB05_Madrugada, MB05_DURATION],
   ['C43-Recibo', C43_Recibo, C43_DURATION],
   ['C44-Zapping', C44_Zapping, C44_DURATION],
   ['C45-ZoomInf', C45_ZoomInf, C45_DURATION],
