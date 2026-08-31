@@ -4024,6 +4024,28 @@ commitar `sbp_...`; quando morrer, pedir ao dono outro em supabase.com/dashboard
 
 ---
 
+### 2026-08-31 (sessão remota) — curso "MedCurso 2025" importado (317 aulas, 94,7 GB)
+
+Pasta `1B7hqgJ2XrH88m8cZD_dBuOiasTyKNlCm` — o link É o curso →
+`sync-drive-extra.mjs --curso-unico`. Auditoria independente antes de gravar: 317 arquivos
+(281 MP4 verdadeiros — 6/6 sondados com `ftyp` — + 36 PDFs de apostila), 21 módulos de topo por
+especialidade, **zero** armadilhas (0-byte, stub 55.855, `.gdrive`, download parcial,
+AppleDouble, duplicata de `drive_file_id`).
+
+Importado: **`medcurso-2025`**, 317 aulas, 126 módulos, ativo, `sort_order` 317/317 distintos,
+**281/281 vídeos com duração** (o script pegou de `videoMediaMetadata`, sem baixar bytes).
+Categoria corrigida à mão de "Outros cursos" → "Extensivo & Intensivo · Residência" (mesma dos
+irmãos medcurso-2026/medcell-2026).
+
+**Verificado pelo caminho REAL do aluno** — o trial estava bloqueado pelo rate limit por IP
+(sondas anteriores da sessão), então a conta de teste foi criada via `accesses` (annual, 1 dia)
++ `member-auth-request` set-password/login (o login devolve `access_token` no TOPO da resposta,
+não em `session.access_token`): **8/8 aulas** de módulos variados respondem 206 com bytes reais
+(`ftyp`/`%PDF`). Conta de teste apagada (accesses + member_credentials + member_locations +
+auth.users).
+
+---
+
 ## Google OAuth — os DOIS projetos (publicar para os tokens não expirarem)
 
 Descobertos em 19/08 pelo `tokeninfo` do próprio token vivo de cada conta
