@@ -4077,6 +4077,20 @@ dos dois temas foram compostas e conferidas visualmente antes de escrever o cód
 Conferido que o projeto **não tem CSP** (nem no `vercel.json` nem nos headers de produção), então
 o host novo não precisa de liberação. 180 testes verdes, `typecheck:refs` limpo, build 27/27.
 
+**Ajuste de tom (mesma sessão, relato do dono "ficou mais claro"):** o Esri Dark Gray é
+GRAFITE, não o quase-preto da CARTO. Medido no pixel, no mesmo quadrado do mapa: terra em **53**
+no Esri contra **19** na CARTO (2,6× mais clara) — daí a impressão. `filter: brightness(0.45)`
+na camada de BASE devolve o tom antigo (terra em 26).
+
+⚠️ O filtro NÃO pode pegar os rótulos: escurecidos junto, os nomes de cidade sumiriam no fundo.
+Por isso a classe `.map-tiles-dark` (em `index.css`) vai só na camada de base, e só no tema
+escuro — no claro os dois provedores já batem (220 nos dois, medido).
+
+`src/test/mapBaseLayersRender.test.tsx` prova que a classe chega ao container de tiles do Leaflet
+(conferido dos dois lados: falha com a classe removida, passa com ela). Sem esse teste, uma
+mudança de versão do react-leaflet devolveria o mapa cinza-claro **sem quebrar nada** — nem tipo,
+nem build, nem console. 183 testes verdes.
+
 ---
 
 ## Google OAuth — os DOIS projetos (publicar para os tokens não expirarem)
