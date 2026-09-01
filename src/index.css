@@ -260,3 +260,13 @@
   color: hsl(215, 20%, 65%);
   border: 1px solid rgba(100, 116, 139, 0.2);
 }
+
+/* Fundo do mapa no tema escuro (painel admin). O Esri Dark Gray é grafite, mais
+   claro que o quase-preto que a CARTO entregava — este filtro devolve o tom
+   antigo. Medido, não chutado: terra em 53 no Esri, 19 na CARTO; 0.45 põe em 26.
+   Vale SÓ na camada de base: os rótulos ficam de fora do filtro, senão os nomes
+   de cidade escureceriam junto e sumiriam. Aplicado por
+   src/components/admin/MapBaseLayers.tsx. */
+.map-tiles-dark {
+  filter: brightness(0.45);
+}
