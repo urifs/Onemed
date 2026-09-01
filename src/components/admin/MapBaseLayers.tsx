@@ -40,7 +40,14 @@ export function MapBaseLayers({ light }: { light: boolean }) {
   const tiles = light ? MAP_TILES.light : MAP_TILES.dark;
   return (
     <>
-      <TileLayer url={tiles.base} attribution={MAP_ATTRIBUTION} />
+      <TileLayer
+        url={tiles.base}
+        attribution={MAP_ATTRIBUTION}
+        // Escurece a base no tema escuro (.map-tiles-dark em src/index.css) — o
+        // Esri é grafite, e o painel é quase preto. Os rótulos NÃO levam a
+        // classe: filtrados junto, os nomes de cidade sumiriam.
+        className={light ? undefined : 'map-tiles-dark'}
+      />
       <TileLayer url={tiles.labels} />
     </>
   );
