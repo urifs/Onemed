@@ -32,6 +32,12 @@ function json(req: Request, payload: unknown, status = 200) {
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: getCorsHeaders(req) })
 
+  // A function morre aos 150s. Uma geração pesada leva 60-80s, então a
+  // repetição em caso de resposta inválida SÓ cabe se o relógio permitir —
+  // senão o aluno espera 135s para receber 502 (ou 504, sem resposta nenhuma).
+  const inicio = Date.now()
+  const decorrido = () => Date.now() - inicio
+
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabase = createClient(supabaseUrl, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
@@ -88,6 +94,21 @@ serve(async (req) => {
       }
     } catch { /* tabela indisponível não derruba a geração */ }
 
+    // A vaga do dia é cobrada ANTES de gerar (senão dava pra disparar 10 em
+    // paralelo). Quando a geração falha, ela volta: o aluno não recebeu nada, e
+    // sem isso ele queima o limite do plano em tentativas frustradas — foi
+    // exatamente o que aconteceu com um cliente (5 tentativas, 0 cronogramas).
+    const devolverVaga = async () => {
+      try {
+        const { data: rl } = await supabase.from('rate_limits')
+          .select('attempts').eq('identifier', user.id).eq('action', 'study_plan').maybeSingle()
+        if (rl && rl.attempts > 0) {
+          await supabase.from('rate_limits').update({ attempts: rl.attempts - 1 })
+            .eq('identifier', user.id).eq('action', 'study_plan')
+        }
+      } catch { /* devolver a vaga nunca pode derrubar a resposta */ }
+    }
+
     const body = await req.json().catch(() => ({}))
     const objective = String(body.objective || '').trim().slice(0, 2000)
     const weeklyHours = Math.min(Math.max(Number(body.weeklyHours) || 0, 0), 100) || null
@@ -112,14 +133,22 @@ serve(async (req) => {
       focusText ? `PREFERÊNCIAS/PONTOS FRACOS: ${focusText}` : '',
       `Regras:`,
       `- Divida em SEMANAS. Cada semana tem: "week" (número), "theme" (tema central curto), "focus" (1 frase), "goal" (o que dominar ao fim da semana) e "tasks".`,
-      `- Cada tarefa: {"id": string único curto (ex "s1t2"), "label": ação concreta e específica, "type": um de "estudo"|"revisao"|"pratica"|"simulado"|"descanso", "hours": número de horas}. 3 a 6 tarefas por semana, somando aproximadamente as horas semanais.`,
+      // Plano longo com 6 tarefas por semana não cabe na resposta do modelo:
+      // 48 semanas × 6 tarefas passou de 32k tokens e vinha cortado.
+      (semanasAteProva ?? 0) > 20
+        ? `- Cada tarefa: {"id": string único curto (ex "s1t2"), "label": ação concreta e específica e CURTA (até 80 caracteres), "type": um de "estudo"|"revisao"|"pratica"|"simulado"|"descanso", "hours": número de horas}. Como o cronograma é longo, use 3 a 4 tarefas por semana e seja conciso em todos os textos.`
+        : `- Cada tarefa: {"id": string único curto (ex "s1t2"), "label": ação concreta e específica, "type": um de "estudo"|"revisao"|"pratica"|"simulado"|"descanso", "hours": número de horas}. 3 a 6 tarefas por semana, somando aproximadamente as horas semanais.`,
       `- Inclua revisões espaçadas e simulados periódicos.`,
       `- "milestones": 3 a 6 marcos {"week": número, "label": conquista esperada}.`,
       `- "mindmap": um MAPA MENTAL em árvore do conteúdo — {"label": objetivo central, "children": [{"label": grande área, "children": [{"label": subtema, "children": []}]}]}. 4 a 7 grandes áreas, cada uma com 2 a 5 subtemas. É o resumo visual do que será estudado.`,
       `- "tips": 3 a 6 dicas práticas de método de estudo específicas para esse objetivo.`,
       `- "overview": 2 a 3 frases resumindo a estratégia do cronograma.`,
       `- "title": um título curto para o cronograma.`,
-      `- Responda APENAS um objeto JSON válido: {"title","overview","durationWeeks","weeklyHours","weeks":[...],"milestones":[...],"mindmap":{...},"tips":[...]}. Sem markdown, sem comentários.`,
+      // ORDEM IMPORTA: "weeks" é o campo mais longo e vai por ÚLTIMO de
+      // propósito. Se a resposta estourar o teto de tokens e for cortada, o
+      // que se perde são semanas do fim (o remendo devolve as inteiras) em
+      // vez do mapa mental e das dicas, que sumiam por inteiro.
+      `- Responda APENAS um objeto JSON válido, NESTA ORDEM de campos: {"title","overview","durationWeeks","weeklyHours","mindmap":{...},"milestones":[...],"tips":[...],"weeks":[...]}. Sem markdown, sem comentários.`,
     ].filter(Boolean).join('\n')
 
     const chamarLLM = () => fetch(LLM_URL, {
@@ -129,9 +158,41 @@ serve(async (req) => {
         model: LLM_MODEL,
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.5,
-        max_tokens: 16384,
+        // 16384 truncava cronogramas longos NO MEIO do JSON: 26 semanas com
+        // tarefas, marcos, mapa mental e dicas não cabem. O JSON cortado não
+        // dá parse, e o aluno recebia "a IA não conseguiu" — de forma
+        // intermitente, porque planos curtos cabiam. Mesmo teto do gerador de
+        // questões, que passou pelo mesmo problema em 10/08.
+        max_tokens: 32768,
       }),
     })
+
+    // Fecha um JSON cortado no meio: descarta o trecho incompleto do fim e
+    // fecha os colchetes/chaves que ficaram abertos. Um cronograma truncado
+    // ainda traz as primeiras semanas inteiras — entregar 12 das 26 semanas é
+    // muito melhor do que recusar tudo, que é o que acontecia.
+    const remendar = (t: string): string | null => {
+      const pilha: string[] = []
+      let emTexto = false, escape = false, ultimoSeguro = -1
+      // O fechamento tem que usar a pilha DO PONTO DE CORTE, não a do fim da
+      // string: no fim estamos no meio de um objeto aninhado (mais fundo), e
+      // fechar com aquela pilha gera colchete a mais e JSON inválido de novo.
+      let pilhaSegura: string[] = []
+      for (let i = 0; i < t.length; i++) {
+        const c = t[i]
+        if (escape) { escape = false; continue }
+        if (c === '\\') { escape = true; continue }
+        if (c === '"') { emTexto = !emTexto; continue }
+        if (emTexto) continue
+        if (c === '{' || c === '[') pilha.push(c === '{' ? '}' : ']')
+        else if (c === '}' || c === ']') pilha.pop()
+        // vírgula direto dentro de um array = item anterior fechou inteiro:
+        // é o último lugar onde dá pra cortar sem perder metade de uma semana
+        else if (c === ',' && pilha[pilha.length - 1] === ']') { ultimoSeguro = i; pilhaSegura = pilha.slice() }
+      }
+      if (!pilha.length || ultimoSeguro < 0) return null
+      return t.slice(0, ultimoSeguro) + pilhaSegura.reverse().join('')
+    }
 
     const extrair = (raw: string): any => {
       const semCerca = raw.replace(/^\s*```(?:json)?/i, '').replace(/```\s*$/, '').trim()
@@ -139,20 +200,28 @@ serve(async (req) => {
       const ini = semCerca.indexOf('{')
       const fim = semCerca.lastIndexOf('}')
       if (ini >= 0 && fim > ini) candidatos.push(semCerca.slice(ini, fim + 1))
+      const remendado = ini >= 0 ? remendar(semCerca.slice(ini)) : null
+      if (remendado) candidatos.push(remendado)
       for (const t of candidatos) { try { return JSON.parse(t) } catch { /* próximo */ } }
       return null
     }
 
+    const valido = (p: any) => p && Array.isArray(p.weeks) && p.weeks.length > 0
+
     let res = await chamarLLM()
     let data = await res.json()
     let plano = res.ok ? extrair(data.choices?.[0]?.message?.content || '') : null
-    if (!plano || !Array.isArray(plano.weeks) || plano.weeks.length === 0) {
+    // Só repete se a SEGUNDA chamada couber no relógio (a primeira já mostrou
+    // quanto custa). Sem essa conta, 2 × 70s = 140s e a function morre antes de
+    // responder qualquer coisa.
+    if (!valido(plano) && decorrido() + decorrido() < 130_000) {
       res = await chamarLLM()
       data = await res.json()
       if (res.ok) plano = extrair(data.choices?.[0]?.message?.content || '')
     }
-    if (!plano || !Array.isArray(plano.weeks) || plano.weeks.length === 0) {
+    if (!valido(plano)) {
       console.error('study-plan LLM inválido:', String(data?.choices?.[0]?.message?.content || JSON.stringify(data)).slice(0, 300))
+      await devolverVaga()
       return json(req, { error: 'A IA não conseguiu montar o cronograma agora. Tente de novo em instantes.' }, 502)
     }
 
@@ -220,6 +289,7 @@ serve(async (req) => {
     }).select('*').single()
     if (insErr || !saved) {
       console.error('study_plans insert error', insErr)
+      await devolverVaga()
       return json(req, { error: 'Não foi possível salvar o cronograma. Tente de novo.' }, 500)
     }
 
