@@ -4093,6 +4093,53 @@ nem build, nem console. 183 testes verdes.
 
 ---
 
+### 2026-09-02 (sessão remota) — cronograma "não funciona": teto de tokens cortava o JSON no meio
+
+**Relato:** cliente dizendo que o gerador de cronograma não funciona.
+
+**Confirmado nos dados antes de mexer:** zero cronogramas criados em 01 e 02/09, contra **14
+tentativas de 5 usuários em 48h** (`rate_limits`, ação `study_plan`). Flashcards e questões
+seguiam normais no mesmo período (11 e 8 no dia 01) — ou seja, a chave de IA compartilhada
+estava boa e o problema era só do cronograma. O cliente do relato é quase certamente
+`mauroricardoj@gmail.com`: **5 tentativas, 0 cronogramas**, e depois preso no limite do plano.
+
+**Causa: `max_tokens: 16384` cortava a resposta no meio do JSON.** Um cronograma de 26 semanas
+com tarefas, marcos, mapa mental e dicas não cabe nesse teto; o JSON cortado não dá parse e o
+aluno recebia "A IA não conseguiu montar o cronograma". **Intermitente por natureza** — plano
+curto cabia, plano longo não —, o que explica um usuário ter conseguido 3 de 5 tentativas.
+Mesma classe do bug do gerador de questões corrigido em 10/08.
+
+**Reproduzido em produção** com conta de teste: cronograma com data-alvo de 6 meses → **502 aos
+135s**; os curtos passavam. Os 135s são o segundo problema: a repetição automática dobrava o
+tempo contra o limite de 150s da function.
+
+**Quatro correções (`generate-study-plan` v7):**
+
+| # | O quê |
+|---|---|
+| 1 | `max_tokens` 16384 → **32768** (mesmo teto do gerador de questões) |
+| 2 | **Remendo de JSON truncado**: fecha o que ficou aberto cortando na última vírgula de array — entrega as semanas inteiras em vez de recusar tudo. Validado em 4 pontos de corte diferentes (30/50/70/90%), recusando lixo e mantendo o JSON íntegro intacto |
+| 3 | **Repetição só se couber no relógio** (`decorrido()*2 < 130s`) — antes 2×70s estourava os 150s e o aluno esperava para receber nada |
+| 4 | **Devolve a vaga do limite diário quando a geração falha** — sem isso o aluno queima o limite do plano em tentativas frustradas, que foi exatamente o que aconteceu com o cliente |
+
+**Ordem dos campos no JSON importa.** No teste, o plano de 1 ano voltou com 48 semanas mas
+**sem mapa mental, marcos nem dicas** — o remendo salvou as semanas, e o resto vinha depois no
+JSON e foi cortado. O prompt passou a pedir `mindmap`/`milestones`/`tips` ANTES de `weeks` (o
+campo mais longo): agora o que se perde num corte são semanas do fim, não os recursos inteiros.
+Cronograma com mais de 20 semanas também pede 3-4 tarefas por semana e textos curtos.
+
+**Verificado em produção** (contas de teste criadas e apagadas): o caso exato que falhava →
+**200 em 70s, 26 semanas, 104 tarefas, 4 marcos, mapa mental, 6 dicas**; plano de 1 ano →
+**200 em 53s, 52 semanas completas com mapa** (antes: 131s e sem mapa); plano curto → 23s. O
+contador do limite bateu exatamente com os sucessos, provando a devolução da vaga.
+
+`mauroricardoj@gmail.com` teve o contador zerado à mão — estava bloqueado por 5 tentativas que
+nunca entregaram nada.
+
+⚠️ O cliente já espera 165s (`AI_TIMEOUT_MS`) contra os 150s da function, então nenhuma mudança
+de frontend foi necessária. Mas fica o registro: geração pesada leva 70-90s, e é por isso que
+essa rota não pode cair no timeout padrão de 10s.
+
 ## Google OAuth — os DOIS projetos (publicar para os tokens não expirarem)
 
 Descobertos em 19/08 pelo `tokeninfo` do próprio token vivo de cada conta
